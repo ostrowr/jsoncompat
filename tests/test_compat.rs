@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod test_compat {
-    use json_schema_backcompat::{build_and_resolve_schema, check_compat, Role};
+    use json_schema_backcompat::{check_compat, Role};
     use serde_json::json;
     use url::Url;
 
@@ -53,10 +53,10 @@ mod test_compat {
         let s_new = to_ast(new_schema);
 
         // Serializer => new must be subset of old => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Serializer));
 
         // Deserializer => old must be subset of new => true
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), true);
+        assert!(check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 3) Optional -> required field:
@@ -84,10 +84,10 @@ mod test_compat {
         let s_new = to_ast(new_schema);
 
         // Serializer => new must be subset of old => true (since new requiring a field doesn't break producing old data)
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), true);
+        assert!(check_compat(&s_old, &s_new, Role::Serializer));
 
         // Deserializer => old must be subset of new => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 4) AdditionalProperties: old allows them, new disallows them => break for serializer
@@ -109,12 +109,12 @@ mod test_compat {
         // new is narrower => subset => that alone is not break for serializer. Actually let's check carefully:
         //   "new" accepts fewer objects => means there's some object "old" would produce (with extra fields)
         //   that "new" wouldn't. That means from the serializer perspective, that's a break. So we expect false.
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Serializer));
 
         // deserializer => old must be subset of new => old allows everything, new is more restrictive,
         // means old data is definitely accepted by new if old had random fields => new wouldn't accept them => break
         // Wait, from the perspective of "deserializer," if old accepted everything, new won't. So old is not a subset => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 5) AdditionalProperties: old disallows them, new allows them => break for deserializer
@@ -133,12 +133,12 @@ mod test_compat {
 
         // serializer => new must be subset of old => new allows more => new is superset => so not subset => break
         // Actually, from the serializer perspective, if "new" can produce objects with unknown fields that "old" can't accept => break => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Serializer));
 
         // deserializer => old must be subset of new => old disallows unknown fields. So old's data is a subset
         // of new's data => that should be true => no break for deserializer.
         // Wait, re-check carefully: old is subset => everything old accepts is an object with no unknown fields => new is fine with those => true
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), true);
+        assert!(check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 6) Type changed from string -> number => breaks in both directions
@@ -151,10 +151,10 @@ mod test_compat {
         let s_new = to_ast(new_schema);
 
         // serializer => new must be subset of old => "number" is not subset of "string" => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Serializer));
 
         // deserializer => old must be subset of new => "string" not subset of "number" => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 7) Minimally different enumerations
@@ -175,10 +175,10 @@ mod test_compat {
 
         // serializer => new must be subset => new actually allows [1,2,3], old only [1,2].
         // => not a subset => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Serializer));
 
         // deserializer => old must be subset => old allows [1,2], new allows [1,2,3] => old is subset => true
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), true);
+        assert!(check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 8) allOf with references => final combination might be narrower or broader.
@@ -213,17 +213,17 @@ mod test_compat {
         // "ast2" => integer >=0 <=5
         // => ast2 is narrower than ast => ast2 ⊆ ast => from the "serializer" perspective, if new=ast2, old=ast => no break
         // We'll do a direct check: is_subschema_of(ast2, ast)? => true
-        assert!(check_compat(&ast, &ast2, Role::Serializer) == false, "old=ast, new=ast2 => new is narrower => we want to see if new is subset => yes => we expect true => oh wait, let's track carefully");
+        assert!(!check_compat(&ast, &ast2, Role::Serializer), "old=ast, new=ast2 => new is narrower => we want to see if new is subset => yes => we expect true => oh wait, let's track carefully");
 
         // Actually let's be precise:
         // For serializer => new must be subset of old
         // old=ast => integer 0..10
         // new=ast2 => integer 0..5
         // Is 0..5 a subset of 0..10? Yes, so that means no break => we expect check_compat(...) = true
-        assert_eq!(check_compat(&ast, &ast2, Role::Serializer), true);
+        assert!(check_compat(&ast, &ast2, Role::Serializer));
 
         // For deserializer => old=ast must be subset of new=ast2 => 0..10 is not subset of 0..5 => break => false
-        assert_eq!(check_compat(&ast, &ast2, Role::Deserializer), false);
+        assert!(!check_compat(&ast, &ast2, Role::Deserializer));
     }
 
     /// 9) "anyOf" with multiple types => new => anyOf(string, number)
@@ -238,10 +238,10 @@ mod test_compat {
         let s_new = to_ast(new_schema);
 
         // serializer => new must be subset => "string or number" is bigger than "string" alone => not subset => false
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Serializer));
 
         // deserializer => old must be subset => "string" is subset of "string or number" => true
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), true);
+        assert!(check_compat(&s_old, &s_new, Role::Deserializer));
     }
 
     /// 10) Tighter 'minLength' => break for deserializer, not for serializer
@@ -258,9 +258,9 @@ mod test_compat {
         let s_new = to_ast(new_schema);
 
         // serializer => new must be subset => yes, because ">=5" is narrower than ">=0"
-        assert_eq!(check_compat(&s_old, &s_new, Role::Serializer), true);
+        assert!(check_compat(&s_old, &s_new, Role::Serializer));
 
         // deserializer => old must be subset => no, because old accepted length=3, new doesn't
-        assert_eq!(check_compat(&s_old, &s_new, Role::Deserializer), false);
+        assert!(!check_compat(&s_old, &s_new, Role::Deserializer));
     }
 }

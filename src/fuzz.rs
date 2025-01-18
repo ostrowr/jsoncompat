@@ -40,13 +40,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let idx = rng.gen_range(0..subs.len());
             generate_value(&subs[idx], rng, depth.saturating_sub(1))
         }
-        SchemaNode::Not(sub) => {
+        SchemaNode::Not(_sub) => {
             // We'll generate random_any but ensure it's not valid for `sub`.
             // That might be tricky, so for this demonstration, do random_any.
             // (We might produce something invalid for the main schema though.
             //  'not' is tricky to satisfy generically.)
-            let candidate = random_any(rng, depth);
-            candidate
+
+            random_any(rng, depth)
         }
 
         // string
@@ -63,8 +63,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     return e[idx].clone();
                 }
             }
-            let len_min = min_length.unwrap_or(0) as u64;
-            let len_max = max_length.unwrap_or(len_min + 5).max(len_min) as u64; // fallback
+            let len_min = min_length.unwrap_or(0);
+            let len_max = max_length.unwrap_or(len_min + 5).max(len_min); // fallback
             let length = if len_min <= len_max {
                 rng.gen_range(len_min..=len_max.min(len_min + 10)) // limit random
             } else {
@@ -222,7 +222,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         SchemaNode::AllOf(_) => Value::Null,
         SchemaNode::AnyOf(_) => Value::Null,
         SchemaNode::OneOf(_) => Value::Null,
-        SchemaNode::Not(_) => Value::Null,
+        // SchemaNode::Not(_) => Value::Null,
         SchemaNode::Enum(_) => Value::Null,
     }
 }

@@ -239,22 +239,15 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
     }
 }
 fn parse_boolean_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
-    let enumeration = obj
-        .get("enum")
-        .and_then(|v| v.as_array())
-        .map(|v| v.clone());
+    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     Ok(SchemaNode::Boolean { enumeration })
 }
 fn parse_null_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
-    let enumeration = obj
-        .get("enum")
-        .and_then(|v| v.as_array())
-        .map(|v| v.clone());
+    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     Ok(SchemaNode::Null { enumeration })
 }
 
 fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
-    use std::collections::{HashMap, HashSet};
     let mut properties = HashMap::new();
     let mut required = HashSet::new();
 
@@ -276,10 +269,7 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         Some(Value::Bool(b)) => SchemaNode::BoolSchema(*b),
         Some(other) => build_schema_ast(other)?,
     };
-    let enumeration = obj
-        .get("enum")
-        .and_then(|v| v.as_array())
-        .map(|v| v.clone());
+    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     Ok(SchemaNode::Object {
         properties,
         required,
@@ -308,10 +298,7 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     };
     let min_items = obj.get("minItems").and_then(|v| v.as_u64());
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
-    let enumeration = obj
-        .get("enum")
-        .and_then(|v| v.as_array())
-        .map(|v| v.clone());
+    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     Ok(SchemaNode::Array {
         items: Box::new(items_node),
         min_items,
@@ -425,7 +412,6 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
         // sub=Any, sup=Any => equal
         (SchemaNode::Any, SchemaNode::Any) => true,
-        (SchemaNode::Any, SchemaNode::BoolSchema(true)) => true,
         (SchemaNode::Any, _) => false,
 
         // Both enumerations => check that sub's enum values are in sup's
@@ -618,10 +604,6 @@ fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
 ///
 /// The code below includes a fix to handle `additionalProperties`.
 fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
-    use check_int_inclusion;
-    use check_numeric_inclusion;
-    use is_subschema_of;
-
     match (sub, sup) {
         // Strings
         (
@@ -866,20 +848,14 @@ pub fn check_numeric_inclusion(
             // sup => x > supv
             if s_excl {
                 // sub => x > subv => sub is narrower if subv >= supv
-                return subv >= supv;
+                subv >= supv
             } else {
                 // sub => x >= subv => narrower if subv > supv
-                return subv > supv;
+                subv > supv
             }
         } else {
             // sup => x >= supv
-            if s_excl {
-                // sub => x > subv => narrower if subv >= supv
-                return subv >= supv;
-            } else {
-                // sub => x >= subv
-                return subv >= supv;
-            }
+            subv >= supv
         }
     } else {
         // is_max
@@ -888,20 +864,13 @@ pub fn check_numeric_inclusion(
             // x < supv
             if s_excl {
                 // sub => x < subv => narrower if subv <= supv
-                return subv <= supv;
+                subv <= supv
             } else {
                 // sub => x <= subv => narrower if subv < supv
-                return subv < supv;
+                subv < supv
             }
         } else {
-            // x <= supv
-            if s_excl {
-                // sub => x < subv => narrower if subv <= supv
-                return subv <= supv;
-            } else {
-                // sub => x <= subv
-                return subv <= supv;
-            }
+            subv <= supv
         }
     }
 }
@@ -924,34 +893,26 @@ pub fn check_int_inclusion(
         if p_excl {
             // sup => x > supv
             if s_excl {
-                return subv >= supv;
+                subv >= supv
             } else {
-                return subv > supv;
+                subv > supv
             }
         } else {
             // sup => x >= supv
-            if s_excl {
-                return subv >= supv;
-            } else {
-                return subv >= supv;
-            }
+            subv >= supv
         }
     } else {
         // is_max
         if p_excl {
             // sup => x < supv
             if s_excl {
-                return subv <= supv;
+                subv <= supv
             } else {
-                return subv < supv;
+                subv < supv
             }
         } else {
             // sup => x <= supv
-            if s_excl {
-                return subv <= supv;
-            } else {
-                return subv <= supv;
-            }
+            subv <= supv
         }
     }
 }
