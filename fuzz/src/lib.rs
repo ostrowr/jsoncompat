@@ -1,4 +1,4 @@
-use crate::SchemaNode;
+use json_schema_draft2020::{compile, build_and_resolve_schema, SchemaNode};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -227,6 +227,62 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
     }
 }
 
+/// Generate a *random JSON Schema* (subset) for fuzzing the value‑generator
+/// itself.  The result is raw JSON so it can immediately be passed into the
+/// authoritative validator for cross‑checking.
+pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
+    if depth == 0 {
+        return Value::Bool(true);
+    }
+    match rng.gen_range(0..=4) {
+        // Primitive types --------------------------------------------------
+        0 => {
+            // strings with optional minLength / maxLength
+            let mut obj = Map::new();
+            obj.insert("type".into(), Value::String("string".into()));
+            if rng.gen_bool(0.5) {
+                obj.insert("minLength".into(), rng.gen_range(0..5u64).into());
+            }
+            if rng.gen_bool(0.5) {
+                obj.insert("maxLength".into(), rng.gen_range(5..10u64).into());
+            }
+            Value::Object(obj)
+        }
+        1 => {
+            // integer range
+            let mut obj = Map::new();
+            obj.insert("type".into(), Value::String("integer".into()));
+            let min = rng.gen_range(-20..20);
+            let max = min + rng.gen_range(0..20);
+            obj.insert("minimum".into(), min.into());
+            obj.insert("maximum".into(), max.into());
+            Value::Object(obj)
+        }
+        // Array -----------------------------------------------------------
+        2 => {
+            let mut obj = Map::new();
+            obj.insert("type".into(), Value::String("array".into()));
+            obj.insert("items".into(), random_schema(rng, depth - 1));
+            Value::Object(obj)
+        }
+        // Object ----------------------------------------------------------
+        3 => {
+            let mut props = Map::new();
+            props.insert("a".into(), random_schema(rng, depth - 1));
+            props.insert("b".into(), random_schema(rng, depth - 1));
+            let mut obj = Map::new();
+            obj.insert("type".into(), Value::String("object".into()));
+            obj.insert("properties".into(), Value::Object(props));
+            if rng.gen_bool(0.5) {
+                obj.insert("required".into(), Value::Array(vec![Value::String("a".into())]));
+            }
+            Value::Object(obj)
+        }
+        // Boolean schema --------------------------------------------------
+        _ => Value::Bool(true),
+    }
+}
+
 /// A minimal fallback to produce a random JSON value of any type.
 fn random_any(rng: &mut impl Rng, depth: u8) -> Value {
     let pick = rng.gen_range(0..5);
@@ -273,41 +329,12 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
 /// For full correctness, you'd need a robust validator. This
 /// version handles the same subset of features we generate.
 pub fn validate(schema: &SchemaNode, val: &Value) -> bool {
-    // We can reuse the existing `instance_is_valid_against` logic from
-    // your library's subset checks, but that was incomplete for advanced
-    // constraints. We'll do a similarly partial approach here.
-    crate::instance_is_valid_against(val, schema)
-}
-
-/// Fuzz check both schemas by generating random data from each and
-/// seeing if it’s accepted by the other schema. This helps find
-/// real-world counterexamples.
-pub fn fuzz_compat_check(
-    old_schema: &SchemaNode,
-    new_schema: &SchemaNode,
-    samples_per_side: usize,
-    max_depth: u8,
-    rng: &mut impl Rng,
-) {
-    // 1) Generate data from old_schema
-    for _ in 0..samples_per_side {
-        let val = generate_value(old_schema, rng, max_depth);
-        let valid_old = validate(old_schema, &val);
-        let valid_new = validate(new_schema, &val);
-        if valid_old && !valid_new {
-            // This is a data sample accepted by old but rejected by new
-            println!("[Fuzz] Found data accepted by OLD but not NEW:\n  {val}");
-        }
-    }
-
-    // 2) Generate data from new_schema
-    for _ in 0..samples_per_side {
-        let val = generate_value(new_schema, rng, max_depth);
-        let valid_new = validate(new_schema, &val);
-        let valid_old = validate(old_schema, &val);
-        if valid_new && !valid_old {
-            // This is a data sample accepted by new but rejected by old
-            println!("[Fuzz] Found data accepted by NEW but not OLD:\n  {val}");
-        }
+    let raw = schema.to_json();
+    if let Ok(compiled) = compile(&raw) {
+        compiled.is_valid(val)
+    } else {
+        false
     }
 }
+
+// (compat‑fuzz helper removed – see backcompat tests)

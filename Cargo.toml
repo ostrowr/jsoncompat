@@ -3,13 +3,35 @@ name = "json_schema_backcompat"
 version = "0.1.0"
 edition = "2021"
 
+# Workspace definition so we can host the additional sibling crates.
+[workspace]
+# The root package (this crate) is an implicit member. We list the two
+# additional members created as part of this refactor.
+members = [
+    "fuzz",     # -> json_schema_fuzz
+    "schema"    # -> json_schema_draft2020
+]
+
 [dependencies]
 rand = "0.8.5"
-jsonschema = "0.28.1"
 anyhow = "1.0.95"
 thiserror = "2.0.11"
 url = "2.5.4"
 serde_json = "1.0.135"
 clap = { version = "4.5.26", features = ["derive"] }
 serde = { version = "1.0.217", features = ["derive"] }
+# Our own strict Draft‑2020 implementation crate
+json_schema_draft2020 = { path = "schema" }
+# Depend on the brand‑new fuzz crate for optional fuzzing from the CLI.
+# NOTE: The backcompat crate must not depend on the fuzz crate – that would
+# create a cyclic dependency (`fuzz` already relies on `backcompat`). The fuzz
+# functionality is an independent member of the workspace and can be used from
+# binaries/tests that depend on it directly.
+# json_schema_fuzz = { path = "fuzz" }
 
+# Note: The strict draft‑2020 implementation lives in the `schema` crate. The
+# backcompat crate (this one) doesn’t depend on it directly, so no dependency
+# entry is required here.
+
+[dev-dependencies]
+json_schema_fuzz = { path = "fuzz" }
