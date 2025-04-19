@@ -12,6 +12,12 @@ serde_json = "1.0"
 rand = "0.8"
 anyhow = "1.0"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[patch.crates-io]
+reqwest = { git = "https://github.com/yourusername/problematic-crate", branch = "wasm-fix" }
+
 # Internal crates
 json_schema_backcompat = { path = ".." }
 json_schema_fuzz = { path = "../fuzz" }
