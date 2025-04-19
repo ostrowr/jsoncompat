@@ -270,6 +270,11 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
         return Ok(SchemaNode::Enum(e.clone()));
     }
 
+    // const
+    if let Some(c) = obj.get("const") {
+        return Ok(SchemaNode::Const(c.clone()));
+    }
+
     // allOf, anyOf, oneOf, not
     if let Some(Value::Array(subs)) = obj.get("allOf") {
         return Ok(SchemaNode::AllOf(

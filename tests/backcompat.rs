@@ -45,7 +45,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
             panic!(
-                "Previously‑failing fixture now passes – remove allowed_failure from {:?}",
+                "Previously-failing fixture now passes; remove allowed_failure from {:?}",
                 dir
             );
         }
@@ -106,9 +106,9 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Quick fuzz confirmation (10 samples each direction)
     let compiled_old = compile(&old_raw)?;
     let compiled_new = compile(&new_raw)?;
-    let mut rng = StdRng::seed_from_u64(0xFACE + dir.to_string_lossy().len() as u64);
+    let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let v_new = generate_value(&new_ast, &mut rng, 4);
         if expect.serializer {
             assert!(

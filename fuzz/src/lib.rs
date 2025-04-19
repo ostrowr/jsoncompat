@@ -1,4 +1,4 @@
-use json_schema_draft2020::{compile, SchemaNode};
+use json_schema_draft2020::SchemaNode;
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -202,7 +202,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
         // Handle new SchemaNode variants
         SchemaNode::Defs(_) => Value::Null,
-        SchemaNode::Const(_) => Value::Null,
+        SchemaNode::Const(v) => v.clone(),
         SchemaNode::Type(_) => Value::Null,
         SchemaNode::Minimum(_) => Value::Null,
         SchemaNode::Maximum(_) => Value::Null,
@@ -323,21 +323,3 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
         .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
         .collect()
 }
-
-/// A partial validator: checks if `val` is valid against `schema`.
-/// This can be used to confirm that `generate_value(schema,...)`
-/// indeed yields something valid. (Though we rely on a partial
-/// approach in `is_subschema_of`.)
-///
-/// For full correctness, you'd need a robust validator. This
-/// version handles the same subset of features we generate.
-pub fn validate(schema: &SchemaNode, val: &Value) -> bool {
-    let raw = schema.to_json();
-    if let Ok(compiled) = compile(&raw) {
-        compiled.is_valid(val)
-    } else {
-        false
-    }
-}
-
-// (compat‑fuzz helper removed – see backcompat tests)
