@@ -81,6 +81,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             enumeration,
             minimum,
             maximum,
+            multiple_of,
             ..
         } => {
             if let Some(e) = enumeration {
@@ -89,10 +90,31 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     return e[idx].clone();
                 }
             }
-            // We'll pick a f64 in [min..max], or fallback
+            // Special‑case multipleOf – 0 satisfies any divisor and is easy.
+            if multiple_of.is_some() {
+                let low = minimum.unwrap_or(f64::NEG_INFINITY);
+                let high = maximum.unwrap_or(f64::INFINITY);
+                if low <= 0.0 && 0.0 <= high {
+                    return Value::Number(serde_json::Number::from_f64(0.0).unwrap());
+                }
+            }
+
+            // Fallback: pick a f64 in [min..max]
             let low = minimum.unwrap_or(0.0).max(-1_000_000.0);
             let high = maximum.unwrap_or(1_000_000.0).min(1_000_000.0);
-            let val = rng.gen_range(low..=high);
+            let mut val = rng.gen_range(low..=high);
+
+            if let Some(mo) = multiple_of {
+                if *mo > 0.0 {
+                    let k = (val / *mo).floor();
+                    val = k * *mo;
+                    if val < low || val > high {
+                        let k = (low / *mo).ceil();
+                        val = k * *mo;
+                    }
+                }
+            }
+
             Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| 0.into()))
         }
 
@@ -101,6 +123,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             enumeration,
             minimum,
             maximum,
+            multiple_of,
             ..
         } => {
             if let Some(e) = enumeration {
@@ -109,9 +132,34 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     return e[idx].clone();
                 }
             }
-            let low = minimum.unwrap_or(-1000).max(-1000000);
-            let high = maximum.unwrap_or(1000).min(1000000);
-            let val = rng.gen_range(low..=high);
+            // multipleOf shortcut via 0
+            if multiple_of.is_some() {
+                let low = minimum.unwrap_or(i64::MIN);
+                let high = maximum.unwrap_or(i64::MAX);
+                if low <= 0 && 0 <= high {
+                    return Value::Number(0.into());
+                }
+            }
+
+            let low = minimum.unwrap_or(-1000).max(-1_000_000);
+            let high = maximum.unwrap_or(1000).min(1_000_000);
+            let mut val = rng.gen_range(low..=high);
+
+            if let Some(mo_f) = multiple_of {
+                if *mo_f > 0.0 {
+                    let mo = (*mo_f).round() as i64; // safe approximation for integers
+                    if mo != 0 {
+                        val = (val / mo) * mo;
+                        if val < low {
+                            val += mo;
+                        }
+                        if val > high {
+                            val -= mo;
+                        }
+                    }
+                }
+            }
+
             Value::Number(val.into())
         }
 
@@ -142,6 +190,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             properties,
             required,
             additional,
+            min_properties,
+            max_properties,
             enumeration,
             ..
         } => {
@@ -177,15 +227,58 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     map.insert(k.clone(), val);
                 }
             }
-            // Random extra property only if `additional` is not `false`.
+
+            // Determine the desired object size bounds if specified.
+            let min_p = min_properties.map(|v| *v as usize).unwrap_or(0);
+            let max_p = max_properties.map(|v| *v as usize);
+
+            // Random extra properties if allowed and we have not reached min_properties.
             if !matches!(additional.as_ref(), SchemaNode::BoolSchema(false)) {
-                // 30% chance to add an extra property
-                if rng.gen_bool(0.3) {
+                // Continue adding extra properties until we reach `min_properties`.
+                while map.len() < min_p {
                     let key = random_key(rng);
+                    if map.contains_key(&key) {
+                        continue;
+                    }
                     let val = generate_value(additional, rng, depth.saturating_sub(1));
                     map.insert(key, val);
                 }
+
+                // Optionally add more properties (respecting max_properties if set).
+                if rng.gen_bool(0.3) {
+                    let mut attempts = 0;
+                    while rng.gen_bool(0.5)
+                        && (max_p.map_or(true, |m| map.len() < m))
+                        && attempts < 5
+                    {
+                        let key = random_key(rng);
+                        if map.contains_key(&key) {
+                            attempts += 1;
+                            continue;
+                        }
+                        let val = generate_value(additional, rng, depth.saturating_sub(1));
+                        map.insert(key, val);
+                        attempts += 1;
+                    }
+                }
             }
+
+            // As a final fallback, if we still have fewer than `min_properties` but cannot
+            // add additional properties (because `additionalProperties: false`), attempt
+            // to include optional defined properties to satisfy the minimum.
+            if map.len() < min_p {
+                for (k, prop_schema) in properties {
+                    if map.contains_key(k) {
+                        continue;
+                    }
+                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    map.insert(k.clone(), val);
+                    if map.len() >= min_p {
+                        break;
+                    }
+                }
+            }
+
             Value::Object(map)
         }
 
@@ -194,6 +287,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             items,
             min_items,
             max_items,
+            contains,
             enumeration,
         } => {
             if let Some(e) = enumeration {
@@ -202,11 +296,24 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     return e[idx].clone();
                 }
             }
-            let min_i = min_items.unwrap_or(0);
-            let max_i = max_items.unwrap_or(min_i + 5).max(min_i);
-            let length = rng.gen_range(min_i..=max_i.min(min_i + 5));
+            let base_min = if contains.is_some() {
+                min_items.unwrap_or(0).max(1)
+            } else {
+                min_items.unwrap_or(0)
+            };
+
+            let max_i = max_items.unwrap_or(base_min + 5).max(base_min);
+            let length = rng.gen_range(base_min..=max_i.min(base_min + 5));
+
             let mut arr = Vec::new();
-            for _ in 0..length {
+
+            // If contains constraint, first insert an element satisfying it
+            if let Some(c_schema) = contains {
+                let v = generate_value(c_schema, rng, depth.saturating_sub(1));
+                arr.push(v);
+            }
+
+            while arr.len() < length as usize {
                 let v = generate_value(items, rng, depth.saturating_sub(1));
                 arr.push(v);
             }

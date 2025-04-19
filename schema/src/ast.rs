@@ -24,6 +24,7 @@ pub enum SchemaNode {
         maximum: Option<f64>,
         exclusive_minimum: bool,
         exclusive_maximum: bool,
+        multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
     },
     Integer {
@@ -31,6 +32,7 @@ pub enum SchemaNode {
         maximum: Option<i64>,
         exclusive_minimum: bool,
         exclusive_maximum: bool,
+        multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
     },
     Boolean {
@@ -45,7 +47,12 @@ pub enum SchemaNode {
         properties: HashMap<String, SchemaNode>,
         required: HashSet<String>,
         additional: Box<SchemaNode>,
+
+        // Validation keywords for objects
+        min_properties: Option<u64>,
+        max_properties: Option<u64>,
         dependent_required: std::collections::HashMap<String, Vec<String>>,
+
         enumeration: Option<Vec<Value>>,
     },
     // Array
@@ -53,6 +60,7 @@ pub enum SchemaNode {
         items: Box<SchemaNode>,
         min_items: Option<u64>,
         max_items: Option<u64>,
+        contains: Option<Box<SchemaNode>>,
         enumeration: Option<Vec<Value>>,
     },
 
@@ -135,6 +143,7 @@ impl SchemaNode {
                 maximum,
                 exclusive_minimum,
                 exclusive_maximum,
+                multiple_of,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
@@ -157,6 +166,18 @@ impl SchemaNode {
                 if *exclusive_maximum {
                     obj.insert("exclusiveMaximum".into(), Value::Bool(true));
                 }
+                if let Some(mo) = multiple_of {
+                    obj.insert(
+                        "multipleOf".into(),
+                        Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
+                    );
+                }
+                if let Some(mo) = multiple_of {
+                    obj.insert(
+                        "multipleOf".into(),
+                        Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
+                    );
+                }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
@@ -168,6 +189,7 @@ impl SchemaNode {
                 maximum,
                 exclusive_minimum,
                 exclusive_maximum,
+                multiple_of,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
@@ -186,6 +208,12 @@ impl SchemaNode {
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
+                }
+                if let Some(mo) = multiple_of {
+                    obj.insert(
+                        "multipleOf".into(),
+                        Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
+                    );
                 }
                 Value::Object(obj)
             }
@@ -347,6 +375,13 @@ fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         .and_then(|v| v.as_str())
         .map(|s| s.to_owned());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+
+    // Size constraints ---------------------------------------------------
+    let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
+    let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
+
+    // (Note: minProperties/maxProperties do not apply to string schemas.)
+
     Ok(SchemaNode::String {
         min_length,
         max_length,
@@ -386,6 +421,12 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
     };
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
+    // multipleOf ---------------------------------------------------------
+    let multiple_of = obj
+        .get("multipleOf")
+        .and_then(|v| v.as_f64())
+        .filter(|m| *m > 0.0);
+
     if integer {
         let min_i = minimum.map(|m| m as i64);
         let max_i = maximum.map(|m| m as i64);
@@ -394,6 +435,7 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
             maximum: max_i,
             exclusive_minimum,
             exclusive_maximum,
+            multiple_of,
             enumeration,
         })
     } else {
@@ -402,6 +444,7 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
             maximum,
             exclusive_minimum,
             exclusive_maximum,
+            multiple_of,
             enumeration,
         })
     }
@@ -460,12 +503,17 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         })
         .unwrap_or_default();
 
+    let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
+    let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
+
     Ok(SchemaNode::Object {
         properties,
         required,
         additional: Box::new(additional),
-        enumeration,
+        min_properties,
+        max_properties,
         dependent_required,
+        enumeration,
     })
 }
 
@@ -491,10 +539,18 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     let min_items = obj.get("minItems").and_then(|v| v.as_u64());
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+
+    // contains -----------------------------------------------------------
+    let contains_node = match obj.get("contains") {
+        None => None,
+        Some(v) => Some(Box::new(build_schema_ast(v)?)),
+    };
+
     Ok(SchemaNode::Array {
         items: Box::new(items_node),
         min_items,
         max_items,
+        contains: contains_node,
         enumeration,
     })
 }
@@ -531,10 +587,7 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
                     decoded.replace("~0", "~")
                 }
 
-                let parts: Vec<String> = r[2..]
-                    .split('/')
-                    .map(decode_pointer_token)
-                    .collect();
+                let parts: Vec<String> = r[2..].split('/').map(decode_pointer_token).collect();
                 let mut current = root_json;
                 for p in parts.iter() {
                     if let Some(next) = current.get(p.as_str()) {

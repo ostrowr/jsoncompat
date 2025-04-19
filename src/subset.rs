@@ -152,6 +152,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 exclusive_minimum: sexmin,
                 exclusive_maximum: sexmax,
                 enumeration: s_en,
+                ..
             },
             SchemaNode::Number {
                 minimum: pmin,
@@ -159,6 +160,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 exclusive_minimum: pexmin,
                 exclusive_maximum: pexmax,
                 enumeration: p_en,
+                ..
             },
         ) => {
             if !check_numeric_inclusion(*smin, *sexmin, *pmin, *pexmin, true) {
@@ -183,6 +185,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 exclusive_minimum: sexmin,
                 exclusive_maximum: sexmax,
                 enumeration: s_en,
+                ..
             },
             SchemaNode::Integer {
                 minimum: pmin,
@@ -190,6 +193,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 exclusive_minimum: pexmin,
                 exclusive_maximum: pexmax,
                 enumeration: p_en,
+                ..
             },
         ) => {
             if !check_int_inclusion(*smin, *sexmin, *pmin, *pexmin, true) {
@@ -224,6 +228,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 additional: s_addl,
                 enumeration: s_en,
                 dependent_required: _s_deps,
+                ..
             },
             SchemaNode::Object {
                 properties: pprops,
@@ -231,6 +236,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 additional: p_addl,
                 enumeration: p_en,
                 dependent_required: p_deps,
+                ..
             },
         ) => {
             if let (Some(se), Some(pe)) = (s_en, p_en) {
@@ -285,12 +291,14 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 min_items: smin,
                 max_items: smax,
                 enumeration: s_en,
+                ..
             },
             SchemaNode::Array {
                 items: pitems,
                 min_items: pmin,
                 max_items: pmax,
                 enumeration: p_en,
+                ..
             },
         ) => {
             if let Some(pm) = pmin {

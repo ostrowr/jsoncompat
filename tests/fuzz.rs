@@ -57,10 +57,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         [0, 1].iter().cloned().collect(),
     );
 
-    map.insert("multipleOf.json".to_string(), [].iter().cloned().collect());
-
-    map.insert("contains.json".to_string(), [4].iter().cloned().collect());
-
     map.insert(
         "items.json".to_string(),
         [2, 3, 5, 7, 8].iter().cloned().collect(),

@@ -22,6 +22,7 @@ clap = { version = "4.5.26", features = ["derive"] }
 serde = { version = "1.0.217", features = ["derive"] }
 # Our own strict Draft‑2020 implementation crate
 json_schema_draft2020 = { path = "schema" }
+json_schema_fuzz = { path = "fuzz" }
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }
