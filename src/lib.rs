@@ -6,7 +6,6 @@
 //! schemas and decide whether a change is backward‑compatible from the point
 //! of view of a serializer or deserializer.
 
-
 // Re‑export the fundamental building blocks from the core schema crate so that
 // downstream crates can just depend on *this* crate for both parsing and
 // compatibility checking if they wish.

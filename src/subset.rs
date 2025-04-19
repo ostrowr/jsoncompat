@@ -228,9 +228,9 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             SchemaNode::Object {
                 properties: pprops,
                 required: preq,
-                 additional: p_addl,
-                 enumeration: p_en,
-                 dependent_required: p_deps,
+                additional: p_addl,
+                enumeration: p_en,
+                dependent_required: p_deps,
             },
         ) => {
             if let (Some(se), Some(pe)) = (s_en, p_en) {
