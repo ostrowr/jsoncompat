@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use url::Url;
 
 /// An internal Abstract Syntax Tree (AST) representing a fully‑resolved JSON
 /// Schema draft‑2020‑12 document.  The node types are deliberately *very*
@@ -140,10 +139,16 @@ impl SchemaNode {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("number".into()));
                 if let Some(m) = minimum {
-                    obj.insert("minimum".into(), Value::Number(serde_json::Number::from_f64(*m).unwrap()));
+                    obj.insert(
+                        "minimum".into(),
+                        Value::Number(serde_json::Number::from_f64(*m).unwrap()),
+                    );
                 }
                 if let Some(m) = maximum {
-                    obj.insert("maximum".into(), Value::Number(serde_json::Number::from_f64(*m).unwrap()));
+                    obj.insert(
+                        "maximum".into(),
+                        Value::Number(serde_json::Number::from_f64(*m).unwrap()),
+                    );
                 }
                 if *exclusive_minimum {
                     obj.insert("exclusiveMinimum".into(), Value::Bool(true));
@@ -235,9 +240,10 @@ impl SchemaNode {
 }
 
 /// Build and fully resolve a schema node from raw JSON + a base URL.
-pub fn build_and_resolve_schema(raw: &Value, base: &Url) -> Result<SchemaNode> {
+pub fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
+    // For local‑only references we don’t need a real base URI.
     let mut root = build_schema_ast(raw)?;
-    resolve_refs(&mut root, raw, base, &[])?;
+    resolve_refs(&mut root, raw, &[])?;
     Ok(root)
 }
 
@@ -449,12 +455,7 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
 }
 
 /// Recursively resolves `SchemaNode::Ref` by looking up fragments in `root_json`.
-pub fn resolve_refs(
-    node: &mut SchemaNode,
-    root_json: &Value,
-    base: &Url,
-    visited: &[String],
-) -> Result<()> {
+pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]) -> Result<()> {
     match node {
         SchemaNode::Ref(r) => {
             // detect cycles
@@ -475,20 +476,23 @@ pub fn resolve_refs(
                 }
                 let mut resolved = build_schema_ast(current)?;
                 // Recursively resolve inside the resolved node as well
-                resolve_refs(&mut resolved, root_json, base, &[visited, &[r.clone()]].concat())?;
+                resolve_refs(&mut resolved, root_json, &[visited, &[r.clone()]].concat())?;
                 *node = resolved;
             } else {
                 // Non‑local or URI references – **out of scope** for this minimal implementation.
-                return Err(anyhow!("Only local JSON Pointer references are supported in this prototype: {}", r));
+                return Err(anyhow!(
+                    "Only local JSON Pointer references are supported in this prototype: {}",
+                    r
+                ));
             }
         }
         SchemaNode::AllOf(subs) | SchemaNode::AnyOf(subs) | SchemaNode::OneOf(subs) => {
             for s in subs {
-                resolve_refs(s, root_json, base, visited)?;
+                resolve_refs(s, root_json, visited)?;
             }
         }
         SchemaNode::Not(sub_schema) => {
-            resolve_refs(sub_schema, root_json, base, visited)?;
+            resolve_refs(sub_schema, root_json, visited)?;
         }
         SchemaNode::Object {
             properties,
@@ -496,12 +500,12 @@ pub fn resolve_refs(
             ..
         } => {
             for v in properties.values_mut() {
-                resolve_refs(v, root_json, base, visited)?;
+                resolve_refs(v, root_json, visited)?;
             }
-            resolve_refs(additional, root_json, base, visited)?;
+            resolve_refs(additional, root_json, visited)?;
         }
         SchemaNode::Array { items, .. } => {
-            resolve_refs(items, root_json, base, visited)?;
+            resolve_refs(items, root_json, visited)?;
         }
         // primitives / annotations – no nested schemas
         _ => {}

@@ -1,0 +1,5 @@
+{
+  "old_only": ["str"],
+  "new_only": [5],
+  "both": []
+}

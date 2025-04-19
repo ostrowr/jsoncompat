@@ -1,4 +1,4 @@
-use json_schema_draft2020::{compile, build_and_resolve_schema, SchemaNode};
+use json_schema_draft2020::{compile, SchemaNode};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -274,7 +274,10 @@ pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
             obj.insert("type".into(), Value::String("object".into()));
             obj.insert("properties".into(), Value::Object(props));
             if rng.gen_bool(0.5) {
-                obj.insert("required".into(), Value::Array(vec![Value::String("a".into())]));
+                obj.insert(
+                    "required".into(),
+                    Value::Array(vec![Value::String("a".into())]),
+                );
             }
             Value::Object(obj)
         }

@@ -1,0 +1,5 @@
+{
+  "old_only": [{"credit_card":1234}],
+  "new_only": [],
+  "both": [{"credit_card":1234,"billing_address":"addr"}]
+}

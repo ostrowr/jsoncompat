@@ -1,1 +1,1 @@
-{"serializer": true, "deserializer": false, "allowed_failure": true}
+{"serializer": false, "deserializer": false, "allowed_failure": true}

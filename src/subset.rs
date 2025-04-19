@@ -1,10 +1,3 @@
-//! Sub‑schema checking utilities.  The implementation purposefully supports
-//! only the subset of JSON Schema features that are needed by the test‑suite
-//! and fuzzing examples in this repository.  It is **not** a full decision
-//! procedure for Draft 2020‑12.
-
-use serde_json::Value;
-
 use crate::SchemaNode;
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
@@ -45,19 +38,19 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             sups.iter().all(|s| is_subschema_of(sub_schema, s))
         }
 
-        (SchemaNode::AnyOf(subs), sup_schema) => {
-            subs.iter().all(|branch| is_subschema_of(branch, sup_schema))
-        }
-        (sub_schema, SchemaNode::AnyOf(sups)) => {
-            sups.iter().any(|branch| is_subschema_of(sub_schema, branch))
-        }
+        (SchemaNode::AnyOf(subs), sup_schema) => subs
+            .iter()
+            .all(|branch| is_subschema_of(branch, sup_schema)),
+        (sub_schema, SchemaNode::AnyOf(sups)) => sups
+            .iter()
+            .any(|branch| is_subschema_of(sub_schema, branch)),
 
-        (SchemaNode::OneOf(subs), sup_schema) => {
-            subs.iter().all(|branch| is_subschema_of(branch, sup_schema))
-        }
-        (sub_schema, SchemaNode::OneOf(sups)) => {
-            sups.iter().any(|branch| is_subschema_of(sub_schema, branch))
-        }
+        (SchemaNode::OneOf(subs), sup_schema) => subs
+            .iter()
+            .all(|branch| is_subschema_of(branch, sup_schema)),
+        (sub_schema, SchemaNode::OneOf(sups)) => sups
+            .iter()
+            .any(|branch| is_subschema_of(sub_schema, branch)),
 
         (SchemaNode::Not(subn), sup_schema) => match &**subn {
             SchemaNode::Any | SchemaNode::BoolSchema(true) => true, // empty set ⇒ subset of everything
@@ -317,16 +310,14 @@ fn check_numeric_inclusion(
         } else {
             subv >= supv
         }
-    } else {
-        if p_excl {
-            if s_excl {
-                subv <= supv
-            } else {
-                subv < supv
-            }
-        } else {
+    } else if p_excl {
+        if s_excl {
             subv <= supv
+        } else {
+            subv < supv
         }
+    } else {
+        subv <= supv
     }
 }
 
@@ -353,15 +344,13 @@ fn check_int_inclusion(
         } else {
             subv >= supv
         }
-    } else {
-        if p_excl {
-            if s_excl {
-                subv <= supv
-            } else {
-                subv < supv
-            }
-        } else {
+    } else if p_excl {
+        if s_excl {
             subv <= supv
+        } else {
+            subv < supv
         }
+    } else {
+        subv <= supv
     }
 }
