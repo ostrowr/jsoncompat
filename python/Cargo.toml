@@ -13,7 +13,7 @@ anyhow = "1.0"
 rand = "0.8"
 
 # Internal crates
-json_schema_backcompat = { path = ".." }
+jsoncompat = { path = ".." }
 json_schema_fuzz = { path = "../fuzz" }
 
 [features]

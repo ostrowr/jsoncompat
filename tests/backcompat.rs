@@ -1,6 +1,6 @@
-use json_schema_backcompat::{build_and_resolve_schema, check_compat, Role};
 use json_schema_draft2020::compile;
 use json_schema_fuzz::generate_value;
+use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 use rand::{rngs::StdRng, SeedableRng};
 use serde::Deserialize;
 use serde_json::Value;

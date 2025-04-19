@@ -1,8 +1,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use json_schema_backcompat::{build_and_resolve_schema, check_compat, Role};
 use json_schema_fuzz::generate_value;
+use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 
 use rand::thread_rng;
 use serde_json::Value as JsonValue;
@@ -15,9 +15,9 @@ fn parse_json<'a>(s: &'a str) -> PyResult<JsonValue> {
 /// Map a string into the Role enum, raising ValueError on unknown input.
 fn parse_role(role: &str) -> PyResult<Role> {
     match role.to_ascii_lowercase().as_str() {
-        "serializer" | "producer" => Ok(Role::Serializer),
-        "deserializer" | "consumer" => Ok(Role::Deserializer),
-        "both" | "bidirectional" => Ok(Role::Both),
+        "serializer" => Ok(Role::Serializer),
+        "deserializer" => Ok(Role::Deserializer),
+        "both" => Ok(Role::Both),
         _ => Err(PyErr::new::<PyValueError, _>(
             "role must be one of 'serializer', 'deserializer', or 'both'",
         )),

@@ -1,7 +1,4 @@
-//! Command‑line interface for the `json_schema_backcompat` crate.
-//!
-//! A deliberately thin wrapper around the library that focuses *only* on
-//! argument parsing and user interaction.
+//! Command‑line interface for the `jsoncompat` crate.
 
 use std::{
     fs,
@@ -11,8 +8,8 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_backcompat as backcompat;
 use json_schema_draft2020::{compile as compile_schema, JSONSchema};
+use jsoncompat as backcompat;
 
 use owo_colors::OwoColorize;
 use rand::Rng;
@@ -93,8 +90,8 @@ fn sample_incompat<R: Rng>(
 
 #[derive(Parser)]
 #[command(
-    name = "json-schema",
-    about = "JSON Schema Draft 2020-12 helpers: generation & compatibility",
+    name = "jsoncompat",
+    about = "Schema utility toolbox: generation & compatibility checks",
     author,
     version
 )]

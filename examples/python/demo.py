@@ -12,7 +12,12 @@ def main() -> None:  # pragma: no cover – demo only
     new_schema = '{"type": "number"}'
 
     print("=== Compatibility checks ===")
-    for role in ("serializer", "deserializer", "both"):
+    roles: list[jsc.RoleLiteral] = [
+        "serializer",
+        "deserializer",
+        "both",
+    ]
+    for role in roles:
         ok = jsc.check_compat_py(old_schema, new_schema, role)
         print(f"{role:12}: {ok}")
 
