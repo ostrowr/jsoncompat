@@ -1,6 +1,6 @@
 //! Back‑compatibility checking library.
 //!
-//! This crate depends on `json_schema_draft2020`, which provides a strict
+//! This crate depends on `json_schema_ast`, which provides a strict
 //! in‑memory representation (`SchemaNode`) of a Draft 2020‑12 JSON Schema.  The
 //! only responsibility of this crate is to offer algorithms that compare two
 //! schemas and decide whether a change is backward‑compatible from the point
@@ -9,9 +9,7 @@
 // Re‑export the fundamental building blocks from the core schema crate so that
 // downstream crates can just depend on *this* crate for both parsing and
 // compatibility checking if they wish.
-pub use json_schema_draft2020::{
-    build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode,
-};
+pub use json_schema_ast::{build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode};
 
 mod subset;
 

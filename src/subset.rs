@@ -1,5 +1,5 @@
 use crate::SchemaNode;
-use json_schema_draft2020::compile;
+use json_schema_ast::compile;
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.

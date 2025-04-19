@@ -10,7 +10,7 @@ serde_json = "1.0.135"
 # minimal validator that we reuse.
 # The fuzz crate only depends on the core Draft‑2020 schema implementation for
 # the `SchemaNode` AST.
-json_schema_draft2020 = { path = "../schema" }
+json_schema_ast = { path = "../schema" }
 
 [dev-dependencies]
 url = "2.5.4"

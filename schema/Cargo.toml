@@ -1,5 +1,5 @@
 [package]
-name = "json_schema_draft2020"
+name = "json_schema_ast"
 version = "0.1.0"
 edition = "2021"
 description = "JSON Schema Compatibility Checker"

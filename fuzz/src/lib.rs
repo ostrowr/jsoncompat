@@ -1,4 +1,4 @@
-use json_schema_draft2020::SchemaNode;
+use json_schema_ast::SchemaNode;
 use rand::Rng;
 use serde_json::{Map, Value};
 

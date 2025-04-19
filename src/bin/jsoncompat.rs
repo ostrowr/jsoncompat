@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_draft2020::{compile as compile_schema, JSONSchema};
+use json_schema_ast::{compile as compile_schema, JSONSchema};
 use jsoncompat as backcompat;
 
 use owo_colors::OwoColorize;

@@ -549,7 +549,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "json_schema_draft2020"
+name = "json_schema_ast"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -563,7 +563,7 @@ dependencies = [
 name = "json_schema_fuzz"
 version = "0.1.0"
 dependencies = [
- "json_schema_draft2020",
+ "json_schema_ast",
  "rand",
  "serde_json",
  "url",
@@ -576,7 +576,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.37",
  "datatest-stable",
- "json_schema_draft2020",
+ "json_schema_ast",
  "json_schema_fuzz",
  "owo-colors",
  "rand",
