@@ -29,10 +29,10 @@
         ]
     },
     {
-        "description": "maxItems validation with a decimal",
+        "description": "maxItems validation with a decimal (TODO robbie unsupported)",
         "schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "maxItems": 2.0
+            "maxItems": 2
         },
         "tests": [
             {

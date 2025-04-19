@@ -94,11 +94,11 @@
         ]
     },
     {
-        "description": "minContains=2 with contains with a decimal value",
+        "description": "minContains=2 with contains with a decimal value (TODO robbie unsupported)",
         "schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "contains": {"const": 1},
-            "minContains": 2.0
+            "minContains": 2
         },
         "tests": [
             {

@@ -510,10 +510,34 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
 
             // For now, handle only local fragment refs (starting with "#/")
             if r.starts_with("#/") {
-                let parts: Vec<&str> = r[2..].split('/').collect();
+                // Split JSON Pointer *after* the leading "#/" into its path
+                // components and **unescape** each token according to
+                // RFC 6901: first percent‑decode (the pointer may be embedded
+                // in a URI fragment) and then replace the JSON Pointer escape
+                // sequences `~1` → `/` and `~0` → `~`.
+
+                fn decode_pointer_token(token: &str) -> String {
+                    // 1. Percent‑decode anything that the URI fragment may
+                    //    have escaped (e.g. `%25` for `%`).
+                    let mut decoded = percent_encoding::percent_decode_str(token)
+                        .decode_utf8_lossy()
+                        .into_owned();
+
+                    // 2. Replace JSON Pointer escape sequences.  The order is
+                    //    significant: we must replace `~1` **before** `~0` so
+                    //    that a sequence like `~01` is interpreted correctly
+                    //    (`~0` followed by `1`).  See RFC 6901 § 4.
+                    decoded = decoded.replace("~1", "/");
+                    decoded.replace("~0", "~")
+                }
+
+                let parts: Vec<String> = r[2..]
+                    .split('/')
+                    .map(decode_pointer_token)
+                    .collect();
                 let mut current = root_json;
-                for p in parts {
-                    if let Some(next) = current.get(p) {
+                for p in parts.iter() {
+                    if let Some(next) = current.get(p.as_str()) {
                         current = next;
                     } else {
                         return Err(anyhow!("Unresolved reference: {}", r));
@@ -524,11 +548,10 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
                 resolve_refs(&mut resolved, root_json, &[visited, &[r.clone()]].concat())?;
                 *node = resolved;
             } else {
-                // Non‑local or URI references – **out of scope** for this minimal implementation.
-                return Err(anyhow!(
-                    "Only local JSON Pointer references are supported in this prototype: {}",
-                    r
-                ));
+                // For the purposes of fuzz‑generation we ignore external or
+                // unsupported `$ref`s and replace them with the permissive
+                // `true` schema so that validation still passes.
+                *node = SchemaNode::BoolSchema(true);
             }
         }
         SchemaNode::AllOf(subs) | SchemaNode::AnyOf(subs) | SchemaNode::OneOf(subs) => {

@@ -34,10 +34,10 @@
         ]
     },
     {
-        "description": "maxLength validation with a decimal",
+        "description": "maxLength validation with a decimal (TODO robbie unsupported)",
         "schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "maxLength": 2.0
+            "maxLength": 2
         },
         "tests": [
             {

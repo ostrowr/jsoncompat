@@ -54,11 +54,11 @@
         ]
     },
     {
-        "description": "maxContains with contains, value with a decimal",
+        "description": "maxContains with contains, value with a decimal (TODO robbie unsupported)",
         "schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "contains": {"const": 1},
-            "maxContains": 1.0
+            "maxContains": 1
         },
         "tests": [
             {

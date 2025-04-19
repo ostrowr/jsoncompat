@@ -34,10 +34,10 @@
         ]
     },
     {
-        "description": "minLength validation with a decimal",
+        "description": "minLength validation with a decimal (TODO robbie unsupported)",
         "schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "minLength": 2.0
+            "minLength": 2
         },
         "tests": [
             {

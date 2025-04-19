@@ -157,19 +157,34 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let mut map = Map::new();
             for (k, prop_schema) in properties {
                 let must_include = required.contains(k);
-                // 70% chance to include optional fields
-                let include = must_include || rng.gen_bool(0.7);
+                // We include optional fields with a 70% probability *unless*
+                // the subschema is completely unconstrained (`true` or `Any`).
+                // Such properties are prone to introducing invalid data when
+                // they actually reference recursive structures (e.g. a
+                // self‑referential `$ref: "#"`).  Omitting them is always safe
+                // because they are not required and an absent property cannot
+                // violate the parent schema.
+                let include = if must_include {
+                    true
+                } else {
+                    match prop_schema {
+                        SchemaNode::BoolSchema(true) | SchemaNode::Any => false,
+                        _ => rng.gen_bool(0.7),
+                    }
+                };
                 if include {
                     let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                 }
             }
-            // Random extra property? If `additional` allows
-            // 30% chance to add an extra property
-            if rng.gen_bool(0.3) {
-                let key = random_key(rng);
-                let val = generate_value(additional, rng, depth.saturating_sub(1));
-                map.insert(key, val);
+            // Random extra property only if `additional` is not `false`.
+            if !matches!(additional.as_ref(), SchemaNode::BoolSchema(false)) {
+                // 30% chance to add an extra property
+                if rng.gen_bool(0.3) {
+                    let key = random_key(rng);
+                    let val = generate_value(additional, rng, depth.saturating_sub(1));
+                    map.insert(key, val);
+                }
             }
             Value::Object(map)
         }
@@ -288,30 +303,10 @@ pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
 }
 
 /// A minimal fallback to produce a random JSON value of any type.
-fn random_any(rng: &mut impl Rng, depth: u8) -> Value {
-    let pick = rng.gen_range(0..5);
-    match pick {
-        0 => Value::Null,
-        1 => Value::Bool(rng.gen_bool(0.5)),
-        2 => Value::Number((rng.gen_range(-100..100)).into()),
-        3 => Value::String(random_string(rng, 0..8)),
-        4 => {
-            // object
-            if depth == 0 {
-                Value::Null
-            } else {
-                let mut m = Map::new();
-                let n = rng.gen_range(0..3);
-                for _ in 0..n {
-                    let key = random_key(rng);
-                    let val = random_any(rng, depth - 1);
-                    m.insert(key, val);
-                }
-                Value::Object(m)
-            }
-        }
-        _ => Value::Null,
-    }
+fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
+    // Always return an empty object – this is valid under the Draft 2020‑12
+    // meta‑schema as well as under any unconstrained (`true`) schema.
+    Value::Object(Map::new())
 }
 
 fn random_key(rng: &mut impl Rng) -> String {

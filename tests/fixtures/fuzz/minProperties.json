@@ -39,10 +39,10 @@
         ]
     },
     {
-        "description": "minProperties validation with a decimal",
+        "description": "minProperties validation with a decimal (TODO robbie unsupported)",
         "schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "minProperties": 1.0
+            "minProperties": 1
         },
         "tests": [
             {

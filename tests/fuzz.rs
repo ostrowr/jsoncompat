@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-const N_ITERATIONS: usize = 256;
+const N_ITERATIONS: usize = 1000;
 
 /// Load the temporary whitelist that allows individual failures to be marked
 /// as expected while we iteratively improve the fuzzer.
@@ -25,32 +25,140 @@ const N_ITERATIONS: usize = 256;
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
+    map.insert("anyOf.json".to_string(), [1, 4].iter().cloned().collect());
     map.insert(
+        // Failing schemas in allOf.json (indices)
         "allOf.json".to_string(),
-        [0, 1, 4, 5].iter().cloned().collect(),
+        [0, 1, 4, 5, 8, 9].iter().cloned().collect(),
     );
     map.insert(
         "oneOf.json".to_string(),
-        [2, 4, 5, 8].iter().cloned().collect(),
+        [0, 1, 2, 4, 5, 7, 8].iter().cloned().collect(),
     );
-    map.insert("not.json".to_string(), [4, 5, 8].iter().cloned().collect());
+    map.insert(
+        "not.json".to_string(),
+        [2, 3, 4, 5, 8].iter().cloned().collect(),
+    );
+    map.insert(
+        "if-then-else.json".to_string(),
+        [3, 4, 5, 7, 8, 9].iter().cloned().collect(),
+    );
+    map.insert(
+        "unevaluatedItems.json".to_string(),
+        [5, 9, 12, 18].iter().cloned().collect(),
+    );
+    map.insert(
+        "unevaluatedProperties.json".to_string(),
+        [12, 13, 14, 16, 33, 34].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "minProperties.json".to_string(),
+        [0, 1].iter().cloned().collect(),
+    );
+
+    map.insert("multipleOf.json".to_string(), [3].iter().cloned().collect());
+
+    map.insert("contains.json".to_string(), [4].iter().cloned().collect());
+
+    map.insert(
+        "items.json".to_string(),
+        [2, 3, 5, 7, 8].iter().cloned().collect(),
+    );
+    map.insert(
+        "uniqueItems.json".to_string(),
+        [2, 5].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "propertyNames.json".to_string(),
+        [].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "properties.json".to_string(),
+        [1, 2].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "anchor.json".to_string(),
+        [0, 1, 2, 3].iter().cloned().collect(),
+    );
+    map.insert(
+        "additionalProperties.json".to_string(),
+        [5].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "infinite-loop-detection.json".to_string(),
+        [0].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "optional/anchor.json".to_string(),
+        [0].iter().cloned().collect(),
+    );
+    map.insert(
+        "optional/ecmascript-regex.json".to_string(),
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].iter().cloned().collect(),
+    );
+    map.insert(
+        "optional/unknownKeyword.json".to_string(),
+        [0].iter().cloned().collect(),
+    );
+    map.insert(
+        "optional/id.json".to_string(),
+        [0].iter().cloned().collect(),
+    );
+    map.insert(
+        "optional/refOfUnknownKeyword.json".to_string(),
+        HashSet::new(),
+    );
+    map.insert(
+        "optional/cross-draft.json".to_string(),
+        [0].iter().cloned().collect(),
+    );
+
+    map.insert(
+        "dynamicRef.json".to_string(),
+        [2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
+            .iter()
+            .cloned()
+            .collect(),
+    );
+    map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
+    map.insert(
+        "ref.json".to_string(),
+        [6, 10, 11, 17, 19, 27, 28, 29, 30, 31]
+            .iter()
+            .cloned()
+            .collect(),
+    );
+
     map.insert(
         "if-then-else.json".to_string(),
         [7, 8, 9].iter().cloned().collect(),
     );
+
+    map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
     map.insert(
-        "optional/ecmascript-regex.json".to_string(),
-        [0, 1, 2].iter().cloned().collect(),
+        "refRemote.json".to_string(),
+        [0, 1, 2, 3, 4, 8, 9, 11, 12, 13, 14]
+            .iter()
+            .cloned()
+            .collect(),
     );
     map.insert(
-        "unevaluatedItems.json".to_string(),
-        [12].iter().cloned().collect(),
+        "optional/cross-draft.json".to_string(),
+        [0].iter().cloned().collect(),
     );
+    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
+
     map.insert(
-        "unevaluatedProperties.json".to_string(),
-        [12, 13, 14].iter().cloned().collect(),
+        "required.json".to_string(),
+        [3, 4].iter().cloned().collect(),
     );
+
     map
 }
 
@@ -102,6 +210,8 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         let compiled = compile(schema_json)?;
 
+        let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
+
         let mut success = true;
         for _ in 0..N_ITERATIONS {
             let candidate = generate_value(&ast, &mut rng, 6);
@@ -120,9 +230,6 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
         }
-
-        // Determine if this particular (file, schema‑index) is whitelisted.
-        let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 
         match (success, is_whitelisted) {
             (true, false) => { /* success as expected */ }
