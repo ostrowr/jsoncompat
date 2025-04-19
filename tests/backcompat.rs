@@ -1,6 +1,6 @@
-use json_schema_backcompat::{build_and_resolve_schema, check_compat, Role};
 use json_schema_draft2020::compile;
 use json_schema_fuzz::generate_value;
+use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 use rand::{rngs::StdRng, SeedableRng};
 use serde::Deserialize;
 use serde_json::Value;
@@ -8,7 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // datatest‑stable macro generates one test per fixture directory.
-datatest_stable::harness!(fixture, "tests/fixtures/backcompat", ".*/expect\\.json$");
+datatest_stable::harness!(
+    fixture,
+    "tests/fixtures/backcompat",
+    r".*[/\\]expect\.json$"
+);
 
 #[derive(Deserialize)]
 struct Expectation {

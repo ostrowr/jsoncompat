@@ -1,12 +1,8 @@
 //! Fuzzer tests.
-//!
-//! For every JSON file in `tests/fixtures/fuzz` (copied from the official
-//! JSON‑Schema Test Suite) attempt to generate JSON instances that validate
-//! against **each** schema contained in the file.
 
-use json_schema_backcompat::build_and_resolve_schema;
 use json_schema_draft2020::compile;
 use json_schema_fuzz::generate_value;
+use jsoncompat::build_and_resolve_schema;
 use rand::{rngs::StdRng, SeedableRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
