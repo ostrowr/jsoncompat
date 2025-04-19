@@ -4,7 +4,7 @@ Executed by `just python-demo` which automatically builds the extension
 module via *maturin* and then runs this script.
 """
 
-import json_schema_py as jsc
+import jsoncompat_py as jsc
 
 
 def main() -> None:  # pragma: no cover – demo only
@@ -12,17 +12,17 @@ def main() -> None:  # pragma: no cover – demo only
     new_schema = '{"type": "number"}'
 
     print("=== Compatibility checks ===")
-    roles: list[jsc.RoleLiteral] = [
+    roles: list[str] = [
         "serializer",
         "deserializer",
         "both",
     ]
     for role in roles:
-        ok = jsc.check_compat_py(old_schema, new_schema, role)
+        ok = jsc.check_compat(old_schema, new_schema, role)
         print(f"{role:12}: {ok}")
 
     print("\n=== Example value generation ===")
-    example = jsc.generate_value_py(old_schema, 3)
+    example = jsc.generate_value(old_schema, 3)
     print("example value:", example)
 
 

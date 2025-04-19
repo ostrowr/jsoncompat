@@ -1,9 +1,11 @@
 [package]
-name = "json_schema_py"
+name = "jsoncompat_py"
 version = "0.1.0"
 edition = "2021"
 
+
 [lib]
+name = "jsoncompat_py"
 crate-type = ["cdylib"]
 
 [dependencies]

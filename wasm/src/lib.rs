@@ -32,7 +32,8 @@ fn parse_role(role: &str) -> Result<Role, JsValue> {
 /// * `old_schema_json` – original schema as JSON string
 /// * `new_schema_json` – updated schema as JSON string
 /// * `role` – "serializer", "deserializer" or "both" (default)
-#[wasm_bindgen]
+/// Exported to JavaScript as `check_compat`.
+#[wasm_bindgen(js_name = check_compat)]
 pub fn check_compat_js(
     old_schema_json: &str,
     new_schema_json: &str,
@@ -54,7 +55,8 @@ pub fn check_compat_js(
 ///
 /// * `schema_json` – schema as JSON string
 /// * `depth` – recursion depth (default 5)
-#[wasm_bindgen]
+/// Exported to JavaScript as `generate_value`.
+#[wasm_bindgen(js_name = generate_value)]
 pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue> {
     let raw = parse_json(schema_json)?;
     let schema_ast = build_and_resolve_schema(&raw)

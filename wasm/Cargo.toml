@@ -1,5 +1,8 @@
 [package]
-name = "json_schema_wasm"
+# Crate name remains unique for the Rust workspace, but we tell wasm‑pack to
+# publish this as the *npm* package `jsoncompat` so consumers can simply
+# `import { ... } from 'jsoncompat'`.
+name = "jsoncompat_wasm"
 version = "0.1.0"
 edition = "2021"
 description = "JSON Schema Compatibility Checker"
@@ -35,7 +38,4 @@ optional = true
 [dev-dependencies]
 wasm-bindgen-test = "0.2"
 
-[package.metadata.wasm-pack.profile.release]
-# Ensure TypeScript declarations are always generated (this is the default but
-# we declare it explicitly for clarity / strictness).
-wasm-bindgen-typescript = true
+

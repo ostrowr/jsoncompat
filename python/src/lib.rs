@@ -40,7 +40,7 @@ fn parse_role(role: &str) -> PyResult<Role> {
 /// bool
 ///     `True` if the change is considered compatible, `False` otherwise.
 #[pyfunction]
-#[pyo3(signature = (old_schema_json, new_schema_json, role="both"))]
+#[pyo3(signature = (old_schema_json, new_schema_json, role="both"), name = "check_compat")]
 fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> PyResult<bool> {
     let role_e = parse_role(role)?;
 
@@ -69,7 +69,7 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
 /// str
 ///     A JSON string representing a randomly generated value that should satisfy the schema.
 #[pyfunction]
-#[pyo3(signature = (schema_json, depth=5))]
+#[pyo3(signature = (schema_json, depth=5), name = "generate_value")]
 fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let raw = parse_json(schema_json)?;
     let schema_ast = build_and_resolve_schema(&raw)
@@ -85,7 +85,8 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
 
 /// Python module definition
 #[pymodule]
-fn json_schema_py(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyo3(name = "jsoncompat_py")]
+fn jsoncompat_py(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Ensure the random generator is initialised (auto‑initialize takes care of pyo3 env).
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;

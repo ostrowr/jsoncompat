@@ -570,33 +570,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "json_schema_py"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "json_schema_fuzz",
- "jsoncompat",
- "pyo3",
- "rand",
- "serde_json",
-]
-
-[[package]]
-name = "json_schema_wasm"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "getrandom",
- "json_schema_fuzz",
- "jsoncompat",
- "rand",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-test",
- "wee_alloc",
-]
-
-[[package]]
 name = "jsoncompat"
 version = "0.1.0"
 dependencies = [
@@ -611,6 +584,33 @@ dependencies = [
  "serde_json",
  "thiserror",
  "url",
+]
+
+[[package]]
+name = "jsoncompat_py"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "json_schema_fuzz",
+ "jsoncompat",
+ "pyo3",
+ "rand",
+ "serde_json",
+]
+
+[[package]]
+name = "jsoncompat_wasm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "getrandom",
+ "json_schema_fuzz",
+ "jsoncompat",
+ "rand",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "wee_alloc",
 ]
 
 [[package]]

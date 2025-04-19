@@ -10,7 +10,7 @@ edition = "2021"
 members = [
     "fuzz",     # -> json_schema_fuzz
     "schema",   # -> json_schema_draft2020
-    "python",   # -> json_schema_py bindings
+    "python",   # -> jsoncompat Python bindings
     "wasm"      # -> json_schema_wasm bindings
 ]
 
