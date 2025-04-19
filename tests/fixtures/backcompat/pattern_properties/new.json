@@ -1,0 +1,1 @@
+{"type":"object","patternProperties":{"^foo.*$":{"type":"number"}}}

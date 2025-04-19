@@ -1,0 +1,13 @@
+[package]
+name = "json_schema_draft2020"
+version = "0.1.0"
+edition = "2021"
+
+description = "Strict validation for JSON Schema draft‑2020‑12 (thin wrapper around the `jsonschema` crate)."
+
+[dependencies]
+serde_json = "1.0.135"
+anyhow = "1.0.95"
+jsonschema = { version = "0.16", features = ["draft202012"] }
+url = "2.5.4"
+percent-encoding = "2.3.1"
