@@ -1,11 +1,8 @@
-//! Fuzzer integration tests.
+//! Fuzzer tests.
 //!
 //! For every JSON file in `tests/fixtures/fuzz` (copied from the official
-//! JSON‑Schema Test Suite) we attempt to generate at least *one* JSON instance
-//! that validates against **every** schema contained in the file.  The
-//! generation is performed by `json_schema_fuzz::generate_value` and the
-//! candidate instance is checked with the authoritative Draft 2020‑12
-//! validator from `json_schema_draft2020`.
+//! JSON‑Schema Test Suite) attempt to generate JSON instances that validate
+//! against **each** schema contained in the file.
 
 use json_schema_backcompat::build_and_resolve_schema;
 use json_schema_draft2020::compile;
@@ -16,13 +13,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-// -------------------------------------------------------------------------
-// Whitelist handling
-// -------------------------------------------------------------------------
+const N_ITERATIONS: usize = 256;
 
-/// Load the *optional* whitelist that allows individual failures to be marked
-/// as expected while we iteratively improve the fuzzer.  The file lives at
-/// `tests/fixtures/fuzz/whitelist.json` and has the following shape:
+/// Load the temporary whitelist that allows individual failures to be marked
+/// as expected while we iteratively improve the fuzzer.
 ///
 /// ```jsonc
 /// {
@@ -30,33 +24,33 @@ use std::path::Path;
 /// }
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
-    let path = Path::new("tests/fixtures/fuzz/whitelist.json");
-    let raw = match fs::read(path) {
-        Ok(b) => b,
-        Err(_) => return HashMap::new(),
-    };
-
-    let doc: Value = match serde_json::from_slice(&raw) {
-        Ok(v) => v,
-        Err(_) => return HashMap::new(),
-    };
-
-    let mut map = HashMap::new();
-    if let Value::Object(obj) = doc {
-        for (k, v) in obj {
-            let set: HashSet<usize> = match v {
-                Value::Array(arr) => arr
-                    .into_iter()
-                    .filter_map(|vv| vv.as_u64().map(|n| n as usize))
-                    .collect(),
-                _ => panic!(
-                    "whitelist.json: expected array of indices for {}, got {}",
-                    k, v
-                ),
-            };
-            map.insert(k, set);
-        }
-    }
+    let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
+    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
+    map.insert(
+        "allOf.json".to_string(),
+        [0, 1, 4, 5].iter().cloned().collect(),
+    );
+    map.insert(
+        "oneOf.json".to_string(),
+        [2, 4, 5, 8].iter().cloned().collect(),
+    );
+    map.insert("not.json".to_string(), [4, 5, 8].iter().cloned().collect());
+    map.insert(
+        "if-then-else.json".to_string(),
+        [7, 8, 9].iter().cloned().collect(),
+    );
+    map.insert(
+        "optional/ecmascript-regex.json".to_string(),
+        [0, 1, 2].iter().cloned().collect(),
+    );
+    map.insert(
+        "unevaluatedItems.json".to_string(),
+        [12].iter().cloned().collect(),
+    );
+    map.insert(
+        "unevaluatedProperties.json".to_string(),
+        [12, 13, 14].iter().cloned().collect(),
+    );
     map
 }
 
@@ -88,7 +82,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Deterministic RNG per file for reproducibility.
-    let seed = 0xF00DBABE + file.to_string_lossy().len() as u64;
+    let seed = 0xBADBABE + file.to_string_lossy().len() as u64;
     let mut rng = StdRng::seed_from_u64(seed);
 
     // Whitelist lookup key – path relative to the fixtures root.
@@ -108,11 +102,21 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         let compiled = compile(schema_json)?;
 
-        let mut success = false;
-        for _ in 0..256 {
+        let mut success = true;
+        for _ in 0..N_ITERATIONS {
             let candidate = generate_value(&ast, &mut rng, 6);
-            if compiled.is_valid(&candidate) {
-                success = true;
+            if !compiled.is_valid(&candidate) {
+                if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
+                    panic!(
+                        "{}", &format!(
+                            "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance:\n{}",
+                            rel_str,
+                            serde_json::to_string_pretty(schema_json)?,
+                            serde_json::to_string_pretty(&candidate)?
+                        )
+                    );
+                }
+                success = false;
                 break;
             }
         }
@@ -134,7 +138,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             (false, false) => {
                 panic!(
-                    "Could not generate a valid instance for schema #{idx} in {}",
+                    "Should have panicked above, but didn't: schema #{idx} in {}",
                     rel_str
                 );
             }
