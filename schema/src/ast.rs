@@ -45,6 +45,7 @@ pub enum SchemaNode {
         properties: HashMap<String, SchemaNode>,
         required: HashSet<String>,
         additional: Box<SchemaNode>,
+        dependent_required: std::collections::HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
     },
     // Array
@@ -421,11 +422,32 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         Some(other) => build_schema_ast(other)?,
     };
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+
+    let dependent_required = obj
+        .get("dependentRequired")
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, val)| {
+                    val.as_array().map(|arr| {
+                        (
+                            k.clone(),
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                                .collect::<Vec<_>>(),
+                        )
+                    })
+                })
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+
     Ok(SchemaNode::Object {
         properties,
         required,
         additional: Box::new(additional),
         enumeration,
+        dependent_required,
     })
 }
 

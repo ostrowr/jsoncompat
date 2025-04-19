@@ -1,4 +1,5 @@
 use crate::SchemaNode;
+use json_schema_draft2020::compile;
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
@@ -81,9 +82,27 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             type_constraints_subsumed(sub, sup)
         }
 
+        // --------------------------- Const -------------------------------
+        (SchemaNode::Const(s_val), SchemaNode::Const(p_val)) => s_val == p_val,
+
+        (SchemaNode::Const(s_val), p_node) => {
+            // The subset allows exactly `s_val`.  Therefore we only need to
+            // confirm that `p_node` accepts that single value.
+            let schema_json = p_node.to_json();
+            compile(&schema_json)
+                .map(|compiled| compiled.is_valid(s_val))
+                .unwrap_or(false)
+        }
+
+        (_, SchemaNode::Const(_)) => false,
+
         _ => false,
     }
 }
+
+// -------------------------------------------------------------------------
+// Extra logic for `const` support
+// -------------------------------------------------------------------------
 
 // -------------------------------------------------------------------------
 // Constraint‑level checks
@@ -204,12 +223,14 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 required: sreq,
                 additional: s_addl,
                 enumeration: s_en,
+                dependent_required: _s_deps,
             },
             SchemaNode::Object {
                 properties: pprops,
                 required: preq,
-                additional: p_addl,
-                enumeration: p_en,
+                 additional: p_addl,
+                 enumeration: p_en,
+                 dependent_required: p_deps,
             },
         ) => {
             if let (Some(se), Some(pe)) = (s_en, p_en) {
@@ -236,6 +257,22 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
             if !is_subschema_of(s_addl, p_addl) {
                 return false;
+            }
+
+            // dependentRequired inclusion: every dependency in the SUP schema must
+            // already be guaranteed by SUB (i.e., either the triggering key is
+            // impossible in SUB or the required dependents are unconditionally
+            // required there).
+            for (trigger, deps) in p_deps {
+                // does SUB allow `trigger` property at all?
+                let trigger_allowed = sprops.contains_key(trigger)
+                    || !matches!(**s_addl, SchemaNode::BoolSchema(false));
+                if trigger_allowed {
+                    // then SUB must list *all* dependent keys as required.
+                    if !deps.iter().all(|d| sreq.contains(d)) {
+                        return false;
+                    }
+                }
             }
 
             true

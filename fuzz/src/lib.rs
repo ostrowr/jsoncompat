@@ -143,6 +143,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             required,
             additional,
             enumeration,
+            ..
         } => {
             // If there's an enumeration, pick from it
             if let Some(e) = enumeration {
