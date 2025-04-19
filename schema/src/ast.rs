@@ -356,16 +356,34 @@ fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
 }
 
 fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> Result<SchemaNode> {
-    let minimum = obj.get("minimum").and_then(|v| v.as_f64());
-    let maximum = obj.get("maximum").and_then(|v| v.as_f64());
-    let exclusive_minimum = obj
-        .get("exclusiveMinimum")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let exclusive_maximum = obj
-        .get("exclusiveMaximum")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    // Start with the basic inclusive bounds.
+    let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
+    let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
+
+    // Exclusive minimum (numeric only in 2020‑12) -------------------------
+    let exclusive_minimum = if let Some(v) = obj.get("exclusiveMinimum") {
+        if let serde_json::Value::Number(n) = v {
+            minimum = n.as_f64();
+            true
+        } else {
+            // Non‑numeric values are invalid in draft 2020‑12; ignore.
+            false
+        }
+    } else {
+        false
+    };
+
+    // Exclusive maximum (numeric only in 2020‑12) -------------------------
+    let exclusive_maximum = if let Some(v) = obj.get("exclusiveMaximum") {
+        if let serde_json::Value::Number(n) = v {
+            maximum = n.as_f64();
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
     if integer {
