@@ -30,3 +30,7 @@ datatest-stable = "0.1"
 [[test]]
 name = "backcompat"
 harness = false
+
+[[test]]
+name = "fuzz"
+harness = false
