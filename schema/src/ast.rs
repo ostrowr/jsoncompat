@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 /// close to the JSON Schema specification so that higher‑level crates (e.g.
 /// the back‑compat checker or fuzz generator) can reason about schemas
 /// without constantly reparsing raw JSON values.
+/// TODO: need roundtrip tests
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemaNode {
     BoolSchema(bool),
@@ -161,16 +162,20 @@ impl SchemaNode {
                     );
                 }
                 if *exclusive_minimum {
-                    obj.insert("exclusiveMinimum".into(), Value::Bool(true));
+                    if let Some(m) = minimum {
+                        obj.insert(
+                            "exclusiveMinimum".into(),
+                            Value::Number(serde_json::Number::from_f64(*m).unwrap()),
+                        );
+                    }
                 }
                 if *exclusive_maximum {
-                    obj.insert("exclusiveMaximum".into(), Value::Bool(true));
-                }
-                if let Some(mo) = multiple_of {
-                    obj.insert(
-                        "multipleOf".into(),
-                        Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
-                    );
+                    if let Some(m) = maximum {
+                        obj.insert(
+                            "exclusiveMaximum".into(),
+                            Value::Number(serde_json::Number::from_f64(*m).unwrap()),
+                        );
+                    }
                 }
                 if let Some(mo) = multiple_of {
                     obj.insert(
@@ -201,10 +206,14 @@ impl SchemaNode {
                     obj.insert("maximum".into(), Value::Number((*m).into()));
                 }
                 if *exclusive_minimum {
-                    obj.insert("exclusiveMinimum".into(), Value::Bool(true));
+                    if let Some(m) = minimum {
+                        obj.insert("exclusiveMinimum".into(), Value::Number((*m).into()));
+                    }
                 }
                 if *exclusive_maximum {
-                    obj.insert("exclusiveMaximum".into(), Value::Bool(true));
+                    if let Some(m) = maximum {
+                        obj.insert("exclusiveMaximum".into(), Value::Number((*m).into()));
+                    }
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -236,33 +245,237 @@ impl SchemaNode {
                 Value::Object(obj)
             }
 
-            // For complex types we only emit the basic skeleton; that is good
-            // enough for the validation we perform in tests.
-            SchemaNode::Array { .. }
-            | SchemaNode::Object { .. }
-            | SchemaNode::AllOf(_)
-            | SchemaNode::AnyOf(_)
-            | SchemaNode::OneOf(_)
-            | SchemaNode::Not(_)
-            | SchemaNode::Defs(_)
-            | SchemaNode::Const(_)
-            | SchemaNode::Type(_)
-            | SchemaNode::Minimum(_)
-            | SchemaNode::Maximum(_)
-            | SchemaNode::Required(_)
-            | SchemaNode::AdditionalProperties(_)
-            | SchemaNode::Format(_)
-            | SchemaNode::ContentEncoding(_)
-            | SchemaNode::ContentMediaType(_)
-            | SchemaNode::Title(_)
-            | SchemaNode::Description(_)
-            | SchemaNode::Default(_)
-            | SchemaNode::Examples(_)
-            | SchemaNode::ReadOnly(_)
-            | SchemaNode::WriteOnly(_)
-            | SchemaNode::Ref(_) => {
-                // Fallback to "true" schema (accept all).
-                Value::Bool(true)
+            // Composite/applier keywords ----------------------------------
+            SchemaNode::AllOf(subs) => {
+                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut obj = serde_json::Map::new();
+                obj.insert("allOf".into(), Value::Array(arr));
+                Value::Object(obj)
+            }
+            SchemaNode::AnyOf(subs) => {
+                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut obj = serde_json::Map::new();
+                obj.insert("anyOf".into(), Value::Array(arr));
+                Value::Object(obj)
+            }
+            SchemaNode::OneOf(subs) => {
+                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut obj = serde_json::Map::new();
+                obj.insert("oneOf".into(), Value::Array(arr));
+                Value::Object(obj)
+            }
+            SchemaNode::Not(sub) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("not".into(), sub.to_json());
+                Value::Object(obj)
+            }
+
+            // Array -------------------------------------------------------
+            SchemaNode::Array {
+                items,
+                min_items,
+                max_items,
+                contains,
+                enumeration,
+            } => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("type".into(), Value::String("array".into()));
+                // `items` – only include if not SchemaNode::Any to mimic
+                // original minimal style yet remain loss‑less.
+                if !matches!(**items, SchemaNode::Any) {
+                    obj.insert("items".into(), items.to_json());
+                }
+                if let Some(mi) = min_items {
+                    obj.insert("minItems".into(), Value::Number((*mi).into()));
+                }
+                if let Some(ma) = max_items {
+                    obj.insert("maxItems".into(), Value::Number((*ma).into()));
+                }
+                if let Some(c) = contains {
+                    obj.insert("contains".into(), c.to_json());
+                }
+                if let Some(e) = enumeration {
+                    obj.insert("enum".into(), Value::Array(e.clone()));
+                }
+                Value::Object(obj)
+            }
+
+            // Object ------------------------------------------------------
+            SchemaNode::Object {
+                properties,
+                required,
+                additional,
+                min_properties,
+                max_properties,
+                dependent_required,
+                enumeration,
+            } => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("type".into(), Value::String("object".into()));
+
+                if !properties.is_empty() {
+                    let mut props_map = serde_json::Map::new();
+                    for (k, v) in properties {
+                        props_map.insert(k.clone(), v.to_json());
+                    }
+                    obj.insert("properties".into(), Value::Object(props_map));
+                }
+
+                if !required.is_empty() {
+                    // Sort to ensure deterministic output (helps with tests)
+                    let mut sorted: Vec<_> = required.iter().cloned().collect();
+                    sorted.sort();
+                    obj.insert(
+                        "required".into(),
+                        Value::Array(sorted.into_iter().map(Value::String).collect()),
+                    );
+                }
+
+                // additionalProperties
+                if !matches!(**additional, SchemaNode::Any) {
+                    match &**additional {
+                        SchemaNode::BoolSchema(b) => {
+                            obj.insert("additionalProperties".into(), Value::Bool(*b));
+                        }
+                        other => {
+                            obj.insert("additionalProperties".into(), other.to_json());
+                        }
+                    }
+                }
+
+                if let Some(mp) = min_properties {
+                    obj.insert("minProperties".into(), Value::Number((*mp).into()));
+                }
+                if let Some(mp) = max_properties {
+                    obj.insert("maxProperties".into(), Value::Number((*mp).into()));
+                }
+
+                if !dependent_required.is_empty() {
+                    let mut dr_map = serde_json::Map::new();
+                    for (k, v) in dependent_required {
+                        dr_map.insert(
+                            k.clone(),
+                            Value::Array(v.iter().cloned().map(Value::String).collect()),
+                        );
+                    }
+                    obj.insert("dependentRequired".into(), Value::Object(dr_map));
+                }
+
+                if let Some(e) = enumeration {
+                    obj.insert("enum".into(), Value::Array(e.clone()));
+                }
+
+                Value::Object(obj)
+            }
+
+            // Definitions (rarely used in resolved AST) -------------------
+            SchemaNode::Defs(map) => {
+                let mut defs_obj = serde_json::Map::new();
+                for (k, v) in map {
+                    defs_obj.insert(k.clone(), v.to_json());
+                }
+                let mut obj = serde_json::Map::new();
+                obj.insert("$defs".into(), Value::Object(defs_obj));
+                Value::Object(obj)
+            }
+
+            // Simple keyword wrappers -------------------------------------
+            SchemaNode::Const(v) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("const".into(), v.clone());
+                Value::Object(obj)
+            }
+            SchemaNode::Type(t) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("type".into(), Value::String(t.clone()));
+                Value::Object(obj)
+            }
+            SchemaNode::Minimum(m) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert(
+                    "minimum".into(),
+                    Value::Number(serde_json::Number::from_f64(*m).unwrap()),
+                );
+                Value::Object(obj)
+            }
+            SchemaNode::Maximum(m) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert(
+                    "maximum".into(),
+                    Value::Number(serde_json::Number::from_f64(*m).unwrap()),
+                );
+                Value::Object(obj)
+            }
+            SchemaNode::Required(reqs) => {
+                let mut sorted = reqs.clone();
+                sorted.sort();
+                let mut obj = serde_json::Map::new();
+                obj.insert(
+                    "required".into(),
+                    Value::Array(sorted.into_iter().map(Value::String).collect()),
+                );
+                Value::Object(obj)
+            }
+            SchemaNode::AdditionalProperties(schema) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("additionalProperties".into(), schema.to_json());
+                Value::Object(obj)
+            }
+
+            // Format & content --------------------------------------------
+            SchemaNode::Format(f) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("format".into(), Value::String(f.clone()));
+                Value::Object(obj)
+            }
+            SchemaNode::ContentEncoding(c) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("contentEncoding".into(), Value::String(c.clone()));
+                Value::Object(obj)
+            }
+            SchemaNode::ContentMediaType(c) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("contentMediaType".into(), Value::String(c.clone()));
+                Value::Object(obj)
+            }
+
+            // Annotations --------------------------------------------------
+            SchemaNode::Title(t) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("title".into(), Value::String(t.clone()));
+                Value::Object(obj)
+            }
+            SchemaNode::Description(d) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("description".into(), Value::String(d.clone()));
+                Value::Object(obj)
+            }
+            SchemaNode::Default(def) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("default".into(), def.clone());
+                Value::Object(obj)
+            }
+            SchemaNode::Examples(ex) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("examples".into(), Value::Array(ex.clone()));
+                Value::Object(obj)
+            }
+            SchemaNode::ReadOnly(b) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("readOnly".into(), Value::Bool(*b));
+                Value::Object(obj)
+            }
+            SchemaNode::WriteOnly(b) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("writeOnly".into(), Value::Bool(*b));
+                Value::Object(obj)
+            }
+
+            // $ref ---------------------------------------------------------
+            SchemaNode::Ref(r) => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("$ref".into(), Value::String(r.clone()));
+                Value::Object(obj)
             }
         }
     }

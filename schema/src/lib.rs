@@ -6,7 +6,8 @@ pub mod ast;
 pub use ast::{build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode};
 
 use anyhow::{Context, Result};
-use jsonschema::{Draft, JSONSchema};
+use jsonschema::Draft;
+pub use jsonschema::JSONSchema;
 use serde_json::Value;
 
 /// Compile the provided raw JSON Schema into the proven validator, enforcing
