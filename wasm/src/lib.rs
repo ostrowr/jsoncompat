@@ -18,10 +18,12 @@ fn parse_json(s: &str) -> Result<JsonValue, JsValue> {
 
 fn parse_role(role: &str) -> Result<Role, JsValue> {
     match role.to_ascii_lowercase().as_str() {
-        "serializer" | "producer" => Ok(Role::Serializer),
-        "deserializer" | "consumer" => Ok(Role::Deserializer),
-        "both" | "bidirectional" | "" => Ok(Role::Both),
-        _ => Err(JsValue::from_str("role must be 'serializer', 'deserializer' or 'both'")),
+        "serializer" => Ok(Role::Serializer),
+        "deserializer" => Ok(Role::Deserializer),
+        "both" => Ok(Role::Both),
+        _ => Err(JsValue::from_str(
+            "role must be 'serializer', 'deserializer' or 'both'",
+        )),
     }
 }
 
@@ -31,7 +33,11 @@ fn parse_role(role: &str) -> Result<Role, JsValue> {
 /// * `new_schema_json` – updated schema as JSON string
 /// * `role` – "serializer", "deserializer" or "both" (default)
 #[wasm_bindgen]
-pub fn check_compat_js(old_schema_json: &str, new_schema_json: &str, role: &str) -> Result<bool, JsValue> {
+pub fn check_compat_js(
+    old_schema_json: &str,
+    new_schema_json: &str,
+    role: &str,
+) -> Result<bool, JsValue> {
     let role_e = parse_role(role)?;
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;

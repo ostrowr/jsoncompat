@@ -18,3 +18,7 @@ json_schema_fuzz = { path = "../fuzz" }
 
 [features]
 default = []
+
+[package.metadata.maturin]
+# Include PEP 561 style typing information (py.typed + .pyi stubs) in the wheel.
+include-type-hints = true

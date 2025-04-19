@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>json_schema_wasm browser demo</title>
+    <style>
+      body { font-family: sans-serif; padding: 2rem; }
+      pre { background:#f4f4f4; padding:1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>json_schema_wasm - browser demo</h1>
+    <pre id="out">initialising …</pre>
+
+    <script type="module">
+      // The Wasm package is built into `pkg/` by `just wasm-demo` with
+      //   wasm-pack build wasm --target web --out-dir examples/wasm/pkg
+      import init, { check_compat_js, generate_value_js } from "../../wasm/pkg/json_schema_wasm.js";
+
+      const out = document.getElementById('out');
+
+      (async () => {
+        await init();
+
+        const oldSchema = '{"type":"string"}';
+        const newSchema = '{"type":"number"}';
+
+        const lines = [];
+        lines.push('=== Compatibility checks ===');
+        for (const role of ['serializer','deserializer','both']) {
+          const ok = await check_compat_js(oldSchema, newSchema, role);
+          lines.push(`${role.padEnd(12)}: ${ok}`);
+        }
+
+        lines.push('\n=== Example value generation ===');
+        const sample = await generate_value_js(oldSchema, 3);
+        lines.push(sample);
+
+        out.textContent = lines.join('\n');
+      })();
+    </script>
+  </body>
+</html>

@@ -2,6 +2,9 @@
 name = "json_schema_wasm"
 version = "0.1.0"
 edition = "2021"
+description = "JSON Schema Compatibility Checker"
+repository = "https://github.com/ostrowr/jsoncompat"
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib"]
@@ -12,15 +15,15 @@ serde_json = "1.0"
 rand = "0.8"
 anyhow = "1.0"
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-
-[patch.crates-io]
-reqwest = { git = "https://github.com/yourusername/problematic-crate", branch = "wasm-fix" }
-
 # Internal crates
 json_schema_backcompat = { path = ".." }
 json_schema_fuzz = { path = "../fuzz" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+
+
 
 [features]
 default = ["wee_alloc"]
@@ -28,3 +31,11 @@ default = ["wee_alloc"]
 [dependencies.wee_alloc]
 version = "0.4"
 optional = true
+
+[dev-dependencies]
+wasm-bindgen-test = "0.2"
+
+[package.metadata.wasm-pack.profile.release]
+# Ensure TypeScript declarations are always generated (this is the default but
+# we declare it explicitly for clarity / strictness).
+wasm-bindgen-typescript = true
