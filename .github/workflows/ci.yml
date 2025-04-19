@@ -248,7 +248,7 @@ jobs:
             cp -r "wasm/pkg-$target"/* "dist/js/$target/"
           done
 
-      - name: Upload wasm artefacts
+      - name: Upload wasm artifacts
         uses: actions/upload-artifact@v4
         with:
           name: js-packages
@@ -264,7 +264,7 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     needs: wasm
     permissions:
-      # Used to upload release artefacts
+      # Used to upload release artifacts
       contents: write
       # Used to generate build provenance attestation
       attestations: write
@@ -337,13 +337,13 @@ jobs:
       - name: Build CLI
         run: cargo build --locked --release --bin jsoncompat
 
-      - name: Prepare artefact
+      - name: Prepare artifact
         shell: bash
         run: |
           mkdir -p dist
           cp target/release/jsoncompat${{ matrix.ext }} dist/${{ matrix.asset_name }}
 
-      - name: Upload CLI artefact
+      - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.os }}

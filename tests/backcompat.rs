@@ -8,7 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // datatest‑stable macro generates one test per fixture directory.
-datatest_stable::harness!(fixture, "tests/fixtures/backcompat", ".*/expect\\.json$");
+datatest_stable::harness!(
+    fixture,
+    "tests/fixtures/backcompat",
+    r".*[/\\]expect\.json$"
+);
 
 #[derive(Deserialize)]
 struct Expectation {
