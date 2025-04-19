@@ -71,11 +71,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
 
     map.insert(
-        "propertyNames.json".to_string(),
-        [].iter().cloned().collect(),
-    );
-
-    map.insert(
         "properties.json".to_string(),
         [1, 2].iter().cloned().collect(),
     );
@@ -109,10 +104,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     map.insert(
         "optional/id.json".to_string(),
         [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/refOfUnknownKeyword.json".to_string(),
-        HashSet::new(),
     );
     map.insert(
         "optional/cross-draft.json".to_string(),
