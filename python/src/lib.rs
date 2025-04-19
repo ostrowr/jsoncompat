@@ -78,22 +78,24 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let mut rng = thread_rng();
     let value = generate_value(&schema_ast, &mut rng, depth);
 
-    serde_json::to_string(&value).map_err(|e| PyErr::new::<PyValueError, _>(format!("Failed to serialize generated value: {e}")))
+    serde_json::to_string(&value).map_err(|e| {
+        PyErr::new::<PyValueError, _>(format!("Failed to serialize generated value: {e}"))
+    })
 }
 
 /// Python module definition
 #[pymodule]
-fn json_schema_py(py: Python, m: &PyModule) -> PyResult<()> {
+fn json_schema_py(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Ensure the random generator is initialised (auto‑initialize takes care of pyo3 env).
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
 
     // Expose the Role enum for convenience.
-    let role_enum = PyModule::new(py, "Role")?;
+    let role_enum = PyModule::new_bound(py, "Role")?;
     role_enum.add("SERIALIZER", "serializer")?;
     role_enum.add("DESERIALIZER", "deserializer")?;
     role_enum.add("BOTH", "both")?;
-    m.add_submodule(role_enum)?;
+    m.add_submodule(&role_enum)?;
 
     Ok(())
 }
