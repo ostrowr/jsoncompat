@@ -1,0 +1,10 @@
+{
+  "anyOf.json": [4],
+  "allOf.json": [0,1,4,5],
+  "oneOf.json": [2,4,5,8],
+  "not.json": [4,5,8],
+  "if-then-else.json": [7,8,9],
+  "optional/ecmascript-regex.json": [0,1,2],
+  "unevaluatedItems.json": [12],
+  "unevaluatedProperties.json": [12,13,14]
+}
