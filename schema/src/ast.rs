@@ -356,7 +356,11 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
         }
         _ => {
             // If no "type" but "properties" => object
-            if obj.contains_key("properties") {
+            if obj.contains_key("properties")
+                || obj.contains_key("minProperties")
+                || obj.contains_key("maxProperties")
+                || obj.contains_key("required")
+            {
                 parse_object_schema(obj)
             } else if obj.contains_key("items") {
                 parse_array_schema(obj)
@@ -375,12 +379,6 @@ fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         .and_then(|v| v.as_str())
         .map(|s| s.to_owned());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-
-    // Size constraints ---------------------------------------------------
-    let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
-    let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
-
-    // (Note: minProperties/maxProperties do not apply to string schemas.)
 
     Ok(SchemaNode::String {
         min_length,
@@ -474,6 +472,10 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         for r in reqs {
             if let Some(s) = r.as_str() {
                 required.insert(s.to_owned());
+                // If this required field is not in properties, add it with SchemaNode::Any
+                if !properties.contains_key(s) {
+                    properties.insert(s.to_owned(), SchemaNode::Any);
+                }
             }
         }
     }

@@ -229,10 +229,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             }
 
             // Determine the desired object size bounds if specified.
-            let min_p = min_properties.map(|v| *v as usize).unwrap_or(0);
-            let max_p = max_properties.map(|v| *v as usize);
+            let min_p: usize = min_properties.unwrap_or(0).try_into().unwrap();
+            let max_p: usize = max_properties.unwrap_or(u64::MAX).try_into().unwrap();
 
             // Random extra properties if allowed and we have not reached min_properties.
+
             if !matches!(additional.as_ref(), SchemaNode::BoolSchema(false)) {
                 // Continue adding extra properties until we reach `min_properties`.
                 while map.len() < min_p {
@@ -247,10 +248,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 // Optionally add more properties (respecting max_properties if set).
                 if rng.gen_bool(0.3) {
                     let mut attempts = 0;
-                    while rng.gen_bool(0.5)
-                        && (max_p.map_or(true, |m| map.len() < m))
-                        && attempts < 5
-                    {
+                    while rng.gen_bool(0.5) && (map.len() < max_p) && attempts < 5 {
                         let key = random_key(rng);
                         if map.contains_key(&key) {
                             attempts += 1;

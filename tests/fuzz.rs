@@ -53,11 +53,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
 
     map.insert(
-        "minProperties.json".to_string(),
-        [0, 1].iter().cloned().collect(),
-    );
-
-    map.insert(
         "items.json".to_string(),
         [2, 3, 5, 7, 8].iter().cloned().collect(),
     );
@@ -140,11 +135,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         [0].iter().cloned().collect(),
     );
     map.insert("defs.json".to_string(), [0].iter().cloned().collect());
-
-    map.insert(
-        "required.json".to_string(),
-        [3, 4].iter().cloned().collect(),
-    );
 
     map
 }
