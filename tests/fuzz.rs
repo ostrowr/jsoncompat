@@ -33,7 +33,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "oneOf.json".to_string(),
-        [0, 1, 2, 4, 5, 7, 8].iter().cloned().collect(),
+        [0, 1, 2, 4, 5, 7].iter().cloned().collect(),
     );
     map.insert(
         "not.json".to_string(),
@@ -49,7 +49,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33, 34].iter().cloned().collect(),
+        [12, 13, 14, 16, 33].iter().cloned().collect(),
     );
 
     map.insert(

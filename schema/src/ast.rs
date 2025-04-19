@@ -394,26 +394,19 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
     let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
 
     // Exclusive minimum (numeric only in 2020‑12) -------------------------
-    let exclusive_minimum = if let Some(v) = obj.get("exclusiveMinimum") {
-        if let serde_json::Value::Number(n) = v {
-            minimum = n.as_f64();
-            true
-        } else {
-            // Non‑numeric values are invalid in draft 2020‑12; ignore.
-            false
-        }
+    let exclusive_minimum = if let Some(serde_json::Value::Number(n)) = obj.get("exclusiveMinimum")
+    {
+        minimum = n.as_f64();
+        true
     } else {
         false
     };
 
     // Exclusive maximum (numeric only in 2020‑12) -------------------------
-    let exclusive_maximum = if let Some(v) = obj.get("exclusiveMaximum") {
-        if let serde_json::Value::Number(n) = v {
-            maximum = n.as_f64();
-            true
-        } else {
-            false
-        }
+    let exclusive_maximum = if let Some(serde_json::Value::Number(n)) = obj.get("exclusiveMaximum")
+    {
+        maximum = n.as_f64();
+        true
     } else {
         false
     };
@@ -567,7 +560,7 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
             }
 
             // For now, handle only local fragment refs (starting with "#/")
-            if r.starts_with("#/") {
+            if let Some(stripped) = r.strip_prefix("#/") {
                 // Split JSON Pointer *after* the leading "#/" into its path
                 // components and **unescape** each token according to
                 // RFC 6901: first percent‑decode (the pointer may be embedded
@@ -589,7 +582,7 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
                     decoded.replace("~0", "~")
                 }
 
-                let parts: Vec<String> = r[2..].split('/').map(decode_pointer_token).collect();
+                let parts: Vec<String> = stripped.split('/').map(decode_pointer_token).collect();
                 let mut current = root_json;
                 for p in parts.iter() {
                     if let Some(next) = current.get(p.as_str()) {
