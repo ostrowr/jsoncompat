@@ -245,7 +245,7 @@ jobs:
           mkdir -p dist/js
           for target in bundler nodejs web; do
             mkdir -p "dist/js/$target"
-            cp -r "pkg-$target"/* "dist/js/$target/"
+            cp -r "wasm/pkg-$target"/* "dist/js/$target/"
           done
 
       - name: Upload wasm artefacts
