@@ -9,7 +9,9 @@ edition = "2021"
 # additional members created as part of this refactor.
 members = [
     "fuzz",     # -> json_schema_fuzz
-    "schema"    # -> json_schema_draft2020
+    "schema",   # -> json_schema_draft2020
+    "python",   # -> json_schema_py bindings
+    "wasm"      # -> json_schema_wasm bindings
 ]
 
 [dependencies]
@@ -25,7 +27,6 @@ owo-colors = "3.5"
 # Our own strict Draft‑2020 implementation crate
 json_schema_draft2020 = { path = "schema" }
 json_schema_fuzz = { path = "fuzz" }
-
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }

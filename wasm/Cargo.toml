@@ -1,0 +1,24 @@
+[package]
+name = "json_schema_wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+serde_json = "1.0"
+rand = "0.8"
+anyhow = "1.0"
+
+# Internal crates
+json_schema_backcompat = { path = ".." }
+json_schema_fuzz = { path = "../fuzz" }
+
+[features]
+default = ["wee_alloc"]
+
+[dependencies.wee_alloc]
+version = "0.4"
+optional = true

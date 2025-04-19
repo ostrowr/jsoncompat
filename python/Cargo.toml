@@ -1,0 +1,20 @@
+[package]
+name = "json_schema_py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"] }
+serde_json = "1.0"
+anyhow = "1.0"
+rand = "0.8"
+
+# Internal crates
+json_schema_backcompat = { path = ".." }
+json_schema_fuzz = { path = "../fuzz" }
+
+[features]
+default = []
