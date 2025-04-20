@@ -1,25 +1,13 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import init, { generate_value } from "jsoncompat";
 
 export const Route = createFileRoute("/fuzzer")({
   component: FuzzerPage,
 });
 
-let wasmReady: Promise<any> | null = null;
-
-async function loadWasm() {
-  if (!wasmReady) {
-    wasmReady = import("/jsoncompat_wasm/jsoncompat_wasm.js").then(async (m) => {
-      // @ts-ignore – wasm-pack default export exists
-      await (m.default as unknown as () => Promise<void>)();
-      return m;
-    });
-  }
-  return wasmReady;
-}
-
 function FuzzerPage() {
-  const [schema, setSchema] = useState("{\n  \"type\": \"string\"\n}");
+  const [schema, setSchema] = useState('{\n  "type": "string"\n}');
   const [depth, setDepth] = useState(5);
   const [value, setValue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +16,8 @@ function FuzzerPage() {
     setError(null);
     setValue(null);
     try {
-      const m = await loadWasm();
-      const v = await m.generate_value(schema, depth);
+      await init(); // TODO: only do once
+      const v = await generate_value(schema, depth);
       setValue(v);
     } catch (err) {
       setError((err as Error).message ?? String(err));
@@ -38,7 +26,9 @@ function FuzzerPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-3xl font-bold">Value generator / schema fuzzer</h1>
+      <h1 className="mb-4 text-3xl font-bold">
+        Value generator / schema fuzzer
+      </h1>
 
       <label className="mb-2 block font-medium">Schema</label>
       <textarea

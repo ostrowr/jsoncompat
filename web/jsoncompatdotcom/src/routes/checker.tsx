@@ -1,29 +1,14 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import init, { check_compat } from "jsoncompat";
 
 export const Route = createFileRoute("/checker")({
   component: CheckerPage,
 });
 
-// Lazy‑load the wasm module on first use.
-let wasmReady: Promise<any> | null = null;
-
-async function loadWasm() {
-  if (!wasmReady) {
-    wasmReady = import("/jsoncompat_wasm/jsoncompat_wasm.js").then(async (m) => {
-      // the wasm-pack bundle exports default initialiser
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore – default export exists but type not declared
-      await (m.default as unknown as () => Promise<void>)();
-      return m;
-    });
-  }
-  return wasmReady;
-}
-
 function CheckerPage() {
-  const [oldSchema, setOldSchema] = useState("{\n  \"type\": \"string\"\n}");
-  const [newSchema, setNewSchema] = useState("{\n  \"type\": \"number\"\n}");
+  const [oldSchema, setOldSchema] = useState('{\n  "type": "string"\n}');
+  const [newSchema, setNewSchema] = useState('{\n  "type": "number"\n}');
   const [role, setRole] = useState("both");
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +17,8 @@ function CheckerPage() {
     setError(null);
     setResult(null);
     try {
-      const m = await loadWasm();
-      const ok = await (m.check_compat as (a: string,b:string,c:string)=>Promise<boolean>)(oldSchema, newSchema, role);
+      await init(); // TODO: only do once
+      const ok = await check_compat(oldSchema, newSchema, role);
       setResult(ok ? "✔ Compatible" : "✖ Incompatible");
     } catch (err) {
       setError((err as Error).message ?? String(err));
