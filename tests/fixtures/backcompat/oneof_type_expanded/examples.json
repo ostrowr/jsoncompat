@@ -1,0 +1,4 @@
+{
+  "new_only": [true],
+  "both": ["str", 5]
+}

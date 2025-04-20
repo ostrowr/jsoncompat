@@ -1,0 +1,8 @@
+{
+  "old_only": [
+    {"servers": [{"host": "a", "port": 80}]}
+  ],
+  "both": [
+    {"servers": [{"host": "b", "port": 8080}]}
+  ]
+}

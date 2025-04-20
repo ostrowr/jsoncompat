@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string"},
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "nested": {
+      "type": "object",
+      "properties": {
+        "flag": {"type": "boolean"},
+        "count": {"type": "integer", "minimum": 0}
+      },
+      "required": ["flag"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["id", "name"],
+  "additionalProperties": false
+}

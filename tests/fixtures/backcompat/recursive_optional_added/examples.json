@@ -1,0 +1,17 @@
+{
+  "new_only": [
+    {
+      "value": 1,
+      "metadata": "root",
+      "children": [
+        {"value": 2}
+      ]
+    }
+  ],
+  "both": [
+    {
+      "value": 10,
+      "children": []
+    }
+  ]
+}
