@@ -36,7 +36,7 @@ export default function NavBar() {
 
 					{/* GitHub */}
 					<a
-						href="https://github.com/your-org/jsoncompat"
+						href="https://github.com/ostrowr/jsoncompat"
 						target="_blank"
 						rel="noopener noreferrer"
 						className="text-gray-300 hover:text-white"
