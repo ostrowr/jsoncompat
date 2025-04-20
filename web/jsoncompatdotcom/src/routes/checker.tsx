@@ -94,6 +94,37 @@ function CheckerPage() {
 				</button>
 			</div>
 
+			{/* Compatibility explainer */}
+			<section className="mt-10 rounded-lg overflow-hidden shadow ring-1 ring-gray-200 max-w-full text-sm overflow-x-auto">
+				<h2 className="bg-gray-50 px-4 py-3 text-base font-semibold text-gray-900 border-b border-gray-200">
+					What counts as a <em>compatible</em> change?
+				</h2>
+				<table className="min-w-max w-full border-collapse">
+					<thead>
+						<tr className="bg-gray-100 text-gray-900">
+							<th className="px-4 py-2 text-left whitespace-nowrap">Role</th>
+							<th className="px-4 py-2 text-left">Compatibility rule</th>
+						</tr>
+					</thead>
+					<tbody className="align-top">
+						<tr className={`${role==='serializer'?"ring-2 ring-blue-400":""} bg-blue-50`}>
+							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">🖊️ Serializer</td>
+							<td className="px-4 py-3 align-top">Every value produced with the <em>new</em> schema must also satisfy the <em>old</em> schema.</td>
+						</tr>
+						<tr className={`${role==='deserializer'?"ring-2 ring-amber-400":""} bg-amber-50`}>
+							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">👓 Deserializer</td>
+							<td className="px-4 py-3 align-top">Every value valid under the <em>old</em> schema must <strong>also</strong> satisfy the <em>new</em> schema.</td>
+						</tr>
+						<tr className={`${role==='both'?"ring-2 ring-purple-400":""} bg-purple-50`}>
+							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">🔄 Both</td>
+							<td className="px-4 py-3 align-top">Both serializer <em>and</em> deserializer guarantees must hold.</td>
+						</tr>
+					</tbody>
+				</table>
+
+				
+			</section>
+
 			{result && (
 				<p
 					className={`mt-6 rounded-md px-4 py-3 text-lg font-semibold shadow
