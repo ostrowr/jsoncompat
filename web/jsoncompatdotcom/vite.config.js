@@ -8,6 +8,7 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+	base: "", // make asset URLs relative so they work regardless of hosting sub‑path
 	plugins: [
 		TanStackRouterVite({ autoCodeSplitting: true }),
 		viteReact(),
