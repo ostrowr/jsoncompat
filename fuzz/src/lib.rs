@@ -139,13 +139,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
                 // Count how many subschemas accept the generated instance.
                 let mut ok = 0;
-                for v in &validators {
-                    if let Some(schema) = v {
-                        if schema.is_valid(&candidate) {
-                            ok += 1;
-                            if ok > 1 {
-                                break; // early exit – already invalid for oneOf
-                            }
+                for v in validators.iter().flatten() {
+                    if v.is_valid(&candidate) {
+                        ok += 1;
+                        if ok > 1 {
+                            break; // early exit – already invalid for oneOf
                         }
                     }
                 }
