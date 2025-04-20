@@ -106,6 +106,7 @@ function FuzzerPage() {
 				<div className="max-h-[40rem] space-y-4 overflow-y-auto rounded-md border border-gray-200 p-2">
 					{examples.map((ex, idx) => (
 						<pre
+							// biome-ignore lint/suspicious/noArrayIndexKey: nothing else to use
 							key={idx}
 							className="max-h-40 overflow-auto rounded bg-gray-100 p-4 text-sm"
 						>

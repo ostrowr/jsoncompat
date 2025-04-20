@@ -15,30 +15,36 @@ export const Route = createFileRoute("/checker")({
 function CheckerPage() {
 	const [oldSchema, setOldSchema] = useState('{\n  "type": "string"\n}');
 	const [newSchema, setNewSchema] = useState('{\n  "type": "number"\n}');
-    const [compat, setCompat] = useState<Record<string, boolean> | null>(null);
+	const [compat, setCompat] = useState<Record<string, boolean> | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [example, setExample] = useState<string | null>(null);
+	const [exampleOld, setExampleOld] = useState<string | null>(null);
+	const [exampleNew, setExampleNew] = useState<string | null>(null);
 
 	async function runCheck() {
-        setError(null);
-        setCompat(null);
-		setExample(null);
+		setError(null);
+		setCompat(null);
+		setExampleOld(null);
+		setExampleNew(null);
 		try {
 			await init(wasmUrl); // TODO: only do once
 
-            const roles = ["serializer", "deserializer", "both"] as const;
-            const results: Record<string, boolean> = {} as Record<string, boolean>;
-            for (const r of roles) {
-                results[r] = await check_compat(oldSchema, newSchema, r);
-            }
-            setCompat(results);
+			const roles = ["serializer", "deserializer", "both"] as const;
+			const results: Record<string, boolean> = {} as Record<string, boolean>;
+			for (const r of roles) {
+				results[r] = await check_compat(oldSchema, newSchema, r);
+			}
+			setCompat(results);
 
-			// Try to generate an illustrative example based on the *new* schema.
+			// Generate illustrative examples for both schemas
 			try {
-				const ex = await generate_value(newSchema, 5);
-				setExample(ex);
+				setExampleOld(await generate_value(oldSchema, 5));
 			} catch (_) {
-				// ignore if generation fails
+				setExampleOld(null);
+			}
+			try {
+				setExampleNew(await generate_value(newSchema, 5));
+			} catch (_) {
+				setExampleNew(null);
 			}
 		} catch (err) {
 			setError((err as Error).message ?? String(err));
@@ -74,15 +80,15 @@ function CheckerPage() {
 				</div>
 			</div>
 
-    <div className="mt-4">
-        <button
-            type="button"
-            onClick={runCheck}
-            className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
-        >
-            Check compatibility
-        </button>
-    </div>
+			<div className="mt-4">
+				<button
+					type="button"
+					onClick={runCheck}
+					className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
+				>
+					Check compatibility
+				</button>
+			</div>
 
 			{/* Compatibility explainer */}
 			<section className="mt-10 rounded-lg overflow-hidden shadow ring-1 ring-gray-200 max-w-full text-sm overflow-x-auto">
@@ -93,44 +99,76 @@ function CheckerPage() {
 					<thead>
 						<tr className="bg-gray-100 text-gray-900">
 							<th className="px-4 py-2 text-left whitespace-nowrap">Role</th>
-            <th className="px-4 py-2 text-left">Compatibility rule</th>
-            <th className="px-4 py-2 text-left">Status</th>
+							<th className="px-4 py-2 text-left">Compatibility rule</th>
+							<th className="px-4 py-2 text-left">Status</th>
 						</tr>
 					</thead>
 					<tbody className="align-top">
-						<tr className={`${compat? (compat["serializer"]?"ring-2 ring-green-400":"ring-2 ring-red-400"):""} bg-blue-50`}>
-							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">🖊️ Serializer</td>
-            <td className="px-4 py-3 align-top">Every value produced with the <em>new</em> schema must also satisfy the <em>old</em> schema.</td>
-            <td className="px-4 py-3 align-top font-semibold">{compat ? (compat["serializer"] ? "✔" : "✖") : "—"}</td>
+						<tr className="bg-blue-50">
+							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">
+								🖊️ Serializer
+							</td>
+							<td className="px-4 py-3 align-top">
+								Every value produced with the <em>new</em> schema must also
+								satisfy the <em>old</em> schema.
+							</td>
+							<td
+								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.serializer ? "text-green-700" : "text-red-700"}`}
+							>
+								{compat ? (compat.serializer ? "✔" : "✖") : "—"}
+							</td>
 						</tr>
-						<tr className={`${compat? (compat["deserializer"]?"ring-2 ring-green-400":"ring-2 ring-red-400"):""} bg-amber-50`}>
-							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">👓 Deserializer</td>
-            <td className="px-4 py-3 align-top">Every value valid under the <em>old</em> schema must <strong>also</strong> satisfy the <em>new</em> schema.</td>
-            <td className="px-4 py-3 align-top font-semibold">{compat ? (compat["deserializer"] ? "✔" : "✖") : "—"}</td>
-        </tr>
-						<tr className={`${compat?(compat["both"]?"ring-2 ring-green-400":"ring-2 ring-red-400"):""} bg-purple-50`}>
-							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">🔄 Both</td>
-							<td className="px-4 py-3 align-top">Both serializer <em>and</em> deserializer guarantees must hold.</td>
-							<td className="px-4 py-3 align-top font-semibold">{compat ? (compat["both"] ? "✔" : "✖") : "—"}</td>
+						<tr className="bg-amber-50">
+							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">
+								👓 Deserializer
+							</td>
+							<td className="px-4 py-3 align-top">
+								Every value valid under the <em>old</em> schema must{" "}
+								<strong>also</strong> satisfy the <em>new</em> schema.
+							</td>
+							<td
+								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.deserializer ? "text-green-700" : "text-red-700"}`}
+							>
+								{compat ? (compat.deserializer ? "✔" : "✖") : "—"}
+							</td>
+						</tr>
+						<tr className="bg-purple-50">
+							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">
+								🔄 Both
+							</td>
+							<td className="px-4 py-3 align-top">
+								Both serializer <em>and</em> deserializer guarantees must hold.
+							</td>
+							<td
+								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.both ? "text-green-700" : "text-red-700"}`}
+							>
+								{compat ? (compat.both ? "✔" : "✖") : "—"}
+							</td>
 						</tr>
 					</tbody>
 				</table>
-
-				
 			</section>
-
-
 
 			{/* explanatory list removed – table is now self‑contained */}
 
-			{example && (
-				<div className="mt-6">
-					<h2 className="mb-2 text-lg font-medium">
-						Example value (new schema)
-					</h2>
-					<pre className="overflow-auto rounded-md bg-gray-100 p-4 text-sm">
-						{example}
-					</pre>
+			{(exampleOld || exampleNew) && (
+				<div className="mt-8 grid gap-4 md:grid-cols-2">
+					{exampleOld && (
+						<div>
+							<h3 className="mb-2 font-medium">Old schema example</h3>
+							<pre className="overflow-auto rounded-md bg-gray-100 p-4 text-sm">
+								{exampleOld}
+							</pre>
+						</div>
+					)}
+					{exampleNew && (
+						<div>
+							<h3 className="mb-2 font-medium">New schema example</h3>
+							<pre className="overflow-auto rounded-md bg-gray-100 p-4 text-sm">
+								{exampleNew}
+							</pre>
+						</div>
+					)}
 				</div>
 			)}
 
