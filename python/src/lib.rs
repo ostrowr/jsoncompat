@@ -85,7 +85,7 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
 
 /// Python module definition
 #[pymodule]
-#[pyo3(name = "jsoncompat_py")]
+#[pyo3(name = "jsoncompat_py")] // TODO: figure out how to name this jsoncompat rather than jsoncompat_py
 fn jsoncompat_py(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Ensure the random generator is initialised (auto‑initialize takes care of pyo3 env).
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;

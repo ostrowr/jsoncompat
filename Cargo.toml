@@ -2,6 +2,9 @@
 name = "jsoncompat"
 version = "0.1.0"
 edition = "2021"
+description = "JSON Schema Compatibility Checker"
+repository = "https://github.com/ostrowr/jsoncompat"
+license = "MIT"
 
 # Workspace definition so we can host the additional sibling crates.
 [workspace]

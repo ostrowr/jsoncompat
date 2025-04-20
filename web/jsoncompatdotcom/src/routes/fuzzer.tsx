@@ -56,32 +56,32 @@ function FuzzerPage() {
 				onChange={(e) => setSchema(e.target.value)}
 			/>
 
-			<div className="flex flex-wrap items-end gap-4">
-				<label htmlFor="depth" className="font-medium">
+			<div className="flex flex-wrap items-center gap-4">
+				<label htmlFor="depth" className="flex items-center gap-1 text-sm font-medium text-gray-700">
 					Depth:
+					<input
+						id="depth"
+						type="number"
+						min="1"
+						max="10"
+						value={depth}
+						onChange={(e) => setDepth(Number(e.target.value))}
+						className="w-16 rounded-md border border-gray-300 p-1 text-right"
+					/>
 				</label>
-				<input
-					id="depth"
-					type="number"
-					min="1"
-					max="10"
-					value={depth}
-					onChange={(e) => setDepth(Number(e.target.value))}
-					className="w-16 rounded-md border border-gray-300 p-1 text-right"
-				/>
 
-				<label htmlFor="num-ex" className="font-medium">
+				<label htmlFor="num-ex" className="flex items-center gap-1 text-sm font-medium text-gray-700">
 					Examples:
+					<input
+						id="num-ex"
+						type="number"
+						min="1"
+						max="20"
+						value={numExamples}
+						onChange={(e) => setNumExamples(Number(e.target.value))}
+						className="w-16 rounded-md border border-gray-300 p-1 text-right"
+					/>
 				</label>
-				<input
-					id="num-ex"
-					type="number"
-					min="1"
-					max="20"
-					value={numExamples}
-					onChange={(e) => setNumExamples(Number(e.target.value))}
-					className="w-16 rounded-md border border-gray-300 p-1 text-right"
-				/>
 
 				<button
 					type="button"
