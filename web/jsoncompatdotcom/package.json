@@ -2,6 +2,7 @@
   "name": "jsoncompatdotcom",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.8.1",
   "scripts": {
     "dev": "vite --port 3000",
     "start": "vite --port 3000",
