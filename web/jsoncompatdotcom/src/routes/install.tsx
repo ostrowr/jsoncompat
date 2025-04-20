@@ -101,7 +101,7 @@ function Links() {
 				<li>
 					<a
 						className="text-blue-600 hover:underline"
-						href="https://github.com/your-org/jsoncompat"
+						href="https://github.com/ostrowr/jsoncompat"
 					>
 						GitHub repository
 					</a>
