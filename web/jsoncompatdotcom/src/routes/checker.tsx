@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import init, { check_compat, generate_value } from "jsoncompat";
 // Import the raw wasm asset so Vite gives us the final URL it will be served at.
@@ -7,6 +6,7 @@ import init, { check_compat, generate_value } from "jsoncompat";
 // binary from (and works in dev, preview and any static‑hosted production build).
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
+import { useState } from "react";
 
 export const Route = createFileRoute("/checker")({
 	component: CheckerPage,
@@ -47,16 +47,22 @@ function CheckerPage() {
 
 			<div className="grid gap-6 md:grid-cols-2">
 				<div>
-					<label className="mb-2 block font-medium">Old schema</label>
+					<label htmlFor="old-schema" className="mb-2 block font-medium">
+						Old schema
+					</label>
 					<textarea
+						id="old-schema"
 						className="h-64 w-full rounded-md border border-gray-300 p-2 font-mono text-sm"
 						value={oldSchema}
 						onChange={(e) => setOldSchema(e.target.value)}
 					/>
 				</div>
 				<div>
-					<label className="mb-2 block font-medium">New schema</label>
+					<label htmlFor="new-schema" className="mb-2 block font-medium">
+						New schema
+					</label>
 					<textarea
+						id="new-schema"
 						className="h-64 w-full rounded-md border border-gray-300 p-2 font-mono text-sm"
 						value={newSchema}
 						onChange={(e) => setNewSchema(e.target.value)}
@@ -80,6 +86,7 @@ function CheckerPage() {
 				</select>
 
 				<button
+					type="button"
 					onClick={runCheck}
 					className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
 				>

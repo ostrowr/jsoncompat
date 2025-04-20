@@ -1,0 +1,37 @@
+name: Website checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/jsoncompatdotcom/**'
+  pull_request:
+    paths:
+      - 'web/jsoncompatdotcom/**'
+  workflow_dispatch:
+
+jobs:
+  biome:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: web/jsoncompatdotcom/pnpm-lock.yaml
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install website dependencies (frozen lockfile)
+        working-directory: web/jsoncompatdotcom
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Run Biome checks
+        working-directory: web/jsoncompatdotcom
+        run: pnpm run check

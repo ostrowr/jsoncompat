@@ -1,9 +1,9 @@
-import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import init, { generate_value } from "jsoncompat";
 // Get the final URL of the wasm binary from Vite at build time.
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
+import { useState } from "react";
 
 export const Route = createFileRoute("/fuzzer")({
 	component: FuzzerPage,
@@ -46,8 +46,11 @@ function FuzzerPage() {
 				Value generator / schema fuzzer
 			</h1>
 
-			<label className="mb-2 block font-medium">Schema</label>
+			<label htmlFor="schema" className="mb-2 block font-medium">
+				Schema
+			</label>
 			<textarea
+				id="schema"
 				className="h-64 w-full rounded-md border border-gray-300 p-2 font-mono text-sm"
 				value={schema}
 				onChange={(e) => setSchema(e.target.value)}
@@ -81,6 +84,7 @@ function FuzzerPage() {
 				/>
 
 				<button
+					type="button"
 					onClick={runGenerate}
 					className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
 				>
@@ -89,6 +93,7 @@ function FuzzerPage() {
 
 				{examples.length > 0 && (
 					<button
+						type="button"
 						onClick={copyAll}
 						className="rounded border border-gray-300 bg-white px-4 py-2 text-sm shadow-sm hover:bg-gray-50"
 					>
