@@ -5,8 +5,6 @@ edition = "2021"
 
 # Workspace definition so we can host the additional sibling crates.
 [workspace]
-# The root package (this crate) is an implicit member. We list the two
-# additional members created as part of this refactor.
 members = [
     "fuzz",     # -> json_schema_fuzz
     "schema",   # -> json_schema_ast

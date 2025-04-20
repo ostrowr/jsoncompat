@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_ast::{compile as compile_schema, JSONSchema};
+use json_schema_ast::{compile, JSONSchema};
 use jsoncompat as backcompat;
 
 use owo_colors::OwoColorize;
@@ -32,7 +32,7 @@ impl SchemaDoc {
         let ast = backcompat::build_and_resolve_schema(&json)
             .with_context(|| format!("building AST for {}", path))?;
         let validator =
-            compile_schema(&json).with_context(|| format!("compiling validator for {}", path))?;
+            compile(&json).with_context(|| format!("compiling validator for {}", path))?;
 
         Ok(Self { ast, validator })
     }

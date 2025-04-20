@@ -3,9 +3,7 @@ use rand::Rng;
 use serde_json::{Map, Value};
 
 /// Generate a random JSON value *intended* to satisfy `schema`.
-/// Because JSON Schema can be very large in scope, we only handle
-/// core "type" constraints, `enum`, and a few others. We also limit
-/// recursion with `depth`.
+/// We limit recursion with `depth`.
 pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
     // If we reach too deep, return something minimal
     if depth == 0 {
@@ -49,7 +47,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             random_any(rng, depth)
         }
 
-        // string
         SchemaNode::String {
             min_length,
             max_length,
@@ -76,7 +73,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::String(s)
         }
 
-        // number
         SchemaNode::Number {
             enumeration,
             minimum,
@@ -118,7 +114,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| 0.into()))
         }
 
-        // integer
         SchemaNode::Integer {
             enumeration,
             minimum,
@@ -163,7 +158,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Number(val.into())
         }
 
-        // boolean
         SchemaNode::Boolean { enumeration } => {
             if let Some(e) = enumeration {
                 if !e.is_empty() {
@@ -174,7 +168,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Bool(rng.gen_bool(0.5))
         }
 
-        // null
         SchemaNode::Null { enumeration } => {
             if let Some(e) = enumeration {
                 if !e.is_empty() {
@@ -185,7 +178,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Null
         }
 
-        // object
         SchemaNode::Object {
             properties,
             required,
@@ -280,7 +272,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Object(map)
         }
 
-        // array
         SchemaNode::Array {
             items,
             min_items,
@@ -424,3 +415,9 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
         .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
         .collect()
 }
+
+// lots to improve here:
+// - anyof generation
+// - better random any
+// - better not handling
+// - lots of other stuff
