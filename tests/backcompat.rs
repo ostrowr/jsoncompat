@@ -1,4 +1,4 @@
-use json_schema_draft2020::compile;
+use json_schema_ast::compile;
 use json_schema_fuzz::generate_value;
 use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 use rand::{rngs::StdRng, SeedableRng};

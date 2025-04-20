@@ -1,4 +1,4 @@
-use json_schema_draft2020 as schema;
+use json_schema_ast as schema;
 
 use schema::{build_and_resolve_schema, build_schema_ast, compile, SchemaNode};
 use serde_json::json;

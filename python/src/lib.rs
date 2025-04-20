@@ -8,7 +8,7 @@ use rand::thread_rng;
 use serde_json::Value as JsonValue;
 
 /// Parse a JSON string into a serde_json::Value, converting any error into a Python ValueError.
-fn parse_json<'a>(s: &'a str) -> PyResult<JsonValue> {
+fn parse_json(s: &str) -> PyResult<JsonValue> {
     serde_json::from_str(s).map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid JSON: {e}")))
 }
 

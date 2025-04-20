@@ -5,11 +5,9 @@ edition = "2021"
 
 # Workspace definition so we can host the additional sibling crates.
 [workspace]
-# The root package (this crate) is an implicit member. We list the two
-# additional members created as part of this refactor.
 members = [
     "fuzz",     # -> json_schema_fuzz
-    "schema",   # -> json_schema_draft2020
+    "schema",   # -> json_schema_ast
     "python",   # -> jsoncompat Python bindings
     "wasm"      # -> json_schema_wasm bindings
 ]
@@ -25,8 +23,8 @@ serde = { version = "1.0.217", features = ["derive"] }
 # Small, zero‑dep colour library for pleasant CLI output.
 owo-colors = "3.5"
 # Our own strict Draft‑2020 implementation crate
-json_schema_draft2020 = { path = "schema" }
-json_schema_fuzz = { path = "fuzz" }
+json_schema_ast = { path = "schema", version = "0.1.0" }
+json_schema_fuzz = { path = "fuzz", version = "0.1.0" }
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }

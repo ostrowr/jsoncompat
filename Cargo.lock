@@ -292,6 +292,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7493d4c459da9f84325ad297371a6b2b8a162800873a22e3b6b6512e61d18c05"
+dependencies = [
+ "bit-set",
+ "regex",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -549,7 +559,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "json_schema_draft2020"
+name = "json_schema_ast"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -563,7 +573,8 @@ dependencies = [
 name = "json_schema_fuzz"
 version = "0.1.0"
 dependencies = [
- "json_schema_draft2020",
+ "fancy-regex 0.12.0",
+ "json_schema_ast",
  "rand",
  "serde_json",
  "url",
@@ -576,7 +587,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.37",
  "datatest-stable",
- "json_schema_draft2020",
+ "json_schema_ast",
  "json_schema_fuzz",
  "owo-colors",
  "rand",
@@ -623,7 +634,7 @@ dependencies = [
  "anyhow",
  "base64",
  "bytecount",
- "fancy-regex",
+ "fancy-regex 0.10.0",
  "fraction",
  "iso8601",
  "itoa",

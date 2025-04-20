@@ -47,13 +47,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (deny warnings)
-        run: cargo clippy --all-features --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
 
       - name: cargo check
-        run: cargo check --all-features --all-targets --locked
+        run: cargo check --workspace --all-features --all-targets --locked
 
       - name: cargo test
-        run: cargo test --all-features --all-targets --locked
+        run: cargo test --workspace --all-features --all-targets --locked
 
   python-linux:
     runs-on: ${{ matrix.platform.runner }}
