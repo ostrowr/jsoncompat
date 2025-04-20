@@ -517,11 +517,43 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
         return Ok(SchemaNode::Const(c.clone()));
     }
 
+    // ------------------------------------------------------------------
     // allOf, anyOf, oneOf, not
+    // ------------------------------------------------------------------
+    // According to the specification, keywords *in addition* to `allOf`
+    // combine through intersection.  Therefore, if the current object has
+    // both `allOf` and other validation keywords, we treat the *base* object
+    // (with `allOf` removed) as an implicit subschema that participates in
+    // the conjunction.
     if let Some(Value::Array(subs)) = obj.get("allOf") {
-        return Ok(SchemaNode::AllOf(
-            subs.iter().map(build_schema_ast).collect::<Result<_>>()?,
-        ));
+        let mut list = Vec::new();
+
+        // Extract the base‑schema (everything except the `allOf` keyword) –
+        // but only if there are additional constraints present.
+            if obj.len() > 1 {
+                let mut base = obj.clone();
+                base.remove("allOf");
+
+                // Strip recognised meta‑schema keywords that do not impose
+                // validation constraints – most notably `$schema` but also
+                // `$id`, `$comment`, etc.  If, after removal, no keywords
+                // remain, there is no point in adding an empty subschema.
+                const META_KEYS: [&str; 4] = ["$schema", "$id", "$comment", "$defs"];
+                for key in META_KEYS {
+                    base.remove(key);
+                }
+
+                if !base.is_empty() {
+                    list.push(build_schema_ast(&Value::Object(base))?);
+                }
+        }
+
+        // Parse each subschema from the `allOf` array.
+        for s in subs {
+            list.push(build_schema_ast(s)?);
+        }
+
+        return Ok(SchemaNode::AllOf(list));
     }
     if let Some(Value::Array(subs)) = obj.get("anyOf") {
         return Ok(SchemaNode::AnyOf(
@@ -577,6 +609,9 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
                 parse_object_schema(obj)
             } else if obj.contains_key("items") {
                 parse_array_schema(obj)
+            } else if obj.contains_key("minLength") || obj.contains_key("maxLength") || obj.contains_key("pattern") {
+                // String‑related keywords without explicit "type"
+                parse_string_schema(obj)
             } else {
                 Ok(SchemaNode::Any)
             }

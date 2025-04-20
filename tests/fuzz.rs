@@ -21,15 +21,16 @@ const N_ITERATIONS: usize = 1000;
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [1, 4].iter().cloned().collect());
-    map.insert(
-        // Failing schemas in allOf.json (indices)
-        "allOf.json".to_string(),
-        [0, 1, 4, 5, 8, 9].iter().cloned().collect(),
-    );
+    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
+    // Remaining failing schemas in allOf.json – indices 4 and 5 correspond
+    // to `[true, false]` and `[false, false]` where no valid instance exists.
+    // TODO – we need to handle the impossible case more elegantly
+    map.insert("allOf.json".to_string(), [4, 5].iter().cloned().collect());
+    // Remaining tricky `oneOf` schemas – currently only #7 (boolean schemas)
+    // is impossible to satisfy generically.
     map.insert(
         "oneOf.json".to_string(),
-        [0, 1, 2, 4, 5, 7].iter().cloned().collect(),
+        [2, 4, 5].iter().cloned().collect(),
     );
     map.insert(
         "not.json".to_string(),
