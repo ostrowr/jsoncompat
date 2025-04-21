@@ -29,6 +29,7 @@ function FuzzerPage() {
 			}
 			setExamples(vals);
 		} catch (err) {
+			console.log(err);
 			setError((err as Error).message ?? String(err));
 		}
 	}
@@ -57,7 +58,10 @@ function FuzzerPage() {
 			/>
 
 			<div className="flex flex-wrap items-center gap-4">
-				<label htmlFor="depth" className="flex items-center gap-1 text-sm font-medium text-gray-700">
+				<label
+					htmlFor="depth"
+					className="flex items-center gap-1 text-sm font-medium text-gray-700"
+				>
 					Depth:
 					<input
 						id="depth"
@@ -70,7 +74,10 @@ function FuzzerPage() {
 					/>
 				</label>
 
-				<label htmlFor="num-ex" className="flex items-center gap-1 text-sm font-medium text-gray-700">
+				<label
+					htmlFor="num-ex"
+					className="flex items-center gap-1 text-sm font-medium text-gray-700"
+				>
 					Examples:
 					<input
 						id="num-ex"

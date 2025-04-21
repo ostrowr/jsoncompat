@@ -8,13 +8,28 @@ import init, { check_compat, generate_value } from "jsoncompat";
 import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
 import { useState } from "react";
 
+const INITAL_OLD_SCHEMA = `{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}`;
+
+const INITAL_NEW_SCHEMA = `{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 5 },
+    "age": { "type": "integer", "minimum": 18 }
+  }
+}`;
+
 export const Route = createFileRoute("/checker")({
 	component: CheckerPage,
 });
 
 function CheckerPage() {
-	const [oldSchema, setOldSchema] = useState('{\n  "type": "string"\n}');
-	const [newSchema, setNewSchema] = useState('{\n  "type": "number"\n}');
+	const [oldSchema, setOldSchema] = useState(INITAL_OLD_SCHEMA);
+	const [newSchema, setNewSchema] = useState(INITAL_NEW_SCHEMA);
 	const [compat, setCompat] = useState<Record<string, boolean> | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [exampleOld, setExampleOld] = useState<string | null>(null);
@@ -120,11 +135,11 @@ function CheckerPage() {
 						</tr>
 						<tr className="bg-amber-50">
 							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">
-								👓 Deserializer
+								👓 Deserializer
 							</td>
 							<td className="px-4 py-3 align-top">
-								Every value valid under the <em>old</em> schema must{" "}
-								<strong>also</strong> satisfy the <em>new</em> schema.
+								Every value valid under the <em>old</em> schema must also
+								satisfy the <em>new</em> schema.
 							</td>
 							<td
 								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.deserializer ? "text-green-700" : "text-red-700"}`}

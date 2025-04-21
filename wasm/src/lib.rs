@@ -64,5 +64,5 @@ pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue
 
     let mut rng = thread_rng();
     let v = generate_value(&schema_ast, &mut rng, depth);
-    serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialisation failure: {e}")))
+    serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialization failure: {e}")))
 }

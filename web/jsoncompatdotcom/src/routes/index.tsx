@@ -37,13 +37,14 @@ function HomePage() {
 			{/* Features */}
 			<section className="bg-white py-16">
 				<div className="mx-auto grid max-w-5xl grid-cols-1 gap-12 px-4 md:grid-cols-3">
-					<Feature title="Blazing‑fast">
+					<Feature title="Blazing-fast">
 						Pure Rust core, optimised for performance.
 					</Feature>
-					<Feature title="Sound & complete">
-						Rigorous algorithms guarantee correct results.
+					<Feature title="Escape version skew">
+						Don't have time to migrate everything to protobuf? Keep using JSON,
+						but safely.
 					</Feature>
-					<Feature title="Multi‑platform">
+					<Feature title="Multi-platform">
 						Same engine for Rust, Python & the browser.
 					</Feature>
 				</div>
