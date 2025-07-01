@@ -73,6 +73,11 @@ pub enum SchemaNode {
     AnyOf(Vec<SchemaNode>),
     OneOf(Vec<SchemaNode>),
     Not(Box<SchemaNode>),
+    IfThenElse {
+        if_schema: Box<SchemaNode>,
+        then_schema: Option<Box<SchemaNode>>,
+        else_schema: Option<Box<SchemaNode>>,
+    },
 
     // Validation Keywords
     Const(Value),
@@ -267,6 +272,21 @@ impl SchemaNode {
             SchemaNode::Not(sub) => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("not".into(), sub.to_json());
+                Value::Object(obj)
+            }
+            SchemaNode::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("if".into(), if_schema.to_json());
+                if let Some(t) = then_schema {
+                    obj.insert("then".into(), t.to_json());
+                }
+                if let Some(e) = else_schema {
+                    obj.insert("else".into(), e.to_json());
+                }
                 Value::Object(obj)
             }
 
@@ -515,6 +535,46 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
     // const
     if let Some(c) = obj.get("const") {
         return Ok(SchemaNode::Const(c.clone()));
+    }
+
+    // if / then / else ---------------------------------------------------
+    if obj.contains_key("if") || obj.contains_key("then") || obj.contains_key("else") {
+        if let Some(cond) = obj.get("if") {
+            let if_schema = Box::new(build_schema_ast(cond)?);
+            let then_schema = match obj.get("then") {
+                Some(v) => Some(Box::new(build_schema_ast(v)?)),
+                None => None,
+            };
+            let else_schema = match obj.get("else") {
+                Some(v) => Some(Box::new(build_schema_ast(v)?)),
+                None => None,
+            };
+            let mut base = obj.clone();
+            base.remove("if");
+            base.remove("then");
+            base.remove("else");
+            const META_KEYS: [&str; 4] = ["$schema", "$id", "$comment", "$defs"];
+            for key in META_KEYS {
+                base.remove(key);
+            }
+            let cond_node = SchemaNode::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            };
+            if !base.is_empty() {
+                let subs = vec![build_schema_ast(&Value::Object(base))?, cond_node];
+                return Ok(SchemaNode::AllOf(subs));
+            } else {
+                return Ok(cond_node);
+            }
+        } else {
+            // then/else without if are ignored
+            let mut base = obj.clone();
+            base.remove("then");
+            base.remove("else");
+            return build_schema_ast(&Value::Object(base));
+        }
     }
 
     // ------------------------------------------------------------------
@@ -862,6 +922,19 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
                 resolve_refs(s, root_json, visited)?;
             }
         }
+        SchemaNode::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
+            resolve_refs(if_schema, root_json, visited)?;
+            if let Some(t) = then_schema {
+                resolve_refs(t, root_json, visited)?;
+            }
+            if let Some(e) = else_schema {
+                resolve_refs(e, root_json, visited)?;
+            }
+        }
         SchemaNode::Not(sub_schema) => {
             resolve_refs(sub_schema, root_json, visited)?;
         }
@@ -909,6 +982,23 @@ pub fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
             count == 1
         }
         SchemaNode::Not(sub) => !instance_is_valid_against(val, sub),
+        SchemaNode::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
+            if instance_is_valid_against(val, if_schema) {
+                if let Some(t) = then_schema {
+                    instance_is_valid_against(val, t)
+                } else {
+                    true
+                }
+            } else if let Some(e) = else_schema {
+                instance_is_valid_against(val, e)
+            } else {
+                true
+            }
+        }
 
         SchemaNode::String { enumeration, .. } => {
             if let Some(e) = enumeration {

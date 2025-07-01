@@ -33,3 +33,16 @@ fn boolean_schemas() {
         assert_eq!(compiled.is_valid(&sample), b);
     }
 }
+
+#[test]
+fn conditional_roundtrip() {
+    let raw = json!({
+        "if": {"type": "integer"},
+        "then": {"minimum": 0},
+        "else": {"type": "string"}
+    });
+    let ast = build_and_resolve_schema(&raw).unwrap();
+    let json = ast.to_json();
+    let ast2 = build_and_resolve_schema(&json).unwrap();
+    assert_eq!(ast, ast2);
+}
