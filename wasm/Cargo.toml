@@ -3,11 +3,12 @@
 # publish this as the *npm* package `jsoncompat` so consumers can simply
 # `import { ... } from 'jsoncompat'`.
 name = "jsoncompat_wasm"
-version = "0.1.1"
+version = "0.1.4"
 edition = "2021"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
+publish = false # This crate is not published to crates.io; only NPM.
 
 [lib]
 crate-type = ["cdylib"]

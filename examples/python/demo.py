@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "jsoncompat-py",
+#     "jsoncompat",
 # ]
 # ///
 """End-to-end demo for the Python bindings of jsoncompat.
@@ -10,7 +10,7 @@ Executed by `just python-demo` which automatically builds the extension
 module via *maturin* and then runs this script.
 """
 
-import jsoncompat_py as jsc
+import jsoncompat as jsc
 
 
 def main() -> None:  # pragma: no cover – demo only

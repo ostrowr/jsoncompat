@@ -189,7 +189,7 @@ jobs:
         uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
         with:
           command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          args: --non-interactive wheels-*/*
 
 # ---------------------------------------------------------------------------
 # Build WebAssembly / JavaScript packages -----------------------------------
@@ -278,6 +278,15 @@ jobs:
             echo "Publishing $pkg …"
             npm publish "$pkg" --access public --provenance
           done
+
+  cargo-release:
+    name: Release Cargo package
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: cargo-release/action@v1.1.0
+        with:
+          token: ${{ secrets.CARGO_TOKEN }}
 
 # ---------------------------------------------------------------------------
 # Build Rust CLI binaries ----------------------------------------------------
