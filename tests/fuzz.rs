@@ -180,10 +180,10 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     // Whitelist lookup key – path relative to the fixtures root.
     let rel_path = file.strip_prefix("tests/fixtures/fuzz").unwrap_or(file);
-    let rel_str = rel_path.to_string_lossy();
+    let rel_str = rel_path.to_string_lossy().replace('\\', "/");
 
     let whitelist = load_whitelist();
-    let allowed = whitelist.get(rel_str.as_ref());
+    let allowed = whitelist.get::<str>(rel_str.as_ref());
 
     for (idx, schema_json) in schemas.iter().enumerate() {
         // Skip `false` schemas – they have an empty instance set by design.
