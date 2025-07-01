@@ -8,76 +8,32 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as InstallRouteImport } from './routes/install'
+import { Route as FuzzerRouteImport } from './routes/fuzzer'
+import { Route as CheckerRouteImport } from './routes/checker'
+import { Route as IndexRouteImport } from './routes/index'
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as InstallImport } from './routes/install'
-import { Route as FuzzerImport } from './routes/fuzzer'
-import { Route as CheckerImport } from './routes/checker'
-import { Route as IndexImport } from './routes/index'
-
-// Create/Update Routes
-
-const InstallRoute = InstallImport.update({
+const InstallRoute = InstallRouteImport.update({
   id: '/install',
   path: '/install',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const FuzzerRoute = FuzzerImport.update({
+const FuzzerRoute = FuzzerRouteImport.update({
   id: '/fuzzer',
   path: '/fuzzer',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const CheckerRoute = CheckerImport.update({
+const CheckerRoute = CheckerRouteImport.update({
   id: '/checker',
   path: '/checker',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const IndexRoute = IndexImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-// Populate the FileRoutesByPath interface
-
-declare module '@tanstack/react-router' {
-  interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/checker': {
-      id: '/checker'
-      path: '/checker'
-      fullPath: '/checker'
-      preLoaderRoute: typeof CheckerImport
-      parentRoute: typeof rootRoute
-    }
-    '/fuzzer': {
-      id: '/fuzzer'
-      path: '/fuzzer'
-      fullPath: '/fuzzer'
-      preLoaderRoute: typeof FuzzerImport
-      parentRoute: typeof rootRoute
-    }
-    '/install': {
-      id: '/install'
-      path: '/install'
-      fullPath: '/install'
-      preLoaderRoute: typeof InstallImport
-      parentRoute: typeof rootRoute
-    }
-  }
-}
-
-// Create and export the route tree
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -85,22 +41,19 @@ export interface FileRoutesByFullPath {
   '/fuzzer': typeof FuzzerRoute
   '/install': typeof InstallRoute
 }
-
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checker': typeof CheckerRoute
   '/fuzzer': typeof FuzzerRoute
   '/install': typeof InstallRoute
 }
-
 export interface FileRoutesById {
-  __root__: typeof rootRoute
+  __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/checker': typeof CheckerRoute
   '/fuzzer': typeof FuzzerRoute
   '/install': typeof InstallRoute
 }
-
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths: '/' | '/checker' | '/fuzzer' | '/install'
@@ -109,12 +62,44 @@ export interface FileRouteTypes {
   id: '__root__' | '/' | '/checker' | '/fuzzer' | '/install'
   fileRoutesById: FileRoutesById
 }
-
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CheckerRoute: typeof CheckerRoute
   FuzzerRoute: typeof FuzzerRoute
   InstallRoute: typeof InstallRoute
+}
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/install': {
+      id: '/install'
+      path: '/install'
+      fullPath: '/install'
+      preLoaderRoute: typeof InstallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fuzzer': {
+      id: '/fuzzer'
+      path: '/fuzzer'
+      fullPath: '/fuzzer'
+      preLoaderRoute: typeof FuzzerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/checker': {
+      id: '/checker'
+      path: '/checker'
+      fullPath: '/checker'
+      preLoaderRoute: typeof CheckerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -123,35 +108,6 @@ const rootRouteChildren: RootRouteChildren = {
   FuzzerRoute: FuzzerRoute,
   InstallRoute: InstallRoute,
 }
-
-export const routeTree = rootRoute
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-/* ROUTE_MANIFEST_START
-{
-  "routes": {
-    "__root__": {
-      "filePath": "__root.tsx",
-      "children": [
-        "/",
-        "/checker",
-        "/fuzzer",
-        "/install"
-      ]
-    },
-    "/": {
-      "filePath": "index.tsx"
-    },
-    "/checker": {
-      "filePath": "checker.tsx"
-    },
-    "/fuzzer": {
-      "filePath": "fuzzer.tsx"
-    },
-    "/install": {
-      "filePath": "install.tsx"
-    }
-  }
-}
-ROUTE_MANIFEST_END */
