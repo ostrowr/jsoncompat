@@ -435,7 +435,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
         // Handle new SchemaNode variants
         SchemaNode::Defs(_) => Value::Null,
-        SchemaNode::IfThenElse { if_schema, then_schema, else_schema } => {
+        SchemaNode::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
             if rng.gen_bool(0.5) {
                 if let Some(t) = then_schema {
                     return generate_value(t, rng, depth.saturating_sub(1));

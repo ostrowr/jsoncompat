@@ -274,7 +274,11 @@ impl SchemaNode {
                 obj.insert("not".into(), sub.to_json());
                 Value::Object(obj)
             }
-            SchemaNode::IfThenElse { if_schema, then_schema, else_schema } => {
+            SchemaNode::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("if".into(), if_schema.to_json());
                 if let Some(t) = then_schema {
@@ -553,7 +557,11 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
             for key in META_KEYS {
                 base.remove(key);
             }
-            let cond_node = SchemaNode::IfThenElse { if_schema, then_schema, else_schema };
+            let cond_node = SchemaNode::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            };
             if !base.is_empty() {
                 let mut subs = Vec::new();
                 subs.push(build_schema_ast(&Value::Object(base))?);
@@ -916,7 +924,11 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
                 resolve_refs(s, root_json, visited)?;
             }
         }
-        SchemaNode::IfThenElse { if_schema, then_schema, else_schema } => {
+        SchemaNode::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
             resolve_refs(if_schema, root_json, visited)?;
             if let Some(t) = then_schema {
                 resolve_refs(t, root_json, visited)?;
@@ -972,7 +984,11 @@ pub fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
             count == 1
         }
         SchemaNode::Not(sub) => !instance_is_valid_against(val, sub),
-        SchemaNode::IfThenElse { if_schema, then_schema, else_schema } => {
+        SchemaNode::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
             if instance_is_valid_against(val, if_schema) {
                 if let Some(t) = then_schema {
                     instance_is_valid_against(val, t)
