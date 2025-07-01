@@ -127,7 +127,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
     map.insert(
         "if-then-else.json".to_string(),
-        [7, 8, 9].iter().cloned().collect(),
+        [7, 8].iter().cloned().collect(),
     );
 
     map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
