@@ -36,4 +36,4 @@ jobs:
 
       - name: Run Biome checks
         working-directory: web/jsoncompatdotcom
-        run: pnpm run check
+        run: pnpm run ci

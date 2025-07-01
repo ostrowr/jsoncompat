@@ -48,18 +48,11 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
-            panic!(
-                "Previously-failing fixture now passes; remove allowed_failure from {:?}",
-                dir
-            );
+            panic!("Previously-failing fixture now passes; remove allowed_failure from {dir:?}");
         }
     } else {
-        assert_eq!(ser, expect.serializer, "serializer mismatch in {:?}", dir);
-        assert_eq!(
-            de, expect.deserializer,
-            "deserializer mismatch in {:?}",
-            dir
-        );
+        assert_eq!(ser, expect.serializer, "serializer mismatch in {dir:?}");
+        assert_eq!(de, expect.deserializer, "deserializer mismatch in {dir:?}");
     }
 
     // Load examples if present
@@ -72,37 +65,27 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         for v in &samples.old_only {
             assert!(
                 compiled_old.is_valid(v),
-                "old_only invalid in {:?}: {:?}",
-                dir,
-                v
+                "old_only invalid in {dir:?}: {v:?}"
             );
             assert!(
                 !compiled_new.is_valid(v),
-                "old_only accepted by NEW in {:?}: {:?}",
-                dir,
-                v
+                "old_only accepted by NEW in {dir:?}: {v:?}"
             );
         }
         for v in &samples.new_only {
             assert!(
                 compiled_new.is_valid(v),
-                "new_only invalid in {:?}: {:?}",
-                dir,
-                v
+                "new_only invalid in {dir:?}: {v:?}"
             );
             assert!(
                 !compiled_old.is_valid(v),
-                "new_only accepted by OLD in {:?}: {:?}",
-                dir,
-                v
+                "new_only accepted by OLD in {dir:?}: {v:?}"
             );
         }
         for v in &samples.both {
             assert!(
                 compiled_old.is_valid(v) && compiled_new.is_valid(v),
-                "both sample invalid in {:?}: {:?}",
-                dir,
-                v
+                "both sample invalid in {dir:?}: {v:?}"
             );
         }
     }
@@ -117,9 +100,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if expect.serializer {
             assert!(
                 compiled_old.is_valid(&v_new),
-                "serializer=true but OLD rejects generated value {:?} in {:?}",
-                v_new,
-                dir
+                "serializer=true but OLD rejects generated value {v_new:?} in {dir:?}"
             );
         }
 
@@ -127,9 +108,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if expect.deserializer {
             assert!(
                 compiled_new.is_valid(&v_old),
-                "deserializer=true but NEW rejects generated value {:?} in {:?}",
-                v_old,
-                dir
+                "deserializer=true but NEW rejects generated value {v_old:?} in {dir:?}"
             );
         }
     }
