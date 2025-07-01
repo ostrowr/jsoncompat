@@ -38,8 +38,7 @@ function HomePage() {
       <section className="bg-white py-16">
         <div className="mx-auto grid max-w-5xl grid-cols-1 gap-12 px-4 md:grid-cols-3">
           <Feature title="Escape version skew">
-            Don't have time to migrate everything to protobuf? Keep using JSON,
-            but safely.
+            Don't want to deal with protobuf? Keep using JSON, but safely.
           </Feature>
           <Feature title="Multi-platform (and fast)">
             Same engine for Rust, Python & the browser.
