@@ -30,5 +30,9 @@ wasm-demo:
   @echo "Press Ctrl+C to stop."
   @python -m http.server 8000
 
+release version="patch":
+  @echo "[just] releasing {{version}} (dry run)"
+  cargo release {{version}} --workspace
+
 default:
   @just --list
