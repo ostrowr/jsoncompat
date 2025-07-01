@@ -1,3 +1,5 @@
+> **ℹ️ See [jsoncompat.com](https://jsoncompat.com) for more information.**
+
 # jsoncompat
 
 Check compatibility of evolving JSON schemas.
