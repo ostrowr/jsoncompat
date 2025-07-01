@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "jsoncompat-py",
+# ]
+# ///
 """End-to-end demo for the Python bindings of jsoncompat.
 
 Executed by `just python-demo` which automatically builds the extension

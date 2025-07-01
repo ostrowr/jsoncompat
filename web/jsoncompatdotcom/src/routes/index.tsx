@@ -13,8 +13,8 @@ function HomePage() {
           jsoncompat
         </h1>
         <p className="mx-auto mt-6 max-w-3xl text-lg text-gray-700">
-          Safely evolve your JSON schemas. Check backward/forward compatibility
-          and automatically generate representative sample data – available in
+          Safely evolve your JSON schemas. Check backward/forward compatibility
+          and automatically generate representative sample data. Available in
           Rust, Python and WebAssembly.
         </p>
 
