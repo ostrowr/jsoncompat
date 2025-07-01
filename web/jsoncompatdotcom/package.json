@@ -19,7 +19,7 @@
     "@tanstack/react-router": "^1.123.2",
     "@tanstack/react-router-devtools": "^1.123.2",
     "@tanstack/router-plugin": "^1.123.2",
-    "jsoncompat": "0.1.0",
+    "jsoncompat": "^0.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tailwindcss": "^4.1.11"
