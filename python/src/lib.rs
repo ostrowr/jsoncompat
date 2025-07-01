@@ -92,7 +92,7 @@ fn jsoncompat_py(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
 
     // Expose the Role enum for convenience.
-    let role_enum = PyModule::new_bound(py, "Role")?;
+    let role_enum = PyModule::new(py, "Role")?;
     role_enum.add("SERIALIZER", "serializer")?;
     role_enum.add("DESERIALIZER", "deserializer")?;
     role_enum.add("BOTH", "both")?;
