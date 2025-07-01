@@ -48,16 +48,11 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
-            panic!(
-                "Previously-failing fixture now passes; remove allowed_failure from {dir:?}"
-            );
+            panic!("Previously-failing fixture now passes; remove allowed_failure from {dir:?}");
         }
     } else {
         assert_eq!(ser, expect.serializer, "serializer mismatch in {dir:?}");
-        assert_eq!(
-            de, expect.deserializer,
-            "deserializer mismatch in {dir:?}"
-        );
+        assert_eq!(de, expect.deserializer, "deserializer mismatch in {dir:?}");
     }
 
     // Load examples if present

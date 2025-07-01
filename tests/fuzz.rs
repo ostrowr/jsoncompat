@@ -228,9 +228,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 // Allowed failure – proceed.
             }
             (false, false) => {
-                panic!(
-                    "Should have panicked above, but didn't: schema #{idx} in {rel_str}"
-                );
+                panic!("Should have panicked above, but didn't: schema #{idx} in {rel_str}");
             }
         }
     }
