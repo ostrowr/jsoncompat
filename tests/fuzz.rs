@@ -221,8 +221,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             (true, true) => {
                 // This schema was previously whitelisted but now passes – flag it.
                 panic!(
-                    "Whitelisted failure now passes; please remove entry for schema #{idx} in {}",
-                    rel_str
+                    "Whitelisted failure now passes; please remove entry for schema #{idx} in {rel_str}"
                 );
             }
             (false, true) => {
@@ -230,8 +229,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             (false, false) => {
                 panic!(
-                    "Should have panicked above, but didn't: schema #{idx} in {}",
-                    rel_str
+                    "Should have panicked above, but didn't: schema #{idx} in {rel_str}"
                 );
             }
         }
