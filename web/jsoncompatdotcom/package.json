@@ -11,7 +11,8 @@
     "test": "vitest run",
     "format": "biome format",
     "lint": "biome lint",
-    "check": "biome check"
+    "check": "biome check",
+    "ci": "biome ci"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.4",

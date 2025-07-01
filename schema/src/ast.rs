@@ -898,7 +898,11 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
                 }
                 let mut resolved = build_schema_ast(current)?;
                 // Recursively resolve inside the resolved node as well
-                resolve_refs(&mut resolved, root_json, &[visited, &[r.clone()]].concat())?;
+                resolve_refs(
+                    &mut resolved,
+                    root_json,
+                    &[visited, std::slice::from_ref(r)].concat(),
+                )?;
                 *node = resolved;
             } else {
                 // For the purposes of fuzz‑generation we ignore external or

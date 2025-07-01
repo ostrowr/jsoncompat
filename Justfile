@@ -2,6 +2,16 @@
 
 # ---- Basic python smoke test ----
 
+check:
+  @echo "[just] checking Rust code …"
+  cargo fmt --all
+  cargo clippy --workspace --all-features --all-targets -- -D warnings
+  cargo check --workspace --all-features --all-targets --locked
+  cargo test --workspace --all-features --all-targets --locked
+  @echo "[just] checking TypeScript code …"
+  npm --prefix web/jsoncompatdotcom run ci
+
+
 python-demo:
   @command -v maturin >/dev/null 2>&1 || (echo "error: maturin not found (install with 'pip install maturin' or 'cargo install maturin --locked')" >&2 && exit 1)
   @echo "[just] building Python extension via maturin …"
