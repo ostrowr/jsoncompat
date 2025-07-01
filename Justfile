@@ -31,7 +31,7 @@ wasm-demo:
   @python -m http.server 8000
 
 release version="patch":
-  @echo "[just] releasing {{version}}"
+  @echo "[just] releasing {{version}} (dry run)"
   cargo release {{version}} --workspace
 
 default:
