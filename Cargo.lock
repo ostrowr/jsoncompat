@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "json_schema_ast"
-version = "0.1.5-alpha.1"
+version = "0.1.5-alpha.2"
 dependencies = [
  "anyhow",
  "jsonschema",
@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "json_schema_fuzz"
-version = "0.1.5-alpha.1"
+version = "0.1.5-alpha.2"
 dependencies = [
  "fancy-regex 0.12.0",
  "json_schema_ast",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat"
-version = "0.1.5-alpha.1"
+version = "0.1.5-alpha.2"
 dependencies = [
  "anyhow",
  "clap 4.5.37",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat_py"
-version = "0.1.5-alpha.1"
+version = "0.1.5-alpha.2"
 dependencies = [
  "anyhow",
  "json_schema_fuzz",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat_wasm"
-version = "0.1.5-alpha.1"
+version = "0.1.5-alpha.2"
 dependencies = [
  "anyhow",
  "getrandom",
