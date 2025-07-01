@@ -1,0 +1,26 @@
+[package]
+name = "jsoncompat_py"
+version = "0.1.1"
+edition = "2021"
+
+
+[lib]
+name = "jsoncompat_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.25.1", features = ["extension-module"] }
+serde_json = "1.0"
+anyhow = "1.0"
+rand = "0.8"
+
+# Internal crates
+jsoncompat = { path = ".." }
+json_schema_fuzz = { path = "../fuzz" }
+
+[features]
+default = []
+
+[package.metadata.maturin]
+# Include PEP 561 style typing information (py.typed + .pyi stubs) in the wheel.
+include-type-hints = true

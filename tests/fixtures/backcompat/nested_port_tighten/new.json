@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "host": {"type": "string"},
+          "port": {"type": "integer", "minimum": 1024, "maximum": 65535}
+        },
+        "required": ["host", "port"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["servers"],
+  "additionalProperties": false
+}

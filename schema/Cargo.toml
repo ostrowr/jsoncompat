@@ -1,0 +1,16 @@
+[package]
+name = "json_schema_ast"
+version = "0.1.1"
+edition = "2021"
+description = "JSON Schema Compatibility Checker"
+repository = "https://github.com/ostrowr/jsoncompat"
+license = "MIT"
+
+
+[dependencies]
+serde_json = "1.0.135"
+anyhow = "1.0.95"
+# by default, jsonschema tries to use reqwest to resolve remote schemas, which is not supported in wasm
+jsonschema = { version = "0.16", features = ["draft202012"], default-features = false}
+url = "2.5.4"
+percent-encoding = "2.3.1"

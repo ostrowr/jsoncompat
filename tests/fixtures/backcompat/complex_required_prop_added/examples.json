@@ -1,0 +1,8 @@
+{
+  "old_only": [
+    {"id": "1", "name": "old obj", "config": {"enable": true}}
+  ],
+  "new_only": [
+    {"id": "2", "name": "new obj", "description": "req", "config": {"enable": false}}
+  ]
+}

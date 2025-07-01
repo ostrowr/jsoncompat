@@ -1,0 +1,19 @@
+{
+  "new_only": [
+    {
+      "id": "123",
+      "name": "obj",
+      "description": "optional desc",
+      "tags": ["a"],
+      "nested": {"flag": true}
+    }
+  ],
+  "both": [
+    {
+      "id": "456",
+      "name": "no desc",
+      "tags": ["x", "y"],
+      "nested": {"flag": false, "count": 2}
+    }
+  ]
+}
