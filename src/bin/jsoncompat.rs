@@ -25,14 +25,13 @@ impl SchemaDoc {
     fn load(path: &str) -> Result<Self> {
         // Read JSON (stdin if `-`).
         let raw = read_to_string(path)?;
-        let json: Value =
-            serde_json::from_str(&raw).with_context(|| format!("parsing {}", path))?;
+        let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
 
         // Build AST and a validator for fast membership checks.
         let ast = backcompat::build_and_resolve_schema(&json)
-            .with_context(|| format!("building AST for {}", path))?;
+            .with_context(|| format!("building AST for {path}"))?;
         let validator =
-            compile(&json).with_context(|| format!("compiling validator for {}", path))?;
+            compile(&json).with_context(|| format!("compiling validator for {path}"))?;
 
         Ok(Self { ast, validator })
     }
@@ -54,7 +53,7 @@ fn read_to_string(path: &str) -> Result<String> {
         io::stdin().read_to_string(&mut buf)?;
         Ok(buf)
     } else {
-        fs::read_to_string(Path::new(path)).with_context(|| format!("reading {}", path))
+        fs::read_to_string(Path::new(path)).with_context(|| format!("reading {path}"))
     }
 }
 
