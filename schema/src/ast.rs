@@ -563,9 +563,7 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
                 else_schema,
             };
             if !base.is_empty() {
-                let mut subs = Vec::new();
-                subs.push(build_schema_ast(&Value::Object(base))?);
-                subs.push(cond_node);
+                let subs = vec![build_schema_ast(&Value::Object(base))?, cond_node];
                 return Ok(SchemaNode::AllOf(subs));
             } else {
                 return Ok(cond_node);
