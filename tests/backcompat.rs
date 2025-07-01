@@ -32,11 +32,17 @@ struct SampleSets {
     both: Vec<Value>,
 }
 
+fn read_json(path: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let data = fs::read_to_string(path)?;
+    let norm = data.replace("\r\n", "\n");
+    Ok(serde_json::from_str(&norm)?)
+}
+
 fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let dir: PathBuf = expect_file.parent().unwrap().into();
-    let old_raw: Value = serde_json::from_slice(&fs::read(dir.join("old.json"))?)?;
-    let new_raw: Value = serde_json::from_slice(&fs::read(dir.join("new.json"))?)?;
-    let expect: Expectation = serde_json::from_slice(&fs::read(expect_file)?)?;
+    let old_raw = read_json(&dir.join("old.json"))?;
+    let new_raw = read_json(&dir.join("new.json"))?;
+    let expect: Expectation = serde_json::from_value(read_json(expect_file)?)?;
 
     // Build ASTs
     let old_ast = build_and_resolve_schema(&old_raw)?;
@@ -58,7 +64,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Load examples if present
     let ex_path = dir.join("examples.json");
     if ex_path.exists() {
-        let samples: SampleSets = serde_json::from_slice(&fs::read(&ex_path)?)?;
+        let samples: SampleSets = serde_json::from_value(read_json(&ex_path)?)?;
         let compiled_old = compile(&old_raw)?;
         let compiled_new = compile(&new_raw)?;
 

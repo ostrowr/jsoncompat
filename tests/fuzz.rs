@@ -153,9 +153,14 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
 datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
 
+fn read_json(path: &Path) -> Result<Value, Box<dyn std::error::Error>> {
+    let data = fs::read_to_string(path)?;
+    let norm = data.replace("\r\n", "\n");
+    Ok(serde_json::from_str(&norm)?)
+}
+
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let bytes = fs::read(file)?;
-    let root: Value = serde_json::from_slice(&bytes)?;
+    let root = read_json(file)?;
 
     // Collect all schemas contained in the file.  For the official test‑suite
     // this is typically an array of objects each with a `schema` member.
