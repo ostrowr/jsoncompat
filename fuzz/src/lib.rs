@@ -1,4 +1,4 @@
-use json_schema_ast::SchemaNode;
+use json_schema_ast::{compile, SchemaNode};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -158,12 +158,15 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             // will eventually mark as invalid (whitelisted).
             random_any(rng, depth)
         }
-        SchemaNode::Not(_sub) => {
-            // We'll generate random_any but ensure it's not valid for `sub`.
-            // That might be tricky, so for this demonstration, do random_any.
-            // (We might produce something invalid for the main schema though.
-            //  'not' is tricky to satisfy generically.)
-
+        SchemaNode::Not(sub) => {
+            if let Ok(validator) = compile(&sub.to_json()) {
+                for candidate in [Value::Null, Value::Bool(true), Value::Bool(false)] {
+                    if !validator.is_valid(&candidate) {
+                        return candidate;
+                    }
+                }
+            }
+            // Fallback
             random_any(rng, depth)
         }
 

@@ -34,7 +34,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "not.json".to_string(),
-        [2, 3, 4, 5, 8].iter().cloned().collect(),
+        [3, 4, 5, 8].iter().cloned().collect(),
     );
     map.insert(
         "if-then-else.json".to_string(),
