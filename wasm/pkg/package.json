@@ -2,7 +2,7 @@
   "name": "jsoncompat_wasm",
   "type": "module",
   "description": "JSON Schema Compatibility Checker",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "license": "MIT",
   "repository": {
     "type": "git",

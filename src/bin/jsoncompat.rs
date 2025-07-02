@@ -13,6 +13,7 @@ use jsoncompat as backcompat;
 
 use owo_colors::OwoColorize;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// In‑memory representation of a schema with everything we need in one place.
@@ -105,7 +106,7 @@ enum Command {
     Generate(GenerateArgs),
     /// Check backward‑compatibility between two schema revisions.
     Compat(CompatArgs),
-    /// compatibility between two golden files.
+    /// Check compatibility between two golden files.
     CI(CiArgs),
 }
 
@@ -141,21 +142,25 @@ struct CompatArgs {
     depth: u8,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DisplayMode {
+    Table,
+    Json,
+}
+
 #[derive(Args)]
 struct CiArgs {
     /// Path to the *old* golden file.
     old: String,
     /// Path to the *new* golden file.
     new: String,
-    /// Additional fuzzing attempts (0 disables fuzz).
-    #[arg(short = 'f', long, value_name = "N", default_value_t = 0)]
-    fuzz: u32,
-    /// Depth used during fuzzing.
-    #[arg(short, long, default_value_t = 8)]
-    depth: u8,
+    /// Display mode.
+    #[arg(short, long, value_enum, default_value_t = DisplayMode::Table)]
+    display: DisplayMode,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum RoleCli {
     Serializer,
@@ -250,8 +255,6 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
     std::process::exit(1);
 }
 
-use serde::Deserialize;
-
 #[derive(Deserialize)]
 struct GoldenEntry {
     mode: RoleCli,
@@ -269,68 +272,132 @@ fn load_golden_file(path: &str) -> Result<GoldenFile> {
     Ok(golden)
 }
 
+#[derive(Debug, PartialEq, Serialize)]
+enum Status {
+    Ok,
+    MissingOld,
+    MissingNew,
+    ModeChanged,
+    Incompatible { example: Option<Value> },
+    Invalid,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+struct Grade {
+    id: String,
+    mode: RoleCli,
+    status: Status,
+}
+
+fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
+    match (old, new) {
+        (Some(old), Some(new)) => {
+            let (old_schema, new_schema) = (
+                SchemaDoc::load(&old.schema.to_string()),
+                SchemaDoc::load(&new.schema.to_string()),
+            );
+            match (old_schema, new_schema) {
+                (Ok(old_schema), Ok(new_schema)) => {
+                    let ok =
+                        backcompat::check_compat(&old_schema.ast, &new_schema.ast, old.mode.into());
+                    if !ok {
+                        let mut rng = rand::thread_rng();
+                        let example = sample_incompat(
+                            &old_schema,
+                            &new_schema,
+                            old.mode.into(),
+                            100,
+                            8,
+                            &mut rng,
+                        );
+                        Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Incompatible { example },
+                        }
+                    } else if old.mode != new.mode {
+                        Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::ModeChanged,
+                        }
+                    } else {
+                        Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Ok,
+                        }
+                    }
+                }
+                _ => Grade {
+                    id: new.stable_id.clone(),
+                    mode: old.mode,
+                    status: Status::Invalid,
+                },
+            }
+        }
+        (Some(old), None) => Grade {
+            id: old.stable_id.clone(),
+            mode: old.mode,
+            status: Status::MissingNew,
+        },
+        (None, Some(new)) => Grade {
+            id: new.stable_id.clone(),
+            mode: new.mode,
+            status: Status::MissingOld,
+        },
+        (None, None) => unreachable!(
+            "grade_entry called with both old and new as None; this should never happen"
+        ),
+    }
+}
+
+fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
+    println!("{}", "ID".bold().green());
+    for grade in grades {
+        println!("{}", grade.id.bold().green());
+    }
+    Ok(())
+}
+
+fn print_grades_json(grades: &Vec<Grade>) -> Result<()> {
+    let json = serde_json::to_string_pretty(&grades)?;
+    println!("{json}");
+    Ok(())
+}
+
+fn print_grades(grades: &Vec<Grade>, display: DisplayMode) -> Result<()> {
+    match display {
+        DisplayMode::Table => print_grades_table(grades),
+        DisplayMode::Json => print_grades_json(grades),
+    }
+}
+
 fn cmd_ci(args: CiArgs) -> Result<()> {
     let old = load_golden_file(&args.old)?;
     let new = load_golden_file(&args.new)?;
 
-    // First, check for any ids that are in new but not old.
-    let new_only = new.keys().filter(|id| !old.contains_key(*id));
-    for id in new_only {
-        eprintln!(
-            "{} Schema {} is missing from the old golden file",
-            "✘".red(),
-            id
-        );
-    }
+    let all_ids = old
+        .keys()
+        .chain(new.keys())
+        .collect::<std::collections::HashSet<_>>();
 
-    // Check for any ids that are in old but not new.
-    let old_only = old.keys().filter(|id| !new.contains_key(*id));
-    for id in old_only {
-        eprintln!(
-            "{} Schema {} is missing from the new golden file",
-            "✘".red(),
-            id
-        );
-    }
+    let grades: Vec<Grade> = all_ids
+        .iter()
+        .map(|id| {
+            let old_entry = old.get(*id);
+            let new_entry = new.get(*id);
+            grade_entry(old_entry, new_entry)
+        })
+        .collect();
 
-    // Warn if there are any ids whose modes have changed
-    for id in old.keys().filter(|id| new.contains_key(*id)) {
-        let old_entry = old.get(id).unwrap();
-        let new_entry = new.get(id).unwrap();
-        if old_entry.mode != new_entry.mode {
-            eprintln!(
-                "{} Schema {} mode changed from {:?} to {:?}",
-                "⚠".yellow(),
-                id,
-                old_entry.mode,
-                new_entry.mode
-            );
-        }
-    }
+    print_grades(&grades, args.display)?;
 
-    // Check for any ids whose schemas have not changed
-    for id in old.keys().filter(|id| new.contains_key(*id)) {
-        let old_entry = old.get(id).unwrap();
-        let new_entry = new.get(id).unwrap();
-        if old_entry.schema == new_entry.schema {
-            eprintln!("{} Schema {} has not changed", "✔".green(), id);
-        }
-    }
-
-    // For any ids whose schemas have changed, check for compatibility between the old and new schemas.
-    for id in old.keys().filter(|id| new.contains_key(*id)) {
-        let old_entry = old.get(id).unwrap();
-        let new_entry = new.get(id).unwrap();
-        if old_entry.schema != new_entry.schema {
-            eprintln!("{} Schema {} has changed", "⚠".yellow(), id);
-        }
-
-        let old_schema = SchemaDoc::load(&old_entry.schema.to_string())?; // TODO; unnecessary serialization here
-        let new_schema = SchemaDoc::load(&new_entry.schema.to_string())?;
-        let ok = backcompat::check_compat(&old_schema.ast, &new_schema.ast, new_entry.mode.into());
-        if !ok {
-            eprintln!("{} Schema {} is not backward-compatible", "✘".red(), id);
-        }
+    if grades
+        .iter()
+        .any(|g| matches!(g.status, Status::Incompatible { .. } | Status::Invalid))
+    {
+        anyhow::bail!("Found incompatible or invalid grades");
     }
 
     Ok(())

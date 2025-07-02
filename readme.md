@@ -92,3 +92,10 @@ just check
 ```
 
 See the [Justfile](Justfile) for more commands
+
+## Releasing
+
+`just release` will dry-run the release process for a patch release.
+
+Right now, releases to PyPI and npm are done in CI via manual dispatch of the `CI` workflow
+on a tag. Releases to cargo are done manually for now.
