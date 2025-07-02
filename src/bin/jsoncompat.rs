@@ -1,5 +1,6 @@
 //! Command‑line interface for the `jsoncompat` crate.
 
+use owo_colors::OwoColorize;
 use std::{
     fs,
     io::{self, Read},
@@ -11,12 +12,12 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use json_schema_ast::{compile, JSONSchema};
 use jsoncompat as backcompat;
 
-use owo_colors::OwoColorize;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// In‑memory representation of a schema with everything we need in one place.
+/// In‑memory representation of a schema with a cached validator.
+#[derive(Debug)]
 struct SchemaDoc {
     ast: backcompat::SchemaNode,
     validator: JSONSchema,
@@ -58,10 +59,7 @@ fn read_to_string(path: &str) -> Result<String> {
     }
 }
 
-// -----------------------------------------------------------------------------
 // Sampling logic shared by fuzzing and counterexample search
-// -----------------------------------------------------------------------------
-
 fn sample_incompat<R: Rng>(
     old: &SchemaDoc,
     new: &SchemaDoc,
@@ -83,10 +81,6 @@ fn sample_incompat<R: Rng>(
         backcompat::Role::Both => try_once(new, old).or_else(|| try_once(old, new)),
     }
 }
-
-// -----------------------------------------------------------------------------
-// CLI (clap)
-// -----------------------------------------------------------------------------
 
 #[derive(Parser)]
 #[command(
@@ -293,18 +287,25 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
     match (old, new) {
         (Some(old), Some(new)) => {
             let (old_schema, new_schema) = (
-                SchemaDoc::load(&old.schema.to_string()),
-                SchemaDoc::load(&new.schema.to_string()),
+                backcompat::build_and_resolve_schema(&old.schema),
+                backcompat::build_and_resolve_schema(&new.schema),
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
-                    let ok =
-                        backcompat::check_compat(&old_schema.ast, &new_schema.ast, old.mode.into());
+                    let ok = backcompat::check_compat(&old_schema, &new_schema, old.mode.into());
                     if !ok {
+                        let old_validator = compile(&old.schema).unwrap();
+                        let new_validator = compile(&new.schema).unwrap();
                         let mut rng = rand::thread_rng();
                         let example = sample_incompat(
-                            &old_schema,
-                            &new_schema,
+                            &SchemaDoc {
+                                ast: old_schema,
+                                validator: old_validator,
+                            },
+                            &SchemaDoc {
+                                ast: new_schema,
+                                validator: new_validator,
+                            },
                             old.mode.into(),
                             100,
                             8,
@@ -353,10 +354,94 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
 }
 
 fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
-    println!("{}", "ID".bold().green());
+    // Table headers
+    let header_id = "ID";
+    let header_mode = "Mode";
+    let header_status = "Status";
+
+    // Compute column widths
+    let id_width = grades
+        .iter()
+        .map(|g| g.id.len())
+        .max()
+        .unwrap_or(2)
+        .max(header_id.len());
+    let mode_width = grades
+        .iter()
+        .map(|g| format!("{:?}", g.mode).len())
+        .max()
+        .unwrap_or(4)
+        .max(header_mode.len());
+    let status_width = grades
+        .iter()
+        .map(|g| match &g.status {
+            Status::Ok => "Ok".len(),
+            Status::MissingOld => "MissingOld".len(),
+            Status::MissingNew => "MissingNew".len(),
+            Status::ModeChanged => "ModeChanged".len(),
+            Status::Incompatible { .. } => "Incompatible".len(),
+            Status::Invalid => "Invalid".len(),
+        })
+        .max()
+        .unwrap_or(6)
+        .max(header_status.len());
+
+    // Print header
+    println!(
+        "{:<idw$}  {:<modew$}  {:<statusw$}",
+        header_id.bold(),
+        header_mode.bold(),
+        header_status.bold(),
+        idw = id_width,
+        modew = mode_width,
+        statusw = status_width
+    );
+
+    // Print separator
+    println!(
+        "{:-<idw$}  {:-<modew$}  {:-<statusw$}",
+        "",
+        "",
+        "",
+        idw = id_width,
+        modew = mode_width,
+        statusw = status_width
+    );
+
+    // Print each grade
     for grade in grades {
-        println!("{}", grade.id.bold().green());
+        let status_str = match &grade.status {
+            Status::Ok => "Ok".green().to_string(),
+            Status::MissingOld => "MissingOld".yellow().to_string(),
+            Status::MissingNew => "MissingNew".yellow().to_string(),
+            Status::ModeChanged => "ModeChanged".yellow().to_string(),
+            Status::Incompatible { example } => {
+                if let Some(example) = example {
+                    let example_str = example.to_string();
+                    format!("Incompatible: (example: {example_str})")
+                        .red()
+                        .to_string()
+                } else {
+                    "Incompatible".red().to_string()
+                }
+            }
+            Status::Invalid => "Invalid".red().to_string(),
+        };
+
+        let mode = grade.mode;
+        let mode_str = format!("{mode:?}");
+
+        println!(
+            "{:<idw$}  {:<modew$}  {:<statusw$}",
+            grade.id,
+            mode_str.cyan(),
+            status_str,
+            idw = id_width,
+            modew = mode_width,
+            statusw = status_width
+        );
     }
+
     Ok(())
 }
 
@@ -402,10 +487,6 @@ fn cmd_ci(args: CiArgs) -> Result<()> {
 
     Ok(())
 }
-
-// -----------------------------------------------------------------------------
-// Compile‑time smoke test
-// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
