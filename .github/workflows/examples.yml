@@ -28,12 +28,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install uv
 
-      - name: Install dependencies with uv
-        run: |
-          uv sync
-
       - name: Run pytest
         run: |
-          uv run pytest
+          uv run --dev pytest
 
+  basic:
+    name: Test basic
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/python/basic
 
+    steps:
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+
+      - name: Run the demo smoketest
+        run: |
+          uv run demo.py
