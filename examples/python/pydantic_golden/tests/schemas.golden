@@ -1,5 +1,65 @@
 {
-  "x1": {
+  "several_fields": {
+    "mode": "both",
+    "schema": {
+      "properties": {
+        "active": {
+          "default": true,
+          "title": "Active",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "default",
+          "maxLength": 20,
+          "title": "Name",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "x": {
+          "anyOf": [
+            {
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "X"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        },
+        "z": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Z"
+        }
+      },
+      "required": [
+        "y"
+      ],
+      "title": "X4",
+      "type": "object"
+    },
+    "stable_id": "several_fields"
+  },
+  "simple_int": {
     "mode": "serializer",
     "schema": {
       "properties": {
@@ -14,15 +74,38 @@
       "title": "X",
       "type": "object"
     },
-    "stable_id": "x1"
+    "stable_id": "simple_int"
   },
-  "x2": {
+  "simple_optional_str": {
+    "mode": "deserializer",
+    "schema": {
+      "properties": {
+        "x": {
+          "anyOf": [
+            {
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "X"
+        }
+      },
+      "title": "X3",
+      "type": "object"
+    },
+    "stable_id": "simple_optional_str"
+  },
+  "simple_str": {
     "mode": "serializer",
     "schema": {
       "properties": {
         "x": {
           "title": "X",
-          "type": "integer"
+          "type": "string"
         }
       },
       "required": [
@@ -31,6 +114,6 @@
       "title": "X2",
       "type": "object"
     },
-    "stable_id": "x2"
+    "stable_id": "simple_str"
   }
 }

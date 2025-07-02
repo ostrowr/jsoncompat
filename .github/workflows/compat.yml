@@ -1,0 +1,33 @@
+# Example compatibility checks
+
+name: Compat
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  compat:
+    name: Check compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find merge base with main
+        id: merge_base
+        run: |
+          git fetch origin main
+          echo "MERGE_BASE=$(git merge-base HEAD origin/main)" >> $GITHUB_OUTPUT
+
+      - name: Checkout pydantic_golden from MERGE_BASE
+        run: |
+          cp examples/python/pydantic_golden/tests/schemas.golden examples/python/pydantic_golden/tests/schemas.golden.new
+          git checkout ${{ steps.merge_base.outputs.MERGE_BASE }} -- examples/python/pydantic_golden/tests/schemas.golden
+
+      - name: Run jsoncompat ci
+        run: |
+          cargo run --bin jsoncompat ci examples/python/pydantic_golden/tests/schemas.golden examples/python/pydantic_golden/tests/schemas.golden.new

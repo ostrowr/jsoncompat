@@ -28,6 +28,7 @@ owo-colors = "3.5"
 # Our own strict Draft‑2020 implementation crate
 json_schema_ast = { path = "schema", version = "0.1.5" }
 json_schema_fuzz = { path = "fuzz", version = "0.1.5" }
+console = "0.16.0"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }

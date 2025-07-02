@@ -1,5 +1,7 @@
 //! Command‑line interface for the `jsoncompat` crate.
 
+use console::{pad_str, Alignment};
+use owo_colors::OwoColorize;
 use std::{
     fs,
     io::{self, Read},
@@ -11,11 +13,12 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use json_schema_ast::{compile, JSONSchema};
 use jsoncompat as backcompat;
 
-use owo_colors::OwoColorize;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// In‑memory representation of a schema with everything we need in one place.
+/// In‑memory representation of a schema with a cached validator.
+#[derive(Debug)]
 struct SchemaDoc {
     ast: backcompat::SchemaNode,
     validator: JSONSchema,
@@ -57,10 +60,7 @@ fn read_to_string(path: &str) -> Result<String> {
     }
 }
 
-// -----------------------------------------------------------------------------
 // Sampling logic shared by fuzzing and counterexample search
-// -----------------------------------------------------------------------------
-
 fn sample_incompat<R: Rng>(
     old: &SchemaDoc,
     new: &SchemaDoc,
@@ -83,10 +83,6 @@ fn sample_incompat<R: Rng>(
     }
 }
 
-// -----------------------------------------------------------------------------
-// CLI (clap)
-// -----------------------------------------------------------------------------
-
 #[derive(Parser)]
 #[command(
     name = "jsoncompat",
@@ -105,6 +101,8 @@ enum Command {
     Generate(GenerateArgs),
     /// Check backward‑compatibility between two schema revisions.
     Compat(CompatArgs),
+    /// Check compatibility between two golden files.
+    CI(CiArgs),
 }
 
 #[derive(Args)]
@@ -139,7 +137,26 @@ struct CompatArgs {
     depth: u8,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DisplayMode {
+    Table,
+    Json,
+}
+
+#[derive(Args)]
+struct CiArgs {
+    /// Path to the *old* golden file.
+    old: String,
+    /// Path to the *new* golden file.
+    new: String,
+    /// Display mode.
+    #[arg(short, long, value_enum, default_value_t = DisplayMode::Table)]
+    display: DisplayMode,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 enum RoleCli {
     Serializer,
     Deserializer,
@@ -161,6 +178,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Generate(a) => cmd_generate(a),
         Command::Compat(a) => cmd_compat(a),
+        Command::CI(a) => cmd_ci(a),
     }
 }
 
@@ -232,9 +250,296 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
     std::process::exit(1);
 }
 
-// -----------------------------------------------------------------------------
-// Compile‑time smoke test
-// -----------------------------------------------------------------------------
+#[derive(Deserialize)]
+struct GoldenEntry {
+    mode: RoleCli,
+    schema: serde_json::Value,
+    stable_id: String,
+}
+
+type GoldenFile = std::collections::HashMap<String, GoldenEntry>;
+
+fn load_golden_file(path: &str) -> Result<GoldenFile> {
+    let raw = read_to_string(path)?;
+    let golden: GoldenFile =
+        serde_json::from_str(&raw).with_context(|| format!("parsing golden file {path}"))?;
+
+    Ok(golden)
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+enum Status {
+    Ok,
+    MissingOld,
+    MissingNew,
+    ModeChanged,
+    Incompatible { example: Option<Value> },
+    Invalid,
+    Identical,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+struct Grade {
+    id: String,
+    mode: RoleCli,
+    status: Status,
+}
+
+fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
+    match (old, new) {
+        (Some(old), Some(new)) => {
+            let (old_schema, new_schema) = (
+                backcompat::build_and_resolve_schema(&old.schema),
+                backcompat::build_and_resolve_schema(&new.schema),
+            );
+            match (old_schema, new_schema) {
+                (Ok(old_schema), Ok(new_schema)) => {
+                    if old.schema == new.schema {
+                        return Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Identical,
+                        };
+                    }
+                    let ok = backcompat::check_compat(&old_schema, &new_schema, old.mode.into());
+                    if !ok {
+                        let old_validator = compile(&old.schema).unwrap();
+                        let new_validator = compile(&new.schema).unwrap();
+                        let mut rng = rand::thread_rng();
+                        let example = sample_incompat(
+                            &SchemaDoc {
+                                ast: old_schema,
+                                validator: old_validator,
+                            },
+                            &SchemaDoc {
+                                ast: new_schema,
+                                validator: new_validator,
+                            },
+                            old.mode.into(),
+                            100,
+                            8,
+                            &mut rng,
+                        );
+                        Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Incompatible { example },
+                        }
+                    } else if old.mode != new.mode {
+                        Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::ModeChanged,
+                        }
+                    } else {
+                        Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Ok,
+                        }
+                    }
+                }
+                _ => Grade {
+                    id: new.stable_id.clone(),
+                    mode: old.mode,
+                    status: Status::Invalid,
+                },
+            }
+        }
+        (Some(old), None) => Grade {
+            id: old.stable_id.clone(),
+            mode: old.mode,
+            status: Status::MissingNew,
+        },
+        (None, Some(new)) => Grade {
+            id: new.stable_id.clone(),
+            mode: new.mode,
+            status: Status::MissingOld,
+        },
+        (None, None) => unreachable!(
+            "grade_entry called with both old and new as None; this should never happen"
+        ),
+    }
+}
+
+fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
+    // Table headers
+    let header_id = "ID";
+    let header_mode = "Mode";
+    let header_status = "Status";
+    let header_example = "Example";
+
+    // Compute column widths
+    let id_width = grades
+        .iter()
+        .map(|g| g.id.len())
+        .max()
+        .unwrap_or(2)
+        .max(header_id.len());
+    let mode_width = grades
+        .iter()
+        .map(|g| format!("{:?}", g.mode).len())
+        .max()
+        .unwrap_or(4)
+        .max(header_mode.len());
+    let status_width = grades
+        .iter()
+        .map(|g| match &g.status {
+            Status::Ok => "Ok".len(),
+            Status::MissingOld => "MissingOld".len(),
+            Status::MissingNew => "MissingNew".len(),
+            Status::ModeChanged => "ModeChanged".len(),
+            Status::Incompatible { .. } => "Incompatible".len(),
+            Status::Invalid => "Invalid".len(),
+            Status::Identical => "Identical".len(),
+        })
+        .max()
+        .unwrap_or(6)
+        .max(header_status.len());
+    let no_example = "Could not find example";
+    let example_width = grades
+        .iter()
+        .map(|g| match &g.status {
+            Status::Incompatible { example } => {
+                if let Some(example) = example {
+                    let s = example.to_string();
+                    s.len()
+                } else {
+                    no_example.len()
+                }
+            }
+            _ => "N/A".len(),
+        })
+        .max()
+        .unwrap_or(7)
+        .max(header_example.len());
+
+    // Print header
+    println!(
+        "{}  {}  {}  {}",
+        pad_str(
+            &header_id.bold().to_string(),
+            id_width,
+            Alignment::Left,
+            None
+        ),
+        pad_str(
+            &header_mode.bold().to_string(),
+            mode_width,
+            Alignment::Left,
+            None
+        ),
+        pad_str(
+            &header_status.bold().to_string(),
+            status_width,
+            Alignment::Left,
+            None
+        ),
+        pad_str(
+            &header_example.bold().to_string(),
+            example_width,
+            Alignment::Left,
+            None
+        )
+    );
+
+    // Print separator
+    println!(
+        "{}  {}  {}  {}",
+        pad_str("", id_width, Alignment::Left, Some("-")),
+        pad_str("", mode_width, Alignment::Left, Some("-")),
+        pad_str("", status_width, Alignment::Left, Some("-")),
+        pad_str("", example_width, Alignment::Left, Some("-"))
+    );
+
+    // Print each grade
+    for grade in grades {
+        let (status_str, example_str) = match &grade.status {
+            Status::Ok => ("Ok".green().to_string(), "N/A".to_string()),
+            Status::MissingOld => ("MissingOld".yellow().to_string(), "N/A".to_string()),
+            Status::MissingNew => ("MissingNew".yellow().to_string(), "N/A".to_string()),
+            Status::ModeChanged => ("ModeChanged".yellow().to_string(), "N/A".to_string()),
+            Status::Incompatible { example } => {
+                let status = "Incompatible".red().to_string();
+                let example_str = if let Some(example) = example {
+                    example.to_string()
+                } else {
+                    no_example.to_string()
+                };
+                (status, example_str)
+            }
+            Status::Invalid => ("Invalid".red().to_string(), "N/A".to_string()),
+            Status::Identical => ("Identical".green().to_string(), "N/A".to_string()),
+        };
+
+        let mode = grade.mode;
+        let mode_str = format!("{mode:?}");
+
+        println!(
+            "{}  {}  {}  {}",
+            pad_str(&grade.id, id_width, Alignment::Left, None),
+            pad_str(
+                &mode_str.cyan().to_string(),
+                mode_width,
+                Alignment::Left,
+                None
+            ),
+            pad_str(&status_str, status_width, Alignment::Left, None),
+            pad_str(
+                &example_str.bright_black().to_string(),
+                example_width,
+                Alignment::Left,
+                None
+            )
+        );
+    }
+
+    Ok(())
+}
+
+fn print_grades_json(grades: &Vec<Grade>) -> Result<()> {
+    let json = serde_json::to_string_pretty(&grades)?;
+    println!("{json}");
+    Ok(())
+}
+
+fn print_grades(grades: &Vec<Grade>, display: DisplayMode) -> Result<()> {
+    match display {
+        DisplayMode::Table => print_grades_table(grades),
+        DisplayMode::Json => print_grades_json(grades),
+    }
+}
+
+fn cmd_ci(args: CiArgs) -> Result<()> {
+    let old = load_golden_file(&args.old)?;
+    let new = load_golden_file(&args.new)?;
+
+    let all_ids = old
+        .keys()
+        .chain(new.keys())
+        .collect::<std::collections::HashSet<_>>();
+
+    let grades: Vec<Grade> = all_ids
+        .iter()
+        .map(|id| {
+            let old_entry = old.get(*id);
+            let new_entry = new.get(*id);
+            grade_entry(old_entry, new_entry)
+        })
+        .collect();
+
+    print_grades(&grades, args.display)?;
+
+    if grades
+        .iter()
+        .any(|g| matches!(g.status, Status::Incompatible { .. } | Status::Invalid))
+    {
+        println!("\nError: Found incompatible or invalid grades");
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
