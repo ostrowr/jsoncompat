@@ -32,6 +32,8 @@ jobs:
         run: |
           uv run --dev pytest
 
+
+
   basic:
     name: Test basic
     runs-on: ubuntu-latest
