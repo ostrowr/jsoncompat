@@ -105,6 +105,8 @@ enum Command {
     Generate(GenerateArgs),
     /// Check backward‑compatibility between two schema revisions.
     Compat(CompatArgs),
+    /// compatibility between two golden files.
+    CI(CiArgs),
 }
 
 #[derive(Args)]
@@ -139,7 +141,22 @@ struct CompatArgs {
     depth: u8,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug)]
+#[derive(Args)]
+struct CiArgs {
+    /// Path to the *old* golden file.
+    old: String,
+    /// Path to the *new* golden file.
+    new: String,
+    /// Additional fuzzing attempts (0 disables fuzz).
+    #[arg(short = 'f', long, value_name = "N", default_value_t = 0)]
+    fuzz: u32,
+    /// Depth used during fuzzing.
+    #[arg(short, long, default_value_t = 8)]
+    depth: u8,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum RoleCli {
     Serializer,
     Deserializer,
@@ -161,6 +178,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Generate(a) => cmd_generate(a),
         Command::Compat(a) => cmd_compat(a),
+        Command::CI(a) => cmd_ci(a),
     }
 }
 
@@ -230,6 +248,92 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
     }
 
     std::process::exit(1);
+}
+
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct GoldenEntry {
+    mode: RoleCli,
+    schema: serde_json::Value,
+    stable_id: String,
+}
+
+type GoldenFile = std::collections::HashMap<String, GoldenEntry>;
+
+fn load_golden_file(path: &str) -> Result<GoldenFile> {
+    let raw = read_to_string(path)?;
+    let golden: GoldenFile =
+        serde_json::from_str(&raw).with_context(|| format!("parsing golden file {path}"))?;
+
+    Ok(golden)
+}
+
+fn cmd_ci(args: CiArgs) -> Result<()> {
+    let old = load_golden_file(&args.old)?;
+    let new = load_golden_file(&args.new)?;
+
+    // First, check for any ids that are in new but not old.
+    let new_only = new.keys().filter(|id| !old.contains_key(*id));
+    for id in new_only {
+        eprintln!(
+            "{} Schema {} is missing from the old golden file",
+            "✘".red(),
+            id
+        );
+    }
+
+    // Check for any ids that are in old but not new.
+    let old_only = old.keys().filter(|id| !new.contains_key(*id));
+    for id in old_only {
+        eprintln!(
+            "{} Schema {} is missing from the new golden file",
+            "✘".red(),
+            id
+        );
+    }
+
+    // Warn if there are any ids whose modes have changed
+    for id in old.keys().filter(|id| new.contains_key(*id)) {
+        let old_entry = old.get(id).unwrap();
+        let new_entry = new.get(id).unwrap();
+        if old_entry.mode != new_entry.mode {
+            eprintln!(
+                "{} Schema {} mode changed from {:?} to {:?}",
+                "⚠".yellow(),
+                id,
+                old_entry.mode,
+                new_entry.mode
+            );
+        }
+    }
+
+    // Check for any ids whose schemas have not changed
+    for id in old.keys().filter(|id| new.contains_key(*id)) {
+        let old_entry = old.get(id).unwrap();
+        let new_entry = new.get(id).unwrap();
+        if old_entry.schema == new_entry.schema {
+            eprintln!("{} Schema {} has not changed", "✔".green(), id);
+        }
+    }
+
+    // For any ids whose schemas have changed, check for compatibility between the old and new schemas.
+    for id in old.keys().filter(|id| new.contains_key(*id)) {
+        let old_entry = old.get(id).unwrap();
+        let new_entry = new.get(id).unwrap();
+        if old_entry.schema != new_entry.schema {
+            eprintln!("{} Schema {} has changed", "⚠".yellow(), id);
+        }
+
+        let old_schema = SchemaDoc::load(&old_entry.schema.to_string())?; // TODO; unnecessary serialization here
+        let new_schema = SchemaDoc::load(&new_entry.schema.to_string())?;
+        let ok = backcompat::check_compat(&old_schema.ast, &new_schema.ast, new_entry.mode.into());
+        if !ok {
+            eprintln!("{} Schema {} is not backward-compatible", "✘".red(), id);
+        }
+    }
+
+    Ok(())
 }
 
 // -----------------------------------------------------------------------------
