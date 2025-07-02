@@ -1,4 +1,4 @@
-from decorator import check_compatibility
+from demo.decorator import check_compatibility
 import pydantic
 
 

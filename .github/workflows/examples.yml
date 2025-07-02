@@ -30,7 +30,6 @@ jobs:
 
       - name: Run pytest
         run: |
-          uv sync --dev
           uv run --dev pytest
 
   basic:

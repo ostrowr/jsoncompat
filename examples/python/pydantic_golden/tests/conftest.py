@@ -1,6 +1,5 @@
 import sys
 import os
-import decorator
 from dataclasses import dataclass
 from typing import Literal, Callable, Protocol
 import pytest
@@ -53,4 +52,6 @@ def _check_compatibility_test_patch[C: HasJsonSchema](
 
 def pytest_configure() -> None:
     """Run once, as soon as pytest starts collecting tests."""
+    from demo import decorator
+
     decorator.check_compatibility = _check_compatibility_test_patch
