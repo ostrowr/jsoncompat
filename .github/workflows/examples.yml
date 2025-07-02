@@ -30,6 +30,7 @@ jobs:
 
       - name: Run pytest
         run: |
+          uv sync --dev
           uv run --dev pytest
 
   basic:
@@ -56,4 +57,4 @@ jobs:
 
       - name: Run the demo smoketest
         run: |
-          uv run demo.py
+          uv run --prerelease=allow demo.py
