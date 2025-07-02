@@ -1,5 +1,9 @@
 # Developer convenience tasks -------------------------------------------------
 
+default:
+  @just --list
+
+
 # ---- Basic python smoke test ----
 
 check:
@@ -9,7 +13,7 @@ check:
   cargo check --workspace --all-features --all-targets --locked
   cargo test --workspace --all-features --all-targets --locked
   @echo "[just] checking TypeScript code …"
-  npm --prefix web/jsoncompatdotcom run ci
+  pnpm --prefix web/jsoncompatdotcom run ci
 
 
 python-demo:
@@ -34,5 +38,3 @@ release version="patch":
   @echo "[just] releasing {{version}} (dry run)"
   cargo release {{version}} --workspace
 
-default:
-  @just --list
