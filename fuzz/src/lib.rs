@@ -1,5 +1,7 @@
 use json_schema_ast::SchemaNode;
+use rand::distributions::Distribution;
 use rand::Rng;
+use rand_regex::Regex as RandRegex;
 use serde_json::{Map, Value};
 
 /// Generate a random JSON value *intended* to satisfy `schema`.
@@ -170,7 +172,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         SchemaNode::String {
             min_length,
             max_length,
-            pattern: _, // TODO: honor `pattern` when present
+            pattern,
             enumeration,
         } => {
             if let Some(e) = enumeration {
@@ -178,6 +180,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     // pick from enum
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
+                }
+            }
+
+            if let Some(pat) = pattern {
+                let trimmed = pat.trim_start_matches('^').trim_end_matches('$');
+                if let Ok(gen) = RandRegex::compile(trimmed, 64) {
+                    return Value::String(gen.sample(rng));
                 }
             }
 

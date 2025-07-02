@@ -576,6 +576,7 @@ dependencies = [
  "fancy-regex 0.12.0",
  "json_schema_ast",
  "rand",
+ "rand_regex",
  "serde_json",
  "url",
 ]
@@ -1046,6 +1047,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
+]
+
+[[package]]
+name = "rand_regex"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bfbd599a8c757f89100e3ae559fb1ef9efa1cfd9276136862e3089dec627b31"
+dependencies = [
+ "rand",
+ "regex-syntax",
 ]
 
 [[package]]
