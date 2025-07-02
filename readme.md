@@ -76,3 +76,19 @@ and you make `name` required, attempting to load that data into memory by deseri
 you'll be unable to deserialize any data that doesn't have a `name` property, which is a breaking change for the `deserializer` role.
 
 If a schema is used by both a serializer and a deserializer, then a change to the schema that can break either should be considered "breaking."
+
+## Development
+
+Requirements:
+
+`maturin`: install with `pip install maturin` or `cargo install maturin --locked`
+
+`wasm-pack`: install with `cargo install wasm-pack --locked`
+
+Run tests:
+
+```bash
+just check
+```
+
+See the [Justfile](Justfile) for more commands
