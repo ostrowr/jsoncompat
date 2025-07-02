@@ -1,0 +1,36 @@
+{
+  "x1": {
+    "mode": "serializer",
+    "schema": {
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x"
+      ],
+      "title": "X",
+      "type": "object"
+    },
+    "stable_id": "x1"
+  },
+  "x2": {
+    "mode": "serializer",
+    "schema": {
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x"
+      ],
+      "title": "X2",
+      "type": "object"
+    },
+    "stable_id": "x2"
+  }
+}
