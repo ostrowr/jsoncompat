@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout current sources
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Find merge base with main
         id: merge_base
