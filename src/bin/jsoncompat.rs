@@ -1,5 +1,6 @@
 //! Command‑line interface for the `jsoncompat` crate.
 
+use console::{pad_str, Alignment};
 use owo_colors::OwoColorize;
 use std::{
     fs,
@@ -162,6 +163,12 @@ enum RoleCli {
     Both,
 }
 
+impl std::fmt::Display for RoleCli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl From<RoleCli> for backcompat::Role {
     fn from(r: RoleCli) -> Self {
         match r {
@@ -274,6 +281,7 @@ enum Status {
     ModeChanged,
     Incompatible { example: Option<Value> },
     Invalid,
+    Identical,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -292,6 +300,13 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
+                    if old.schema == new.schema {
+                        return Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Identical,
+                        };
+                    }
                     let ok = backcompat::check_compat(&old_schema, &new_schema, old.mode.into());
                     if !ok {
                         let old_validator = compile(&old.schema).unwrap();
@@ -358,6 +373,7 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
     let header_id = "ID";
     let header_mode = "Mode";
     let header_status = "Status";
+    let header_example = "Example";
 
     // Compute column widths
     let id_width = grades
@@ -381,64 +397,106 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
             Status::ModeChanged => "ModeChanged".len(),
             Status::Incompatible { .. } => "Incompatible".len(),
             Status::Invalid => "Invalid".len(),
+            Status::Identical => "Identical".len(),
         })
         .max()
         .unwrap_or(6)
         .max(header_status.len());
+    let no_example = "Could not find example";
+    let example_width = grades
+        .iter()
+        .map(|g| match &g.status {
+            Status::Incompatible { example } => {
+                if let Some(example) = example {
+                    let s = example.to_string();
+                    s.len()
+                } else {
+                    no_example.len()
+                }
+            }
+            _ => "N/A".len(),
+        })
+        .max()
+        .unwrap_or(7)
+        .max(header_example.len());
 
     // Print header
     println!(
-        "{:<idw$}  {:<modew$}  {:<statusw$}",
-        header_id.bold(),
-        header_mode.bold(),
-        header_status.bold(),
-        idw = id_width,
-        modew = mode_width,
-        statusw = status_width
+        "{}  {}  {}  {}",
+        pad_str(
+            &header_id.bold().to_string(),
+            id_width,
+            Alignment::Left,
+            None
+        ),
+        pad_str(
+            &header_mode.bold().to_string(),
+            mode_width,
+            Alignment::Left,
+            None
+        ),
+        pad_str(
+            &header_status.bold().to_string(),
+            status_width,
+            Alignment::Left,
+            None
+        ),
+        pad_str(
+            &header_example.bold().to_string(),
+            example_width,
+            Alignment::Left,
+            None
+        )
     );
 
     // Print separator
     println!(
-        "{:-<idw$}  {:-<modew$}  {:-<statusw$}",
-        "",
-        "",
-        "",
-        idw = id_width,
-        modew = mode_width,
-        statusw = status_width
+        "{}  {}  {}  {}",
+        pad_str("", id_width, Alignment::Left, Some("-")),
+        pad_str("", mode_width, Alignment::Left, Some("-")),
+        pad_str("", status_width, Alignment::Left, Some("-")),
+        pad_str("", example_width, Alignment::Left, Some("-"))
     );
 
     // Print each grade
     for grade in grades {
-        let status_str = match &grade.status {
-            Status::Ok => "Ok".green().to_string(),
-            Status::MissingOld => "MissingOld".yellow().to_string(),
-            Status::MissingNew => "MissingNew".yellow().to_string(),
-            Status::ModeChanged => "ModeChanged".yellow().to_string(),
+        let (status_str, example_str) = match &grade.status {
+            Status::Ok => ("Ok".green().to_string(), "N/A".to_string()),
+            Status::MissingOld => ("MissingOld".yellow().to_string(), "N/A".to_string()),
+            Status::MissingNew => ("MissingNew".yellow().to_string(), "N/A".to_string()),
+            Status::ModeChanged => ("ModeChanged".yellow().to_string(), "N/A".to_string()),
             Status::Incompatible { example } => {
-                if let Some(example) = example {
-                    let example_str = example.to_string();
-                    format!("Incompatible: (example: {example_str})")
-                        .red()
-                        .to_string()
+                let status = "Incompatible".red().to_string();
+                let example_str = if let Some(example) = example {
+                    example.to_string()
                 } else {
-                    "Incompatible".red().to_string()
-                }
+                    no_example.to_string()
+                };
+                (status, example_str)
             }
-            Status::Invalid => "Invalid".red().to_string(),
+            Status::Invalid => ("Invalid".red().to_string(), "N/A".to_string()),
+            Status::Identical => ("Identical".green().to_string(), "N/A".to_string()),
         };
 
         let mode = grade.mode;
         let mode_str = format!("{mode:?}");
 
         println!(
-            "{:<idw$}  {:<modew$}  {:<statusw$}",
-            grade.id,
-            mode_str.cyan(),
-            status_str,
-            idw = id_width,
-            modew = mode_width,
-            statusw = status_width
+            "{}  {}  {}  {}",
+            pad_str(&grade.id, id_width, Alignment::Left, None),
+            pad_str(
+                &mode_str.cyan().to_string(),
+                mode_width,
+                Alignment::Left,
+                None
+            ),
+            pad_str(&status_str, status_width, Alignment::Left, None),
+            pad_str(
+                &example_str.bright_black().to_string(),
+                example_width,
+                Alignment::Left,
+                None
+            )
         );
     }
 
@@ -482,7 +540,8 @@ fn cmd_ci(args: CiArgs) -> Result<()> {
         .iter()
         .any(|g| matches!(g.status, Status::Incompatible { .. } | Status::Invalid))
     {
-        anyhow::bail!("Found incompatible or invalid grades");
+        println!("\nError: Found incompatible or invalid grades");
+        std::process::exit(1);
     }
 
     Ok(())
