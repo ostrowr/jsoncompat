@@ -163,12 +163,6 @@ enum RoleCli {
     Both,
 }
 
-impl std::fmt::Display for RoleCli {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 impl From<RoleCli> for backcompat::Role {
     fn from(r: RoleCli) -> Self {
         match r {
