@@ -40,7 +40,7 @@ export default function NavBar() {
           <a
             href="https://github.com/ostrowr/jsoncompat"
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noopener"
             className="text-gray-300 hover:text-white"
           >
             <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">

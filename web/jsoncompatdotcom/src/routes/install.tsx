@@ -95,20 +95,20 @@ function PythonTab() {
   return (
     <section className="space-y-4">
       <p>Install from PyPI:</p>
-      <CodeBlock>pip install jsoncompat</CodeBlock>
-      <CodeBlock>{`import jsoncompat
+      <CodeBlock>pip install jsoncompat-py</CodeBlock>
+      <CodeBlock>{`import jsoncompat_py as jsc
 
-old_schema = {"type": "string"}
-new_schema = {"type": "number"}
+old_schema = '{"type": "string"}'
+new_schema = '{"type": "number"}'
 
-print(jsoncompat.check_compat(old_schema, new_schema, role="both"))`}</CodeBlock>
+print(jsc.check_compat(old_schema, new_schema, role="both"))`}</CodeBlock>
       <p>
         See more usage examples{" "}
         <a
           className="text-blue-600 hover:underline"
           href="https://github.com/ostrowr/jsoncompat/tree/main/examples/python"
           target="_blank"
-          rel="noopener noreferrer"
+          rel="noopener"
         >
           here.
         </a>
@@ -134,7 +134,7 @@ const ok = await check_compat('{"type":"string"}', '{"type":"number"}', "both");
           className="text-blue-600 hover:underline"
           href="https://github.com/ostrowr/jsoncompat/tree/main/examples/wasm"
           target="_blank"
-          rel="noopener noreferrer"
+          rel="noopener"
         >
           here
         </a>
