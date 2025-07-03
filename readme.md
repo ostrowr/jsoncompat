@@ -5,6 +5,9 @@
 
 Check compatibility of evolving JSON schemas.
 
+> [!WARNING]
+> This is alpha software. Not all incompatible changes are detected, and there may be false positives. Contributions are welcome!
+
 Imagine you have an API that returns some JSON data, or JSON that you're storing in a database or file. You need to ensure that new code can read old data and that old code can read new data.
 
 It's difficult to version JSON schemas in a traditional sense, because they can break in two directions:
