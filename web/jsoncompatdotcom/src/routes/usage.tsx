@@ -22,7 +22,7 @@ function UsagePage(): ReactNode {
           results between all of them, along with incompatible examples if it
           can find them. Here's an{" "}
           <a
-            href="https://github.com/ostrowr/jsoncompat/pull/31"
+            href="https://github.com/ostrowr/jsoncompat/actions/runs/16038808938/job/45256262179"
             className="text-blue-600 hover:underline"
           >
             example of a CI pipeline
