@@ -81,9 +81,7 @@ If a schema is used by both a serializer and a deserializer, then a change to th
 
 Requirements:
 
-`maturin`: install with `pip install maturin` or `cargo install maturin --locked`
-
-`wasm-pack`: install with `cargo install wasm-pack --locked`
+Run [bootstrap.sh](bootstrap.sh) to install the necessary dependencies.
 
 Run tests:
 
@@ -99,3 +97,5 @@ See the [Justfile](Justfile) for more commands
 
 Right now, releases to PyPI and npm are done in CI via manual dispatch of the `CI` workflow
 on a tag. Releases to cargo are done manually for now.
+
+Merging to main will trigger a release of the website.

@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsageRouteImport } from './routes/usage'
 import { Route as InstallRouteImport } from './routes/install'
 import { Route as FuzzerRouteImport } from './routes/fuzzer'
 import { Route as CheckerRouteImport } from './routes/checker'
 import { Route as IndexRouteImport } from './routes/index'
 
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InstallRoute = InstallRouteImport.update({
   id: '/install',
   path: '/install',
@@ -40,12 +46,14 @@ export interface FileRoutesByFullPath {
   '/checker': typeof CheckerRoute
   '/fuzzer': typeof FuzzerRoute
   '/install': typeof InstallRoute
+  '/usage': typeof UsageRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checker': typeof CheckerRoute
   '/fuzzer': typeof FuzzerRoute
   '/install': typeof InstallRoute
+  '/usage': typeof UsageRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/checker': typeof CheckerRoute
   '/fuzzer': typeof FuzzerRoute
   '/install': typeof InstallRoute
+  '/usage': typeof UsageRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/checker' | '/fuzzer' | '/install'
+  fullPaths: '/' | '/checker' | '/fuzzer' | '/install' | '/usage'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/checker' | '/fuzzer' | '/install'
-  id: '__root__' | '/' | '/checker' | '/fuzzer' | '/install'
+  to: '/' | '/checker' | '/fuzzer' | '/install' | '/usage'
+  id: '__root__' | '/' | '/checker' | '/fuzzer' | '/install' | '/usage'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,10 +76,18 @@ export interface RootRouteChildren {
   CheckerRoute: typeof CheckerRoute
   FuzzerRoute: typeof FuzzerRoute
   InstallRoute: typeof InstallRoute
+  UsageRoute: typeof UsageRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/install': {
       id: '/install'
       path: '/install'
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   CheckerRoute: CheckerRoute,
   FuzzerRoute: FuzzerRoute,
   InstallRoute: InstallRoute,
+  UsageRoute: UsageRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
