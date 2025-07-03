@@ -41,7 +41,7 @@ function HomePage() {
             Don't want to deal with protobuf? Keep using JSON, but safely.
           </Feature>
           <Feature title="Multi-platform (and fast)">
-            Same engine for Rust, Python & the browser.
+            Same engine for Rust, Python, & the browser.
           </Feature>
           <Feature title="Open source">
             jsoncompat is open source and free to use.
