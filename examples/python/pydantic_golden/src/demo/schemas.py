@@ -9,7 +9,7 @@ class X(pydantic.BaseModel):
 
 @check_compatibility("simple_str", mode="serializer")
 class X2(pydantic.BaseModel):
-    x: int
+    x: str
 
 
 @check_compatibility("simple_optional_str", mode="deserializer")
