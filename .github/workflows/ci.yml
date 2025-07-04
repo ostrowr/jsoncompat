@@ -260,6 +260,9 @@ jobs:
       - name: Tree
         run: |
           tree js-packages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Publish to npm (tag builds only)
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
