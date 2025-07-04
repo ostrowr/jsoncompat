@@ -267,7 +267,11 @@ jobs:
           set -euo pipefail
           echo "Publishing WebAssembly bundler package …"
           # for now, only publish the bundler package
-          npm publish js-packages/bundler/ --access public --provenance
+          pushd js-packages/bundler
+          # rename the package to jsoncompat from jsoncompat_wasm
+          perl -0777 -pi -e 's/"name"\s*:\s*"jsoncompat_wasm"/"name": "jsoncompat"/' package.json
+          npm publish . --access public --provenance
+          popd
 
 # ---------------------------------------------------------------------------
 # Build Rust CLI binaries ----------------------------------------------------

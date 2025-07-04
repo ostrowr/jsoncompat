@@ -1,4 +1,4 @@
-# jsoncompat-py
+# jsoncompat
 
 JSON Schema Compatibility Checker Python Bindings
 
@@ -9,13 +9,13 @@ Check compatibility of evolving JSON schemas and generate example values using P
 Install from PyPI:
 
 ```bash
-pip install jsoncompat-py
+pip install jsoncompat
 ```
 
 ## Usage
 
 ```python
-import jsoncompat_py as jsc
+import jsoncompat as jsc
 
 # Define old and new schemas as JSON strings
 old_schema = '{"type": "string"}'
