@@ -1,6 +1,6 @@
 [package]
 name = "json_schema_ast"
-version = "0.1.6-alpha.2"
+version = "0.1.6-alpha.3"
 edition = "2021"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
