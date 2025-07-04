@@ -50,8 +50,8 @@ pub enum SchemaNode {
         additional: Box<SchemaNode>,
 
         // Validation keywords for objects
-        min_properties: Option<u64>,
-        max_properties: Option<u64>,
+        min_properties: Option<usize>,
+        max_properties: Option<usize>,
         dependent_required: std::collections::HashMap<String, Vec<String>>,
 
         enumeration: Option<Vec<Value>>,
@@ -809,8 +809,12 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         })
         .unwrap_or_default();
 
-    let min_properties = obj.get("minProperties").and_then(|v| v.as_u64());
-    let max_properties = obj.get("maxProperties").and_then(|v| v.as_u64());
+    let min_properties = obj
+        .get("minProperties")
+        .and_then(|v| v.as_u64().and_then(|n| usize::try_from(n).ok()));
+    let max_properties = obj
+        .get("maxProperties")
+        .and_then(|v| v.as_u64().and_then(|n| usize::try_from(n).ok()));
 
     Ok(SchemaNode::Object {
         properties,

@@ -5,12 +5,21 @@ import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
 import { useState } from "react";
 import init, { generate_value } from "jsoncompat";
 
+const DEFAULT_SCHEMA = `{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "integer", "minimum": 18 }
+  },
+  "required": ["name"]
+}`;
+
 export const Route = createFileRoute("/fuzzer")({
   component: FuzzerPage,
 });
 
 function FuzzerPage() {
-  const [schema, setSchema] = useState('{\n  "type": "string"\n}');
+  const [schema, setSchema] = useState(DEFAULT_SCHEMA);
   const [depth, setDepth] = useState(5);
   const [examples, setExamples] = useState<string[]>([]);
   const [numExamples, setNumExamples] = useState(5);

@@ -342,8 +342,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             }
 
             // Determine the desired object size bounds if specified.
-            let min_p: usize = min_properties.unwrap_or(0).try_into().unwrap();
-            let max_p: usize = max_properties.unwrap_or(u64::MAX).try_into().unwrap();
+            let min_p: usize = min_properties.unwrap_or(0);
+            let max_p: usize = max_properties.unwrap_or(usize::MAX);
 
             // Random extra properties if allowed and we have not reached min_properties.
 
