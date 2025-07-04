@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "jsoncompat",
+#     "jsoncompat==0.1.8a9",
 # ]
 # ///
 """End-to-end demo for the Python bindings of jsoncompat.
