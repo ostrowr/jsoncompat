@@ -168,7 +168,7 @@ function Links() {
         <li>
           <a
             className="text-blue-600 hover:underline"
-            href="https://pypi.org/project/jsoncompat-py/"
+            href="https://pypi.org/project/jsoncompat/"
           >
             PyPI
           </a>
