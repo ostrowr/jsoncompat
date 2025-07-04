@@ -1,8 +1,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use ::jsoncompat::{build_and_resolve_schema, check_compat, Role};
 use json_schema_fuzz::generate_value;
-use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 
 use rand::thread_rng;
 use serde_json::Value as JsonValue;
@@ -85,8 +85,8 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
 
 /// Python module definition
 #[pymodule]
-#[pyo3(name = "jsoncompat_py")] // TODO: figure out how to name this jsoncompat rather than jsoncompat_py
-fn jsoncompat_py(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyo3(name = "jsoncompat")]
+fn jsoncompat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Ensure the random generator is initialised (auto‑initialize takes care of pyo3 env).
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;

@@ -95,8 +95,8 @@ function PythonTab() {
   return (
     <section className="space-y-4">
       <p>Install from PyPI:</p>
-      <CodeBlock>pip install jsoncompat-py</CodeBlock>
-      <CodeBlock>{`import jsoncompat_py as jsc
+      <CodeBlock>pip install jsoncompat</CodeBlock>
+      <CodeBlock>{`import jsoncompat as jsc
 
 old_schema = '{"type": "string"}'
 new_schema = '{"type": "number"}'
@@ -168,7 +168,7 @@ function Links() {
         <li>
           <a
             className="text-blue-600 hover:underline"
-            href="https://pypi.org/project/jsoncompat-py/"
+            href="https://pypi.org/project/jsoncompat/"
           >
             PyPI
           </a>

@@ -3,7 +3,7 @@ name = "demo"
 version = "0.1.0"
 description = "Demo python project that checks pydantic models for compatibility across versions"
 requires-python = ">=3.12"
-dependencies = ["jsoncompat-py==0.1.5a3", "pydantic"]
+dependencies = ["jsoncompat==0.1.6a4", "pydantic"]
 
 [dependency-groups]
 dev = ["pytest", "ruff", "mypy"]

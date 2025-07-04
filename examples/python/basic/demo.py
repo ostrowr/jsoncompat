@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#     "jsoncompat-py",
+#     "jsoncompat==0.1.8a9",
 # ]
 # ///
 """End-to-end demo for the Python bindings of jsoncompat.
@@ -13,7 +13,7 @@ Alternatively, run `uv run --prerelease=allow examples/python/basic/demo.py`
 to grab jsoncompat from PyPI and run the script.
 """
 
-import jsoncompat_py as jsc
+import jsoncompat as jsc
 
 
 def main() -> None:
