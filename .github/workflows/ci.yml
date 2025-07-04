@@ -261,11 +261,8 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: |
           set -euo pipefail
-          shopt -s globstar nullglob
-          for pkg in js-packages/**/*.tgz; do
-            echo "Publishing $pkg …"
-            npm publish "$pkg" --access public --provenance
-          done
+          echo "Publishing WebAssembly bundler package …"
+          npm publish js-packages/dist/js/bundler --access public --provenance
 
 # ---------------------------------------------------------------------------
 # Build Rust CLI binaries ----------------------------------------------------
