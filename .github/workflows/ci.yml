@@ -263,6 +263,8 @@ jobs:
 
       - name: Publish to npm (tag builds only)
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           echo "Publishing WebAssembly bundler package …"
@@ -272,6 +274,7 @@ jobs:
           perl -0777 -pi -e 's/"name"\s*:\s*"jsoncompat_wasm"/"name": "jsoncompat"/' package.json
           npm publish . --access public --provenance
           popd
+
 
 # ---------------------------------------------------------------------------
 # Build Rust CLI binaries ----------------------------------------------------
