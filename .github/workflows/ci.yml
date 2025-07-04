@@ -266,7 +266,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "Publishing WebAssembly bundler package …"
-          npm publish js-packages/bundler --access public --provenance
+          # for now, only publish the bundler package
+          npm publish js-packages/bundler/ --access public --provenance
 
 # ---------------------------------------------------------------------------
 # Build Rust CLI binaries ----------------------------------------------------
