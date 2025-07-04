@@ -1,6 +1,6 @@
 [package]
 name = "json_schema_fuzz"
-version = "0.1.6-alpha.6"
+version = "0.1.8-alpha.8"
 edition = "2021"
 description = "JSON Schema Fuzzer"
 repository = "https://github.com/ostrowr/jsoncompat"
@@ -9,7 +9,7 @@ license = "MIT"
 [dependencies]
 rand = "0.8"
 serde_json = "1.0.135"
-json_schema_ast = { path = "../schema", version = "0.1.6-alpha.6" }
+json_schema_ast = { path = "../schema", version = "0.1.8-alpha.8" }
 fancy-regex = "0.12"
 
 [dev-dependencies]
