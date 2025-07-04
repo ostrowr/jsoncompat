@@ -273,9 +273,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          echo "Publishing WebAssembly bundler package …"
-          # for now, only publish the bundler package
-          pushd js-packages/bundler
+          echo "Publishing WebAssembly web package …"
+          # for now, only publish the web package
+          pushd js-packages/web
           # rename the package to jsoncompat from jsoncompat_wasm
           perl -0777 -pi -e 's/"name"\s*:\s*"jsoncompat_wasm"/"name": "jsoncompat"/' package.json
           npm publish . --access public --provenance
