@@ -1,4 +1,4 @@
-[![jsoncompat logo](web/jsoncompatdotcom/public/logo512.png)](https://jsoncompat.com)
+[![jsoncompat logo](web/jsoncompatdotcom/public/logo192.png)](https://jsoncompat.com)
 
 # jsoncompat
 
