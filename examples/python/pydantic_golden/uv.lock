@@ -25,7 +25,6 @@ name = "demo"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "jsoncompat" },
     { name = "pydantic" },
 ]
 
@@ -37,10 +36,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "jsoncompat", specifier = "==0.1.6a4" },
-    { name = "pydantic" },
-]
+requires-dist = [{ name = "pydantic" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -56,29 +52,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f2/97/ebf4da567aa6827c909642694d71c9fcf53e5b504f2d96afea02718862f3/iniconfig-2.1.0.tar.gz", hash = "sha256:3abbd2e30b36733fee78f9c7f7308f2d0050e88f0087fd25c2645f63c773e1c7", size = 4793, upload-time = "2025-03-19T20:09:59.721Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/e1/e6716421ea10d38022b952c159d5161ca1193197fb744506875fbb87ea7b/iniconfig-2.1.0-py3-none-any.whl", hash = "sha256:9deba5723312380e77435581c6bf4935c94cbfab9b1ed33ef8d238ea168eb760", size = 6050, upload-time = "2025-03-19T20:10:01.071Z" },
-]
-
-[[package]]
-name = "jsoncompat"
-version = "0.1.6a4"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/d7/1969684a94f1b122d1feb2790a33e5fbbcf0a5f8af304257bd049e8626cc/jsoncompat-0.1.6a4-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:c257dfeeb98f8914d6b541c1952baa8cdfbbaba2e45f25e22885238bb4ff6057", size = 1563516, upload-time = "2025-07-04T02:18:34.921Z" },
-    { url = "https://files.pythonhosted.org/packages/b7/df/622f87658e2aef37e65fcf2816ea24b6abd572a55292fe0a70d00a3f02ed/jsoncompat-0.1.6a4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:f74f0ae72d28391be43cd94e70bee575c81b098d2c0138d591766aea700eee80", size = 1481034, upload-time = "2025-07-04T02:18:31.135Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/2b/b171175e448fe2f65b1dad31a7272f53848ff336456d7b05293d1e127dcd/jsoncompat-0.1.6a4-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:bad6e9ec50051e31be611254543a5f3c81f1c0e7f94f2c090e47439788c6eef3", size = 1645341, upload-time = "2025-07-04T02:18:22.838Z" },
-    { url = "https://files.pythonhosted.org/packages/d8/bc/26c34c2bf7c3bca822b0f2d0498a3881177a60f78902da4e70b0ebc677c5/jsoncompat-0.1.6a4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b0e67e01d5ac0fad4443f0b8479743c10fb39961f4b3cb4adbf74d3b54defb20", size = 1729016, upload-time = "2025-07-04T02:18:26.83Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/52/fcf20620852a9e46bf455bed03f90559bd6b38129867931be69bafdeed86/jsoncompat-0.1.6a4-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:a24241950452ac518eff3ed4261ed095d9525f73ce8d49392c570f7bf8a394c6", size = 1818728, upload-time = "2025-07-04T02:18:38.235Z" },
-    { url = "https://files.pythonhosted.org/packages/b5/ac/3e829668b0cadd9f081381a138f580443b2414124afe47ea97b3bb0e8016/jsoncompat-0.1.6a4-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:a047ea0eab4a8a24b10256fa75ae700fb9fcc42ce8621020f3dec0ac667f3f7e", size = 1899467, upload-time = "2025-07-04T02:18:42.355Z" },
-    { url = "https://files.pythonhosted.org/packages/75/02/25d2851e30eb9fb530f7bfa92c7d90930ebb2737563f5f5ceb88853b570a/jsoncompat-0.1.6a4-cp312-cp312-win32.whl", hash = "sha256:0f30889c410b2ed66b277c313fefc8b6473698940b3765b858449878d88adb6a", size = 1246789, upload-time = "2025-07-04T02:18:48.934Z" },
-    { url = "https://files.pythonhosted.org/packages/91/24/c33b60c5a7e786a152b19c8bcbc86c30ee8f7cf4b40c568527604d81a612/jsoncompat-0.1.6a4-cp312-cp312-win_amd64.whl", hash = "sha256:8a94ce9c84607426f507cdb228ca3bbb1078c639503c649e1a84f924455dcf88", size = 1353855, upload-time = "2025-07-04T02:18:45.924Z" },
-    { url = "https://files.pythonhosted.org/packages/9d/6a/4c01cef9fdf3f65caefa9beb33f18c4ac509a804618f3a7cb726818f9454/jsoncompat-0.1.6a4-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:615bdfefb51b101e37464592d00e3f5165e03e889d0690f38cd2612fa400134d", size = 1563542, upload-time = "2025-07-04T02:18:36.02Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/f7/8c8a65907536bf9d05554a52445041d9593a073a4505ea1d09abadcf5d6e/jsoncompat-0.1.6a4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:92e02571d34164d2e0bc93712c0ba5819050014bfa358f0e6e5ea9dd48b5d020", size = 1481139, upload-time = "2025-07-04T02:18:32.151Z" },
-    { url = "https://files.pythonhosted.org/packages/1b/77/0ea8f6025e16e31150f74197068931abd8399f0b658d54d10de4a0431ce9/jsoncompat-0.1.6a4-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a5c24a2c5f41fa1ceff8658eaa5bd074385d7b09d932f8a6bdda51ee2aee7efc", size = 1645949, upload-time = "2025-07-04T02:18:24.252Z" },
-    { url = "https://files.pythonhosted.org/packages/a6/94/17220d67a20f3da57d94adc459c9019082e59f5cfe84f09de8d670940510/jsoncompat-0.1.6a4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b8de51c28749654b69f0c4e9b076bcb11277093b188c6763c8d945c2720d96a1", size = 1728591, upload-time = "2025-07-04T02:18:28.183Z" },
-    { url = "https://files.pythonhosted.org/packages/b8/97/56b550a37ab50bb47ab94625f4280cbd439a33fe71b8c05cafcb94f10465/jsoncompat-0.1.6a4-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:94631bfdf488a44a41810e217242ca6f3cfc984752b737173af0a621f0bd0878", size = 1819014, upload-time = "2025-07-04T02:18:39.319Z" },
-    { url = "https://files.pythonhosted.org/packages/64/c8/de9d324be3f2e2f47dd2ac3fbbd7c1e1b41f2aa8e88cc815d5abf313f6eb/jsoncompat-0.1.6a4-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:2deccecdc9636d47f926583199a4812a8b5181350ac947ad92283c32c045229a", size = 1899332, upload-time = "2025-07-04T02:18:43.447Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/90/71c5a1af10e1df33c581b5a255f7a55eb80fdb273deb9a2091f8762b8908/jsoncompat-0.1.6a4-cp313-cp313-win32.whl", hash = "sha256:18f7f56f20715dceeb7c868dffee72c574318fae53ad6f4f2f8bdeda6a11e85a", size = 1246893, upload-time = "2025-07-04T02:18:50.364Z" },
-    { url = "https://files.pythonhosted.org/packages/b7/ec/fcf453c54accdef1bad064b379fd521798fb766806472de2dbfece1a437e/jsoncompat-0.1.6a4-cp313-cp313-win_amd64.whl", hash = "sha256:e48bdc6d0e72bc51ce52c3379d5f0008a7ee3f507e7f22a5b285b19f16097d3d", size = 1353665, upload-time = "2025-07-04T02:18:46.938Z" },
 ]
 
 [[package]]
