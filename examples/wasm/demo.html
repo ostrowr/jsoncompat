@@ -10,20 +10,33 @@
   </head>
   <body>
     <h1>json_schema_wasm - browser demo</h1>
-    <pre id="out">initialising …</pre>
+    <pre id="out">initializing …</pre>
 
     <script type="module">
       // The Wasm package is built into `pkg/` by `just wasm-demo` with
       //   wasm-pack build wasm --target web --out-dir examples/wasm/pkg
-import init, { check_compat, generate_value } from "../../wasm/pkg/jsoncompat_wasm.js";
+      import init, { check_compat, generate_value } from "../../wasm/pkg/jsoncompat_wasm.js";
 
       const out = document.getElementById('out');
 
       (async () => {
         await init();
+        const oldSchema = `{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "integer", "minimum": 18 }
+  },
+  "required": ["name"]
+}`;
+        const newSchema = `{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 5 },
+    "age": { "type": "integer", "minimum": 18 }
+  }
+}`;
 
-        const oldSchema = '{"type":"string"}';
-        const newSchema = '{"type":"number"}';
 
         const lines = [];
         lines.push('=== Compatibility checks ===');
@@ -31,7 +44,6 @@ import init, { check_compat, generate_value } from "../../wasm/pkg/jsoncompat_wa
           const ok = await check_compat(oldSchema, newSchema, role);
           lines.push(`${role.padEnd(12)}: ${ok}`);
         }
-
         lines.push('\n=== Example value generation ===');
         const sample = await generate_value(oldSchema, 3);
         lines.push(sample);
