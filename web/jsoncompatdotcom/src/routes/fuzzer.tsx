@@ -3,8 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
 import { useState } from "react";
-
-import * as jsoncompat from "jsoncompat";
+import init, { generate_value } from "jsoncompat";
 
 export const Route = createFileRoute("/fuzzer")({
   component: FuzzerPage,
@@ -21,7 +20,7 @@ function FuzzerPage() {
     setError(null);
     setExamples([]);
     try {
-      await jsoncompat.init(wasmUrl); // TODO: only do once
+      await init(wasmUrl); // TODO: only do once
       const vals: string[] = [];
       for (let i = 0; i < numExamples; i++) {
         // eslint-disable-next-line no-await-in-loop
