@@ -1,8 +1,8 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = [
-#     "jsoncompat==0.1.8a9",
-# ]
+# dependencies = ["jsoncompat"]
+# [tool.uv.sources]
+# jsoncompat = { path = "../../../python", editable = true }
 # ///
 """End-to-end demo for the Python bindings of jsoncompat.
 
@@ -17,8 +17,21 @@ import jsoncompat as jsc
 
 
 def main() -> None:
-    old_schema = '{"type": "string"}'
-    new_schema = '{"type": "number"}'
+    new_schema = """{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 5 },
+    "age": { "type": "integer", "minimum": 18 }
+  },
+  "required": ["name"]
+}"""
+    old_schema = """{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "minLength": 5 },
+    "age": { "type": "integer", "minimum": 18 }
+  }
+}"""
 
     print("=== Compatibility checks ===")
     roles: list[jsc.RoleLiteral] = [

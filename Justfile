@@ -13,11 +13,7 @@ check:
 # ---- Basic python smoke test ----
 
 python-demo:
-  @command -v maturin >/dev/null 2>&1 || (echo "error: maturin not found (install with 'pip install maturin' or 'cargo install maturin --locked')" >&2 && exit 1)
-  @echo "[just] building Python extension via maturin …"
-  maturin develop -q -m python/Cargo.toml
-  @echo "[just] running Python demo …"
-  @python examples/python/basic/demo.py
+  uv run --reinstall-package jsoncompat examples/python/basic/demo.py
 
 # ---- Basic javascript smoke test ----
 
