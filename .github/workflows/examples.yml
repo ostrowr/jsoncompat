@@ -58,4 +58,4 @@ jobs:
 
       - name: Run the demo smoketest
         run: |
-          uv run --prerelease=allow demo.py
+          uv run demo.py
