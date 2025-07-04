@@ -3,7 +3,7 @@
 # publish this as the *npm* package `jsoncompat` so consumers can simply
 # `import { ... } from 'jsoncompat'`.
 name = "jsoncompat_wasm"
-version = "0.1.6-alpha.3"
+version = "0.1.6-alpha.4"
 edition = "2021"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
