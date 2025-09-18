@@ -1,6 +1,6 @@
 use json_schema_ast as schema;
 
-use schema::{build_and_resolve_schema, build_schema_ast, compile, SchemaNode};
+use schema::{build_and_resolve_schema, build_schema_ast, compile, SchemaNodeKind};
 use serde_json::json;
 
 #[test]
@@ -20,7 +20,35 @@ fn resolve_local_ref() {
     });
     let mut ast = build_schema_ast(&raw).unwrap();
     schema::resolve_refs(&mut ast, &raw, &[]).unwrap();
-    assert!(matches!(ast, SchemaNode::Integer { .. }));
+    assert!(matches!(&*ast.borrow(), SchemaNodeKind::Integer { .. }));
+}
+
+#[test]
+fn resolve_recursive_ref() {
+    let raw = json!({
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "integer"},
+                    "next": {"$ref": "#/$defs/Node"}
+                },
+                "required": ["value"]
+            }
+        },
+        "$ref": "#/$defs/Node"
+    });
+    let mut ast = build_schema_ast(&raw).unwrap();
+    schema::resolve_refs(&mut ast, &raw, &[]).unwrap();
+    {
+        let guard = ast.borrow();
+        if let SchemaNodeKind::Object { properties, .. } = &*guard {
+            let next = properties.get("next").expect("next property");
+            assert!(next.ptr_eq(&ast));
+        } else {
+            panic!("expected object schema");
+        }
+    }
 }
 
 #[test]

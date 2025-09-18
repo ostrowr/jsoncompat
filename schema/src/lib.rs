@@ -3,7 +3,9 @@
 
 pub mod ast;
 
-pub use ast::{build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode};
+pub use ast::{
+    build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode, SchemaNodeKind,
+};
 
 use anyhow::{Context, Result};
 use jsonschema::Draft;
