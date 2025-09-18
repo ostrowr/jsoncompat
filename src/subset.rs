@@ -228,6 +228,11 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                         return false;
                     }
                 } else {
+                    // The new schema permits an additional property that the
+                    // previous map did not list explicitly.  We must ensure the
+                    // "additional" schema of the superset accepts whatever the
+                    // subset would have produced (or, if `additionalProperties`
+                    // was `false`, reject immediately).
                     let additional_allows =
                         !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
                     if !additional_allows || !is_subschema_of(s_schema, &p_addl) {
@@ -241,6 +246,9 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             }
 
             for (trigger, deps) in p_deps.iter() {
+                // If the superset requires extra keys whenever `trigger` exists,
+                // then the subset may only allow `trigger` when those keys are
+                // unconditionally present.
                 let trigger_allowed = sprops.contains_key(trigger)
                     || !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
                 if trigger_allowed && !deps.iter().all(|d| sreq.contains(d)) {

@@ -52,6 +52,31 @@ fn resolve_recursive_ref() {
 }
 
 #[test]
+fn resolve_duplicate_refs_share_pointer() {
+    let raw = json!({
+        "$defs": {
+            "Thing": {"type": "integer"}
+        },
+        "type": "object",
+        "properties": {
+            "a": {"$ref": "#/$defs/Thing"},
+            "b": {"$ref": "#/$defs/Thing"}
+        }
+    });
+    let mut ast = build_schema_ast(&raw).unwrap();
+    schema::resolve_refs(&mut ast, &raw, &[]).unwrap();
+
+    let guard = ast.borrow();
+    if let SchemaNodeKind::Object { properties, .. } = &*guard {
+        let a = properties.get("a").expect("property a");
+        let b = properties.get("b").expect("property b");
+        assert!(a.ptr_eq(b));
+    } else {
+        panic!("expected object schema");
+    }
+}
+
+#[test]
 fn boolean_schemas() {
     let sample = json!({"k":1});
     for b in [true, false] {

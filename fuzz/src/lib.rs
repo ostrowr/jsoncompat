@@ -21,6 +21,15 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         }
 
         AllOf(subs) if !subs.is_empty() => {
+            // Heuristic strategy: try to satisfy *all* branches while keeping the
+            // generation cheap.  The original implementation relied on a long
+            // explanatory comment; reintroduce the gist:
+            //   1. bail out if any subschema is `false` (the intersection is empty),
+            //   2. when all branches describe objects, merge their generated
+            //      property maps so the final instance satisfies every branch,
+            //   3. otherwise fall back to any non-trivial branch (ignoring
+            //      `true`/`Any`) which is usually sufficient for simple
+            //      intersections such as `[{}, {"type": "number"}]`.
             if subs
                 .iter()
                 .any(|s| matches!(&*s.borrow(), BoolSchema(false)))
@@ -40,6 +49,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     }
                 }
 
+                // Ensure that every branch's required properties exist in the
+                // merged object.  The generator is probabilistic, so it is
+                // possible that the fast generation above skipped an optional
+                // property that later turned out to be required by another
+                // branch.  We deterministically fill any such gaps here.
                 let mut missing: HashMap<std::string::String, SchemaNode> = HashMap::new();
                 for sub in subs {
                     if let Object {
@@ -260,6 +274,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let mut map = Map::new();
             for (k, prop_schema) in properties {
                 let must_include = required.contains(k);
+                // Optional fields are only included with some probability unless the
+                // schema is unconstrained (`true`/`Any`).  Skipping these avoids
+                // descending into deep recursive refs when it is unnecessary.
                 let include = if must_include {
                     true
                 } else {
@@ -275,6 +292,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let max_p: usize = max_properties.unwrap_or(usize::MAX);
 
             if !matches!(&*additional.borrow(), BoolSchema(false)) {
+                // If we need to hit `minProperties`, keep inventing additional keys
+                // until we reach the minimum before attempting the probabilistic
+                // extras.
                 while map.len() < min_p {
                     let key = random_key(rng);
                     if map.contains_key(&key) {
