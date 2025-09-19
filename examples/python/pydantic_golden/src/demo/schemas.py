@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from demo.decorator import check_compatibility
 import pydantic
 
@@ -25,3 +27,12 @@ class X4(pydantic.BaseModel):
     name: str = pydantic.Field(default="default", max_length=20)
     active: bool = True
     tags: list[str] = pydantic.Field(default_factory=list)
+
+
+@check_compatibility("recursive_node", mode="both")
+class RecursiveNode(pydantic.BaseModel):
+    value: int
+    next: "RecursiveNode | None" = None
+
+
+RecursiveNode.model_rebuild()
