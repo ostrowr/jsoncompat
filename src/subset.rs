@@ -1,125 +1,88 @@
 use crate::SchemaNode;
-use json_schema_ast::compile;
+use json_schema_ast::{compile, SchemaNodeKind};
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
 pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
-    // Quick win: structural equality ⇒ set equality.
     if sub == sup {
         return true;
     }
 
-    match (sub, sup) {
-        // `false` accepts no instance – it is a subset of every schema.
-        (SchemaNode::BoolSchema(false), _) => true,
+    use SchemaNodeKind::*;
 
-        // `true` accepts every instance – it is a *superset* of every schema.
-        (_, SchemaNode::BoolSchema(true)) => true,
+    let sub_kind = sub.borrow().clone();
+    let sup_kind = sup.borrow().clone();
 
-        // `Any` behaves like `true` with regard to validation (it accepts every
-        // instance).  Therefore *every* schema is a subset of `Any`.
-        (SchemaNode::Any, SchemaNode::Any) => true,
-        (_, SchemaNode::Any) => true,
-        (SchemaNode::Any, _) => false,
+    match (&sub_kind, &sup_kind) {
+        (BoolSchema(false), _) => true,
+        (_, BoolSchema(true)) => true,
+        (Any, Any) => true,
+        (_, Any) => true,
+        (Any, _) => false,
 
-        // Enumeration rules -------------------------------------------------
-        (SchemaNode::Enum(sub_e), SchemaNode::Enum(sup_e)) => {
-            sub_e.iter().all(|v| sup_e.contains(v))
-        }
-        // Enum vs non‑enum ⇒ never a subset in either direction under our
-        // simplified semantics.
-        (SchemaNode::Enum(_), _) => false,
-        (_, SchemaNode::Enum(_)) => false,
+        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
+        (Enum(_), _) => false,
+        (_, Enum(_)) => false,
 
-        // Boolean logic keywords -------------------------------------------
-        (SchemaNode::AllOf(subs), sup_schema) => {
-            subs.iter().all(|s| is_subschema_of(s, sup_schema))
-        }
-        (sub_schema, SchemaNode::AllOf(sups)) => {
-            sups.iter().all(|s| is_subschema_of(sub_schema, s))
-        }
+        (AllOf(subs), _) => subs.iter().all(|s| is_subschema_of(s, sup)),
+        (_, AllOf(sups)) => sups.iter().all(|s| is_subschema_of(sub, s)),
 
-        (SchemaNode::AnyOf(subs), sup_schema) => subs
-            .iter()
-            .all(|branch| is_subschema_of(branch, sup_schema)),
-        (sub_schema, SchemaNode::AnyOf(sups)) => sups
-            .iter()
-            .any(|branch| is_subschema_of(sub_schema, branch)),
+        (AnyOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
+        (_, AnyOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
 
-        (SchemaNode::OneOf(subs), sup_schema) => subs
-            .iter()
-            .all(|branch| is_subschema_of(branch, sup_schema)),
-        (sub_schema, SchemaNode::OneOf(sups)) => sups
-            .iter()
-            .any(|branch| is_subschema_of(sub_schema, branch)),
+        (OneOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
+        (_, OneOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
 
-        (SchemaNode::Not(subn), sup_schema) => match &**subn {
-            SchemaNode::Any | SchemaNode::BoolSchema(true) => true, // empty set ⇒ subset of everything
-            SchemaNode::BoolSchema(false) => match sup_schema {
-                SchemaNode::Any | SchemaNode::BoolSchema(true) => false, // everything not allowed ⇒ never subset unless sup is false too
-                _ => true,
-            },
-            _ => false, // not implemented properly
+        (Not(subn), _) => match &*subn.borrow() {
+            Any | BoolSchema(true) => true,
+            BoolSchema(false) => !matches!(sup_kind, Any | BoolSchema(true)),
+            _ => false,
         },
-        (sub_schema, SchemaNode::Not(supn)) => match &**supn {
-            SchemaNode::Any | SchemaNode::BoolSchema(true) => {
-                matches!(sub_schema, SchemaNode::BoolSchema(false))
-            }
-            SchemaNode::BoolSchema(false) => {
-                matches!(sub_schema, SchemaNode::BoolSchema(true) | SchemaNode::Any)
-            }
+        (_, Not(supn)) => match &*supn.borrow() {
+            Any | BoolSchema(true) => matches!(sub_kind, BoolSchema(false)),
+            BoolSchema(false) => matches!(sub_kind, BoolSchema(true) | Any),
             _ => false,
         },
 
-        // Structural / numeric constraints ---------------------------------
-        (SchemaNode::String { .. }, SchemaNode::String { .. })
-        | (SchemaNode::Number { .. }, SchemaNode::Number { .. })
-        | (SchemaNode::Integer { .. }, SchemaNode::Integer { .. })
-        | (SchemaNode::Boolean { .. }, SchemaNode::Boolean { .. })
-        | (SchemaNode::Null { .. }, SchemaNode::Null { .. })
-        | (SchemaNode::Object { .. }, SchemaNode::Object { .. })
-        | (SchemaNode::Array { .. }, SchemaNode::Array { .. }) => {
-            type_constraints_subsumed(sub, sup)
-        }
+        (String { .. }, String { .. })
+        | (Number { .. }, Number { .. })
+        | (Integer { .. }, Integer { .. })
+        | (Boolean { .. }, Boolean { .. })
+        | (Null { .. }, Null { .. })
+        | (Object { .. }, Object { .. })
+        | (Array { .. }, Array { .. }) => type_constraints_subsumed(sub, sup),
 
-        // --------------------------- Const -------------------------------
-        (SchemaNode::Const(s_val), SchemaNode::Const(p_val)) => s_val == p_val,
+        (Const(s_val), Const(p_val)) => s_val == p_val,
 
-        (SchemaNode::Const(s_val), p_node) => {
-            // The subset allows exactly `s_val`.  Therefore we only need to
-            // confirm that `p_node` accepts that single value.
-            let schema_json = p_node.to_json();
+        (Const(s_val), _) => {
+            let schema_json = sup.to_json();
             compile(&schema_json)
                 .map(|compiled| compiled.is_valid(s_val))
                 .unwrap_or(false)
         }
 
-        (_, SchemaNode::Const(_)) => false,
+        (_, Const(_)) => false,
 
         _ => false,
     }
 }
 
-// -------------------------------------------------------------------------
-// Extra logic for `const` support
-// -------------------------------------------------------------------------
-
-// -------------------------------------------------------------------------
-// Constraint‑level checks
-// -------------------------------------------------------------------------
-
 /// Compare the **constraints** of two nodes of the *same* basic type.
 pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
-    match (sub, sup) {
-        // --------------------------- Strings ------------------------------
+    use SchemaNodeKind::*;
+
+    let sub_kind = sub.borrow().clone();
+    let sup_kind = sup.borrow().clone();
+
+    match (sub_kind, sup_kind) {
         (
-            SchemaNode::String {
+            String {
                 min_length: smin,
                 max_length: smax,
                 enumeration: s_enum,
                 ..
             },
-            SchemaNode::String {
+            String {
                 min_length: pmin,
                 max_length: pmax,
                 enumeration: p_enum,
@@ -127,12 +90,12 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             },
         ) => {
             if let Some(pm) = pmin {
-                if smin.unwrap_or(0) < *pm {
+                if smin.unwrap_or(0) < pm {
                     return false;
                 }
             }
             if let Some(px) = pmax {
-                if smax.unwrap_or(u64::MAX) > *px {
+                if smax.unwrap_or(u64::MAX) > px {
                     return false;
                 }
             }
@@ -144,9 +107,8 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             true
         }
 
-        // --------------------------- Numbers ------------------------------
         (
-            SchemaNode::Number {
+            Number {
                 minimum: smin,
                 maximum: smax,
                 exclusive_minimum: sexmin,
@@ -154,7 +116,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 enumeration: s_en,
                 ..
             },
-            SchemaNode::Number {
+            Number {
                 minimum: pmin,
                 maximum: pmax,
                 exclusive_minimum: pexmin,
@@ -163,10 +125,10 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 ..
             },
         ) => {
-            if !check_numeric_inclusion(*smin, *sexmin, *pmin, *pexmin, true) {
+            if !check_numeric_inclusion(smin, sexmin, pmin, pexmin, true) {
                 return false;
             }
-            if !check_numeric_inclusion(*smax, *sexmax, *pmax, *pexmax, false) {
+            if !check_numeric_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
             if let (Some(se), Some(pe)) = (s_en, p_en) {
@@ -177,9 +139,8 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             true
         }
 
-        // -------------------------- Integers ------------------------------
         (
-            SchemaNode::Integer {
+            Integer {
                 minimum: smin,
                 maximum: smax,
                 exclusive_minimum: sexmin,
@@ -187,7 +148,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 enumeration: s_en,
                 ..
             },
-            SchemaNode::Integer {
+            Integer {
                 minimum: pmin,
                 maximum: pmax,
                 exclusive_minimum: pexmin,
@@ -196,10 +157,10 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 ..
             },
         ) => {
-            if !check_int_inclusion(*smin, *sexmin, *pmin, *pexmin, true) {
+            if !check_int_inclusion(smin, sexmin, pmin, pexmin, true) {
                 return false;
             }
-            if !check_int_inclusion(*smax, *sexmax, *pmax, *pexmax, false) {
+            if !check_int_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
             if let (Some(se), Some(pe)) = (s_en, p_en) {
@@ -210,90 +171,103 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             true
         }
 
-        // --------------------------- Boolean / Null -----------------------
-        (SchemaNode::Boolean { enumeration: s_e }, SchemaNode::Boolean { enumeration: p_e })
-        | (SchemaNode::Null { enumeration: s_e }, SchemaNode::Null { enumeration: p_e }) => {
+        (Boolean { enumeration: s_e }, Boolean { enumeration: p_e })
+        | (Null { enumeration: s_e }, Null { enumeration: p_e }) => {
             if let (Some(se), Some(pe)) = (s_e, p_e) {
-                se.iter().all(|v| pe.contains(v))
-            } else {
-                true
+                if !se.iter().all(|v| pe.contains(v)) {
+                    return false;
+                }
             }
+            true
         }
 
-        // --------------------------- Objects ------------------------------
         (
-            SchemaNode::Object {
+            Object {
                 properties: sprops,
                 required: sreq,
                 additional: s_addl,
-                enumeration: s_en,
+                min_properties: smin,
+                max_properties: smax,
                 dependent_required: _s_deps,
-                ..
+                enumeration: s_en,
             },
-            SchemaNode::Object {
+            Object {
                 properties: pprops,
                 required: preq,
                 additional: p_addl,
-                enumeration: p_en,
+                min_properties: pmin,
+                max_properties: pmax,
                 dependent_required: p_deps,
-                ..
+                enumeration: p_en,
             },
         ) => {
+            if let Some(pm) = pmin {
+                if smin.unwrap_or(0) < pm {
+                    return false;
+                }
+            }
+            if let Some(px) = pmax {
+                if smax.unwrap_or(usize::MAX) > px {
+                    return false;
+                }
+            }
+
             if let (Some(se), Some(pe)) = (s_en, p_en) {
                 if !se.iter().all(|v| pe.contains(v)) {
                     return false;
                 }
             }
 
-            for (k, ssub) in sprops {
-                if let Some(psub) = pprops.get(k) {
-                    if !is_subschema_of(ssub, psub) {
-                        return false;
-                    }
-                } else if !is_subschema_of(ssub, p_addl) {
-                    return false;
-                }
-            }
-
-            for r in preq {
-                if !sreq.contains(r) {
-                    return false;
-                }
-            }
-
-            if !is_subschema_of(s_addl, p_addl) {
+            if !preq.is_subset(&sreq) {
                 return false;
             }
 
-            // dependentRequired inclusion: every dependency in the SUP schema must
-            // already be guaranteed by SUB (i.e., either the triggering key is
-            // impossible in SUB or the required dependents are unconditionally
-            // required there).
-            for (trigger, deps) in p_deps {
-                // does SUB allow `trigger` property at all?
-                let trigger_allowed = sprops.contains_key(trigger)
-                    || !matches!(**s_addl, SchemaNode::BoolSchema(false));
-                if trigger_allowed {
-                    // then SUB must list *all* dependent keys as required.
-                    if !deps.iter().all(|d| sreq.contains(d)) {
+            for (key, s_schema) in &sprops {
+                if let Some(p_schema) = pprops.get(key) {
+                    if !is_subschema_of(s_schema, p_schema) {
                         return false;
                     }
+                } else {
+                    // The new schema permits an additional property that the
+                    // previous map did not list explicitly.  We must ensure the
+                    // "additional" schema of the superset accepts whatever the
+                    // subset would have produced (or, if `additionalProperties`
+                    // was `false`, reject immediately).
+                    let additional_allows =
+                        !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
+                    if !additional_allows || !is_subschema_of(s_schema, &p_addl) {
+                        return false;
+                    }
+                }
+            }
+
+            if !is_subschema_of(&s_addl, &p_addl) {
+                return false;
+            }
+
+            for (trigger, deps) in p_deps.iter() {
+                // If the superset requires extra keys whenever `trigger` exists,
+                // then the subset may only allow `trigger` when those keys are
+                // unconditionally present.
+                let trigger_allowed = sprops.contains_key(trigger)
+                    || !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
+                if trigger_allowed && !deps.iter().all(|d| sreq.contains(d)) {
+                    return false;
                 }
             }
 
             true
         }
 
-        // --------------------------- Arrays -------------------------------
         (
-            SchemaNode::Array {
+            Array {
                 items: sitems,
                 min_items: smin,
                 max_items: smax,
                 enumeration: s_en,
                 ..
             },
-            SchemaNode::Array {
+            Array {
                 items: pitems,
                 min_items: pmin,
                 max_items: pmax,
@@ -302,20 +276,18 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             },
         ) => {
             if let Some(pm) = pmin {
-                if smin.unwrap_or(0) < *pm {
+                if smin.unwrap_or(0) < pm {
                     return false;
                 }
             }
             if let Some(px) = pmax {
-                if smax.unwrap_or(u64::MAX) > *px {
+                if smax.unwrap_or(u64::MAX) > px {
                     return false;
                 }
             }
-
-            if !is_subschema_of(sitems, pitems) {
+            if !is_subschema_of(&sitems, &pitems) {
                 return false;
             }
-
             if let (Some(se), Some(pe)) = (s_en, p_en) {
                 if !se.iter().all(|v| pe.contains(v)) {
                     return false;
@@ -327,10 +299,6 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         _ => false,
     }
 }
-
-// -------------------------------------------------------------------------
-// Helpers
-// -------------------------------------------------------------------------
 
 fn check_numeric_inclusion(
     s_val: Option<f64>,
@@ -397,5 +365,46 @@ fn check_int_inclusion(
         }
     } else {
         subv <= supv
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use json_schema_ast::build_and_resolve_schema;
+    use serde_json::json;
+
+    #[test]
+    fn allof_tighten_subset() {
+        let old = build_and_resolve_schema(&json!({
+            "allOf": [
+                {"type": "integer", "minimum": 0},
+                {"maximum": 10}
+            ]
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+        }))
+        .unwrap();
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn exclusive_bounds_subset() {
+        let old = build_and_resolve_schema(&json!({
+            "minimum": 1,
+            "exclusiveMinimum": 1
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+            "minimum": 1,
+            "maximum": 3
+        }))
+        .unwrap();
+
+        assert!(is_subschema_of(&new, &old));
     }
 }

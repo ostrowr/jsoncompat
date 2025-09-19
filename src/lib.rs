@@ -9,7 +9,9 @@
 // Re‑export the fundamental building blocks from the core schema crate so that
 // downstream crates can just depend on *this* crate for both parsing and
 // compatibility checking if they wish.
-pub use json_schema_ast::{build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode};
+pub use json_schema_ast::{
+    build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode, SchemaNodeKind,
+};
 
 mod subset;
 
