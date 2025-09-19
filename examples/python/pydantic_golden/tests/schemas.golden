@@ -1,4 +1,37 @@
 {
+  "recursive_node": {
+    "mode": "both",
+    "schema": {
+      "$defs": {
+        "RecursiveNode": {
+          "properties": {
+            "next": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RecursiveNode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "value": {
+              "title": "Value",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "title": "RecursiveNode",
+          "type": "object"
+        }
+      },
+      "$ref": "#/$defs/RecursiveNode"
+    },
+    "stable_id": "recursive_node"
+  },
   "several_fields": {
     "mode": "both",
     "schema": {

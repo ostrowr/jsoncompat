@@ -390,6 +390,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 }
             }
 
+            if map.is_empty() && min_p > 0 && !properties.is_empty() {
+                if let Some((k, schema)) = properties.iter().next() {
+                    let val = generate_value(schema, rng, depth.saturating_sub(1));
+                    map.insert(k.clone(), val);
+                }
+            }
+
             Value::Object(map)
         }
 
@@ -558,3 +565,33 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
 // - better random any
 // - better not handling
 // - lots of other stuff
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
+    use serde_json::json;
+
+    #[test]
+    fn object_required_properties_not_empty() {
+        let schema = build_required_object_schema();
+        let mut rng = StdRng::seed_from_u64(42);
+        for _ in 0..50 {
+            let value = generate_value(&schema, &mut rng, 5);
+            let obj = value.as_object().expect("expected object");
+            assert!(obj.contains_key("class"));
+        }
+    }
+
+    fn build_required_object_schema() -> SchemaNode {
+        let raw = json!({
+            "type": "object",
+            "properties": {
+                "class": {"const": "MyClass"},
+                "opt": {"type": "integer"}
+            },
+            "required": ["class"]
+        });
+        json_schema_ast::build_and_resolve_schema(&raw).unwrap()
+    }
+}
