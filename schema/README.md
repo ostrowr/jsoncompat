@@ -10,7 +10,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json_schema_ast = "0.2.0"
+json_schema_ast = "0.2.1"
 ```
 
 ## Usage
