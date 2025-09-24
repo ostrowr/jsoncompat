@@ -1,7 +1,7 @@
 //! Fuzzer tests.
 
 use json_schema_ast::compile;
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::{generate_value, GenerateError};
 use jsoncompat::build_and_resolve_schema;
 use rand::{rngs::StdRng, SeedableRng};
 use serde_json::Value;
@@ -10,6 +10,14 @@ use std::fs;
 use std::path::Path;
 
 const N_ITERATIONS: usize = 1000;
+
+#[derive(Debug)]
+enum GenerationOutcome {
+    Valid,
+    Invalid(Value),
+    Unsatisfiable,
+    Exhausted,
+}
 
 /// Load the temporary whitelist that allows individual failures to be marked
 /// as expected while we iteratively improve the fuzzer.
@@ -21,71 +29,24 @@ const N_ITERATIONS: usize = 1000;
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
-    // Remaining failing schemas in allOf.json – indices 4 and 5 correspond
-    // to `[true, false]` and `[false, false]` where no valid instance exists.
-    // TODO – we need to handle the impossible case more elegantly
-    map.insert("allOf.json".to_string(), [4, 5].iter().cloned().collect());
-    // Remaining tricky `oneOf` schemas – currently only #7 (boolean schemas)
-    // is impossible to satisfy generically.
-    map.insert(
-        "oneOf.json".to_string(),
-        [2, 4, 5].iter().cloned().collect(),
-    );
-    map.insert(
-        "not.json".to_string(),
-        [2, 3, 4, 5, 8].iter().cloned().collect(),
-    );
+    map.insert("not.json".to_string(), [2, 8].iter().cloned().collect());
     map.insert(
         "if-then-else.json".to_string(),
         [3, 4, 5, 7, 8, 9].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedItems.json".to_string(),
-        [5, 9, 12, 18].iter().cloned().collect(),
+        [12].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "items.json".to_string(),
-        [2, 3, 5, 7, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "uniqueItems.json".to_string(),
-        [2, 5].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "properties.json".to_string(),
-        [1, 2].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "anchor.json".to_string(),
-        [0, 1, 2, 3].iter().cloned().collect(),
-    );
-    map.insert(
-        "additionalProperties.json".to_string(),
-        [5].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "infinite-loop-detection.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "optional/anchor.json".to_string(),
-        [0].iter().cloned().collect(),
+        [12, 13, 14, 33].iter().cloned().collect(),
     );
     map.insert(
         "optional/ecmascript-regex.json".to_string(),
         [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-            30, 31,
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+            31,
         ]
         .iter()
         .cloned()
@@ -97,52 +58,15 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
-        "optional/unknownKeyword.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/id.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-
-    map.insert(
         "dynamicRef.json".to_string(),
-        [2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
-            .iter()
-            .cloned()
-            .collect(),
+        [20].iter().cloned().collect(),
     );
     map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
-    map.insert(
-        "ref.json".to_string(),
-        [6, 10, 11, 17, 19, 27, 28, 29, 30, 31]
-            .iter()
-            .cloned()
-            .collect(),
-    );
 
     map.insert(
         "if-then-else.json".to_string(),
         [7, 8].iter().cloned().collect(),
     );
-
-    map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
-    map.insert(
-        "refRemote.json".to_string(),
-        [0, 1, 2, 3, 4, 8, 9, 11, 12, 13, 14]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
 
     map
 }
@@ -164,13 +88,17 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         Value::Array(groups) => {
             for item in groups {
                 if let Some(s) = item.get("schema") {
-                    schemas.push(s.clone());
+                    let expect_unsat = item
+                        .get("jsoncompat_expect_unsat")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    schemas.push((s.clone(), expect_unsat));
                 }
             }
         }
         v => {
             // Fallback: treat the entire document as a single schema.
-            schemas.push(v.clone());
+            schemas.push((v.clone(), false));
         }
     }
 
@@ -185,50 +113,92 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let whitelist = load_whitelist();
     let allowed = whitelist.get::<str>(rel_str.as_ref());
 
-    for (idx, schema_json) in schemas.iter().enumerate() {
-        // Skip `false` schemas – they have an empty instance set by design.
-        if schema_json == &Value::Bool(false) {
-            continue;
-        }
-
+    for (idx, (schema_json, expect_unsat)) in schemas.iter().enumerate() {
         let ast = build_and_resolve_schema(schema_json)?;
 
-        let compiled = compile(schema_json)?;
+        let compiled = compile(&ast.to_json())?;
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 
-        let mut success = true;
+        let mut outcome = GenerationOutcome::Exhausted;
         for _ in 0..N_ITERATIONS {
-            let candidate = generate_value(&ast, &mut rng, 6);
-            if !compiled.is_valid(&candidate) {
-                if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
-                    panic!(
-                        "{}", &format!(
-                            "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance:\n{}",
-                            rel_str,
-                            serde_json::to_string_pretty(schema_json)?,
-                            serde_json::to_string_pretty(&candidate)?
-                        )
-                    );
+            match generate_value(&ast, &mut rng, 6) {
+                Ok(candidate) => {
+                    if compiled.is_valid(&candidate) {
+                        outcome = GenerationOutcome::Valid;
+                        break;
+                    } else {
+                        outcome = GenerationOutcome::Invalid(candidate);
+                        break;
+                    }
                 }
-                success = false;
-                break;
+                Err(GenerateError::Unsatisfiable) => {
+                    outcome = GenerationOutcome::Unsatisfiable;
+                    break;
+                }
+                Err(GenerateError::Exhausted) => {
+                    outcome = GenerationOutcome::Exhausted;
+                }
             }
         }
 
-        match (success, is_whitelisted) {
-            (true, false) => { /* success as expected */ }
-            (true, true) => {
-                // This schema was previously whitelisted but now passes – flag it.
+        match outcome {
+            GenerationOutcome::Valid => {
+                if is_whitelisted {
+                    panic!(
+                        "Whitelisted failure now passes; please remove entry for schema #{idx} in {rel_str}"
+                    );
+                }
+            }
+            GenerationOutcome::Invalid(candidate) => {
+                if is_whitelisted {
+                    continue;
+                }
                 panic!(
-                    "Whitelisted failure now passes; please remove entry for schema #{idx} in {rel_str}"
+                    "{}",
+                    &format!(
+                        "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance:\n{}",
+                        rel_str,
+                        serde_json::to_string_pretty(schema_json)?,
+                        serde_json::to_string_pretty(&candidate)?
+                    )
                 );
             }
-            (false, true) => {
-                // Allowed failure – proceed.
+            GenerationOutcome::Exhausted => {
+                // TODO: a different expect_unsat could be allowed here
+                // for non provably unsatisfiable schemas
+                if is_whitelisted {
+                    continue;
+                }
+                panic!(
+                    "{}",
+                    &format!(
+                        "Generator exhausted without finding a value for schema #{idx} in {}\n\nSchema:\n{}",
+                        rel_str,
+                        serde_json::to_string_pretty(schema_json)?
+                    )
+                );
             }
-            (false, false) => {
-                panic!("Should have panicked above, but didn't: schema #{idx} in {rel_str}");
+            GenerationOutcome::Unsatisfiable => {
+                if is_whitelisted && *expect_unsat {
+                    panic!(
+                        "Whitelisted failure now passes; please remove entry for schema #{idx} in {rel_str}"
+                    );
+                }
+                if is_whitelisted {
+                    continue;
+                }
+                if *expect_unsat {
+                    continue;
+                }
+                panic!(
+                    "{}",
+                    &format!(
+                        "Generator determined schema #{idx} in {} is unsatisfiable\n\nSchema:\n{}",
+                        rel_str,
+                        serde_json::to_string_pretty(schema_json)?
+                    )
+                );
             }
         }
     }

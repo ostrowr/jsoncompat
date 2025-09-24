@@ -35,7 +35,8 @@ let schema_node: SchemaNode = build_and_resolve_schema(&raw).unwrap();
 
 // Generate a random value
 let mut rng = thread_rng();
-let value = generate_value(&schema_node, &mut rng, 4);
+let value = generate_value(&schema_node, &mut rng, 4)
+    .expect("schema should admit at least one instance");
 
 println!("{}", value);
 ```

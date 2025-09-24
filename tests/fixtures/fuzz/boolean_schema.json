@@ -53,6 +53,7 @@
     {
         "description": "boolean schema 'false'",
         "schema": false,
+        "jsoncompat_expect_unsat": true,
         "tests": [
             {
                 "description": "number is invalid",

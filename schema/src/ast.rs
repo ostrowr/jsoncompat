@@ -5,6 +5,7 @@ use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
+use url::Url;
 
 /// Shared, interior-mutable representation of a JSON Schema node.  Using
 /// reference counting allows multiple parents to point to the same node which
@@ -33,7 +34,7 @@ impl SchemaNode {
         self.0.borrow_mut()
     }
 
-    fn ptr_id(&self) -> usize {
+    pub fn ptr_id(&self) -> usize {
         Rc::as_ptr(&self.0) as usize
     }
 
@@ -46,8 +47,26 @@ impl SchemaNode {
     /// tests and fuzz harness (which only relies on the subset of keywords we
     /// explicitly generate).
     pub fn to_json(&self) -> Value {
-        use SchemaNodeKind::*;
+        let mut seen = HashMap::new();
+        let mut path = Vec::new();
+        self.to_json_with_path(&mut path, &mut seen)
+    }
 
+    fn to_json_with_path(
+        &self,
+        path: &mut Vec<String>,
+        seen: &mut HashMap<usize, String>,
+    ) -> Value {
+        if let Some(existing) = seen.get(&self.ptr_id()) {
+            let mut obj = serde_json::Map::new();
+            obj.insert("$ref".into(), Value::String(existing.clone()));
+            return Value::Object(obj);
+        }
+
+        let pointer = pointer_from_path(path);
+        seen.insert(self.ptr_id(), pointer);
+
+        use SchemaNodeKind::*;
         match &*self.borrow() {
             BoolSchema(b) => Value::Bool(*b),
             Any => Value::Object(serde_json::Map::new()),
@@ -157,14 +176,14 @@ impl SchemaNode {
                         obj.insert("exclusiveMaximum".into(), Value::Number((*m).into()));
                     }
                 }
-                if let Some(e) = enumeration {
-                    obj.insert("enum".into(), Value::Array(e.clone()));
-                }
                 if let Some(mo) = multiple_of {
                     obj.insert(
                         "multipleOf".into(),
                         Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
                     );
+                }
+                if let Some(e) = enumeration {
+                    obj.insert("enum".into(), Value::Array(e.clone()));
                 }
                 Value::Object(obj)
             }
@@ -188,26 +207,49 @@ impl SchemaNode {
             }
 
             AllOf(subs) => {
-                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut arr = Vec::new();
+                path.push("allOf".into());
+                for (idx, child) in subs.iter().enumerate() {
+                    path.push(idx.to_string());
+                    arr.push(child.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("allOf".into(), Value::Array(arr));
                 Value::Object(obj)
             }
             AnyOf(subs) => {
-                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut arr = Vec::new();
+                path.push("anyOf".into());
+                for (idx, child) in subs.iter().enumerate() {
+                    path.push(idx.to_string());
+                    arr.push(child.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("anyOf".into(), Value::Array(arr));
                 Value::Object(obj)
             }
             OneOf(subs) => {
-                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut arr = Vec::new();
+                path.push("oneOf".into());
+                for (idx, child) in subs.iter().enumerate() {
+                    path.push(idx.to_string());
+                    arr.push(child.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("oneOf".into(), Value::Array(arr));
                 Value::Object(obj)
             }
             Not(sub) => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("not".into(), sub.to_json());
+                path.push("not".into());
+                obj.insert("not".into(), sub.to_json_with_path(path, seen));
+                path.pop();
                 Value::Object(obj)
             }
             IfThenElse {
@@ -216,12 +258,18 @@ impl SchemaNode {
                 else_schema,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("if".into(), if_schema.to_json());
+                path.push("if".into());
+                obj.insert("if".into(), if_schema.to_json_with_path(path, seen));
+                path.pop();
                 if let Some(t) = then_schema {
-                    obj.insert("then".into(), t.to_json());
+                    path.push("then".into());
+                    obj.insert("then".into(), t.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 if let Some(e) = else_schema {
-                    obj.insert("else".into(), e.to_json());
+                    path.push("else".into());
+                    obj.insert("else".into(), e.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 Value::Object(obj)
             }
@@ -231,12 +279,16 @@ impl SchemaNode {
                 min_items,
                 max_items,
                 contains,
+                min_contains,
+                max_contains,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("array".into()));
                 if !matches!(&*items.borrow(), SchemaNodeKind::Any) {
-                    obj.insert("items".into(), items.to_json());
+                    path.push("items".into());
+                    obj.insert("items".into(), items.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 if let Some(mi) = min_items {
                     obj.insert("minItems".into(), Value::Number((*mi).into()));
@@ -245,7 +297,15 @@ impl SchemaNode {
                     obj.insert("maxItems".into(), Value::Number((*ma).into()));
                 }
                 if let Some(c) = contains {
-                    obj.insert("contains".into(), c.to_json());
+                    path.push("contains".into());
+                    obj.insert("contains".into(), c.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                if let Some(mc) = min_contains {
+                    obj.insert("minContains".into(), Value::Number((*mc).into()));
+                }
+                if let Some(mc) = max_contains {
+                    obj.insert("maxContains".into(), Value::Number((*mc).into()));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -267,9 +327,13 @@ impl SchemaNode {
 
                 if !properties.is_empty() {
                     let mut props_map = serde_json::Map::new();
+                    path.push("properties".into());
                     for (k, v) in properties {
-                        props_map.insert(k.clone(), v.to_json());
+                        path.push(k.clone());
+                        props_map.insert(k.clone(), v.to_json_with_path(path, seen));
+                        path.pop();
                     }
+                    path.pop();
                     obj.insert("properties".into(), Value::Object(props_map));
                 }
 
@@ -288,7 +352,12 @@ impl SchemaNode {
                         obj.insert("additionalProperties".into(), Value::Bool(*b));
                     }
                     _ => {
-                        obj.insert("additionalProperties".into(), additional.to_json());
+                        path.push("additionalProperties".into());
+                        obj.insert(
+                            "additionalProperties".into(),
+                            additional.to_json_with_path(path, seen),
+                        );
+                        path.pop();
                     }
                 }
 
@@ -319,9 +388,13 @@ impl SchemaNode {
 
             Defs(map) => {
                 let mut defs_obj = serde_json::Map::new();
+                path.push("$defs".into());
                 for (k, v) in map {
-                    defs_obj.insert(k.clone(), v.to_json());
+                    path.push(k.clone());
+                    defs_obj.insert(k.clone(), v.to_json_with_path(path, seen));
+                    path.pop();
                 }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("$defs".into(), Value::Object(defs_obj));
                 Value::Object(obj)
@@ -365,7 +438,12 @@ impl SchemaNode {
             }
             AdditionalProperties(schema) => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("additionalProperties".into(), schema.to_json());
+                path.push("additionalProperties".into());
+                obj.insert(
+                    "additionalProperties".into(),
+                    schema.to_json_with_path(path, seen),
+                );
+                path.pop();
                 Value::Object(obj)
             }
 
@@ -423,6 +501,22 @@ impl SchemaNode {
             }
         }
     }
+}
+
+fn pointer_from_path(path: &[String]) -> String {
+    if path.is_empty() {
+        "#".to_string()
+    } else {
+        let encoded: Vec<String> = path
+            .iter()
+            .map(|segment| encode_pointer_segment(segment))
+            .collect();
+        format!("#/{}", encoded.join("/"))
+    }
+}
+
+fn encode_pointer_segment(segment: &str) -> String {
+    segment.replace('~', "~0").replace('/', "~1")
 }
 
 impl fmt::Debug for SchemaNode {
@@ -560,6 +654,8 @@ impl PartialEq for SchemaNode {
                         min_items: amin,
                         max_items: amax,
                         contains: acontains,
+                        min_contains: amin_contains,
+                        max_contains: amax_contains,
                         enumeration: aenum,
                     },
                     Array {
@@ -567,10 +663,17 @@ impl PartialEq for SchemaNode {
                         min_items: bmin,
                         max_items: bmax,
                         contains: bcontains,
+                        min_contains: bmin_contains,
+                        max_contains: bmax_contains,
                         enumeration: benum,
                     },
                 ) => {
-                    if amin != bmin || amax != bmax || aenum != benum {
+                    if amin != bmin
+                        || amax != bmax
+                        || aenum != benum
+                        || amin_contains != bmin_contains
+                        || amax_contains != bmax_contains
+                    {
                         return false;
                     }
                     if !eq_inner(aitems, bitems, seen) {
@@ -718,6 +821,8 @@ pub enum SchemaNodeKind {
         min_items: Option<u64>,
         max_items: Option<u64>,
         contains: Option<SchemaNode>,
+        min_contains: Option<u64>,
+        max_contains: Option<u64>,
         enumeration: Option<Vec<Value>>,
     },
 
@@ -1069,6 +1174,8 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     };
     let min_items = obj.get("minItems").and_then(|v| v.as_u64());
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
+    let mut min_contains = obj.get("minContains").and_then(|v| v.as_u64());
+    let mut max_contains = obj.get("maxContains").and_then(|v| v.as_u64());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
     let contains_node = match obj.get("contains") {
@@ -1076,11 +1183,18 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
         Some(v) => Some(build_schema_ast(v)?),
     };
 
+    if contains_node.is_none() {
+        min_contains = None;
+        max_contains = None;
+    }
+
     Ok(SchemaNode::new(SchemaNodeKind::Array {
         items: items_node,
         min_items,
         max_items,
         contains: contains_node,
+        min_contains,
+        max_contains,
         enumeration,
     }))
 }
@@ -1089,15 +1203,48 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
 pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]) -> Result<()> {
     let mut stack = visited.to_vec();
     let mut cache: HashMap<String, SchemaNode> = HashMap::new();
-    resolve_refs_internal(node, root_json, &mut stack, &mut cache)
+    let mut id_map: HashMap<String, (Value, Option<Url>)> = HashMap::new();
+    collect_id_schemas(root_json, None, &mut id_map);
+    let root_base = compute_base_for_tokens(root_json, &[], None);
+    let root_base_clone = root_base.clone();
+    resolve_refs_internal(
+        node,
+        root_json,
+        root_json,
+        root_base.clone(),
+        root_base.clone(),
+        root_json,
+        root_base_clone,
+        &mut stack,
+        &mut cache,
+        &id_map,
+    )
 }
 
+#[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 fn resolve_refs_internal(
     node: &mut SchemaNode,
+    current_json: &Value,
     root_json: &Value,
+    current_base: Option<Url>,
+    root_base: Option<Url>,
+    resource_json: &Value,
+    resource_base: Option<Url>,
     stack: &mut Vec<String>,
     cache: &mut HashMap<String, SchemaNode>,
+    id_map: &HashMap<String, (Value, Option<Url>)>,
 ) -> Result<()> {
+    let mut effective_base = current_base;
+    let mut resource_json_local = resource_json;
+    let mut resource_base_local = resource_base.clone();
+    if let Some(obj) = current_json.as_object() {
+        if let Some(Value::String(id_str)) = obj.get("$id") {
+            effective_base = resolve_uri(effective_base.as_ref(), id_str);
+            resource_json_local = current_json;
+            resource_base_local = effective_base.clone();
+        }
+    }
+
     let ref_path = {
         let guard = node.borrow();
         if let SchemaNodeKind::Ref(p) = &*guard {
@@ -1108,112 +1255,557 @@ fn resolve_refs_internal(
     };
 
     if let Some(path) = ref_path {
-        if let Some(existing) = cache.get(&path) {
+        if let Some(tokens) = decode_json_pointer(&path) {
+            let cache_key = format!(
+                "pointer:{}:{}",
+                resource_base_local
+                    .as_ref()
+                    .map(|u| u.as_str())
+                    .unwrap_or("<root>"),
+                path
+            );
+            if let Some(existing) = cache.get(&cache_key) {
+                *node = existing.clone();
+                return Ok(());
+            }
+            let target = get_value_by_tokens(resource_json_local, &tokens)
+                .ok_or_else(|| anyhow!("Unresolved reference: {}", path))?;
+            let target_base =
+                compute_base_for_tokens(resource_json_local, &tokens, resource_base_local.clone());
+            let mut resolved = build_schema_ast(target)?;
+            cache.insert(cache_key.clone(), resolved.clone());
+            stack.push(path.clone());
+            resolve_refs_internal(
+                &mut resolved,
+                target,
+                root_json,
+                target_base.clone(),
+                root_base.clone(),
+                resource_json_local,
+                resource_base_local.clone(),
+                stack,
+                cache,
+                id_map,
+            )?;
+            stack.pop();
+            cache.insert(cache_key, resolved.clone());
+            *node = resolved;
+            return Ok(());
+        }
+
+        let absolute = effective_base
+            .as_ref()
+            .and_then(|base| base.join(&path).ok())
+            .or_else(|| root_base.as_ref().and_then(|base| base.join(&path).ok()))
+            .or_else(|| Url::parse(&path).ok());
+
+        let Some(target_url) = absolute else {
+            *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
+            return Ok(());
+        };
+
+        let canonical = target_url.to_string();
+        if let Some(existing) = cache.get(&canonical) {
             *node = existing.clone();
             return Ok(());
         }
 
-        if let Some(stripped) = path.strip_prefix("#/") {
-            let parts: Vec<String> = stripped
-                .split('/')
-                .map(|token| {
-                    let mut decoded = percent_decode_str(token).decode_utf8_lossy().into_owned();
-                    decoded = decoded.replace("~1", "/");
-                    decoded.replace("~0", "~")
-                })
-                .collect();
-            let mut current = root_json;
-            for p in &parts {
-                if let Some(next) = current.get(p.as_str()) {
-                    current = next;
-                } else {
-                    return Err(anyhow!("Unresolved reference: {}", path));
+        if let Some((target_json, base)) = id_map.get(&canonical) {
+            let mut resolved = build_schema_ast(target_json)?;
+            cache.insert(canonical.clone(), resolved.clone());
+            stack.push(canonical.clone());
+            resolve_refs_internal(
+                &mut resolved,
+                target_json,
+                root_json,
+                base.clone(),
+                root_base.clone(),
+                target_json,
+                base.clone(),
+                stack,
+                cache,
+                id_map,
+            )?;
+            stack.pop();
+            cache.insert(canonical.clone(), resolved.clone());
+            *node = resolved;
+            return Ok(());
+        }
+
+        let mut doc_url = target_url.clone();
+        let fragment = doc_url.fragment().map(|s| s.to_string());
+        doc_url.set_fragment(None);
+        let doc_key = doc_url.to_string();
+
+        if let Some((doc_json, doc_base)) = id_map.get(&doc_key) {
+            let mut base = doc_base.clone();
+            let mut target_json = doc_json;
+
+            if let Some(frag) = fragment {
+                if let Some(tokens) = decode_pointer_fragment(&frag) {
+                    target_json = get_value_by_tokens(target_json, &tokens)
+                        .ok_or_else(|| anyhow!("Unresolved reference: {}", path))?;
+                    base = compute_base_for_tokens(doc_json, &tokens, base);
+                } else if !frag.is_empty() {
+                    if let Some((anchor_json, anchor_base)) = id_map.get(&target_url.to_string()) {
+                        let key = target_url.to_string();
+                        let mut resolved = build_schema_ast(anchor_json)?;
+                        cache.insert(key.clone(), resolved.clone());
+                        stack.push(key.clone());
+                        resolve_refs_internal(
+                            &mut resolved,
+                            anchor_json,
+                            root_json,
+                            anchor_base.clone(),
+                            root_base.clone(),
+                            anchor_json,
+                            anchor_base.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                        stack.pop();
+                        cache.insert(key.clone(), resolved.clone());
+                        *node = resolved;
+                        return Ok(());
+                    } else {
+                        *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
+                        return Ok(());
+                    }
                 }
             }
-            let mut resolved = build_schema_ast(current)?;
-            cache.insert(path.clone(), resolved.clone());
-            stack.push(path.clone());
-            resolve_refs_internal(&mut resolved, root_json, stack, cache)?;
+
+            let key = target_url.to_string();
+            let mut resolved = build_schema_ast(target_json)?;
+            cache.insert(key.clone(), resolved.clone());
+            stack.push(key.clone());
+            resolve_refs_internal(
+                &mut resolved,
+                target_json,
+                root_json,
+                base.clone(),
+                root_base.clone(),
+                doc_json,
+                doc_base.clone(),
+                stack,
+                cache,
+                id_map,
+            )?;
             stack.pop();
-            cache.insert(path.clone(), resolved.clone());
+            cache.insert(key.clone(), resolved.clone());
             *node = resolved;
-        } else {
-            *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
+            return Ok(());
         }
+
+        *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
         return Ok(());
     }
 
-    if let SchemaNodeKind::AllOf(children) = &mut *node.borrow_mut() {
-        for child in children.iter_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        return Ok(());
-    }
-    if let SchemaNodeKind::AnyOf(children) = &mut *node.borrow_mut() {
-        for child in children.iter_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        return Ok(());
-    }
-    if let SchemaNodeKind::OneOf(children) = &mut *node.borrow_mut() {
-        for child in children.iter_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        return Ok(());
-    }
-    if let SchemaNodeKind::IfThenElse {
-        if_schema,
-        then_schema,
-        else_schema,
-    } = &mut *node.borrow_mut()
     {
-        resolve_refs_internal(if_schema, root_json, stack, cache)?;
-        if let Some(t) = then_schema {
-            resolve_refs_internal(t, root_json, stack, cache)?;
+        let mut guard = node.borrow_mut();
+        match &mut *guard {
+            SchemaNodeKind::AllOf(children) => {
+                if let Some(obj) = current_json.as_object() {
+                    let mut extras = Vec::new();
+                    if obj.len() > 1 {
+                        let mut base_obj = obj.clone();
+                        base_obj.remove("allOf");
+                        const META_KEYS: [&str; 4] = ["$schema", "$id", "$comment", "$defs"];
+                        for key in META_KEYS {
+                            base_obj.remove(key);
+                        }
+                        if !base_obj.is_empty() {
+                            extras.push(Value::Object(base_obj));
+                        }
+                    }
+
+                    let mut json_children: Vec<&Value> = extras.iter().collect();
+                    if let Some(Value::Array(arr)) = obj.get("allOf") {
+                        for item in arr {
+                            json_children.push(item);
+                        }
+                    }
+                    for (child, json_fragment) in children.iter_mut().zip(json_children.iter()) {
+                        resolve_refs_internal(
+                            child,
+                            json_fragment,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                    }
+                    return Ok(());
+                }
+            }
+            SchemaNodeKind::AnyOf(children) => {
+                if let Some(Value::Array(arr)) = current_json.get("anyOf") {
+                    for (child, json_fragment) in children.iter_mut().zip(arr.iter()) {
+                        resolve_refs_internal(
+                            child,
+                            json_fragment,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                    }
+                    return Ok(());
+                }
+            }
+            SchemaNodeKind::OneOf(children) => {
+                if let Some(Value::Array(arr)) = current_json.get("oneOf") {
+                    for (child, json_fragment) in children.iter_mut().zip(arr.iter()) {
+                        resolve_refs_internal(
+                            child,
+                            json_fragment,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                    }
+                    return Ok(());
+                }
+            }
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => {
+                if let Some(obj) = current_json.as_object() {
+                    if let Some(cond) = obj.get("if") {
+                        resolve_refs_internal(
+                            if_schema,
+                            cond,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                    }
+                    if let Some(then_val) = then_schema.as_mut().and_then(|_| obj.get("then")) {
+                        if let Some(schema) = then_schema {
+                            resolve_refs_internal(
+                                schema,
+                                then_val,
+                                root_json,
+                                effective_base.clone(),
+                                root_base.clone(),
+                                resource_json_local,
+                                resource_base_local.clone(),
+                                stack,
+                                cache,
+                                id_map,
+                            )?;
+                        }
+                    }
+                    if let Some(else_val) = else_schema.as_mut().and_then(|_| obj.get("else")) {
+                        if let Some(schema) = else_schema {
+                            resolve_refs_internal(
+                                schema,
+                                else_val,
+                                root_json,
+                                effective_base.clone(),
+                                root_base.clone(),
+                                resource_json_local,
+                                resource_base_local.clone(),
+                                stack,
+                                cache,
+                                id_map,
+                            )?;
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+            SchemaNodeKind::Not(sub) => {
+                if let Some(obj) = current_json.as_object() {
+                    if let Some(inner) = obj.get("not") {
+                        resolve_refs_internal(
+                            sub,
+                            inner,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                        return Ok(());
+                    }
+                }
+            }
+            SchemaNodeKind::Object {
+                properties,
+                additional,
+                ..
+            } => {
+                if let Some(obj) = current_json.as_object() {
+                    if let Some(Value::Object(props)) = obj.get("properties") {
+                        for (name, child) in properties.iter_mut() {
+                            if let Some(prop_json) = props.get(name) {
+                                resolve_refs_internal(
+                                    child,
+                                    prop_json,
+                                    root_json,
+                                    effective_base.clone(),
+                                    root_base.clone(),
+                                    resource_json_local,
+                                    resource_base_local.clone(),
+                                    stack,
+                                    cache,
+                                    id_map,
+                                )?;
+                            }
+                        }
+                    }
+                    if let Some(additional_json) = obj.get("additionalProperties") {
+                        resolve_refs_internal(
+                            additional,
+                            additional_json,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                    }
+                }
+                return Ok(());
+            }
+            SchemaNodeKind::Array {
+                items, contains, ..
+            } => {
+                if let Some(obj) = current_json.as_object() {
+                    if let Some(items_json) = obj.get("items") {
+                        resolve_refs_internal(
+                            items,
+                            items_json,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                    }
+                    if let Some(contains_json) = obj.get("contains") {
+                        if let Some(child) = contains {
+                            resolve_refs_internal(
+                                child,
+                                contains_json,
+                                root_json,
+                                effective_base.clone(),
+                                root_base.clone(),
+                                resource_json_local,
+                                resource_base_local.clone(),
+                                stack,
+                                cache,
+                                id_map,
+                            )?;
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            SchemaNodeKind::AdditionalProperties(schema) => {
+                if let Some(obj) = current_json.as_object() {
+                    if let Some(inner) = obj.get("additionalProperties") {
+                        resolve_refs_internal(
+                            schema,
+                            inner,
+                            root_json,
+                            effective_base.clone(),
+                            root_base.clone(),
+                            resource_json_local,
+                            resource_base_local.clone(),
+                            stack,
+                            cache,
+                            id_map,
+                        )?;
+                        return Ok(());
+                    }
+                }
+            }
+            SchemaNodeKind::Defs(map) => {
+                if let Some(obj) = current_json.as_object() {
+                    if let Some(Value::Object(defs)) = obj.get("$defs") {
+                        for (name, child) in map.iter_mut() {
+                            if let Some(def_json) = defs.get(name) {
+                                resolve_refs_internal(
+                                    child,
+                                    def_json,
+                                    root_json,
+                                    effective_base.clone(),
+                                    root_base.clone(),
+                                    resource_json_local,
+                                    resource_base_local.clone(),
+                                    stack,
+                                    cache,
+                                    id_map,
+                                )?;
+                            }
+                        }
+                        return Ok(());
+                    }
+                }
+            }
+            _ => {}
         }
-        if let Some(e) = else_schema {
-            resolve_refs_internal(e, root_json, stack, cache)?;
-        }
-        return Ok(());
-    }
-    if let SchemaNodeKind::Not(sub) = &mut *node.borrow_mut() {
-        resolve_refs_internal(sub, root_json, stack, cache)?;
-        return Ok(());
-    }
-    if let SchemaNodeKind::Object {
-        properties,
-        additional,
-        ..
-    } = &mut *node.borrow_mut()
-    {
-        for child in properties.values_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        resolve_refs_internal(additional, root_json, stack, cache)?;
-        return Ok(());
-    }
-    if let SchemaNodeKind::Array {
-        items, contains, ..
-    } = &mut *node.borrow_mut()
-    {
-        resolve_refs_internal(items, root_json, stack, cache)?;
-        if let Some(child) = contains {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        return Ok(());
-    }
-    if let SchemaNodeKind::AdditionalProperties(schema) = &mut *node.borrow_mut() {
-        resolve_refs_internal(schema, root_json, stack, cache)?;
-        return Ok(());
-    }
-    if let SchemaNodeKind::Defs(map) = &mut *node.borrow_mut() {
-        for child in map.values_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        return Ok(());
     }
 
     Ok(())
+}
+
+fn resolve_uri(base: Option<&Url>, reference: &str) -> Option<Url> {
+    if let Some(base_url) = base {
+        if let Ok(joined) = base_url.join(reference) {
+            return Some(joined);
+        }
+    }
+    Url::parse(reference).ok()
+}
+
+fn decode_json_pointer(pointer: &str) -> Option<Vec<String>> {
+    if pointer == "#" {
+        return Some(Vec::new());
+    }
+    let stripped = pointer.strip_prefix("#/")?;
+    let tokens = stripped.split('/').map(decode_reference_token).collect();
+    Some(tokens)
+}
+
+fn decode_pointer_fragment(fragment: &str) -> Option<Vec<String>> {
+    if fragment.is_empty() {
+        return Some(Vec::new());
+    }
+    if !fragment.starts_with('/') {
+        return None;
+    }
+    let tokens = fragment
+        .trim_start_matches('/')
+        .split('/')
+        .map(decode_reference_token)
+        .collect();
+    Some(tokens)
+}
+
+fn decode_reference_token(token: &str) -> String {
+    let mut decoded = percent_decode_str(token).decode_utf8_lossy().into_owned();
+    decoded = decoded.replace("~1", "/");
+    decoded.replace("~0", "~")
+}
+
+fn get_value_by_tokens<'a>(value: &'a Value, tokens: &[String]) -> Option<&'a Value> {
+    let mut current = value;
+    for token in tokens {
+        match current {
+            Value::Object(map) => {
+                current = map.get(token)?;
+            }
+            Value::Array(arr) => {
+                let idx: usize = token.parse().ok()?;
+                current = arr.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current)
+}
+
+fn compute_base_for_tokens(value: &Value, tokens: &[String], base: Option<Url>) -> Option<Url> {
+    let mut current_base = base;
+    let mut current = value;
+    let mut remaining = tokens;
+
+    loop {
+        if let Some(obj) = current.as_object() {
+            if let Some(Value::String(id_str)) = obj.get("$id") {
+                current_base = resolve_uri(current_base.as_ref(), id_str);
+            }
+        }
+
+        let Some((first, rest)) = remaining.split_first() else {
+            return current_base;
+        };
+
+        current = match current {
+            Value::Object(map) => map.get(first)?,
+            Value::Array(arr) => {
+                let idx: usize = first.parse().ok()?;
+                arr.get(idx)?
+            }
+            _ => return current_base,
+        };
+        remaining = rest;
+    }
+}
+
+fn collect_id_schemas(
+    value: &Value,
+    base: Option<Url>,
+    map: &mut HashMap<String, (Value, Option<Url>)>,
+) {
+    if let Some(obj) = value.as_object() {
+        let mut current_base = base;
+        if let Some(Value::String(id_str)) = obj.get("$id") {
+            current_base = resolve_uri(current_base.as_ref(), id_str);
+            if let Some(url) = &current_base {
+                map.insert(url.to_string(), (value.clone(), current_base.clone()));
+            }
+        }
+        if let Some(Value::String(anchor)) = obj.get("$anchor") {
+            if let Some(url) = current_base.as_ref() {
+                let mut with_fragment = url.clone();
+                with_fragment.set_fragment(Some(anchor));
+                map.insert(
+                    with_fragment.to_string(),
+                    (value.clone(), current_base.clone()),
+                );
+            }
+        }
+        if let Some(Value::String(dynamic_anchor)) = obj.get("$dynamicAnchor") {
+            if let Some(url) = current_base.as_ref() {
+                let mut with_fragment = url.clone();
+                with_fragment.set_fragment(Some(dynamic_anchor));
+                map.insert(
+                    with_fragment.to_string(),
+                    (value.clone(), current_base.clone()),
+                );
+            }
+        }
+        for v in obj.values() {
+            collect_id_schemas(v, current_base.clone(), map);
+        }
+    } else if let Some(arr) = value.as_array() {
+        for v in arr {
+            collect_id_schemas(v, base.clone(), map);
+        }
+    }
 }
 
 /// Minimal check if an *instance* `val` is valid against `schema`.

@@ -1,5 +1,5 @@
 use json_schema_ast::compile;
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::{generate_value, GenerateError};
 use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 use rand::{rngs::StdRng, SeedableRng};
 use serde::Deserialize;
@@ -96,20 +96,34 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
 
     for _ in 0..100 {
-        let v_new = generate_value(&new_ast, &mut rng, 4);
-        if expect.serializer {
-            assert!(
-                compiled_old.is_valid(&v_new),
-                "serializer=true but OLD rejects generated value {v_new:?} in {dir:?}"
-            );
+        match generate_value(&new_ast, &mut rng, 4) {
+            Ok(v_new) => {
+                if expect.serializer {
+                    assert!(
+                        compiled_old.is_valid(&v_new),
+                        "serializer=true but OLD rejects generated value {v_new:?} in {dir:?}"
+                    );
+                }
+            }
+            Err(GenerateError::Unsatisfiable) => {
+                panic!("new schema in {dir:?} is unsatisfiable, cannot fuzz examples");
+            }
+            Err(GenerateError::Exhausted) => {}
         }
 
-        let v_old = generate_value(&old_ast, &mut rng, 4);
-        if expect.deserializer {
-            assert!(
-                compiled_new.is_valid(&v_old),
-                "deserializer=true but NEW rejects generated value {v_old:?} in {dir:?}"
-            );
+        match generate_value(&old_ast, &mut rng, 4) {
+            Ok(v_old) => {
+                if expect.deserializer {
+                    assert!(
+                        compiled_new.is_valid(&v_old),
+                        "deserializer=true but NEW rejects generated value {v_old:?} in {dir:?}"
+                    );
+                }
+            }
+            Err(GenerateError::Unsatisfiable) => {
+                panic!("old schema in {dir:?} is unsatisfiable, cannot fuzz examples");
+            }
+            Err(GenerateError::Exhausted) => {}
         }
     }
 

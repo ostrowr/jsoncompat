@@ -1,9 +1,22 @@
 use crate::SchemaNode;
 use json_schema_ast::{compile, SchemaNodeKind};
+use std::collections::HashSet;
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
 pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    let mut seen = HashSet::new();
+    is_subschema_of_inner(sub, sup, &mut seen)
+}
+
+fn is_subschema_of_inner(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+    seen: &mut HashSet<(usize, usize)>,
+) -> bool {
+    if !seen.insert((sub.ptr_id(), sup.ptr_id())) {
+        return true;
+    }
     if sub == sup {
         return true;
     }
@@ -24,14 +37,22 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         (Enum(_), _) => false,
         (_, Enum(_)) => false,
 
-        (AllOf(subs), _) => subs.iter().all(|s| is_subschema_of(s, sup)),
-        (_, AllOf(sups)) => sups.iter().all(|s| is_subschema_of(sub, s)),
+        (AllOf(subs), _) => subs.iter().all(|s| is_subschema_of_inner(s, sup, seen)),
+        (_, AllOf(sups)) => sups.iter().all(|s| is_subschema_of_inner(sub, s, seen)),
 
-        (AnyOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
-        (_, AnyOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
+        (AnyOf(subs), _) => subs
+            .iter()
+            .all(|branch| is_subschema_of_inner(branch, sup, seen)),
+        (_, AnyOf(sups)) => sups
+            .iter()
+            .any(|branch| is_subschema_of_inner(sub, branch, seen)),
 
-        (OneOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
-        (_, OneOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
+        (OneOf(subs), _) => subs
+            .iter()
+            .all(|branch| is_subschema_of_inner(branch, sup, seen)),
+        (_, OneOf(sups)) => sups
+            .iter()
+            .any(|branch| is_subschema_of_inner(sub, branch, seen)),
 
         (Not(subn), _) => match &*subn.borrow() {
             Any | BoolSchema(true) => true,
@@ -50,7 +71,7 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         | (Boolean { .. }, Boolean { .. })
         | (Null { .. }, Null { .. })
         | (Object { .. }, Object { .. })
-        | (Array { .. }, Array { .. }) => type_constraints_subsumed(sub, sup),
+        | (Array { .. }, Array { .. }) => type_constraints_subsumed_inner(sub, sup, seen),
 
         (Const(s_val), Const(p_val)) => s_val == p_val,
 
@@ -69,6 +90,15 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
 /// Compare the **constraints** of two nodes of the *same* basic type.
 pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    let mut seen = HashSet::new();
+    type_constraints_subsumed_inner(sub, sup, &mut seen)
+}
+
+fn type_constraints_subsumed_inner(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+    seen: &mut HashSet<(usize, usize)>,
+) -> bool {
     use SchemaNodeKind::*;
 
     let sub_kind = sub.borrow().clone();
@@ -224,31 +254,23 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
             for (key, s_schema) in &sprops {
                 if let Some(p_schema) = pprops.get(key) {
-                    if !is_subschema_of(s_schema, p_schema) {
+                    if !is_subschema_of_inner(s_schema, p_schema, seen) {
                         return false;
                     }
                 } else {
-                    // The new schema permits an additional property that the
-                    // previous map did not list explicitly.  We must ensure the
-                    // "additional" schema of the superset accepts whatever the
-                    // subset would have produced (or, if `additionalProperties`
-                    // was `false`, reject immediately).
                     let additional_allows =
                         !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
-                    if !additional_allows || !is_subschema_of(s_schema, &p_addl) {
+                    if !additional_allows || !is_subschema_of_inner(s_schema, &p_addl, seen) {
                         return false;
                     }
                 }
             }
 
-            if !is_subschema_of(&s_addl, &p_addl) {
+            if !is_subschema_of_inner(&s_addl, &p_addl, seen) {
                 return false;
             }
 
             for (trigger, deps) in p_deps.iter() {
-                // If the superset requires extra keys whenever `trigger` exists,
-                // then the subset may only allow `trigger` when those keys are
-                // unconditionally present.
                 let trigger_allowed = sprops.contains_key(trigger)
                     || !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
                 if trigger_allowed && !deps.iter().all(|d| sreq.contains(d)) {
@@ -285,7 +307,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                     return false;
                 }
             }
-            if !is_subschema_of(&sitems, &pitems) {
+            if !is_subschema_of_inner(&sitems, &pitems, seen) {
                 return false;
             }
             if let (Some(se), Some(pe)) = (s_en, p_en) {
