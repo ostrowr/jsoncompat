@@ -74,10 +74,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
-        "optional/unknownKeyword.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
         "optional/id.json".to_string(),
         [0].iter().cloned().collect(),
     );
@@ -88,18 +84,12 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
     map.insert(
         "dynamicRef.json".to_string(),
-        [2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
-            .iter()
-            .cloned()
-            .collect(),
+        [2, 13, 14, 15, 16, 17, 20].iter().cloned().collect(),
     );
     map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
     map.insert(
         "ref.json".to_string(),
-        [6, 10, 17, 19, 27, 28, 29, 30, 31]
-            .iter()
-            .cloned()
-            .collect(),
+        [6, 10, 19, 26].iter().cloned().collect(),
     );
 
     map.insert(
@@ -109,7 +99,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
     map.insert(
         "refRemote.json".to_string(),
-        [0, 1, 2, 3, 4, 8, 9, 11, 12, 13, 14]
+        [0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 14]
             .iter()
             .cloned()
             .collect(),
