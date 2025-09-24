@@ -1,40 +1,56 @@
 use json_schema_ast::{SchemaNode, SchemaNodeKind};
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use serde_json::{Map, Value};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenerateError {
+    Unsatisfiable,
+    Exhausted,
+}
+
+impl std::fmt::Display for GenerateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unsatisfiable => f.write_str("schema cannot be satisfied"),
+            Self::Exhausted => f.write_str("failed to generate a satisfying value"),
+        }
+    }
+}
+
+impl std::error::Error for GenerateError {}
+
+pub type GenerateResult = Result<Value, GenerateError>;
 
 /// Generate a random JSON value *intended* to satisfy `schema`.
 /// We limit recursion with `depth`.
-pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
+pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> GenerateResult {
     if depth == 0 {
-        return Value::Null;
+        return Err(GenerateError::Exhausted);
     }
 
     use SchemaNodeKind::*;
 
     match &*schema.borrow() {
-        BoolSchema(false) => Value::Null,
-        BoolSchema(true) | Any => random_any(rng, depth),
-
-        Enum(vals) if !vals.is_empty() => {
-            let idx = rng.gen_range(0..vals.len());
-            vals[idx].clone()
+        BoolSchema(false) => Err(GenerateError::Unsatisfiable),
+        BoolSchema(true) | Any => Ok(random_any(rng, depth)),
+        Enum(vals) => {
+            if vals.is_empty() {
+                Err(GenerateError::Unsatisfiable)
+            } else {
+                let idx = rng.gen_range(0..vals.len());
+                Ok(vals[idx].clone())
+            }
         }
+        AllOf(subs) => {
+            if subs.is_empty() {
+                return Ok(random_any(rng, depth));
+            }
 
-        AllOf(subs) if !subs.is_empty() => {
-            // Heuristic strategy: try to satisfy *all* branches while keeping the
-            // generation cheap.  The original implementation relied on a long
-            // explanatory comment; reintroduce the gist:
-            //   1. bail out if any subschema is `false` (the intersection is empty),
-            //   2. when all branches describe objects, merge their generated
-            //      property maps so the final instance satisfies every branch,
-            //   3. otherwise fall back to any non-trivial branch (ignoring
-            //      `true`/`Any`) which is usually sufficient for simple
-            //      intersections such as `[{}, {"type": "number"}]`.
             if subs
                 .iter()
                 .any(|s| matches!(&*s.borrow(), BoolSchema(false)))
             {
-                return Value::Null;
+                return Err(GenerateError::Unsatisfiable);
             }
 
             if subs.iter().all(|s| matches!(&*s.borrow(), Object { .. })) {
@@ -42,18 +58,16 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
                 let mut combined = Map::new();
                 for sub in subs {
-                    if let Value::Object(obj) = generate_value(sub, rng, depth.saturating_sub(1)) {
-                        for (k, v) in obj {
-                            combined.insert(k, v);
+                    match generate_value(sub, rng, depth.saturating_sub(1))? {
+                        Value::Object(obj) => {
+                            for (k, v) in obj {
+                                combined.insert(k, v);
+                            }
                         }
+                        _ => return Err(GenerateError::Exhausted),
                     }
                 }
 
-                // Ensure that every branch's required properties exist in the
-                // merged object.  The generator is probabilistic, so it is
-                // possible that the fast generation above skipped an optional
-                // property that later turned out to be required by another
-                // branch.  We deterministically fill any such gaps here.
                 let mut missing: HashMap<std::string::String, SchemaNode> = HashMap::new();
                 for sub in subs {
                     if let Object {
@@ -75,58 +89,106 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 }
 
                 for (k, schema) in missing {
-                    let val = generate_value(&schema, rng, depth.saturating_sub(1));
+                    let val = generate_value(&schema, rng, depth.saturating_sub(1))?;
                     combined.insert(k, val);
                 }
 
-                return Value::Object(combined);
-            }
-
-            for sub in subs {
-                if matches!(&*sub.borrow(), BoolSchema(true) | Any) {
-                    continue;
+                Ok(Value::Object(combined))
+            } else {
+                let mut exhausted = false;
+                for sub in subs {
+                    if matches!(&*sub.borrow(), BoolSchema(true) | Any) {
+                        continue;
+                    }
+                    match generate_value(sub, rng, depth.saturating_sub(1)) {
+                        Ok(v) => return Ok(v),
+                        Err(GenerateError::Unsatisfiable) => {
+                            return Err(GenerateError::Unsatisfiable);
+                        }
+                        Err(GenerateError::Exhausted) => exhausted = true,
+                    }
                 }
-                return generate_value(sub, rng, depth.saturating_sub(1));
+
+                if exhausted {
+                    return Err(GenerateError::Exhausted);
+                }
+                Ok(random_any(rng, depth))
+            }
+        }
+        AnyOf(subs) => {
+            if subs.is_empty() {
+                return Err(GenerateError::Unsatisfiable);
             }
 
-            random_any(rng, depth)
-        }
+            let mut order: Vec<_> = (0..subs.len()).collect();
+            order.shuffle(rng);
 
-        AnyOf(subs) if !subs.is_empty() => {
-            let idx = rng.gen_range(0..subs.len());
-            generate_value(&subs[idx], rng, depth.saturating_sub(1))
-        }
+            let mut unsat = 0usize;
+            for idx in order {
+                match generate_value(&subs[idx], rng, depth.saturating_sub(1)) {
+                    Ok(v) => return Ok(v),
+                    Err(GenerateError::Unsatisfiable) => {
+                        unsat += 1;
+                    }
+                    Err(GenerateError::Exhausted) => {}
+                }
+            }
 
-        OneOf(subs) if !subs.is_empty() => {
+            if unsat == subs.len() {
+                Err(GenerateError::Unsatisfiable)
+            } else {
+                Err(GenerateError::Exhausted)
+            }
+        }
+        OneOf(subs) => {
+            if subs.is_empty() {
+                return Err(GenerateError::Unsatisfiable);
+            }
+
             let validators: Vec<_> = subs
                 .iter()
                 .map(|s| json_schema_ast::compile(&s.to_json()).ok())
                 .collect();
 
+            let mut unsat = vec![false; subs.len()];
+
             for _ in 0..32 {
                 let pick = rng.gen_range(0..subs.len());
-                let candidate = generate_value(&subs[pick], rng, depth.saturating_sub(1));
-
-                let mut ok = 0;
-                for v in validators.iter().flatten() {
-                    if v.is_valid(&candidate) {
-                        ok += 1;
-                        if ok > 1 {
-                            break;
+                match generate_value(&subs[pick], rng, depth.saturating_sub(1)) {
+                    Ok(candidate) => {
+                        let mut ok = 0;
+                        for v in validators.iter().flatten() {
+                            if v.is_valid(&candidate) {
+                                ok += 1;
+                                if ok > 1 {
+                                    break;
+                                }
+                            }
+                        }
+                        if ok == 1 {
+                            return Ok(candidate);
                         }
                     }
-                }
-
-                if ok == 1 {
-                    return candidate;
+                    Err(GenerateError::Unsatisfiable) => {
+                        unsat[pick] = true;
+                        if unsat.iter().all(|&b| b) {
+                            return Err(GenerateError::Unsatisfiable);
+                        }
+                    }
+                    Err(GenerateError::Exhausted) => {}
                 }
             }
 
-            random_any(rng, depth)
+            if unsat.iter().all(|&b| b) {
+                Err(GenerateError::Unsatisfiable)
+            } else {
+                Err(GenerateError::Exhausted)
+            }
         }
-
-        Not(_) => random_any(rng, depth),
-
+        Not(sub) => match &*sub.borrow() {
+            BoolSchema(true) | Any => Err(GenerateError::Unsatisfiable),
+            _ => Ok(random_any(rng, depth)),
+        },
         String {
             min_length,
             max_length,
@@ -134,127 +196,188 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             ..
         } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
                 }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
             }
 
-            let len_min = min_length.unwrap_or(0);
-            let len_max = max_length.unwrap_or(len_min + 5).max(len_min);
-            let length = if len_min <= len_max {
-                rng.gen_range(len_min..=len_max.min(len_min + 10))
-            } else {
-                len_min
-            };
+            let len_min = (*min_length).unwrap_or(0);
+            let len_max = (*max_length).unwrap_or(len_min + 5);
+            if len_max < len_min {
+                return Err(GenerateError::Unsatisfiable);
+            }
+            let upper = len_max.min(len_min + 10);
+            let length = rng.gen_range(len_min..=upper);
             let s: std::string::String = (0..length)
                 .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
                 .collect();
-            Value::String(s)
+            Ok(Value::String(s))
         }
-
         Number {
             enumeration,
             minimum,
             maximum,
             multiple_of,
+            exclusive_minimum,
+            exclusive_maximum,
             ..
         } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
+                }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
+            }
+
+            if let (Some(min), Some(max)) = (*minimum, *maximum) {
+                if min > max || (min == max && (*exclusive_minimum || *exclusive_maximum)) {
+                    return Err(GenerateError::Unsatisfiable);
                 }
             }
-            if multiple_of.is_some() {
-                let low = minimum.unwrap_or(f64::NEG_INFINITY);
-                let high = maximum.unwrap_or(f64::INFINITY);
+
+            let mut low = (*minimum).unwrap_or(-1_000_000.0);
+            let mut high = (*maximum).unwrap_or(1_000_000.0);
+
+            low = low.max(-1_000_000.0);
+            high = high.min(1_000_000.0);
+
+            if !(low.is_finite() && high.is_finite()) || low > high {
+                return Err(GenerateError::Unsatisfiable);
+            }
+
+            if let Some(mo) = *multiple_of {
+                if mo <= 0.0 {
+                    return Err(GenerateError::Unsatisfiable);
+                }
                 if low <= 0.0 && 0.0 <= high {
-                    return Value::Number(serde_json::Number::from_f64(0.0).unwrap());
+                    let num = serde_json::Number::from_f64(0.0).ok_or(GenerateError::Exhausted)?;
+                    return Ok(Value::Number(num));
                 }
+                let k = (low / mo).ceil();
+                let candidate = k * mo;
+                if candidate > high {
+                    return Err(GenerateError::Unsatisfiable);
+                }
+                let num =
+                    serde_json::Number::from_f64(candidate).ok_or(GenerateError::Exhausted)?;
+                return Ok(Value::Number(num));
             }
-
-            let low = minimum.unwrap_or(0.0).max(-1_000_000.0);
-            let high = maximum.unwrap_or(1_000_000.0).min(1_000_000.0);
-            let mut val = rng.gen_range(low..=high);
-
-            if let Some(mo) = multiple_of {
-                if *mo > 0.0 {
-                    let k = (val / *mo).floor();
-                    val = k * *mo;
-                    if val < low || val > high {
-                        let k = (low / *mo).ceil();
-                        val = k * *mo;
+            let mut attempts = 0;
+            loop {
+                let val = rng.gen_range(low..=high);
+                if (*exclusive_minimum && val <= low) || (*exclusive_maximum && val >= high) {
+                    attempts += 1;
+                    if attempts > 32 {
+                        return Err(GenerateError::Exhausted);
                     }
+                    continue;
                 }
+                let num = serde_json::Number::from_f64(val).ok_or(GenerateError::Exhausted)?;
+                break Ok(Value::Number(num));
             }
-
-            Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| 0.into()))
         }
-
         Integer {
             enumeration,
             minimum,
             maximum,
             multiple_of,
+            exclusive_minimum,
+            exclusive_maximum,
             ..
         } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
                 }
-            }
-            if multiple_of.is_some() {
-                let low = minimum.unwrap_or(i64::MIN);
-                let high = maximum.unwrap_or(i64::MAX);
-                if low <= 0 && 0 <= high {
-                    return Value::Number(0.into());
-                }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
             }
 
-            let low = minimum.unwrap_or(-1000).max(-1_000_000);
-            let high = maximum.unwrap_or(1000).min(1_000_000);
-            let mut val = rng.gen_range(low..=high);
+            let mut low = (*minimum).unwrap_or(-1_000_000);
+            let mut high = (*maximum).unwrap_or(1_000_000);
 
-            if let Some(mo_f) = multiple_of {
-                if *mo_f > 0.0 {
-                    let mo = (*mo_f).round() as i64;
-                    if mo != 0 {
-                        val = (val / mo) * mo;
-                        if val < low {
-                            val += mo;
-                        }
-                        if val > high {
-                            val -= mo;
+            if *exclusive_minimum {
+                low = low.checked_add(1).ok_or(GenerateError::Unsatisfiable)?;
+            }
+            if *exclusive_maximum {
+                high = high.checked_sub(1).ok_or(GenerateError::Unsatisfiable)?;
+            }
+
+            if low > high {
+                return Err(GenerateError::Unsatisfiable);
+            }
+
+            if let Some(mo_f) = *multiple_of {
+                if mo_f <= 0.0 {
+                    return Err(GenerateError::Unsatisfiable);
+                }
+                if mo_f.fract().abs() > f64::EPSILON {
+                    if low <= 0 && high >= 0 {
+                        return Ok(Value::Number(0.into()));
+                    }
+                    let mut candidate = None;
+                    for k in -1_000..=1_000 {
+                        let value = mo_f * k as f64;
+                        let rounded = value.round();
+                        if (value - rounded).abs() < 1e-6 {
+                            let int_value = rounded as i64;
+                            if int_value >= low && int_value <= high {
+                                candidate = Some(int_value);
+                                break;
+                            }
                         }
                     }
+                    if let Some(found) = candidate {
+                        return Ok(Value::Number(found.into()));
+                    }
+                    return Err(GenerateError::Unsatisfiable);
                 }
+                let mo = mo_f.round() as i64;
+                if mo == 0 {
+                    if low <= 0 && high >= 0 {
+                        return Ok(Value::Number(0.into()));
+                    }
+                    return Err(GenerateError::Unsatisfiable);
+                }
+                let remainder = low.rem_euclid(mo);
+                let candidate = if remainder == 0 {
+                    low
+                } else {
+                    low + (mo - remainder)
+                };
+                if candidate > high {
+                    return Err(GenerateError::Unsatisfiable);
+                }
+                return Ok(Value::Number(candidate.into()));
             }
 
-            Value::Number(val.into())
+            let val = rng.gen_range(low..=high);
+            Ok(Value::Number(val.into()))
         }
-
         Boolean { enumeration } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
                 }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
             }
-            Value::Bool(rng.gen_bool(0.5))
-        }
 
+            Ok(Value::Bool(rng.gen_bool(0.5)))
+        }
         Null { enumeration } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
                 }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
             }
-            Value::Null
+            Ok(Value::Null)
         }
-
         Object {
             properties,
             required,
@@ -265,55 +388,95 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             ..
         } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
                 }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
+            }
+
+            let min_p = (*min_properties).unwrap_or(0);
+            let max_p = (*max_properties).unwrap_or(usize::MAX);
+
+            if max_p < min_p || max_p < required.len() {
+                return Err(GenerateError::Unsatisfiable);
             }
 
             let mut map = Map::new();
+
             for (k, prop_schema) in properties {
                 let must_include = required.contains(k);
-                // Optional fields are only included with some probability unless the
-                // schema is unconstrained (`true`/`Any`).  Skipping these avoids
-                // descending into deep recursive refs when it is unnecessary.
+                if map.len() >= max_p && !must_include {
+                    continue;
+                }
                 let include = if must_include {
                     true
                 } else {
                     !matches!(&*prop_schema.borrow(), BoolSchema(true) | Any) && rng.gen_bool(0.7)
                 };
-                if include {
-                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
-                    map.insert(k.clone(), val);
+                if !include {
+                    continue;
+                }
+                match generate_value(prop_schema, rng, depth.saturating_sub(1)) {
+                    Ok(val) => {
+                        if map.len() >= max_p && !must_include {
+                            continue;
+                        }
+                        map.insert(k.clone(), val);
+                    }
+                    Err(GenerateError::Unsatisfiable) => {
+                        if must_include {
+                            return Err(GenerateError::Unsatisfiable);
+                        }
+                    }
+                    Err(GenerateError::Exhausted) => {
+                        if must_include {
+                            return Err(GenerateError::Exhausted);
+                        }
+                    }
                 }
             }
 
-            let min_p: usize = min_properties.unwrap_or(0);
-            let max_p: usize = max_properties.unwrap_or(usize::MAX);
-
             if !matches!(&*additional.borrow(), BoolSchema(false)) {
-                // If we need to hit `minProperties`, keep inventing additional keys
-                // until we reach the minimum before attempting the probabilistic
-                // extras.
                 while map.len() < min_p {
+                    if map.len() >= max_p {
+                        break;
+                    }
                     let key = random_key(rng);
                     if map.contains_key(&key) {
                         continue;
                     }
-                    let val = generate_value(additional, rng, depth.saturating_sub(1));
-                    map.insert(key, val);
+                    match generate_value(additional, rng, depth.saturating_sub(1)) {
+                        Ok(val) => {
+                            map.insert(key, val);
+                        }
+                        Err(GenerateError::Unsatisfiable) => {
+                            return Err(GenerateError::Unsatisfiable);
+                        }
+                        Err(GenerateError::Exhausted) => {
+                            return Err(GenerateError::Exhausted);
+                        }
+                    }
                 }
 
                 if rng.gen_bool(0.3) {
                     let mut attempts = 0;
-                    while rng.gen_bool(0.5) && (map.len() < max_p) && attempts < 5 {
+                    while rng.gen_bool(0.5) && map.len() < max_p && attempts < 5 {
                         let key = random_key(rng);
                         if map.contains_key(&key) {
                             attempts += 1;
                             continue;
                         }
-                        let val = generate_value(additional, rng, depth.saturating_sub(1));
-                        map.insert(key, val);
+                        match generate_value(additional, rng, depth.saturating_sub(1)) {
+                            Ok(val) => {
+                                map.insert(key, val);
+                            }
+                            Err(GenerateError::Unsatisfiable) => break,
+                            Err(GenerateError::Exhausted) => {
+                                attempts += 1;
+                                continue;
+                            }
+                        }
                         attempts += 1;
                     }
                 }
@@ -324,7 +487,10 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     if map.contains_key(k) {
                         continue;
                     }
-                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    if map.len() >= max_p {
+                        break;
+                    }
+                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1))?;
                     map.insert(k.clone(), val);
                     if map.len() >= min_p {
                         break;
@@ -334,14 +500,22 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             if map.is_empty() && min_p > 0 && !properties.is_empty() {
                 if let Some((k, schema)) = properties.iter().next() {
-                    let val = generate_value(schema, rng, depth.saturating_sub(1));
-                    map.insert(k.clone(), val);
+                    if !map.contains_key(k) {
+                        let val = generate_value(schema, rng, depth.saturating_sub(1))?;
+                        map.insert(k.clone(), val);
+                    }
                 }
             }
 
-            Value::Object(map)
-        }
+            if map.len() < min_p {
+                return Err(GenerateError::Exhausted);
+            }
+            if map.len() > max_p {
+                return Err(GenerateError::Unsatisfiable);
+            }
 
+            Ok(Value::Object(map))
+        }
         Array {
             items,
             min_items,
@@ -350,35 +524,54 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             enumeration,
         } => {
             if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
+                if e.is_empty() {
+                    return Err(GenerateError::Unsatisfiable);
                 }
+                let idx = rng.gen_range(0..e.len());
+                return Ok(e[idx].clone());
             }
-            let base_min = if contains.is_some() {
-                min_items.unwrap_or(0).max(1)
-            } else {
-                min_items.unwrap_or(0)
-            };
+            let mut min_len = (*min_items).unwrap_or(0);
+            if contains.is_some() {
+                min_len = min_len.max(1);
+            }
 
-            let max_i = max_items.unwrap_or(base_min + 5).max(base_min);
-            let length = rng.gen_range(base_min..=max_i.min(base_min + 5));
+            let mut max_len = (*max_items).unwrap_or(min_len + 5);
+            if max_len < min_len {
+                return Err(GenerateError::Unsatisfiable);
+            }
+            max_len = max_len.max(min_len);
+            let upper = max_len.min(min_len + 5);
+            let length = rng.gen_range(min_len..=upper);
 
             let mut arr = Vec::new();
             if let Some(c_schema) = contains {
-                let v = generate_value(c_schema, rng, depth.saturating_sub(1));
-                arr.push(v);
+                match generate_value(c_schema, rng, depth.saturating_sub(1)) {
+                    Ok(v) => arr.push(v),
+                    Err(GenerateError::Unsatisfiable) => {
+                        return Err(GenerateError::Unsatisfiable);
+                    }
+                    Err(GenerateError::Exhausted) => {
+                        return Err(GenerateError::Exhausted);
+                    }
+                }
             }
 
             while arr.len() < length as usize {
-                let v = generate_value(items, rng, depth.saturating_sub(1));
-                arr.push(v);
+                match generate_value(items, rng, depth.saturating_sub(1)) {
+                    Ok(v) => arr.push(v),
+                    Err(GenerateError::Unsatisfiable) => {
+                        return Err(GenerateError::Unsatisfiable);
+                    }
+                    Err(GenerateError::Exhausted) => {
+                        return Err(GenerateError::Exhausted);
+                    }
+                }
             }
-            Value::Array(arr)
-        }
 
-        Ref(_) => random_any(rng, depth),
-        Defs(_) => Value::Null,
+            Ok(Value::Array(arr))
+        }
+        Ref(_) => Ok(random_any(rng, depth)),
+        Defs(_) => Err(GenerateError::Exhausted),
         IfThenElse {
             if_schema,
             then_schema,
@@ -395,25 +588,21 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 generate_value(if_schema, rng, depth.saturating_sub(1))
             }
         }
-        Const(v) => v.clone(),
-        Type(_) => Value::Null,
-        Minimum(_) => Value::Null,
-        Maximum(_) => Value::Null,
-        Required(_) => Value::Null,
-        AdditionalProperties(_) => Value::Null,
-        Format(_) => Value::Null,
-        ContentEncoding(_) => Value::Null,
-        ContentMediaType(_) => Value::Null,
-        Title(_) => Value::Null,
-        Description(_) => Value::Null,
-        Default(_) => Value::Null,
-        Examples(_) => Value::Null,
-        ReadOnly(_) => Value::Null,
-        WriteOnly(_) => Value::Null,
-        AllOf(_) => Value::Null,
-        AnyOf(_) => Value::Null,
-        OneOf(_) => Value::Null,
-        Enum(_) => Value::Null,
+        Const(v) => Ok(v.clone()),
+        Type(_)
+        | Minimum(_)
+        | Maximum(_)
+        | Required(_)
+        | AdditionalProperties(_)
+        | Format(_)
+        | ContentEncoding(_)
+        | ContentMediaType(_)
+        | Title(_)
+        | Description(_)
+        | Default(_)
+        | Examples(_)
+        | ReadOnly(_)
+        | WriteOnly(_) => Err(GenerateError::Exhausted),
     }
 }
 
@@ -511,7 +700,8 @@ mod tests {
         let schema = build_required_object_schema();
         let mut rng = StdRng::seed_from_u64(42);
         for _ in 0..50 {
-            let value = generate_value(&schema, &mut rng, 5);
+            let value = generate_value(&schema, &mut rng, 5)
+                .expect("expected generator to produce a value for required object schema");
             let obj = value.as_object().expect("expected object");
             assert!(obj.contains_key("class"));
         }

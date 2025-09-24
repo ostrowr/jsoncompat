@@ -2,7 +2,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use ::jsoncompat::{build_and_resolve_schema, check_compat, Role};
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::{generate_value, GenerateError};
 
 use rand::thread_rng;
 use serde_json::Value as JsonValue;
@@ -76,7 +76,19 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
 
     let mut rng = thread_rng();
-    let value = generate_value(&schema_ast, &mut rng, depth);
+    let value = match generate_value(&schema_ast, &mut rng, depth) {
+        Ok(v) => v,
+        Err(GenerateError::Unsatisfiable) => {
+            return Err(PyErr::new::<PyValueError, _>(
+                "Schema cannot produce any valid instances",
+            ));
+        }
+        Err(GenerateError::Exhausted) => {
+            return Err(PyErr::new::<PyValueError, _>(
+                "Failed to generate a value that satisfies the schema",
+            ));
+        }
+    };
 
     serde_json::to_string(&value).map_err(|e| {
         PyErr::new::<PyValueError, _>(format!("Failed to serialize generated value: {e}"))

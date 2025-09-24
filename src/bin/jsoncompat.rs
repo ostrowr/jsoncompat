@@ -8,9 +8,10 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use json_schema_ast::{compile, JSONSchema};
+use json_schema_fuzz::{self, GenerateError, GenerateResult};
 use jsoncompat as backcompat;
 
 use rand::Rng;
@@ -44,7 +45,7 @@ impl SchemaDoc {
         self.validator.is_valid(v)
     }
 
-    fn gen_value<R: Rng>(&self, rng: &mut R, depth: u8) -> Value {
+    fn gen_value<R: Rng>(&self, rng: &mut R, depth: u8) -> GenerateResult {
         json_schema_fuzz::generate_value(&self.ast, rng, depth)
     }
 }
@@ -70,10 +71,18 @@ fn sample_incompat<R: Rng>(
     rng: &mut R,
 ) -> Option<Value> {
     let mut try_once = |src: &SchemaDoc, dst: &SchemaDoc| -> Option<Value> {
-        (0..attempts).find_map(|_| {
-            let v = src.gen_value(rng, depth);
-            (src.is_valid(&v) && !dst.is_valid(&v)).then_some(v)
-        })
+        for _ in 0..attempts {
+            match src.gen_value(rng, depth) {
+                Ok(v) => {
+                    if src.is_valid(&v) && !dst.is_valid(&v) {
+                        return Some(v);
+                    }
+                }
+                Err(GenerateError::Unsatisfiable) => return None,
+                Err(GenerateError::Exhausted) => {}
+            }
+        }
+        None
     };
 
     match role {
@@ -187,7 +196,22 @@ fn cmd_generate(args: GenerateArgs) -> Result<()> {
     let mut rng = rand::thread_rng();
 
     for _ in 0..args.count {
-        let v = schema.gen_value(&mut rng, args.depth);
+        let v = match schema.gen_value(&mut rng, args.depth) {
+            Ok(v) => v,
+            Err(GenerateError::Unsatisfiable) => {
+                return Err(anyhow!(
+                    "schema {} has no satisfying instances",
+                    args.schema
+                ));
+            }
+            Err(GenerateError::Exhausted) => {
+                return Err(anyhow!(
+                    "failed to generate a value at depth {} for {}",
+                    args.depth,
+                    args.schema
+                ));
+            }
+        };
         if args.pretty {
             println!("{}", serde_json::to_string_pretty(&v)?);
         } else {

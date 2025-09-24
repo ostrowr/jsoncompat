@@ -34,6 +34,7 @@ print(example)
 
 - `check_compat(old_schema_json: str, new_schema_json: str, role: str = "both") -> bool`
 - `generate_value(schema_json: str, depth: int = 5) -> str`
+  - Raises `ValueError` when the schema has no valid instances or no example can be generated at the requested depth.
 
 ## Examples
 

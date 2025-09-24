@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::{generate_value, GenerateError};
 use jsoncompat::{build_and_resolve_schema, check_compat, Role};
 
 use rand::thread_rng;
@@ -63,6 +63,16 @@ pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue
         .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
 
     let mut rng = thread_rng();
-    let v = generate_value(&schema_ast, &mut rng, depth);
+    let v = match generate_value(&schema_ast, &mut rng, depth) {
+        Ok(v) => v,
+        Err(GenerateError::Unsatisfiable) => {
+            return Err(JsValue::from_str("schema has no valid instances"));
+        }
+        Err(GenerateError::Exhausted) => {
+            return Err(JsValue::from_str(
+                "failed to generate a value that satisfies the schema",
+            ));
+        }
+    };
     serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialization failure: {e}")))
 }
