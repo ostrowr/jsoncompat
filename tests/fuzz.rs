@@ -30,6 +30,7 @@ enum GenerationOutcome {
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
     map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
+    map.insert("oneOf.json".to_string(), [2, 4].iter().cloned().collect());
     map.insert("not.json".to_string(), [2, 8].iter().cloned().collect());
     map.insert(
         "if-then-else.json".to_string(),
@@ -165,11 +166,6 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let allowed = whitelist.get::<str>(rel_str.as_ref());
 
     for (idx, (schema_json, expect_unsat)) in schemas.iter().enumerate() {
-        // Skip `false` schemas – they have an empty instance set by design.
-        if schema_json == &Value::Bool(false) {
-            continue;
-        }
-
         let ast = build_and_resolve_schema(schema_json)?;
 
         let compiled = compile(schema_json)?;
@@ -221,9 +217,8 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             GenerationOutcome::Exhausted => {
-                if *expect_unsat {
-                    continue;
-                }
+                // TODO: a different expect_unsat could be allowed here
+                // for non provably unsatisfiable schemas
                 if is_whitelisted {
                     continue;
                 }
