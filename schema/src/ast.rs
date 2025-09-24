@@ -34,7 +34,7 @@ impl SchemaNode {
         self.0.borrow_mut()
     }
 
-    fn ptr_id(&self) -> usize {
+    pub fn ptr_id(&self) -> usize {
         Rc::as_ptr(&self.0) as usize
     }
 
@@ -47,8 +47,26 @@ impl SchemaNode {
     /// tests and fuzz harness (which only relies on the subset of keywords we
     /// explicitly generate).
     pub fn to_json(&self) -> Value {
-        use SchemaNodeKind::*;
+        let mut seen = HashMap::new();
+        let mut path = Vec::new();
+        self.to_json_with_path(&mut path, &mut seen)
+    }
 
+    fn to_json_with_path(
+        &self,
+        path: &mut Vec<String>,
+        seen: &mut HashMap<usize, String>,
+    ) -> Value {
+        if let Some(existing) = seen.get(&self.ptr_id()) {
+            let mut obj = serde_json::Map::new();
+            obj.insert("$ref".into(), Value::String(existing.clone()));
+            return Value::Object(obj);
+        }
+
+        let pointer = pointer_from_path(path);
+        seen.insert(self.ptr_id(), pointer);
+
+        use SchemaNodeKind::*;
         match &*self.borrow() {
             BoolSchema(b) => Value::Bool(*b),
             Any => Value::Object(serde_json::Map::new()),
@@ -158,14 +176,14 @@ impl SchemaNode {
                         obj.insert("exclusiveMaximum".into(), Value::Number((*m).into()));
                     }
                 }
-                if let Some(e) = enumeration {
-                    obj.insert("enum".into(), Value::Array(e.clone()));
-                }
                 if let Some(mo) = multiple_of {
                     obj.insert(
                         "multipleOf".into(),
                         Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
                     );
+                }
+                if let Some(e) = enumeration {
+                    obj.insert("enum".into(), Value::Array(e.clone()));
                 }
                 Value::Object(obj)
             }
@@ -189,26 +207,49 @@ impl SchemaNode {
             }
 
             AllOf(subs) => {
-                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut arr = Vec::new();
+                path.push("allOf".into());
+                for (idx, child) in subs.iter().enumerate() {
+                    path.push(idx.to_string());
+                    arr.push(child.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("allOf".into(), Value::Array(arr));
                 Value::Object(obj)
             }
             AnyOf(subs) => {
-                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut arr = Vec::new();
+                path.push("anyOf".into());
+                for (idx, child) in subs.iter().enumerate() {
+                    path.push(idx.to_string());
+                    arr.push(child.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("anyOf".into(), Value::Array(arr));
                 Value::Object(obj)
             }
             OneOf(subs) => {
-                let arr = subs.iter().map(|s| s.to_json()).collect();
+                let mut arr = Vec::new();
+                path.push("oneOf".into());
+                for (idx, child) in subs.iter().enumerate() {
+                    path.push(idx.to_string());
+                    arr.push(child.to_json_with_path(path, seen));
+                    path.pop();
+                }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("oneOf".into(), Value::Array(arr));
                 Value::Object(obj)
             }
             Not(sub) => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("not".into(), sub.to_json());
+                path.push("not".into());
+                obj.insert("not".into(), sub.to_json_with_path(path, seen));
+                path.pop();
                 Value::Object(obj)
             }
             IfThenElse {
@@ -217,12 +258,18 @@ impl SchemaNode {
                 else_schema,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("if".into(), if_schema.to_json());
+                path.push("if".into());
+                obj.insert("if".into(), if_schema.to_json_with_path(path, seen));
+                path.pop();
                 if let Some(t) = then_schema {
-                    obj.insert("then".into(), t.to_json());
+                    path.push("then".into());
+                    obj.insert("then".into(), t.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 if let Some(e) = else_schema {
-                    obj.insert("else".into(), e.to_json());
+                    path.push("else".into());
+                    obj.insert("else".into(), e.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 Value::Object(obj)
             }
@@ -237,7 +284,9 @@ impl SchemaNode {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("array".into()));
                 if !matches!(&*items.borrow(), SchemaNodeKind::Any) {
-                    obj.insert("items".into(), items.to_json());
+                    path.push("items".into());
+                    obj.insert("items".into(), items.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 if let Some(mi) = min_items {
                     obj.insert("minItems".into(), Value::Number((*mi).into()));
@@ -246,7 +295,9 @@ impl SchemaNode {
                     obj.insert("maxItems".into(), Value::Number((*ma).into()));
                 }
                 if let Some(c) = contains {
-                    obj.insert("contains".into(), c.to_json());
+                    path.push("contains".into());
+                    obj.insert("contains".into(), c.to_json_with_path(path, seen));
+                    path.pop();
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -268,9 +319,13 @@ impl SchemaNode {
 
                 if !properties.is_empty() {
                     let mut props_map = serde_json::Map::new();
+                    path.push("properties".into());
                     for (k, v) in properties {
-                        props_map.insert(k.clone(), v.to_json());
+                        path.push(k.clone());
+                        props_map.insert(k.clone(), v.to_json_with_path(path, seen));
+                        path.pop();
                     }
+                    path.pop();
                     obj.insert("properties".into(), Value::Object(props_map));
                 }
 
@@ -289,7 +344,12 @@ impl SchemaNode {
                         obj.insert("additionalProperties".into(), Value::Bool(*b));
                     }
                     _ => {
-                        obj.insert("additionalProperties".into(), additional.to_json());
+                        path.push("additionalProperties".into());
+                        obj.insert(
+                            "additionalProperties".into(),
+                            additional.to_json_with_path(path, seen),
+                        );
+                        path.pop();
                     }
                 }
 
@@ -320,9 +380,13 @@ impl SchemaNode {
 
             Defs(map) => {
                 let mut defs_obj = serde_json::Map::new();
+                path.push("$defs".into());
                 for (k, v) in map {
-                    defs_obj.insert(k.clone(), v.to_json());
+                    path.push(k.clone());
+                    defs_obj.insert(k.clone(), v.to_json_with_path(path, seen));
+                    path.pop();
                 }
+                path.pop();
                 let mut obj = serde_json::Map::new();
                 obj.insert("$defs".into(), Value::Object(defs_obj));
                 Value::Object(obj)
@@ -366,7 +430,12 @@ impl SchemaNode {
             }
             AdditionalProperties(schema) => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("additionalProperties".into(), schema.to_json());
+                path.push("additionalProperties".into());
+                obj.insert(
+                    "additionalProperties".into(),
+                    schema.to_json_with_path(path, seen),
+                );
+                path.pop();
                 Value::Object(obj)
             }
 
@@ -424,6 +493,22 @@ impl SchemaNode {
             }
         }
     }
+}
+
+fn pointer_from_path(path: &[String]) -> String {
+    if path.is_empty() {
+        "#".to_string()
+    } else {
+        let encoded: Vec<String> = path
+            .iter()
+            .map(|segment| encode_pointer_segment(segment))
+            .collect();
+        format!("#/{}", encoded.join("/"))
+    }
+}
+
+fn encode_pointer_segment(segment: &str) -> String {
+    segment.replace('~', "~0").replace('/', "~1")
 }
 
 impl fmt::Debug for SchemaNode {
@@ -1108,6 +1193,7 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
     )
 }
 
+#[allow(clippy::too_many_arguments, clippy::only_used_in_recursion)]
 fn resolve_refs_internal(
     node: &mut SchemaNode,
     current_json: &Value,
@@ -1314,7 +1400,7 @@ fn resolve_refs_internal(
                     for (child, json_fragment) in children.iter_mut().zip(json_children.iter()) {
                         resolve_refs_internal(
                             child,
-                            *json_fragment,
+                            json_fragment,
                             root_json,
                             effective_base.clone(),
                             root_base.clone(),
@@ -1626,6 +1712,7 @@ fn get_value_by_tokens<'a>(value: &'a Value, tokens: &[String]) -> Option<&'a Va
 fn compute_base_for_tokens(value: &Value, tokens: &[String], base: Option<Url>) -> Option<Url> {
     let mut current_base = base;
     let mut current = value;
+    let mut remaining = tokens;
 
     loop {
         if let Some(obj) = current.as_object() {
@@ -1634,11 +1721,10 @@ fn compute_base_for_tokens(value: &Value, tokens: &[String], base: Option<Url>) 
             }
         }
 
-        if tokens.is_empty() {
+        let Some((first, rest)) = remaining.split_first() else {
             return current_base;
-        }
+        };
 
-        let (first, rest) = tokens.split_first().unwrap();
         current = match current {
             Value::Object(map) => map.get(first)?,
             Value::Array(arr) => {
@@ -1647,7 +1733,7 @@ fn compute_base_for_tokens(value: &Value, tokens: &[String], base: Option<Url>) 
             }
             _ => return current_base,
         };
-        return compute_base_for_tokens(current, rest, current_base);
+        remaining = rest;
     }
 }
 
