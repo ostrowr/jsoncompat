@@ -145,6 +145,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Gen
                 return Err(GenerateError::Unsatisfiable);
             }
 
+            let trivially_true = subs
+                .iter()
+                .filter(|schema| schema_is_trivially_true(schema))
+                .count();
+            if trivially_true > 1 {
+                return Err(GenerateError::Unsatisfiable);
+            }
+
             let validators: Vec<_> = subs
                 .iter()
                 .map(|s| json_schema_ast::compile(&s.to_json()).ok())
@@ -745,6 +753,13 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
         .collect()
 }
 
+fn schema_is_trivially_true(schema: &SchemaNode) -> bool {
+    matches!(
+        &*schema.borrow(),
+        SchemaNodeKind::BoolSchema(true) | SchemaNodeKind::Any
+    )
+}
+
 // lots to improve here:
 // - anyof generation
 // - better random any
@@ -820,6 +835,17 @@ mod tests {
             let matches = arr.iter().filter(|v| **v == json!(1)).count();
             assert_eq!(matches, 1, "expected exactly one match: {value:?}");
         }
+    }
+
+    #[test]
+    fn oneof_multiple_trivial_branches_is_unsat() {
+        let raw = json!({
+            "oneOf": [true, true]
+        });
+        let schema = json_schema_ast::build_and_resolve_schema(&raw).unwrap();
+        let mut rng = StdRng::seed_from_u64(7);
+        let result = generate_value(&schema, &mut rng, 6);
+        assert!(matches!(result, Err(GenerateError::Unsatisfiable)));
     }
 
     #[test]

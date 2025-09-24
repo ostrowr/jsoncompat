@@ -273,6 +273,7 @@
                 "bool": false
             }
         },
+        "jsoncompat_expect_unsat": true,
         "tests": [
             {
                 "description": "any value is invalid",
@@ -1028,7 +1029,7 @@
                     "$defs": {
                         "": { "type": "number" }
                     }
-                } 
+                }
             },
             "allOf": [
                 {

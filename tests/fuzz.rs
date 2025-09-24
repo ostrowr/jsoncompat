@@ -29,8 +29,6 @@ enum GenerationOutcome {
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
-    map.insert("oneOf.json".to_string(), [2, 4].iter().cloned().collect());
     map.insert("not.json".to_string(), [2, 8].iter().cloned().collect());
     map.insert(
         "if-then-else.json".to_string(),
@@ -64,7 +62,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         [20].iter().cloned().collect(),
     );
     map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
-    map.insert("ref.json".to_string(), [10].iter().cloned().collect());
 
     map.insert(
         "if-then-else.json".to_string(),
@@ -183,10 +180,15 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             GenerationOutcome::Unsatisfiable => {
-                if *expect_unsat {
-                    continue;
+                if is_whitelisted && *expect_unsat {
+                    panic!(
+                        "Whitelisted failure now passes; please remove entry for schema #{idx} in {rel_str}"
+                    );
                 }
                 if is_whitelisted {
+                    continue;
+                }
+                if *expect_unsat {
                     continue;
                 }
                 panic!(
