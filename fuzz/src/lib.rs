@@ -1,4 +1,4 @@
-use json_schema_ast::{SchemaNode, SchemaNodeKind};
+use json_schema_ast::{compile, SchemaNode, SchemaNodeKind};
 use rand::{seq::SliceRandom, Rng};
 use serde_json::{Map, Value};
 
@@ -521,6 +521,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Gen
             min_items,
             max_items,
             contains,
+            min_contains,
+            max_contains,
             enumeration,
         } => {
             if let Some(e) = enumeration {
@@ -530,42 +532,102 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Gen
                 let idx = rng.gen_range(0..e.len());
                 return Ok(e[idx].clone());
             }
-            let mut min_len = (*min_items).unwrap_or(0);
-            if contains.is_some() {
-                min_len = min_len.max(1);
+            let contains_schema = contains.as_ref();
+            let required_contains = match (contains_schema, *min_contains) {
+                (Some(_), Some(val)) => val,
+                (Some(_), None) => 1,
+                (None, _) => 0,
+            };
+            let limit_contains = contains_schema.and(*max_contains);
+            if let Some(limit) = limit_contains {
+                if limit < required_contains {
+                    return Err(GenerateError::Unsatisfiable);
+                }
             }
 
+            let min_len = (*min_items).unwrap_or(0).max(required_contains);
+
             let mut max_len = (*max_items).unwrap_or(min_len + 5);
+            if matches!(&*items.borrow(), BoolSchema(false)) {
+                if min_len > 0 {
+                    return Err(GenerateError::Unsatisfiable);
+                }
+                max_len = min_len;
+            }
             if max_len < min_len {
                 return Err(GenerateError::Unsatisfiable);
             }
             max_len = max_len.max(min_len);
             let upper = max_len.min(min_len + 5);
             let length = rng.gen_range(min_len..=upper);
+            let target_len = usize::try_from(length).map_err(|_| GenerateError::Exhausted)?;
+            let required_matches =
+                usize::try_from(required_contains).map_err(|_| GenerateError::Unsatisfiable)?;
+            let max_allowed_matches = limit_contains.and_then(|limit| usize::try_from(limit).ok());
 
-            let mut arr = Vec::new();
-            if let Some(c_schema) = contains {
-                match generate_value(c_schema, rng, depth.saturating_sub(1)) {
-                    Ok(v) => arr.push(v),
-                    Err(GenerateError::Unsatisfiable) => {
-                        return Err(GenerateError::Unsatisfiable);
-                    }
-                    Err(GenerateError::Exhausted) => {
-                        return Err(GenerateError::Exhausted);
+            if target_len < required_matches {
+                return Err(GenerateError::Unsatisfiable);
+            }
+
+            let contains_validator = contains_schema.and_then(|schema| {
+                let json = schema.to_json();
+                compile(&json).ok()
+            });
+
+            let mut arr = Vec::with_capacity(target_len);
+            let mut match_count = 0usize;
+
+            if let Some(c_schema) = contains_schema {
+                for _ in 0..required_matches {
+                    match generate_value(c_schema, rng, depth.saturating_sub(1)) {
+                        Ok(value) => {
+                            match_count += 1;
+                            arr.push(value);
+                        }
+                        Err(err) => return Err(err),
                     }
                 }
             }
 
-            while arr.len() < length as usize {
-                match generate_value(items, rng, depth.saturating_sub(1)) {
-                    Ok(v) => arr.push(v),
-                    Err(GenerateError::Unsatisfiable) => {
-                        return Err(GenerateError::Unsatisfiable);
+            while arr.len() < target_len {
+                let mut attempts = 0;
+                let value = loop {
+                    attempts += 1;
+                    match generate_value(items, rng, depth.saturating_sub(1)) {
+                        Ok(candidate) => {
+                            let matches_contains = contains_validator
+                                .as_ref()
+                                .map(|validator| validator.is_valid(&candidate))
+                                .unwrap_or(false);
+
+                            if let Some(limit) = max_allowed_matches {
+                                if matches_contains && match_count >= limit {
+                                    if attempts >= 8 {
+                                        return Err(GenerateError::Unsatisfiable);
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            if matches_contains {
+                                match_count += 1;
+                            }
+
+                            break candidate;
+                        }
+                        Err(GenerateError::Unsatisfiable) => {
+                            return Err(GenerateError::Unsatisfiable)
+                        }
+                        Err(GenerateError::Exhausted) => {
+                            if attempts >= 8 {
+                                return Err(GenerateError::Exhausted);
+                            }
+                            continue;
+                        }
                     }
-                    Err(GenerateError::Exhausted) => {
-                        return Err(GenerateError::Exhausted);
-                    }
-                }
+                };
+
+                arr.push(value);
             }
 
             Ok(Value::Array(arr))
@@ -717,5 +779,101 @@ mod tests {
             "required": ["class"]
         });
         json_schema_ast::build_and_resolve_schema(&raw).unwrap()
+    }
+
+    #[test]
+    fn array_respects_min_contains() {
+        let raw = json!({
+            "type": "array",
+            "contains": {"const": 1},
+            "minContains": 2
+        });
+        let schema = json_schema_ast::build_and_resolve_schema(&raw).unwrap();
+        let mut rng = StdRng::seed_from_u64(1337);
+
+        for _ in 0..20 {
+            let value =
+                generate_value(&schema, &mut rng, 6).expect("generator should honour minContains");
+            let arr = value.as_array().expect("expected array output");
+            let matches = arr.iter().filter(|v| **v == json!(1)).count();
+            assert!(matches >= 2, "expected at least two matches: {value:?}");
+        }
+    }
+
+    #[test]
+    fn array_respects_max_contains() {
+        let raw = json!({
+            "type": "array",
+            "contains": {"const": 1},
+            "minContains": 1,
+            "maxContains": 1,
+            "minItems": 3,
+            "items": {"type": "integer", "minimum": 2}
+        });
+        let schema = json_schema_ast::build_and_resolve_schema(&raw).unwrap();
+        let mut rng = StdRng::seed_from_u64(4242);
+
+        for _ in 0..20 {
+            let value =
+                generate_value(&schema, &mut rng, 6).expect("generator should honour maxContains");
+            let arr = value.as_array().expect("expected array output");
+            let matches = arr.iter().filter(|v| **v == json!(1)).count();
+            assert_eq!(matches, 1, "expected exactly one match: {value:?}");
+        }
+    }
+
+    #[test]
+    fn anchor_refs_generate_valid_strings() {
+        let raw = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed",
+            "$defs": {
+                "bar": {
+                    "$anchor": "something",
+                    "type": "string"
+                }
+            },
+            "properties": {
+                "foo": {"$ref": "urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed#something"}
+            }
+        });
+        let schema = json_schema_ast::build_and_resolve_schema(&raw).unwrap();
+        {
+            let guard = schema.borrow();
+            if let SchemaNodeKind::Object { properties, .. } = &*guard {
+                let foo_kind = properties
+                    .get("foo")
+                    .map(|node| node.borrow().clone())
+                    .expect("expected foo property");
+                assert!(
+                    matches!(foo_kind, SchemaNodeKind::String { .. }),
+                    "expected resolved foo property to be a string schema"
+                );
+                let foo_schema = properties.get("foo").unwrap();
+                let foo_json = foo_schema.to_json();
+                let foo_compiled = json_schema_ast::compile(&foo_json).unwrap();
+                assert!(
+                    foo_compiled.is_valid(&json!("bar")),
+                    "compiled foo schema unexpectedly rejects valid value"
+                );
+            } else {
+                panic!("expected object schema");
+            }
+        }
+        let compiled = json_schema_ast::compile(&schema.to_json()).unwrap();
+        assert!(
+            compiled.is_valid(&json!({"foo": "bar"})),
+            "compiled validator unexpectedly rejects explicit valid instance"
+        );
+        let mut rng = StdRng::seed_from_u64(2024);
+
+        for _ in 0..10 {
+            let value = generate_value(&schema, &mut rng, 6)
+                .expect("generator should produce value for anchored ref schema");
+            assert!(
+                compiled.is_valid(&value),
+                "expected generated value to satisfy compiled schema: {value:?}"
+            );
+        }
     }
 }

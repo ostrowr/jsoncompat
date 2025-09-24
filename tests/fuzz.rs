@@ -38,25 +38,11 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "unevaluatedItems.json".to_string(),
-        [9, 12, 18].iter().cloned().collect(),
+        [12].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "items.json".to_string(),
-        [2, 5, 7, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "uniqueItems.json".to_string(),
-        [2, 5].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "anchor.json".to_string(),
-        [0, 1, 2, 3].iter().cloned().collect(),
+        [12, 13, 14, 33].iter().cloned().collect(),
     );
     map.insert(
         "optional/ecmascript-regex.json".to_string(),
@@ -74,41 +60,16 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
-        "optional/id.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-
-    map.insert(
         "dynamicRef.json".to_string(),
-        [2, 13, 14, 15, 16, 17, 20].iter().cloned().collect(),
+        [20].iter().cloned().collect(),
     );
     map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
-    map.insert(
-        "ref.json".to_string(),
-        [6, 10, 19, 26].iter().cloned().collect(),
-    );
+    map.insert("ref.json".to_string(), [10].iter().cloned().collect());
 
     map.insert(
         "if-then-else.json".to_string(),
         [7, 8].iter().cloned().collect(),
     );
-
-    map.insert(
-        "refRemote.json".to_string(),
-        [0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 14]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
 
     map
 }
@@ -158,7 +119,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     for (idx, (schema_json, expect_unsat)) in schemas.iter().enumerate() {
         let ast = build_and_resolve_schema(schema_json)?;
 
-        let compiled = compile(schema_json)?;
+        let compiled = compile(&ast.to_json())?;
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 

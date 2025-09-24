@@ -279,6 +279,8 @@ impl SchemaNode {
                 min_items,
                 max_items,
                 contains,
+                min_contains,
+                max_contains,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
@@ -298,6 +300,12 @@ impl SchemaNode {
                     path.push("contains".into());
                     obj.insert("contains".into(), c.to_json_with_path(path, seen));
                     path.pop();
+                }
+                if let Some(mc) = min_contains {
+                    obj.insert("minContains".into(), Value::Number((*mc).into()));
+                }
+                if let Some(mc) = max_contains {
+                    obj.insert("maxContains".into(), Value::Number((*mc).into()));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -646,6 +654,8 @@ impl PartialEq for SchemaNode {
                         min_items: amin,
                         max_items: amax,
                         contains: acontains,
+                        min_contains: amin_contains,
+                        max_contains: amax_contains,
                         enumeration: aenum,
                     },
                     Array {
@@ -653,10 +663,17 @@ impl PartialEq for SchemaNode {
                         min_items: bmin,
                         max_items: bmax,
                         contains: bcontains,
+                        min_contains: bmin_contains,
+                        max_contains: bmax_contains,
                         enumeration: benum,
                     },
                 ) => {
-                    if amin != bmin || amax != bmax || aenum != benum {
+                    if amin != bmin
+                        || amax != bmax
+                        || aenum != benum
+                        || amin_contains != bmin_contains
+                        || amax_contains != bmax_contains
+                    {
                         return false;
                     }
                     if !eq_inner(aitems, bitems, seen) {
@@ -804,6 +821,8 @@ pub enum SchemaNodeKind {
         min_items: Option<u64>,
         max_items: Option<u64>,
         contains: Option<SchemaNode>,
+        min_contains: Option<u64>,
+        max_contains: Option<u64>,
         enumeration: Option<Vec<Value>>,
     },
 
@@ -1155,6 +1174,8 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     };
     let min_items = obj.get("minItems").and_then(|v| v.as_u64());
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
+    let mut min_contains = obj.get("minContains").and_then(|v| v.as_u64());
+    let mut max_contains = obj.get("maxContains").and_then(|v| v.as_u64());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
     let contains_node = match obj.get("contains") {
@@ -1162,11 +1183,18 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
         Some(v) => Some(build_schema_ast(v)?),
     };
 
+    if contains_node.is_none() {
+        min_contains = None;
+        max_contains = None;
+    }
+
     Ok(SchemaNode::new(SchemaNodeKind::Array {
         items: items_node,
         min_items,
         max_items,
         contains: contains_node,
+        min_contains,
+        max_contains,
         enumeration,
     }))
 }
