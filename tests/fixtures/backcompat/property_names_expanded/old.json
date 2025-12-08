@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "type": "object",
+      "propertyNames": { "enum": ["a"] },
+      "additionalProperties": { "type": "boolean" }
+    }
+  },
+  "required": ["flags"]
+}

@@ -1,4 +1,4 @@
-use json_schema_ast::{SchemaNode, SchemaNodeKind};
+use json_schema_ast::{compile, SchemaNode, SchemaNodeKind};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -259,11 +259,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             properties,
             required,
             additional,
+            property_names,
             min_properties,
             max_properties,
             enumeration,
             ..
         } => {
+            let property_name_validator = build_property_name_validator(property_names);
             if let Some(e) = enumeration {
                 if !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
@@ -273,6 +275,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             let mut map = Map::new();
             for (k, prop_schema) in properties {
+                if !property_name_allows(property_name_validator.as_ref(), k) {
+                    continue;
+                }
                 let must_include = required.contains(k);
                 // Optional fields are only included with some probability unless the
                 // schema is unconstrained (`true`/`Any`).  Skipping these avoids
@@ -296,7 +301,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 // until we reach the minimum before attempting the probabilistic
                 // extras.
                 while map.len() < min_p {
-                    let key = random_key(rng);
+                    let Some(key) = generate_property_key(
+                        property_names,
+                        property_name_validator.as_ref(),
+                        rng,
+                        depth,
+                    ) else {
+                        break;
+                    };
                     if map.contains_key(&key) {
                         continue;
                     }
@@ -307,7 +319,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 if rng.gen_bool(0.3) {
                     let mut attempts = 0;
                     while rng.gen_bool(0.5) && (map.len() < max_p) && attempts < 5 {
-                        let key = random_key(rng);
+                        let Some(key) = generate_property_key(
+                            property_names,
+                            property_name_validator.as_ref(),
+                            rng,
+                            depth,
+                        ) else {
+                            break;
+                        };
                         if map.contains_key(&key) {
                             attempts += 1;
                             continue;
@@ -321,6 +340,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             if map.len() < min_p {
                 for (k, prop_schema) in properties {
+                    if !property_name_allows(property_name_validator.as_ref(), k) {
+                        continue;
+                    }
                     if map.contains_key(k) {
                         continue;
                     }
@@ -333,7 +355,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             }
 
             if map.is_empty() && min_p > 0 && !properties.is_empty() {
-                if let Some((k, schema)) = properties.iter().next() {
+                if let Some((k, schema)) = properties
+                    .iter()
+                    .find(|(name, _)| property_name_allows(property_name_validator.as_ref(), name))
+                    .or_else(|| properties.iter().next())
+                {
                     let val = generate_value(schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                 }
@@ -481,6 +507,55 @@ fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
     // Always return an empty object – this is valid under the Draft 2020‑12
     // meta‑schema as well as under any unconstrained (`true`) schema.
     Value::Object(Map::new())
+}
+
+fn build_property_name_validator(schema: &SchemaNode) -> Option<json_schema_ast::JSONSchema> {
+    match &*schema.borrow() {
+        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => None,
+        _ => compile(&schema.to_json()).ok(),
+    }
+}
+
+fn property_name_allows(validator: Option<&json_schema_ast::JSONSchema>, candidate: &str) -> bool {
+    match validator {
+        None => true,
+        Some(v) => v.is_valid(&Value::String(candidate.to_owned())),
+    }
+}
+
+fn generate_property_key(
+    property_names: &SchemaNode,
+    validator: Option<&json_schema_ast::JSONSchema>,
+    rng: &mut impl Rng,
+    depth: u8,
+) -> Option<String> {
+    if validator.is_none() {
+        return Some(random_key(rng));
+    }
+
+    let validator = validator.unwrap();
+
+    for _ in 0..32 {
+        let candidate = match &*property_names.borrow() {
+            SchemaNodeKind::String { .. } => {
+                match generate_value(property_names, rng, depth.saturating_sub(1)) {
+                    Value::String(s) => s,
+                    _ => random_key(rng),
+                }
+            }
+            SchemaNodeKind::Enum(values) => values
+                .iter()
+                .find_map(|v| v.as_str().map(|s| s.to_owned()))
+                .unwrap_or_else(|| random_key(rng)),
+            _ => random_key(rng),
+        };
+
+        if validator.is_valid(&Value::String(candidate.clone())) {
+            return Some(candidate);
+        }
+    }
+
+    None
 }
 
 fn random_key(rng: &mut impl Rng) -> String {

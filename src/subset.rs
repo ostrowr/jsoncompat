@@ -186,6 +186,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 properties: sprops,
                 required: sreq,
                 additional: s_addl,
+                property_names: s_prop_names,
                 min_properties: smin,
                 max_properties: smax,
                 dependent_required: _s_deps,
@@ -195,6 +196,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 properties: pprops,
                 required: preq,
                 additional: p_addl,
+                property_names: p_prop_names,
                 min_properties: pmin,
                 max_properties: pmax,
                 dependent_required: p_deps,
@@ -242,6 +244,10 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             }
 
             if !is_subschema_of(&s_addl, &p_addl) {
+                return false;
+            }
+
+            if !is_subschema_of(&s_prop_names, &p_prop_names) {
                 return false;
             }
 

@@ -1,0 +1,9 @@
+{
+  "old_only": [],
+  "new_only": [
+    {"flags": {"b": true}}
+  ],
+  "both": [
+    {"flags": {"a": false}}
+  ]
+}

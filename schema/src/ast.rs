@@ -257,6 +257,7 @@ impl SchemaNode {
                 properties,
                 required,
                 additional,
+                property_names,
                 min_properties,
                 max_properties,
                 dependent_required,
@@ -289,6 +290,16 @@ impl SchemaNode {
                     }
                     _ => {
                         obj.insert("additionalProperties".into(), additional.to_json());
+                    }
+                }
+
+                match &*property_names.borrow() {
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => {}
+                    SchemaNodeKind::BoolSchema(b) => {
+                        obj.insert("propertyNames".into(), Value::Bool(*b));
+                    }
+                    _ => {
+                        obj.insert("propertyNames".into(), property_names.to_json());
                     }
                 }
 
@@ -520,6 +531,7 @@ impl PartialEq for SchemaNode {
                         properties: aprops,
                         required: areq,
                         additional: aaddl,
+                        property_names: apropnames,
                         min_properties: amin,
                         max_properties: amax,
                         dependent_required: adep,
@@ -529,6 +541,7 @@ impl PartialEq for SchemaNode {
                         properties: bprops,
                         required: breq,
                         additional: baddl,
+                        property_names: bpropnames,
                         min_properties: bmin,
                         max_properties: bmax,
                         dependent_required: bdep,
@@ -540,6 +553,7 @@ impl PartialEq for SchemaNode {
                         || amax != bmax
                         || adep != bdep
                         || aenum != benum
+                        || !eq_inner(apropnames, bpropnames, seen)
                         || aprops.len() != bprops.len()
                     {
                         return false;
@@ -708,6 +722,7 @@ pub enum SchemaNodeKind {
         properties: HashMap<String, SchemaNode>,
         required: HashSet<String>,
         additional: SchemaNode,
+        property_names: SchemaNode,
         min_properties: Option<usize>,
         max_properties: Option<usize>,
         dependent_required: HashMap<String, Vec<String>>,
@@ -1009,6 +1024,12 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         Some(other) => build_schema_ast(other)?,
     };
 
+    let property_names = match obj.get("propertyNames") {
+        None => SchemaNode::any(),
+        Some(Value::Bool(b)) => SchemaNode::bool_schema(*b),
+        Some(other) => build_schema_ast(other)?,
+    };
+
     let min_properties = obj
         .get("minProperties")
         .and_then(|v| v.as_u64())
@@ -1042,6 +1063,7 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         properties,
         required,
         additional,
+        property_names,
         min_properties,
         max_properties,
         dependent_required,
@@ -1183,6 +1205,7 @@ fn resolve_refs_internal(
     if let SchemaNodeKind::Object {
         properties,
         additional,
+        property_names,
         ..
     } = &mut *node.borrow_mut()
     {
@@ -1190,6 +1213,7 @@ fn resolve_refs_internal(
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
         resolve_refs_internal(additional, root_json, stack, cache)?;
+        resolve_refs_internal(property_names, root_json, stack, cache)?;
         return Ok(());
     }
     if let SchemaNodeKind::Array {
