@@ -589,6 +589,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "json_schema_codegen"
+version = "0.2.2"
+dependencies = [
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "json_schema_fuzz"
 version = "0.2.2"
 dependencies = [

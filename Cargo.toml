@@ -10,6 +10,7 @@ license = "MIT"
 [workspace]
 members = [
     "fuzz",     # -> json_schema_fuzz
+    "codegen",  # -> json_schema_codegen
     "schema",   # -> json_schema_ast
     "python",   # -> jsoncompat Python bindings
     "wasm"      # -> json_schema_wasm bindings
