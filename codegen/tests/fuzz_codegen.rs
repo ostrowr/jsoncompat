@@ -12,7 +12,7 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
     let base_code = pydantic::base_module();
 
     let fixtures_root = PathBuf::from("../tests/fixtures/fuzz");
-    let golden_root = PathBuf::from("tests/golden/pydantic_fuzz");
+    let golden_root = PathBuf::from("tests/golden/pydantic");
     let whitelist = load_whitelist(&golden_root)?;
 
     if regen && golden_root.exists() {
@@ -25,6 +25,9 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
                 || name_str == "pyproject.toml"
                 || name_str == "README.md"
                 || name_str == "uv.lock"
+                || name_str == ".venv"
+                || name_str == ".uv_cache"
+                || name_str == ".pytest_cache"
             {
                 continue;
             }
@@ -73,8 +76,9 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
         let root: Value = serde_json::from_slice(&content)?;
         let schemas = collect_schemas(&root);
 
-        for (schema_json, idx) in schemas {
-            if is_whitelisted(&whitelist, &rel_path, idx) {
+        for (schema_json, idx, tests) in schemas {
+            let golden_rel_path = strip_json_extension(&rel_path);
+            if is_whitelisted(&whitelist, &golden_rel_path, idx) {
                 continue;
             }
             if schema_json == Value::Bool(false) {
@@ -90,7 +94,8 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
             );
             let options = PydanticOptions::default()
                 .with_root_model_name(root_name.clone())
-                .with_base_module(base_module);
+                .with_base_module(base_module)
+                .with_header_comment(format_header_comment(&schema_json, &tests));
             let serializer =
                 match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
                     Ok(code) => code,
@@ -106,7 +111,7 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
                     Err(err) => return Err(format!("{rel_path}#{idx} deserializer: {err}").into()),
                 };
 
-            let base_dir = golden_root.join(&rel_path);
+            let base_dir = golden_root.join(&golden_rel_path);
             fs::create_dir_all(&base_dir)?;
             let serializer_path = base_dir.join(format!("{idx}_serializer.py"));
             let deserializer_path = base_dir.join(format!("{idx}_deserializer.py"));
@@ -144,22 +149,34 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn collect_schemas(root: &Value) -> Vec<(Value, usize)> {
+fn collect_schemas(root: &Value) -> Vec<(Value, usize, Vec<Value>)> {
     match root {
         Value::Array(groups) => {
             let mut out = Vec::new();
             for (idx, item) in groups.iter().enumerate() {
                 if let Some(schema) = item.get("schema") {
-                    out.push((schema.clone(), idx));
+                    let tests = item
+                        .get("tests")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    out.push((schema.clone(), idx, tests));
                 }
             }
             if out.is_empty() {
-                vec![(root.clone(), 0)]
+                vec![(root.clone(), 0, Vec::new())]
             } else {
                 out
             }
         }
-        _ => vec![(root.clone(), 0)],
+        other => {
+            let tests = other
+                .get("tests")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            vec![(other.clone(), 0, tests)]
+        }
     }
 }
 
@@ -206,6 +223,7 @@ fn load_whitelist(
     let mut out: HashMap<String, HashSet<usize>> = HashMap::new();
 
     for (file, entries) in raw {
+        let file = strip_json_extension(&file);
         let mut set = HashSet::new();
         for idx in entries.keys() {
             if let Ok(val) = idx.parse::<usize>() {
@@ -218,4 +236,36 @@ fn load_whitelist(
     }
 
     Ok(out)
+}
+
+fn strip_json_extension(rel_path: &str) -> String {
+    let path = Path::new(rel_path);
+    if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+        path.with_extension("")
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_string()
+    } else {
+        rel_path.to_string()
+    }
+}
+
+fn format_header_comment(schema: &Value, tests: &[Value]) -> String {
+    let mut out = String::new();
+    out.push_str("Schema:\n");
+    match serde_json::to_string_pretty(schema) {
+        Ok(s) => out.push_str(&s),
+        Err(_) => out.push_str("<unserializable schema>"),
+    }
+    out.push_str("\n\nTests:\n");
+    if tests.is_empty() {
+        out.push_str("[]");
+    } else {
+        match serde_json::to_string_pretty(tests) {
+            Ok(s) => out.push_str(&s),
+            Err(_) => out.push_str("<unserializable tests>"),
+        }
+    }
+    out.push('\n');
+    out
 }

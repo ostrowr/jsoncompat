@@ -15,6 +15,7 @@ pub struct PydanticOptions {
     pub serializer_suffix: String,
     pub deserializer_suffix: String,
     pub base_module: Option<String>,
+    pub header_comment: Option<String>,
 }
 
 impl Default for PydanticOptions {
@@ -24,6 +25,7 @@ impl Default for PydanticOptions {
             serializer_suffix: "Serializer".to_string(),
             deserializer_suffix: "Deserializer".to_string(),
             base_module: None,
+            header_comment: None,
         }
     }
 }
@@ -36,6 +38,11 @@ impl PydanticOptions {
 
     pub fn with_base_module(mut self, module: impl Into<String>) -> Self {
         self.base_module = Some(module.into());
+        self
+    }
+
+    pub fn with_header_comment(mut self, comment: impl Into<String>) -> Self {
+        self.header_comment = Some(comment.into());
         self
     }
 }
@@ -134,6 +141,14 @@ impl PydanticGenerator {
         }
 
         let mut rendered = String::new();
+        if let Some(comment) = &self.options.header_comment {
+            rendered.push_str("\"\"\"\n");
+            rendered.push_str(comment);
+            if !comment.ends_with('\n') {
+                rendered.push('\n');
+            }
+            rendered.push_str("\"\"\"\n\n");
+        }
         rendered.push_str(&ctx.imports.render());
         rendered.push_str(&out.finish());
         Ok(rendered)

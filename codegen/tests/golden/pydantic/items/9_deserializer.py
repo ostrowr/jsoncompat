@@ -1,0 +1,29 @@
+"""
+Schema:
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "items": {
+    "type": "null"
+  }
+}
+
+Tests:
+[
+  {
+    "data": [
+      null
+    ],
+    "description": "allows null elements",
+    "valid": true
+  }
+]
+"""
+
+from __future__ import annotations
+
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from pydantic import ConfigDict, Field
+
+class Items9Deserializer(DeserializerRootModel):
+    root: list[None]
+

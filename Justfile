@@ -8,7 +8,7 @@ check:
   cargo check --workspace --all-features --all-targets --locked
   cargo test --workspace --all-features --all-targets --locked
   @echo "[just] checking Python pydantic fuzz goldens …"
-  @cd codegen/tests/golden/pydantic_fuzz && \
+  @cd codegen/tests/golden/pydantic && \
     if [ -d .venv ]; then \
       env -u VIRTUAL_ENV UV_CACHE_DIR=.uv_cache UV_NO_MANAGED_PYTHON=1 UV_PYTHON_DOWNLOADS=never UV_OFFLINE=1 \
         uv run --offline --no-managed-python --no-sync pytest -q; \
