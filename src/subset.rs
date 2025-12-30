@@ -171,8 +171,22 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             true
         }
 
-        (Boolean { enumeration: s_e }, Boolean { enumeration: p_e })
-        | (Null { enumeration: s_e }, Null { enumeration: p_e }) => {
+        (
+            Boolean {
+                enumeration: s_e, ..
+            },
+            Boolean {
+                enumeration: p_e, ..
+            },
+        )
+        | (
+            Null {
+                enumeration: s_e, ..
+            },
+            Null {
+                enumeration: p_e, ..
+            },
+        ) => {
             if let (Some(se), Some(pe)) = (s_e, p_e) {
                 if !se.iter().all(|v| pe.contains(v)) {
                     return false;
@@ -190,6 +204,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 max_properties: smax,
                 dependent_required: _s_deps,
                 enumeration: s_en,
+                ..
             },
             Object {
                 properties: pprops,
@@ -199,6 +214,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 max_properties: pmax,
                 dependent_required: p_deps,
                 enumeration: p_en,
+                ..
             },
         ) => {
             if let Some(pm) = pmin {

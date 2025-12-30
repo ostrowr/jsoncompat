@@ -235,7 +235,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Number(val.into())
         }
 
-        Boolean { enumeration } => {
+        Boolean { enumeration, .. } => {
             if let Some(e) = enumeration {
                 if !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
@@ -245,7 +245,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             Value::Bool(rng.gen_bool(0.5))
         }
 
-        Null { enumeration } => {
+        Null { enumeration, .. } => {
             if let Some(e) = enumeration {
                 if !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
@@ -348,6 +348,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             max_items,
             contains,
             enumeration,
+            ..
         } => {
             if let Some(e) = enumeration {
                 if !e.is_empty() {

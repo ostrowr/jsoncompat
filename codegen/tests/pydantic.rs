@@ -1,9 +1,10 @@
-use json_schema_codegen::{generate_pydantic, PydanticOptions};
+use json_schema_ast::build_and_resolve_schema;
+use json_schema_codegen::{pydantic, ModelRole, PydanticOptions};
 use serde_json::json;
 
 #[test]
 fn pydantic_defaults_and_aliases() {
-    let schema = json!({
+    let schema_json = json!({
         "type": "object",
         "properties": {
             "id": { "type": "integer" },
@@ -14,31 +15,40 @@ fn pydantic_defaults_and_aliases() {
         "required": ["id"]
     });
 
-    let code =
-        generate_pydantic(&schema, "User", PydanticOptions::default()).expect("codegen failed");
+    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let options = PydanticOptions::default()
+        .with_root_model_name("User")
+        .with_base_module("json_schema_codegen_base");
 
-    assert!(code.contains("class UserSerializer"));
-    assert!(code.contains("class UserDeserializer"));
-    assert!(code.contains("alias=\"display-name\""));
-    assert!(code.contains("kwargs.setdefault(\"exclude_unset\", True)"));
+    let serializer_code = pydantic::generate_model(&schema, ModelRole::Serializer, options.clone())
+        .expect("serializer codegen failed");
+    let deserializer_code = pydantic::generate_model(&schema, ModelRole::Deserializer, options)
+        .expect("deserializer codegen failed");
 
-    let serializer_pos = code.find("class UserSerializer").unwrap();
-    let deserializer_pos = code.find("class UserDeserializer").unwrap();
-    let default_positions: Vec<_> = code.match_indices("default=42").collect();
-    assert_eq!(default_positions.len(), 1);
-    assert!(default_positions[0].0 > deserializer_pos);
-    assert!(deserializer_pos > serializer_pos);
+    assert!(serializer_code.contains("json_schema_codegen_base"));
+    assert!(serializer_code.contains("SerializerBase"));
+    assert!(deserializer_code.contains("json_schema_codegen_base"));
+    assert!(deserializer_code.contains("DeserializerBase"));
+    assert!(serializer_code.contains("class UserSerializer"));
+    assert!(deserializer_code.contains("class UserDeserializer"));
+    assert!(serializer_code.contains("alias=\"display-name\""));
+    assert!(deserializer_code.contains("alias=\"display-name\""));
+    assert!(!serializer_code.contains("default=42"));
+    assert!(deserializer_code.contains("default=42"));
 }
 
 #[test]
 fn pydantic_typed_additional_properties() {
-    let schema = json!({
+    let schema_json = json!({
         "type": "object",
         "additionalProperties": { "type": "string" }
     });
 
+    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let options = PydanticOptions::default().with_root_model_name("Metadata");
+
     let code =
-        generate_pydantic(&schema, "Metadata", PydanticOptions::default()).expect("codegen failed");
+        pydantic::generate_model(&schema, ModelRole::Serializer, options).expect("codegen failed");
 
     assert!(code.contains("__pydantic_extra__: dict[str, str]"));
     assert!(code.contains("model_config = ConfigDict(extra=\"allow\")"));
@@ -46,7 +56,7 @@ fn pydantic_typed_additional_properties() {
 
 #[test]
 fn rejects_enum_objects() {
-    let schema = json!({
+    let schema_json = json!({
         "type": "object",
         "properties": {
             "config": {
@@ -55,8 +65,13 @@ fn rejects_enum_objects() {
         }
     });
 
-    let err = generate_pydantic(&schema, "Config", PydanticOptions::default())
-        .expect_err("expected enum object to be rejected");
+    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let err = pydantic::generate_model(
+        &schema,
+        ModelRole::Serializer,
+        PydanticOptions::default().with_root_model_name("Config"),
+    )
+    .expect_err("expected enum object to be rejected");
 
     let message = err.to_string();
     assert!(message.contains("unsupported enum/const value"));

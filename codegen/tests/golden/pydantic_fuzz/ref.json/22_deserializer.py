@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+from json_schema_codegen_base import DeserializerBase, SerializerBase
+from pydantic import ConfigDict, Field
+from pydantic_core import PydanticUndefined
+
+class Ref22Deserializer(DeserializerBase):
+    model_config = ConfigDict(extra="allow")
+    foo: str = Field(default_factory=lambda: PydanticUndefined)
+

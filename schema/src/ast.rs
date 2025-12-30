@@ -6,11 +6,38 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SchemaAnnotations {
+    title: Option<String>,
+    description: Option<String>,
+    default_value: Option<Value>,
+    read_only: bool,
+    write_only: bool,
+}
+
 /// Shared, interior-mutable representation of a JSON Schema node.  Using
 /// reference counting allows multiple parents to point to the same node which
 /// is required to faithfully model schemas containing recursive `$ref`s.
 #[derive(Clone)]
 pub struct SchemaNode(Rc<RefCell<SchemaNodeKind>>);
+
+fn annotate_object(obj: &mut serde_json::Map<String, Value>, annotations: &SchemaAnnotations) {
+    if let Some(title) = &annotations.title {
+        obj.insert("title".into(), Value::String(title.clone()));
+    }
+    if let Some(desc) = &annotations.description {
+        obj.insert("description".into(), Value::String(desc.clone()));
+    }
+    if let Some(default) = &annotations.default_value {
+        obj.insert("default".into(), default.clone());
+    }
+    if annotations.read_only {
+        obj.insert("readOnly".into(), Value::Bool(true));
+    }
+    if annotations.write_only {
+        obj.insert("writeOnly".into(), Value::Bool(true));
+    }
+}
 
 impl SchemaNode {
     pub fn new(kind: SchemaNodeKind) -> Self {
@@ -63,6 +90,8 @@ impl SchemaNode {
                 max_length,
                 pattern,
                 enumeration,
+                format,
+                annotations,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("string".into()));
@@ -78,6 +107,10 @@ impl SchemaNode {
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
+                if let Some(f) = format {
+                    obj.insert("format".into(), Value::String(f.clone()));
+                }
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
@@ -88,6 +121,7 @@ impl SchemaNode {
                 exclusive_maximum,
                 multiple_of,
                 enumeration,
+                annotations,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("number".into()));
@@ -128,6 +162,7 @@ impl SchemaNode {
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
@@ -138,6 +173,7 @@ impl SchemaNode {
                 exclusive_maximum,
                 multiple_of,
                 enumeration,
+                annotations,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("integer".into()));
@@ -166,24 +202,33 @@ impl SchemaNode {
                         Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
                     );
                 }
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
-            Boolean { enumeration } => {
+            Boolean {
+                enumeration,
+                annotations,
+            } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("boolean".into()));
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
-            Null { enumeration } => {
+            Null {
+                enumeration,
+                annotations,
+            } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("null".into()));
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
@@ -232,6 +277,7 @@ impl SchemaNode {
                 max_items,
                 contains,
                 enumeration,
+                annotations,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("array".into()));
@@ -250,6 +296,7 @@ impl SchemaNode {
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
@@ -261,6 +308,7 @@ impl SchemaNode {
                 max_properties,
                 dependent_required,
                 enumeration,
+                annotations,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("object".into()));
@@ -314,6 +362,7 @@ impl SchemaNode {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
 
+                annotate_object(&mut obj, annotations);
                 Value::Object(obj)
             }
 
@@ -455,14 +504,18 @@ impl PartialEq for SchemaNode {
                         max_length: ay,
                         pattern: ap,
                         enumeration: ae,
+                        format: af,
+                        annotations: ann_a,
                     },
                     String {
                         min_length: bx,
                         max_length: by,
                         pattern: bp,
                         enumeration: be,
+                        format: bf,
+                        annotations: ann_b,
                     },
-                ) => ax == bx && ay == by && ap == bp && ae == be,
+                ) => ax == bx && ay == by && ap == bp && ae == be && af == bf && ann_a == ann_b,
                 (
                     Number {
                         minimum: amin,
@@ -471,6 +524,7 @@ impl PartialEq for SchemaNode {
                         exclusive_maximum: aexmax,
                         multiple_of: amul,
                         enumeration: aenum,
+                        annotations: ann_a,
                     },
                     Number {
                         minimum: bmin,
@@ -479,6 +533,7 @@ impl PartialEq for SchemaNode {
                         exclusive_maximum: bexmax,
                         multiple_of: bmul,
                         enumeration: benum,
+                        annotations: ann_b,
                     },
                 ) => {
                     amin == bmin
@@ -487,6 +542,7 @@ impl PartialEq for SchemaNode {
                         && aexmax == bexmax
                         && amul == bmul
                         && aenum == benum
+                        && ann_a == ann_b
                 }
                 (
                     Integer {
@@ -496,6 +552,7 @@ impl PartialEq for SchemaNode {
                         exclusive_maximum: aexmax,
                         multiple_of: amul,
                         enumeration: aenum,
+                        annotations: ann_a,
                     },
                     Integer {
                         minimum: bmin,
@@ -504,6 +561,7 @@ impl PartialEq for SchemaNode {
                         exclusive_maximum: bexmax,
                         multiple_of: bmul,
                         enumeration: benum,
+                        annotations: ann_b,
                     },
                 ) => {
                     amin == bmin
@@ -512,9 +570,28 @@ impl PartialEq for SchemaNode {
                         && aexmax == bexmax
                         && amul == bmul
                         && aenum == benum
+                        && ann_a == ann_b
                 }
-                (Boolean { enumeration: ae }, Boolean { enumeration: be }) => ae == be,
-                (Null { enumeration: ae }, Null { enumeration: be }) => ae == be,
+                (
+                    Boolean {
+                        enumeration: ae,
+                        annotations: ann_a,
+                    },
+                    Boolean {
+                        enumeration: be,
+                        annotations: ann_b,
+                    },
+                ) => ae == be && ann_a == ann_b,
+                (
+                    Null {
+                        enumeration: ae,
+                        annotations: ann_a,
+                    },
+                    Null {
+                        enumeration: be,
+                        annotations: ann_b,
+                    },
+                ) => ae == be && ann_a == ann_b,
                 (
                     Object {
                         properties: aprops,
@@ -524,6 +601,7 @@ impl PartialEq for SchemaNode {
                         max_properties: amax,
                         dependent_required: adep,
                         enumeration: aenum,
+                        annotations: ann_a,
                     },
                     Object {
                         properties: bprops,
@@ -533,6 +611,7 @@ impl PartialEq for SchemaNode {
                         max_properties: bmax,
                         dependent_required: bdep,
                         enumeration: benum,
+                        annotations: ann_b,
                     },
                 ) => {
                     if areq != breq
@@ -540,6 +619,7 @@ impl PartialEq for SchemaNode {
                         || amax != bmax
                         || adep != bdep
                         || aenum != benum
+                        || ann_a != ann_b
                         || aprops.len() != bprops.len()
                     {
                         return false;
@@ -561,6 +641,7 @@ impl PartialEq for SchemaNode {
                         max_items: amax,
                         contains: acontains,
                         enumeration: aenum,
+                        annotations: ann_a,
                     },
                     Array {
                         items: bitems,
@@ -568,9 +649,10 @@ impl PartialEq for SchemaNode {
                         max_items: bmax,
                         contains: bcontains,
                         enumeration: benum,
+                        annotations: ann_b,
                     },
                 ) => {
-                    if amin != bmin || amax != bmax || aenum != benum {
+                    if amin != bmin || amax != bmax || aenum != benum || ann_a != ann_b {
                         return false;
                     }
                     if !eq_inner(aitems, bitems, seen) {
@@ -680,6 +762,8 @@ pub enum SchemaNodeKind {
         max_length: Option<u64>,
         pattern: Option<String>,
         enumeration: Option<Vec<Value>>,
+        format: Option<String>,
+        annotations: SchemaAnnotations,
     },
     Number {
         minimum: Option<f64>,
@@ -688,6 +772,7 @@ pub enum SchemaNodeKind {
         exclusive_maximum: bool,
         multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
+        annotations: SchemaAnnotations,
     },
     Integer {
         minimum: Option<i64>,
@@ -696,12 +781,15 @@ pub enum SchemaNodeKind {
         exclusive_maximum: bool,
         multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
+        annotations: SchemaAnnotations,
     },
     Boolean {
         enumeration: Option<Vec<Value>>,
+        annotations: SchemaAnnotations,
     },
     Null {
         enumeration: Option<Vec<Value>>,
+        annotations: SchemaAnnotations,
     },
 
     Object {
@@ -712,6 +800,7 @@ pub enum SchemaNodeKind {
         max_properties: Option<usize>,
         dependent_required: HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
+        annotations: SchemaAnnotations,
     },
     Array {
         items: SchemaNode,
@@ -719,6 +808,7 @@ pub enum SchemaNodeKind {
         max_items: Option<u64>,
         contains: Option<SchemaNode>,
         enumeration: Option<Vec<Value>>,
+        annotations: SchemaAnnotations,
     },
 
     Defs(HashMap<String, SchemaNode>),
@@ -906,6 +996,28 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
     }
 }
 
+fn parse_annotations(obj: &serde_json::Map<String, Value>) -> SchemaAnnotations {
+    SchemaAnnotations {
+        title: obj
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
+        description: obj
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
+        default_value: obj.get("default").cloned(),
+        read_only: obj
+            .get("readOnly")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        write_only: obj
+            .get("writeOnly")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    }
+}
+
 fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
     let min_length = obj.get("minLength").and_then(|v| v.as_u64());
     let max_length = obj.get("maxLength").and_then(|v| v.as_u64());
@@ -914,12 +1026,19 @@ fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         .and_then(|v| v.as_str())
         .map(|s| s.to_owned());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let format = obj
+        .get("format")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_owned());
+    let annotations = parse_annotations(obj);
 
     Ok(SchemaNode::new(SchemaNodeKind::String {
         min_length,
         max_length,
         pattern,
         enumeration,
+        format,
+        annotations,
     }))
 }
 
@@ -941,6 +1060,7 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
         false
     };
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let annotations = parse_annotations(obj);
 
     let multiple_of = obj
         .get("multipleOf")
@@ -957,6 +1077,7 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
             exclusive_maximum,
             multiple_of,
             enumeration,
+            annotations,
         }))
     } else {
         Ok(SchemaNode::new(SchemaNodeKind::Number {
@@ -966,18 +1087,27 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
             exclusive_maximum,
             multiple_of,
             enumeration,
+            annotations,
         }))
     }
 }
 
 fn parse_boolean_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    Ok(SchemaNode::new(SchemaNodeKind::Boolean { enumeration }))
+    let annotations = parse_annotations(obj);
+    Ok(SchemaNode::new(SchemaNodeKind::Boolean {
+        enumeration,
+        annotations,
+    }))
 }
 
 fn parse_null_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    Ok(SchemaNode::new(SchemaNodeKind::Null { enumeration }))
+    let annotations = parse_annotations(obj);
+    Ok(SchemaNode::new(SchemaNodeKind::Null {
+        enumeration,
+        annotations,
+    }))
 }
 
 fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
@@ -1037,6 +1167,7 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         })
         .unwrap_or_default();
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let annotations = parse_annotations(obj);
 
     Ok(SchemaNode::new(SchemaNodeKind::Object {
         properties,
@@ -1046,6 +1177,7 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         max_properties,
         dependent_required,
         enumeration,
+        annotations,
     }))
 }
 
@@ -1070,6 +1202,7 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     let min_items = obj.get("minItems").and_then(|v| v.as_u64());
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let annotations = parse_annotations(obj);
 
     let contains_node = match obj.get("contains") {
         None => None,
@@ -1082,6 +1215,7 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
         max_items,
         contains: contains_node,
         enumeration,
+        annotations,
     }))
 }
 
@@ -1284,7 +1418,7 @@ pub fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
             }
             val.as_i64().is_some()
         }
-        Boolean { enumeration } => {
+        Boolean { enumeration, .. } => {
             if let Some(e) = enumeration {
                 if !e.contains(val) {
                     return false;
@@ -1292,7 +1426,7 @@ pub fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
             }
             val.is_boolean()
         }
-        Null { enumeration } => {
+        Null { enumeration, .. } => {
             if let Some(e) = enumeration {
                 if !e.contains(val) {
                     return false;

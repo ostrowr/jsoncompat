@@ -7,25 +7,38 @@ split described in the main project README.
 ## Usage
 
 ```rust
-use json_schema_codegen::{generate_pydantic, PydanticOptions};
+use json_schema_ast::build_and_resolve_schema;
+use json_schema_codegen::{pydantic, ModelRole, PydanticOptions};
 use serde_json::json;
 
-let schema = json!({
+let schema = build_and_resolve_schema(&json!({
     "type": "object",
     "properties": {
         "id": { "type": "integer" },
         "name": { "type": "string", "default": "Anonymous" }
     },
     "required": ["id"]
-});
+}))?;
 
-let code = generate_pydantic(&schema, "User", PydanticOptions::default())?;
-println!("{code}");
+let base_module_name = "json_schema_codegen_base";
+std::fs::write(
+    format!("{base_module_name}.py"),
+    json_schema_codegen::pydantic_base_module(),
+)?;
+
+let options = PydanticOptions::default()
+    .with_root_model_name("User")
+    .with_base_module(base_module_name);
+
+let serializer = pydantic::generate_model(&schema, ModelRole::Serializer, options.clone())?;
+let deserializer = pydantic::generate_model(&schema, ModelRole::Deserializer, options)?;
+println!("{serializer}");
+println!("{deserializer}");
 ```
 
-The generated output includes paired `Serializer` and `Deserializer` models. Defaults are applied
-only on the deserializer; serializer models override `model_dump` / `model_dump_json` to exclude
-unset fields by default.
+The contract is `generate_model(schema, role)`: call once for each role you need. Defaults are
+applied only on the deserializer; serializer models rely on a shared base module that overrides
+`model_dump` / `model_dump_json` to exclude unset fields by default.
 
 ## Supported JSON Schema (current)
 

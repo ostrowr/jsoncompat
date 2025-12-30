@@ -3,22 +3,39 @@ use crate::model::{
     AdditionalProperties, FieldSpec, ModelGraph, ModelRole, ModelSpec, SchemaType, StringFormat,
 };
 use crate::strings::sanitize_field_name;
-use crate::CodeGenerator;
+use crate::{build_model_graph, ModelGenerator};
+use json_schema_ast::SchemaNode;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 #[derive(Debug, Clone)]
 pub struct PydanticOptions {
+    pub root_model_name: String,
     pub serializer_suffix: String,
     pub deserializer_suffix: String,
+    pub base_module: Option<String>,
 }
 
 impl Default for PydanticOptions {
     fn default() -> Self {
         Self {
+            root_model_name: "Model".to_string(),
             serializer_suffix: "Serializer".to_string(),
             deserializer_suffix: "Deserializer".to_string(),
+            base_module: None,
         }
+    }
+}
+
+impl PydanticOptions {
+    pub fn with_root_model_name(mut self, name: impl Into<String>) -> Self {
+        self.root_model_name = name.into();
+        self
+    }
+
+    pub fn with_base_module(mut self, module: impl Into<String>) -> Self {
+        self.base_module = Some(module.into());
+        self
     }
 }
 
@@ -27,20 +44,26 @@ pub struct PydanticGenerator {
     options: PydanticOptions,
 }
 
+pub fn generate_model(
+    schema: &SchemaNode,
+    role: ModelRole,
+    options: PydanticOptions,
+) -> Result<String, CodegenError> {
+    let generator = PydanticGenerator::new(options);
+    generator.generate_model(schema, role)
+}
+
 impl PydanticGenerator {
     pub fn new(options: PydanticOptions) -> Self {
         Self { options }
     }
-}
 
-impl CodeGenerator for PydanticGenerator {
-    fn generate(&self, graph: &ModelGraph) -> Result<String, CodegenError> {
+    pub fn generate(&self, graph: &ModelGraph, role: ModelRole) -> Result<String, CodegenError> {
         let (ordered_models, needs_rebuild) = topo_sort_models(&graph.models);
         let mut ctx = PyContext::new(&self.options);
 
         let mut out = CodeWriter::new();
 
-        ctx.imports.add("pydantic", "BaseModel");
         ctx.imports.add("pydantic", "ConfigDict");
         ctx.imports.add("pydantic", "Field");
 
@@ -52,8 +75,16 @@ impl CodeGenerator for PydanticGenerator {
             ctx.imports.add("pydantic", "model_validator");
         }
 
-        emit_serializer_base(&mut out);
-        emit_deserializer_base(&mut out);
+        if let Some(base_module) = &self.options.base_module {
+            ctx.imports.add(base_module, "SerializerBase");
+            ctx.imports.add(base_module, "DeserializerBase");
+        } else {
+            ctx.imports.add("pydantic", "BaseModel");
+            match role {
+                ModelRole::Serializer => emit_serializer_base(&mut out),
+                ModelRole::Deserializer => emit_deserializer_base(&mut out),
+            }
+        }
 
         for model_name in ordered_models {
             let model =
@@ -64,17 +95,14 @@ impl CodeGenerator for PydanticGenerator {
                         location: crate::SchemaPath::root(),
                         message: format!("missing model {model_name}"),
                     })?;
-            emit_model(&mut out, &mut ctx, model, ModelRole::Serializer)?;
-            emit_model(&mut out, &mut ctx, model, ModelRole::Deserializer)?;
+            emit_model(&mut out, &mut ctx, model, role)?;
         }
 
         if needs_rebuild {
             out.push_empty();
             for model_name in graph.models.keys() {
-                let serializer = ctx.class_name(model_name, ModelRole::Serializer);
-                let deserializer = ctx.class_name(model_name, ModelRole::Deserializer);
-                out.push_line(&format!("{serializer}.model_rebuild()"));
-                out.push_line(&format!("{deserializer}.model_rebuild()"));
+                let class_name = ctx.class_name(model_name, role);
+                out.push_line(&format!("{class_name}.model_rebuild()"));
             }
         }
 
@@ -83,6 +111,29 @@ impl CodeGenerator for PydanticGenerator {
         rendered.push_str(&out.finish());
         Ok(rendered)
     }
+}
+
+impl ModelGenerator for PydanticGenerator {
+    fn generate_model(&self, schema: &SchemaNode, role: ModelRole) -> Result<String, CodegenError> {
+        let graph = build_model_graph(schema, &self.options.root_model_name)?;
+        self.generate(&graph, role)
+    }
+}
+
+/// Source for the reusable Pydantic base classes used by generated models.
+pub fn base_module() -> String {
+    let mut imports = ImportSet::new();
+    imports.add("pydantic", "BaseModel");
+    imports.add("pydantic", "ConfigDict");
+
+    let mut out = CodeWriter::new();
+    emit_serializer_base(&mut out);
+    emit_deserializer_base(&mut out);
+
+    let mut rendered = String::new();
+    rendered.push_str(&imports.render());
+    rendered.push_str(&out.finish());
+    rendered
 }
 
 struct PyContext {

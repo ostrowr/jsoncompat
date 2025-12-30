@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+from json_schema_codegen_base import DeserializerBase, SerializerBase
+from pydantic import ConfigDict, Field
+from pydantic_core import PydanticUndefined
+
+class Properties3Deserializer(DeserializerBase):
+    model_config = ConfigDict(extra="allow")
+    foo_bar: float = Field(alias="foo\tbar", default_factory=lambda: PydanticUndefined)
+    foo_bar_2: float = Field(alias="foo\nbar", default_factory=lambda: PydanticUndefined)
+    foo_bar_3: float = Field(alias="foo\fbar", default_factory=lambda: PydanticUndefined)
+    foo_bar_4: float = Field(alias="foo\rbar", default_factory=lambda: PydanticUndefined)
+    foo_bar_5: float = Field(alias="foo\"bar", default_factory=lambda: PydanticUndefined)
+    foo_bar_6: float = Field(alias="foo\\bar", default_factory=lambda: PydanticUndefined)
+

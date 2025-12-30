@@ -592,8 +592,10 @@ dependencies = [
 name = "json_schema_codegen"
 version = "0.2.2"
 dependencies = [
+ "json_schema_ast",
  "serde_json",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]
