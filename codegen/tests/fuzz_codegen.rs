@@ -16,7 +16,24 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
     let golden_root = PathBuf::from("tests/golden/pydantic_fuzz");
 
     if regen && golden_root.exists() {
-        fs::remove_dir_all(&golden_root)?;
+        for entry in fs::read_dir(&golden_root)? {
+            let entry = entry?;
+            let path = entry.path();
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str == "tests"
+                || name_str == "pyproject.toml"
+                || name_str == "README.md"
+                || name_str == "uv.lock"
+            {
+                continue;
+            }
+            if path.is_dir() {
+                fs::remove_dir_all(&path)?;
+            } else {
+                fs::remove_file(&path)?;
+            }
+        }
     }
 
     let base_path = golden_root.join(format!("{base_module}.py"));
@@ -71,9 +88,11 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
                 sanitize_type_name(entry.path().file_stem().unwrap().to_string_lossy().as_ref()),
                 idx
             );
+            let allow_non_object_inputs = allows_non_object_inputs(&schema_json);
             let options = PydanticOptions::default()
                 .with_root_model_name(root_name.clone())
-                .with_base_module(base_module);
+                .with_base_module(base_module)
+                .with_allow_non_object_inputs(allow_non_object_inputs);
             let serializer =
                 match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
                     Ok(code) => code,
@@ -184,4 +203,27 @@ fn build_whitelist() -> HashMap<String, HashSet<usize>> {
 
 fn is_whitelisted(map: &HashMap<String, HashSet<usize>>, file: &str, idx: usize) -> bool {
     map.get(file).map(|s| s.contains(&idx)).unwrap_or(false)
+}
+
+fn allows_non_object_inputs(schema: &Value) -> bool {
+    match schema {
+        Value::Object(map) => match map.get("type") {
+            None => true,
+            Some(Value::String(t)) => t != "object",
+            Some(Value::Array(types)) => {
+                let mut has_object = false;
+                let mut has_other = false;
+                for ty in types {
+                    if ty.as_str() == Some("object") {
+                        has_object = true;
+                    } else {
+                        has_other = true;
+                    }
+                }
+                has_other || !has_object
+            }
+            _ => false,
+        },
+        _ => false,
+    }
 }

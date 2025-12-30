@@ -14,6 +14,7 @@ pub struct PydanticOptions {
     pub serializer_suffix: String,
     pub deserializer_suffix: String,
     pub base_module: Option<String>,
+    pub allow_non_object_inputs: bool,
 }
 
 impl Default for PydanticOptions {
@@ -23,6 +24,7 @@ impl Default for PydanticOptions {
             serializer_suffix: "Serializer".to_string(),
             deserializer_suffix: "Deserializer".to_string(),
             base_module: None,
+            allow_non_object_inputs: false,
         }
     }
 }
@@ -35,6 +37,11 @@ impl PydanticOptions {
 
     pub fn with_base_module(mut self, module: impl Into<String>) -> Self {
         self.base_module = Some(module.into());
+        self
+    }
+
+    pub fn with_allow_non_object_inputs(mut self, allow: bool) -> Self {
+        self.allow_non_object_inputs = allow;
         self
     }
 }
@@ -95,7 +102,13 @@ impl PydanticGenerator {
                         location: crate::SchemaPath::root(),
                         message: format!("missing model {model_name}"),
                     })?;
-            emit_model(&mut out, &mut ctx, model, role)?;
+            emit_model(
+                &mut out,
+                &mut ctx,
+                model,
+                role,
+                model.name == graph.root && self.options.allow_non_object_inputs,
+            )?;
         }
 
         if needs_rebuild {
@@ -342,6 +355,7 @@ fn emit_model(
     ctx: &mut PyContext,
     model: &ModelSpec,
     role: ModelRole,
+    force_allow_non_objects: bool,
 ) -> Result<(), CodegenError> {
     let class_name = ctx.class_name(&model.name, role);
     let base = match role {
@@ -379,6 +393,13 @@ fn emit_model(
             continue;
         }
         emit_field(out, ctx, field, &field_names, role)?;
+    }
+
+    let allow_non_objects = model.allow_non_objects || force_allow_non_objects;
+
+    if allow_non_objects {
+        ctx.imports.add("pydantic", "model_validator");
+        emit_non_object_bypass(out)?;
     }
 
     if model.min_properties.is_some() || model.max_properties.is_some() {
@@ -449,6 +470,10 @@ fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<()
     out.push_line("@model_validator(mode=\"after\")");
     out.push_line("def _check_properties(self):");
     out.indent();
+    out.push_line("if getattr(self, \"_jsonschema_codegen_skip_object_checks\", False):");
+    out.indent();
+    out.push_line("return self");
+    out.dedent();
     out.push_line("count = len(self.model_fields_set)");
     out.push_line("extra = getattr(self, \"__pydantic_extra__\", None)");
     out.push_line("if extra:");
@@ -475,6 +500,22 @@ fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<()
     }
 
     out.push_line("return self");
+    out.dedent();
+    Ok(())
+}
+
+fn emit_non_object_bypass(out: &mut CodeWriter) -> Result<(), CodegenError> {
+    out.push_empty();
+    out.push_line("@model_validator(mode=\"wrap\")");
+    out.push_line("def _allow_non_objects(cls, value, handler):");
+    out.indent();
+    out.push_line("if not isinstance(value, dict):");
+    out.indent();
+    out.push_line("inst = cls.model_construct()");
+    out.push_line("setattr(inst, \"_jsonschema_codegen_skip_object_checks\", True)");
+    out.push_line("return inst");
+    out.dedent();
+    out.push_line("return handler(value)");
     out.dedent();
     Ok(())
 }

@@ -16,6 +16,7 @@ pub struct ModelSpec {
     pub max_properties: Option<usize>,
     pub description: Option<String>,
     pub title: Option<String>,
+    pub allow_non_objects: bool,
 }
 
 #[derive(Debug, Clone)]

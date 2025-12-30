@@ -1,5 +1,5 @@
 use json_schema_ast::build_and_resolve_schema;
-use json_schema_codegen::{pydantic, ModelRole, PydanticOptions};
+use json_schema_codegen::{build_model_graph, pydantic, ModelRole, PydanticOptions};
 use serde_json::json;
 
 #[test]
@@ -75,4 +75,23 @@ fn rejects_enum_objects() {
 
     let message = err.to_string();
     assert!(message.contains("unsupported enum/const value"));
+}
+
+#[test]
+fn object_keywords_without_type_allow_non_objects() {
+    let schema_json = json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "minProperties": 1
+    });
+
+    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let graph = build_model_graph(&schema, "Root").expect("graph build failed");
+    let root = graph
+        .models
+        .get(&graph.root)
+        .expect("root model should exist");
+    assert!(
+        root.allow_non_objects,
+        "expected non-object inputs to be allowed"
+    );
 }

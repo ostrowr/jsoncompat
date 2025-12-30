@@ -47,8 +47,17 @@ impl<'a> ModelGraphBuilder<'a> {
             }
             self.ref_map
                 .insert(resolved.canonical.clone(), root_model_name.clone());
-            let root_model =
-                self.parse_object_model(resolved.value, &resolved.path, &root_model_name)?;
+            let allow_non_objects = resolved
+                .value
+                .as_object()
+                .map(allows_non_object_instances)
+                .unwrap_or(false);
+            let root_model = self.parse_object_model(
+                resolved.value,
+                &resolved.path,
+                &root_model_name,
+                allow_non_objects,
+            )?;
             self.models.insert(root_model_name.clone(), root_model);
             return Ok(ModelGraph {
                 root: root_model_name,
@@ -57,12 +66,21 @@ impl<'a> ModelGraphBuilder<'a> {
         }
 
         if let Some(Value::String(t)) = schema_obj.get("type") {
-            if t != "object" {
+            if t != "object" && !is_object_like(schema_obj) {
                 return Err(CodegenError::RootNotObject { found: t.clone() });
             }
         }
 
-        let root_model = self.parse_object_model(self.root, &path, &root_model_name)?;
+        if !is_object_like(schema_obj) {
+            return Err(CodegenError::RootNotObject {
+                found: type_name(self.root),
+            });
+        }
+
+        let allow_non_objects = allows_non_object_instances(schema_obj);
+
+        let root_model =
+            self.parse_object_model(self.root, &path, &root_model_name, allow_non_objects)?;
         self.models.insert(root_model_name.clone(), root_model);
 
         Ok(ModelGraph {
@@ -76,6 +94,7 @@ impl<'a> ModelGraphBuilder<'a> {
         schema: &Value,
         path: &SchemaPath,
         name: &str,
+        allow_non_objects: bool,
     ) -> Result<ModelSpec, CodegenError> {
         let obj = schema
             .as_object()
@@ -162,6 +181,7 @@ impl<'a> ModelGraphBuilder<'a> {
             max_properties,
             description,
             title,
+            allow_non_objects,
         })
     }
 
@@ -312,7 +332,9 @@ impl<'a> ModelGraphBuilder<'a> {
         if is_object_schema(resolved.value) {
             self.ref_map
                 .insert(resolved.canonical.clone(), name.clone());
-            let model = self.parse_object_model(resolved.value, &resolved.path, &name)?;
+            let allow_non_objects = !is_explicit_object_type(resolved.value);
+            let model =
+                self.parse_object_model(resolved.value, &resolved.path, &name, allow_non_objects)?;
             self.models.insert(name.clone(), model);
             Ok(SchemaType::Object(name))
         } else {
@@ -486,7 +508,13 @@ impl<'a> ModelGraphBuilder<'a> {
         if !has_properties {
             if let Some(Value::Bool(false)) = additional {
                 let name = self.names.allocate(&sanitize_type_name("EmptyObject"))?;
-                let model = self.parse_object_model(&Value::Object(obj.clone()), path, &name)?;
+                let allow_non_objects = allows_non_object_instances(obj);
+                let model = self.parse_object_model(
+                    &Value::Object(obj.clone()),
+                    path,
+                    &name,
+                    allow_non_objects,
+                )?;
                 self.models.insert(name.clone(), model);
                 return Ok(SchemaType::Object(name));
             }
@@ -523,7 +551,9 @@ impl<'a> ModelGraphBuilder<'a> {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "Model".to_string());
         let name = self.names.allocate(&name_hint)?;
-        let model = self.parse_object_model(&Value::Object(obj.clone()), path, &name)?;
+        let allow_non_objects = allows_non_object_instances(obj);
+        let model =
+            self.parse_object_model(&Value::Object(obj.clone()), path, &name, allow_non_objects)?;
         self.models.insert(name.clone(), model);
         Ok(SchemaType::Object(name))
     }
@@ -867,10 +897,41 @@ fn is_object_like(obj: &Map<String, Value>) -> bool {
     obj.get("type").and_then(|v| v.as_str()) == Some("object")
         || obj.contains_key("properties")
         || obj.contains_key("required")
+        || obj.contains_key("additionalProperties")
+        || obj.contains_key("minProperties")
+        || obj.contains_key("maxProperties")
 }
 
 fn is_object_schema(schema: &Value) -> bool {
     schema.as_object().is_some_and(is_object_like)
+}
+
+fn is_explicit_object_type(schema: &Value) -> bool {
+    schema
+        .as_object()
+        .and_then(|obj| obj.get("type").and_then(|v| v.as_str()))
+        .map(|s| s == "object")
+        .unwrap_or(false)
+}
+
+fn allows_non_object_instances(obj: &Map<String, Value>) -> bool {
+    match obj.get("type") {
+        None => true,
+        Some(Value::String(t)) => t != "object",
+        Some(Value::Array(types)) => {
+            let mut has_object = false;
+            let mut has_other = false;
+            for ty in types {
+                if ty.as_str() == Some("object") {
+                    has_object = true;
+                } else {
+                    has_other = true;
+                }
+            }
+            has_other || !has_object
+        }
+        _ => false,
+    }
 }
 
 fn merge_object_schema(
