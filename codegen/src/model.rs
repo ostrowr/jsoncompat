@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub struct ModelGraph {
-    pub root: String,
+    pub root_name: String,
+    pub root_type: SchemaType,
     pub models: BTreeMap<String, ModelSpec>,
 }
 
@@ -16,7 +17,6 @@ pub struct ModelSpec {
     pub max_properties: Option<usize>,
     pub description: Option<String>,
     pub title: Option<String>,
-    pub allow_non_objects: bool,
 }
 
 #[derive(Debug, Clone)]

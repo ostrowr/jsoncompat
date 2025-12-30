@@ -1,19 +1,19 @@
 use json_schema_ast::build_and_resolve_schema;
-use json_schema_codegen::{pydantic, ModelRole, PydanticOptions};
+use json_schema_codegen::{pydantic, CodegenError, ModelRole, PydanticOptions};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
     let regen = std::env::var_os("REGEN_CODEGEN_GOLDENS").is_some();
-    let whitelist = build_whitelist();
     let base_module = "json_schema_codegen_base";
     let base_code = pydantic::base_module();
 
     let fixtures_root = PathBuf::from("../tests/fixtures/fuzz");
     let golden_root = PathBuf::from("tests/golden/pydantic_fuzz");
+    let whitelist = load_whitelist(&golden_root)?;
 
     if regen && golden_root.exists() {
         for entry in fs::read_dir(&golden_root)? {
@@ -88,21 +88,21 @@ fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
                 sanitize_type_name(entry.path().file_stem().unwrap().to_string_lossy().as_ref()),
                 idx
             );
-            let allow_non_object_inputs = allows_non_object_inputs(&schema_json);
             let options = PydanticOptions::default()
                 .with_root_model_name(root_name.clone())
-                .with_base_module(base_module)
-                .with_allow_non_object_inputs(allow_non_object_inputs);
+                .with_base_module(base_module);
             let serializer =
                 match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
                     Ok(code) => code,
-                    Err(json_schema_codegen::CodegenError::RootNotObject { .. }) => continue,
+                    Err(CodegenError::RootNotObject { .. }) => continue,
+                    Err(CodegenError::UnsupportedFeature { .. }) => continue,
                     Err(err) => return Err(format!("{rel_path}#{idx} serializer: {err}").into()),
                 };
             let deserializer =
                 match pydantic::generate_model(&schema, ModelRole::Deserializer, options) {
                     Ok(code) => code,
-                    Err(json_schema_codegen::CodegenError::RootNotObject { .. }) => continue,
+                    Err(CodegenError::RootNotObject { .. }) => continue,
+                    Err(CodegenError::UnsupportedFeature { .. }) => continue,
                     Err(err) => return Err(format!("{rel_path}#{idx} deserializer: {err}").into()),
                 };
 
@@ -193,37 +193,29 @@ fn sanitize_type_name(input: &str) -> String {
     out
 }
 
-fn build_whitelist() -> HashMap<String, HashSet<usize>> {
-    HashMap::from([
-        ("vocabulary.json".to_string(), HashSet::from([0usize])),
-        ("properties.json".to_string(), HashSet::from([2usize])),
-        ("default.json".to_string(), HashSet::from([0usize])),
-    ])
-}
-
 fn is_whitelisted(map: &HashMap<String, HashSet<usize>>, file: &str, idx: usize) -> bool {
     map.get(file).map(|s| s.contains(&idx)).unwrap_or(false)
 }
 
-fn allows_non_object_inputs(schema: &Value) -> bool {
-    match schema {
-        Value::Object(map) => match map.get("type") {
-            None => true,
-            Some(Value::String(t)) => t != "object",
-            Some(Value::Array(types)) => {
-                let mut has_object = false;
-                let mut has_other = false;
-                for ty in types {
-                    if ty.as_str() == Some("object") {
-                        has_object = true;
-                    } else {
-                        has_other = true;
-                    }
-                }
-                has_other || !has_object
+fn load_whitelist(
+    golden_root: &Path,
+) -> Result<HashMap<String, HashSet<usize>>, Box<dyn std::error::Error>> {
+    let path = golden_root.join("tests").join("whitelist.json");
+    let text = fs::read_to_string(&path)?;
+    let raw: HashMap<String, HashMap<String, String>> = serde_json::from_str(&text)?;
+    let mut out: HashMap<String, HashSet<usize>> = HashMap::new();
+
+    for (file, entries) in raw {
+        let mut set = HashSet::new();
+        for idx in entries.keys() {
+            if let Ok(val) = idx.parse::<usize>() {
+                set.insert(val);
             }
-            _ => false,
-        },
-        _ => false,
+        }
+        if !set.is_empty() {
+            out.insert(file, set);
+        }
     }
+
+    Ok(out)
 }

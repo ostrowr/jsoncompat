@@ -26,67 +26,53 @@ impl<'a> ModelGraphBuilder<'a> {
 
     pub fn build(mut self, root_name: &str) -> Result<ModelGraph, CodegenError> {
         let base_name = sanitize_type_name(root_name);
-        let root_model_name = self.names.allocate(&base_name)?;
+        let root_model_name = self.names.reserve_exact(&base_name)?;
         self.ref_map
             .insert("#".to_string(), root_model_name.clone());
 
         let path = SchemaPath::root();
-        let schema_obj = self
-            .root
-            .as_object()
-            .ok_or_else(|| CodegenError::RootNotObject {
-                found: type_name(self.root),
-            })?;
-
-        if let Some(Value::String(ref_path)) = schema_obj.get("$ref") {
-            let resolved = resolve_ref(self.root, ref_path, &path)?;
-            if !is_object_schema(resolved.value) {
-                return Err(CodegenError::RootNotObject {
-                    found: type_name(resolved.value),
-                });
-            }
-            self.ref_map
-                .insert(resolved.canonical.clone(), root_model_name.clone());
-            let allow_non_objects = resolved
-                .value
-                .as_object()
-                .map(allows_non_object_instances)
-                .unwrap_or(false);
-            let root_model = self.parse_object_model(
-                resolved.value,
-                &resolved.path,
-                &root_model_name,
-                allow_non_objects,
-            )?;
-            self.models.insert(root_model_name.clone(), root_model);
-            return Ok(ModelGraph {
-                root: root_model_name,
-                models: self.models,
-            });
-        }
-
-        if let Some(Value::String(t)) = schema_obj.get("type") {
-            if t != "object" && !is_object_like(schema_obj) {
-                return Err(CodegenError::RootNotObject { found: t.clone() });
-            }
-        }
-
-        if !is_object_like(schema_obj) {
-            return Err(CodegenError::RootNotObject {
-                found: type_name(self.root),
-            });
-        }
-
-        let allow_non_objects = allows_non_object_instances(schema_obj);
-
-        let root_model =
-            self.parse_object_model(self.root, &path, &root_model_name, allow_non_objects)?;
-        self.models.insert(root_model_name.clone(), root_model);
+        let root_type = self.parse_root_schema(self.root, &path, &root_model_name)?;
 
         Ok(ModelGraph {
-            root: root_model_name,
+            root_name: root_model_name,
+            root_type,
             models: self.models,
         })
+    }
+
+    fn parse_root_schema(
+        &mut self,
+        schema: &Value,
+        path: &SchemaPath,
+        root_name: &str,
+    ) -> Result<SchemaType, CodegenError> {
+        if let Some(obj) = schema.as_object() {
+            if let Some(Value::String(ref_path)) = obj.get("$ref") {
+                let resolved = resolve_ref(self.root, ref_path, path)?;
+                if let Some(existing) = self.ref_map.get(&resolved.canonical) {
+                    return Ok(SchemaType::Object(existing.clone()));
+                }
+                if let Some(resolved_obj) = resolved.value.as_object() {
+                    if is_object_like(resolved_obj) {
+                        self.ref_map
+                            .insert(resolved.canonical.clone(), root_name.to_string());
+                        let root_model =
+                            self.parse_object_model(resolved.value, &resolved.path, root_name)?;
+                        self.models.insert(root_name.to_string(), root_model);
+                        return Ok(SchemaType::Object(root_name.to_string()));
+                    }
+                }
+                return self.parse_schema_type(resolved.value, &resolved.path);
+            }
+
+            if is_object_like(obj) {
+                let root_model = self.parse_object_model(schema, path, root_name)?;
+                self.models.insert(root_name.to_string(), root_model);
+                return Ok(SchemaType::Object(root_name.to_string()));
+            }
+        }
+
+        self.parse_schema_type(schema, path)
     }
 
     fn parse_object_model(
@@ -94,7 +80,6 @@ impl<'a> ModelGraphBuilder<'a> {
         schema: &Value,
         path: &SchemaPath,
         name: &str,
-        allow_non_objects: bool,
     ) -> Result<ModelSpec, CodegenError> {
         let obj = schema
             .as_object()
@@ -181,7 +166,6 @@ impl<'a> ModelGraphBuilder<'a> {
             max_properties,
             description,
             title,
-            allow_non_objects,
         })
     }
 
@@ -332,9 +316,7 @@ impl<'a> ModelGraphBuilder<'a> {
         if is_object_schema(resolved.value) {
             self.ref_map
                 .insert(resolved.canonical.clone(), name.clone());
-            let allow_non_objects = !is_explicit_object_type(resolved.value);
-            let model =
-                self.parse_object_model(resolved.value, &resolved.path, &name, allow_non_objects)?;
+            let model = self.parse_object_model(resolved.value, &resolved.path, &name)?;
             self.models.insert(name.clone(), model);
             Ok(SchemaType::Object(name))
         } else {
@@ -508,13 +490,7 @@ impl<'a> ModelGraphBuilder<'a> {
         if !has_properties {
             if let Some(Value::Bool(false)) = additional {
                 let name = self.names.allocate(&sanitize_type_name("EmptyObject"))?;
-                let allow_non_objects = allows_non_object_instances(obj);
-                let model = self.parse_object_model(
-                    &Value::Object(obj.clone()),
-                    path,
-                    &name,
-                    allow_non_objects,
-                )?;
+                let model = self.parse_object_model(&Value::Object(obj.clone()), path, &name)?;
                 self.models.insert(name.clone(), model);
                 return Ok(SchemaType::Object(name));
             }
@@ -550,10 +526,13 @@ impl<'a> ModelGraphBuilder<'a> {
             .map(sanitize_type_name)
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "Model".to_string());
-        let name = self.names.allocate(&name_hint)?;
-        let allow_non_objects = allows_non_object_instances(obj);
-        let model =
-            self.parse_object_model(&Value::Object(obj.clone()), path, &name, allow_non_objects)?;
+        let preferred = self.ref_map.get(&path.to_string()).cloned();
+        let name = if let Some(existing) = preferred {
+            existing
+        } else {
+            self.names.allocate(&name_hint)?
+        };
+        let model = self.parse_object_model(&Value::Object(obj.clone()), path, &name)?;
         self.models.insert(name.clone(), model);
         Ok(SchemaType::Object(name))
     }
@@ -906,34 +885,6 @@ fn is_object_schema(schema: &Value) -> bool {
     schema.as_object().is_some_and(is_object_like)
 }
 
-fn is_explicit_object_type(schema: &Value) -> bool {
-    schema
-        .as_object()
-        .and_then(|obj| obj.get("type").and_then(|v| v.as_str()))
-        .map(|s| s == "object")
-        .unwrap_or(false)
-}
-
-fn allows_non_object_instances(obj: &Map<String, Value>) -> bool {
-    match obj.get("type") {
-        None => true,
-        Some(Value::String(t)) => t != "object",
-        Some(Value::Array(types)) => {
-            let mut has_object = false;
-            let mut has_other = false;
-            for ty in types {
-                if ty.as_str() == Some("object") {
-                    has_object = true;
-                } else {
-                    has_other = true;
-                }
-            }
-            has_other || !has_object
-        }
-        _ => false,
-    }
-}
-
 fn merge_object_schema(
     target: &mut Map<String, Value>,
     source: &Map<String, Value>,
@@ -1030,16 +981,5 @@ fn default_matches_schema(schema: &SchemaType, value: &Value) -> bool {
         SchemaType::Literal(values) => values.iter().any(|v| v.matches_value(value)),
         SchemaType::Union(variants) => variants.iter().any(|v| default_matches_schema(v, value)),
         SchemaType::Nullable(inner) => value.is_null() || default_matches_schema(inner, value),
-    }
-}
-
-fn type_name(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(_) => "boolean".to_string(),
-        Value::Number(_) => "number".to_string(),
-        Value::String(_) => "string".to_string(),
-        Value::Array(_) => "array".to_string(),
-        Value::Object(_) => "object".to_string(),
     }
 }

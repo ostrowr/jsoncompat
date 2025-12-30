@@ -6,7 +6,8 @@ use crate::strings::sanitize_field_name;
 use crate::{build_model_graph, ModelGenerator};
 use json_schema_ast::SchemaNode;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct PydanticOptions {
@@ -14,7 +15,6 @@ pub struct PydanticOptions {
     pub serializer_suffix: String,
     pub deserializer_suffix: String,
     pub base_module: Option<String>,
-    pub allow_non_object_inputs: bool,
 }
 
 impl Default for PydanticOptions {
@@ -24,7 +24,6 @@ impl Default for PydanticOptions {
             serializer_suffix: "Serializer".to_string(),
             deserializer_suffix: "Deserializer".to_string(),
             base_module: None,
-            allow_non_object_inputs: false,
         }
     }
 }
@@ -37,11 +36,6 @@ impl PydanticOptions {
 
     pub fn with_base_module(mut self, module: impl Into<String>) -> Self {
         self.base_module = Some(module.into());
-        self
-    }
-
-    pub fn with_allow_non_object_inputs(mut self, allow: bool) -> Self {
-        self.allow_non_object_inputs = allow;
         self
     }
 }
@@ -68,6 +62,10 @@ impl PydanticGenerator {
     pub fn generate(&self, graph: &ModelGraph, role: ModelRole) -> Result<String, CodegenError> {
         let (ordered_models, needs_rebuild) = topo_sort_models(&graph.models);
         let mut ctx = PyContext::new(&self.options);
+        let needs_root_wrapper = !matches!(
+            &graph.root_type,
+            SchemaType::Object(name) if name == &graph.root_name
+        );
 
         let mut out = CodeWriter::new();
 
@@ -85,11 +83,25 @@ impl PydanticGenerator {
         if let Some(base_module) = &self.options.base_module {
             ctx.imports.add(base_module, "SerializerBase");
             ctx.imports.add(base_module, "DeserializerBase");
+            if needs_root_wrapper {
+                ctx.imports.add(base_module, "SerializerRootModel");
+                ctx.imports.add(base_module, "DeserializerRootModel");
+            }
         } else {
             ctx.imports.add("pydantic", "BaseModel");
+            if needs_root_wrapper {
+                ctx.imports.add("pydantic", "RootModel");
+                ctx.imports.add("typing", "Any");
+            }
             match role {
                 ModelRole::Serializer => emit_serializer_base(&mut out),
                 ModelRole::Deserializer => emit_deserializer_base(&mut out),
+            }
+            if needs_root_wrapper {
+                match role {
+                    ModelRole::Serializer => emit_serializer_root_base(&mut out),
+                    ModelRole::Deserializer => emit_deserializer_root_base(&mut out),
+                }
             }
         }
 
@@ -102,19 +114,21 @@ impl PydanticGenerator {
                         location: crate::SchemaPath::root(),
                         message: format!("missing model {model_name}"),
                     })?;
-            emit_model(
-                &mut out,
-                &mut ctx,
-                model,
-                role,
-                model.name == graph.root && self.options.allow_non_object_inputs,
-            )?;
+            emit_model(&mut out, &mut ctx, model, role)?;
+        }
+
+        if needs_root_wrapper {
+            emit_root_model(&mut out, &mut ctx, role, &graph.root_name, &graph.root_type)?;
         }
 
         if needs_rebuild {
             out.push_empty();
             for model_name in graph.models.keys() {
                 let class_name = ctx.class_name(model_name, role);
+                out.push_line(&format!("{class_name}.model_rebuild()"));
+            }
+            if needs_root_wrapper {
+                let class_name = ctx.class_name(&graph.root_name, role);
                 out.push_line(&format!("{class_name}.model_rebuild()"));
             }
         }
@@ -138,15 +152,24 @@ pub fn base_module() -> String {
     let mut imports = ImportSet::new();
     imports.add("pydantic", "BaseModel");
     imports.add("pydantic", "ConfigDict");
+    imports.add("pydantic", "RootModel");
+    imports.add("typing", "Any");
 
     let mut out = CodeWriter::new();
     emit_serializer_base(&mut out);
     emit_deserializer_base(&mut out);
+    emit_serializer_root_base(&mut out);
+    emit_deserializer_root_base(&mut out);
 
     let mut rendered = String::new();
     rendered.push_str(&imports.render());
     rendered.push_str(&out.finish());
     rendered
+}
+
+struct TypeExpr {
+    expr: String,
+    field_args: Vec<FieldArg>,
 }
 
 struct PyContext {
@@ -169,17 +192,23 @@ impl PyContext {
         }
     }
 
-    fn require_pydantic_undefined(&mut self) {
-        self.imports.add("pydantic_core", "PydanticUndefined");
-    }
-
-    fn type_expr(&mut self, schema: &SchemaType, role: ModelRole) -> Result<String, CodegenError> {
+    fn type_expr(
+        &mut self,
+        schema: &SchemaType,
+        role: ModelRole,
+    ) -> Result<TypeExpr, CodegenError> {
         match schema {
             SchemaType::Any => {
                 self.imports.add("typing", "Any");
-                Ok("Any".to_string())
+                Ok(TypeExpr {
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                })
             }
-            SchemaType::Bool => Ok("bool".to_string()),
+            SchemaType::Bool => Ok(TypeExpr {
+                expr: "bool".to_string(),
+                field_args: Vec::new(),
+            }),
             SchemaType::String(constraints) => {
                 let base = match constraints.format {
                     Some(StringFormat::DateTime) => {
@@ -208,31 +237,48 @@ impl PyContext {
                     }
                     None => "str".to_string(),
                 };
-                Ok(self.maybe_annotated(base, constraint_args_for_string(constraints)?))
+                Ok(TypeExpr {
+                    expr: base,
+                    field_args: constraint_args_for_string(constraints)?,
+                })
             }
-            SchemaType::Integer(constraints) => {
-                Ok(self
-                    .maybe_annotated("int".to_string(), constraint_args_for_number(constraints)?))
-            }
-            SchemaType::Number(constraints) => Ok(self.maybe_annotated(
-                "float".to_string(),
-                constraint_args_for_number(constraints)?,
-            )),
-            SchemaType::Null => Ok("None".to_string()),
+            SchemaType::Integer(constraints) => Ok(TypeExpr {
+                expr: "int".to_string(),
+                field_args: constraint_args_for_number(constraints)?,
+            }),
+            SchemaType::Number(constraints) => Ok(TypeExpr {
+                expr: "float".to_string(),
+                field_args: constraint_args_for_number(constraints)?,
+            }),
+            SchemaType::Null => Ok(TypeExpr {
+                expr: "None".to_string(),
+                field_args: Vec::new(),
+            }),
             SchemaType::Array { items, constraints } => {
                 let inner = self.type_expr(items, role)?;
-                let base = format!("list[{inner}]");
-                Ok(self.maybe_annotated(base, constraint_args_for_array(constraints)?))
+                let inner_expr = self.apply_field_args(inner.expr, &inner.field_args);
+                let base = format!("list[{inner_expr}]");
+                Ok(TypeExpr {
+                    expr: base,
+                    field_args: constraint_args_for_array(constraints)?,
+                })
             }
             SchemaType::Map {
                 values,
                 constraints,
             } => {
                 let inner = self.type_expr(values, role)?;
-                let base = format!("dict[str, {inner}]");
-                Ok(self.maybe_annotated(base, constraint_args_for_object(constraints)?))
+                let inner_expr = self.apply_field_args(inner.expr, &inner.field_args);
+                let base = format!("dict[str, {inner_expr}]");
+                Ok(TypeExpr {
+                    expr: base,
+                    field_args: constraint_args_for_object(constraints)?,
+                })
             }
-            SchemaType::Object(name) => Ok(self.class_name(name, role)),
+            SchemaType::Object(name) => Ok(TypeExpr {
+                expr: self.class_name(name, role),
+                field_args: Vec::new(),
+            }),
             SchemaType::Literal(values) => {
                 self.imports.add("typing", "Literal");
                 let rendered = values
@@ -240,30 +286,43 @@ impl PyContext {
                     .map(literal_value)
                     .collect::<Result<Vec<_>, CodegenError>>()?
                     .join(", ");
-                Ok(format!("Literal[{rendered}]"))
+                Ok(TypeExpr {
+                    expr: format!("Literal[{rendered}]"),
+                    field_args: Vec::new(),
+                })
             }
             SchemaType::Union(variants) => {
                 let rendered = variants
                     .iter()
                     .map(|variant| self.type_expr(variant, role))
                     .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .map(|t| self.apply_field_args(t.expr, &t.field_args))
+                    .collect::<Vec<_>>()
                     .join(" | ");
-                Ok(rendered)
+                Ok(TypeExpr {
+                    expr: rendered,
+                    field_args: Vec::new(),
+                })
             }
             SchemaType::Nullable(inner) => {
                 let inner = self.type_expr(inner, role)?;
-                Ok(format!("{inner} | None"))
+                let applied = self.apply_field_args(inner.expr, &inner.field_args);
+                Ok(TypeExpr {
+                    expr: format!("{applied} | None"),
+                    field_args: Vec::new(),
+                })
             }
         }
     }
 
-    fn maybe_annotated(&mut self, base: String, args: Vec<FieldArg>) -> String {
+    fn apply_field_args(&mut self, base: String, args: &[FieldArg]) -> String {
         if args.is_empty() {
             return base;
         }
         self.imports.add("typing", "Annotated");
         self.imports.add("pydantic", "Field");
-        let rendered = render_field_args(&args);
+        let rendered = render_field_args(args);
         format!("Annotated[{base}, Field({rendered})]")
     }
 }
@@ -315,6 +374,7 @@ fn emit_serializer_base(out: &mut CodeWriter) {
     out.indent();
     out.push_line("model_config = ConfigDict(");
     out.indent();
+    out.push_line("strict=True,");
     out.push_line("validate_by_alias=True,");
     out.push_line("validate_by_name=True,");
     out.push_line("serialize_by_alias=True,");
@@ -341,6 +401,49 @@ fn emit_deserializer_base(out: &mut CodeWriter) {
     out.indent();
     out.push_line("model_config = ConfigDict(");
     out.indent();
+    out.push_line("strict=True,");
+    out.push_line("validate_by_alias=True,");
+    out.push_line("validate_by_name=True,");
+    out.push_line("serialize_by_alias=True,");
+    out.dedent();
+    out.push_line(")");
+    out.dedent();
+    out.push_empty();
+}
+
+fn emit_serializer_root_base(out: &mut CodeWriter) {
+    out.push_line("class SerializerRootModel(RootModel[Any]):");
+    out.indent();
+    out.push_line("model_config = ConfigDict(");
+    out.indent();
+    out.push_line("strict=True,");
+    out.push_line("validate_by_alias=True,");
+    out.push_line("validate_by_name=True,");
+    out.push_line("serialize_by_alias=True,");
+    out.dedent();
+    out.push_line(")");
+    out.push_empty();
+    out.push_line("def model_dump(self, **kwargs):");
+    out.indent();
+    out.push_line("kwargs.setdefault(\"exclude_unset\", True)");
+    out.push_line("return super().model_dump(**kwargs)");
+    out.dedent();
+    out.push_empty();
+    out.push_line("def model_dump_json(self, **kwargs):");
+    out.indent();
+    out.push_line("kwargs.setdefault(\"exclude_unset\", True)");
+    out.push_line("return super().model_dump_json(**kwargs)");
+    out.dedent();
+    out.dedent();
+    out.push_empty();
+}
+
+fn emit_deserializer_root_base(out: &mut CodeWriter) {
+    out.push_line("class DeserializerRootModel(RootModel[Any]):");
+    out.indent();
+    out.push_line("model_config = ConfigDict(");
+    out.indent();
+    out.push_line("strict=True,");
     out.push_line("validate_by_alias=True,");
     out.push_line("validate_by_name=True,");
     out.push_line("serialize_by_alias=True,");
@@ -355,7 +458,6 @@ fn emit_model(
     ctx: &mut PyContext,
     model: &ModelSpec,
     role: ModelRole,
-    force_allow_non_objects: bool,
 ) -> Result<(), CodegenError> {
     let class_name = ctx.class_name(&model.name, role);
     let base = match role {
@@ -381,7 +483,8 @@ fn emit_model(
 
     if let AdditionalProperties::Typed(schema) = &model.additional_properties {
         let extra_type = ctx.type_expr(schema, role)?;
-        out.push_line(&format!("__pydantic_extra__: dict[str, {extra_type}]"));
+        let rendered = ctx.apply_field_args(extra_type.expr, &extra_type.field_args);
+        out.push_line(&format!("__pydantic_extra__: dict[str, {rendered}]"));
     }
 
     let field_names = PythonFieldNames::new(&model.fields);
@@ -395,19 +498,36 @@ fn emit_model(
         emit_field(out, ctx, field, &field_names, role)?;
     }
 
-    let allow_non_objects = model.allow_non_objects || force_allow_non_objects;
-
-    if allow_non_objects {
-        ctx.imports.add("pydantic", "model_validator");
-        emit_non_object_bypass(out)?;
-    }
-
     if model.min_properties.is_some() || model.max_properties.is_some() {
         emit_property_validator(out, model)?;
     }
 
     out.dedent();
     out.push_empty();
+    Ok(())
+}
+
+fn emit_root_model(
+    out: &mut CodeWriter,
+    ctx: &mut PyContext,
+    role: ModelRole,
+    root_name: &str,
+    schema: &SchemaType,
+) -> Result<(), CodegenError> {
+    let class_name = ctx.class_name(root_name, role);
+    let base = match role {
+        ModelRole::Serializer => "SerializerRootModel",
+        ModelRole::Deserializer => "DeserializerRootModel",
+    };
+    let type_expr = ctx.type_expr(schema, role)?;
+    let rendered_type = ctx.apply_field_args(type_expr.expr, &type_expr.field_args);
+
+    out.push_line(&format!("class {class_name}({base}):"));
+    out.indent();
+    out.push_line(&format!("root: {rendered_type}"));
+    out.dedent();
+    out.push_empty();
+
     Ok(())
 }
 
@@ -422,7 +542,7 @@ fn emit_field(
     let type_expr = ctx.type_expr(&field.schema, role)?;
     let required = field.required_for_role(role);
 
-    let mut args = Vec::new();
+    let mut args = type_expr.field_args;
     if names.needs_alias(&field.name) {
         args.push(FieldArg::new("alias", python_string_literal(&field.name)?));
     }
@@ -433,14 +553,9 @@ fn emit_field(
         args.push(FieldArg::new("description", python_string_literal(desc)?));
     }
 
-    if required {
-        if args.is_empty() {
-            out.push_line(&format!("{field_name}: {type_expr}"));
-            return Ok(());
-        }
-        let rendered = render_field_args(&args);
-        out.push_line(&format!("{field_name}: {type_expr} = Field({rendered})"));
-        return Ok(());
+    let mut rendered_type = type_expr.expr;
+    if !required && !field.schema.allows_null() {
+        rendered_type = format!("{rendered_type} | None");
     }
 
     if let Some(default) = field.default_for_role(role) {
@@ -452,16 +567,16 @@ fn emit_field(
                 args.push(FieldArg::new("default_factory", factory));
             }
         }
-    } else {
-        ctx.require_pydantic_undefined();
-        args.push(FieldArg::new(
-            "default_factory",
-            "lambda: PydanticUndefined".to_string(),
-        ));
+    } else if !required {
+        args.push(FieldArg::new("default", "None".to_string()));
     }
 
-    let rendered = render_field_args(&args);
-    out.push_line(&format!("{field_name}: {type_expr} = Field({rendered})"));
+    ctx.imports.add("typing", "Annotated");
+    ctx.imports.add("pydantic", "Field");
+    let rendered_field_args = render_field_args(&args);
+    out.push_line(&format!(
+        "{field_name}: Annotated[{rendered_type}, Field({rendered_field_args})]"
+    ));
     Ok(())
 }
 
@@ -470,19 +585,15 @@ fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<()
     out.push_line("@model_validator(mode=\"after\")");
     out.push_line("def _check_properties(self):");
     out.indent();
-    out.push_line("if getattr(self, \"_jsonschema_codegen_skip_object_checks\", False):");
-    out.indent();
-    out.push_line("return self");
-    out.dedent();
-    out.push_line("count = len(self.model_fields_set)");
+    out.push_line("keys = set(self.model_fields_set)");
     out.push_line("extra = getattr(self, \"__pydantic_extra__\", None)");
     out.push_line("if extra:");
     out.indent();
-    out.push_line("count += len(extra)");
+    out.push_line("keys.update(extra.keys())");
     out.dedent();
 
     if let Some(min_props) = model.min_properties {
-        out.push_line(&format!("if count < {min_props}:",));
+        out.push_line(&format!("if len(keys) < {min_props}:",));
         out.indent();
         out.push_line(&format!(
             "raise ValueError(\"expected at least {min_props} properties\")"
@@ -491,7 +602,7 @@ fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<()
     }
 
     if let Some(max_props) = model.max_properties {
-        out.push_line(&format!("if count > {max_props}:",));
+        out.push_line(&format!("if len(keys) > {max_props}:",));
         out.indent();
         out.push_line(&format!(
             "raise ValueError(\"expected at most {max_props} properties\")"
@@ -500,22 +611,6 @@ fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<()
     }
 
     out.push_line("return self");
-    out.dedent();
-    Ok(())
-}
-
-fn emit_non_object_bypass(out: &mut CodeWriter) -> Result<(), CodegenError> {
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"wrap\")");
-    out.push_line("def _allow_non_objects(cls, value, handler):");
-    out.indent();
-    out.push_line("if not isinstance(value, dict):");
-    out.indent();
-    out.push_line("inst = cls.model_construct()");
-    out.push_line("setattr(inst, \"_jsonschema_codegen_skip_object_checks\", True)");
-    out.push_line("return inst");
-    out.dedent();
-    out.push_line("return handler(value)");
     out.dedent();
     Ok(())
 }
@@ -808,21 +903,23 @@ fn topo_sort_models(models: &BTreeMap<String, ModelSpec>) -> (Vec<String>, bool)
         }
     }
 
-    let mut queue: VecDeque<String> = incoming
+    let mut queue: BinaryHeap<Reverse<String>> = incoming
         .iter()
         .filter(|(_, &count)| count == 0)
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| Reverse(name.clone()))
         .collect();
     let mut ordered = Vec::new();
 
-    while let Some(name) = queue.pop_front() {
+    while let Some(Reverse(name)) = queue.pop() {
         ordered.push(name.clone());
         if let Some(children) = adjacency.get(&name) {
-            for child in children {
-                if let Some(count) = incoming.get_mut(child) {
+            let mut sorted = children.clone();
+            sorted.sort();
+            for child in sorted {
+                if let Some(count) = incoming.get_mut(&child) {
                     *count -= 1;
                     if *count == 0 {
-                        queue.push_back(child.clone());
+                        queue.push(Reverse(child));
                     }
                 }
             }

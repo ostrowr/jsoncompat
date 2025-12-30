@@ -7,5 +7,5 @@ from pydantic import ConfigDict, Field
 
 class Default2Deserializer(DeserializerBase):
     model_config = ConfigDict(extra="allow")
-    alpha: Annotated[float, Field(le=3.0)] = Field(default=5)
+    alpha: Annotated[float | None, Field(le=3.0, default=5)]
 

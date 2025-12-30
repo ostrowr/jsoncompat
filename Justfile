@@ -7,6 +7,14 @@ check:
   cargo clippy --workspace --all-features --all-targets -- -D warnings
   cargo check --workspace --all-features --all-targets --locked
   cargo test --workspace --all-features --all-targets --locked
+  @echo "[just] checking Python pydantic fuzz goldens …"
+  @cd codegen/tests/golden/pydantic_fuzz && \
+    if [ -d .venv ]; then \
+      env -u VIRTUAL_ENV UV_CACHE_DIR=.uv_cache UV_NO_MANAGED_PYTHON=1 UV_PYTHON_DOWNLOADS=never UV_OFFLINE=1 \
+        uv run --offline --no-managed-python --no-sync pytest -q; \
+    else \
+      env -u VIRTUAL_ENV UV_CACHE_DIR=.uv_cache uv run pytest -q; \
+    fi
   @echo "[just] checking TypeScript code …"
   pnpm --prefix web/jsoncompatdotcom run ci
 

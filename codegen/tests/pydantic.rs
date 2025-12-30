@@ -1,5 +1,5 @@
 use json_schema_ast::build_and_resolve_schema;
-use json_schema_codegen::{build_model_graph, pydantic, ModelRole, PydanticOptions};
+use json_schema_codegen::{pydantic, ModelRole, PydanticOptions};
 use serde_json::json;
 
 #[test]
@@ -85,13 +85,33 @@ fn object_keywords_without_type_allow_non_objects() {
     });
 
     let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
-    let graph = build_model_graph(&schema, "Root").expect("graph build failed");
-    let root = graph
-        .models
-        .get(&graph.root)
-        .expect("root model should exist");
+    let code = pydantic::generate_model(
+        &schema,
+        ModelRole::Serializer,
+        PydanticOptions::default().with_root_model_name("Root"),
+    )
+    .expect("codegen failed");
     assert!(
-        root.allow_non_objects,
-        "expected non-object inputs to be allowed"
+        !code.contains("_allow_non_objects"),
+        "non-object bypass validator should not be emitted"
     );
+}
+
+#[test]
+fn root_model_generated_for_primitives() {
+    let schema_json = json!({
+        "type": "string",
+        "minLength": 3
+    });
+
+    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let code = pydantic::generate_model(
+        &schema,
+        ModelRole::Serializer,
+        PydanticOptions::default().with_root_model_name("Root"),
+    )
+    .expect("codegen failed");
+
+    assert!(code.contains("class RootSerializer(SerializerRootModel):"));
+    assert!(code.contains("root: Annotated[str, Field(min_length=3)]"));
 }

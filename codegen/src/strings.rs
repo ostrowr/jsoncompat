@@ -29,6 +29,22 @@ impl NameAllocator {
 
         Err(CodegenError::NameConflict { name: candidate })
     }
+
+    pub fn reserve_exact(&mut self, name: &str) -> Result<String, CodegenError> {
+        let candidate = if name.is_empty() {
+            "Model".to_string()
+        } else {
+            name.to_string()
+        };
+
+        if self.used.contains(&candidate) {
+            return Err(CodegenError::NameConflict {
+                name: candidate.clone(),
+            });
+        }
+        self.used.insert(candidate.clone());
+        Ok(candidate)
+    }
 }
 
 pub fn sanitize_type_name(input: &str) -> String {

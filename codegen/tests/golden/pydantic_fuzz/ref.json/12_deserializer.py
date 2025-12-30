@@ -1,18 +1,11 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field, model_validator
-from pydantic_core import PydanticUndefined
+from pydantic import ConfigDict, Field
 
 class Ref12Deserializer(DeserializerBase):
     model_config = ConfigDict(extra="allow")
-    foo_bar: float = Field(alias="foo\"bar", default_factory=lambda: PydanticUndefined)
-
-    @model_validator(mode="wrap")
-    def _allow_non_objects(cls, value, handler):
-        if not isinstance(value, dict):
-            inst = cls.model_construct()
-            setattr(inst, "_jsonschema_codegen_skip_object_checks", True)
-            return inst
-        return handler(value)
+    foo_bar: Annotated[float | None, Field(alias="foo\"bar", default=None)]
 

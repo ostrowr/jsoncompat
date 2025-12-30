@@ -1,23 +1,16 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field, model_validator
-from pydantic_core import PydanticUndefined
+from pydantic import ConfigDict, Field
 
 class Properties3Serializer(SerializerBase):
     model_config = ConfigDict(extra="allow")
-    foo_bar: float = Field(alias="foo\tbar", default_factory=lambda: PydanticUndefined)
-    foo_bar_2: float = Field(alias="foo\nbar", default_factory=lambda: PydanticUndefined)
-    foo_bar_3: float = Field(alias="foo\fbar", default_factory=lambda: PydanticUndefined)
-    foo_bar_4: float = Field(alias="foo\rbar", default_factory=lambda: PydanticUndefined)
-    foo_bar_5: float = Field(alias="foo\"bar", default_factory=lambda: PydanticUndefined)
-    foo_bar_6: float = Field(alias="foo\\bar", default_factory=lambda: PydanticUndefined)
-
-    @model_validator(mode="wrap")
-    def _allow_non_objects(cls, value, handler):
-        if not isinstance(value, dict):
-            inst = cls.model_construct()
-            setattr(inst, "_jsonschema_codegen_skip_object_checks", True)
-            return inst
-        return handler(value)
+    foo_bar: Annotated[float | None, Field(alias="foo\tbar", default=None)]
+    foo_bar_2: Annotated[float | None, Field(alias="foo\nbar", default=None)]
+    foo_bar_3: Annotated[float | None, Field(alias="foo\fbar", default=None)]
+    foo_bar_4: Annotated[float | None, Field(alias="foo\rbar", default=None)]
+    foo_bar_5: Annotated[float | None, Field(alias="foo\"bar", default=None)]
+    foo_bar_6: Annotated[float | None, Field(alias="foo\\bar", default=None)]
 
