@@ -374,7 +374,7 @@ fn integer_multiple_subset(parent: Option<f64>, source: Option<f64>) -> bool {
         let ratio = sm / pm;
         return (ratio.fract()).abs() < f64::EPSILON;
     }
-    (pm.fract()).abs() < f64::EPSILON
+    (pm - 1.0).abs() < f64::EPSILON
 }
 
 fn check_numeric_inclusion(
