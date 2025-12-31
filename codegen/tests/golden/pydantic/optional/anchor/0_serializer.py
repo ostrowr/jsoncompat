@@ -62,14 +62,50 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Any
+from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic.functional_validators import BeforeValidator
 
+_JSON_SCHEMA = r"""
+{
+  "$defs": {
+    "anchor_in_enum": {
+      "enum": [
+        {
+          "$anchor": "my_anchor",
+          "type": "null"
+        }
+      ]
+    },
+    "real_identifier_in_schema": {
+      "$anchor": "my_anchor",
+      "type": "string"
+    },
+    "zzz_anchor_in_const": {
+      "const": {
+        "$anchor": "my_anchor",
+        "type": "null"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/anchor_in_enum"
+    },
+    {
+      "$ref": "#my_anchor"
+    }
+  ]
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Anchor0Serializer(SerializerRootModel):
-    root: Annotated[Any, BeforeValidator(lambda v, _allowed=[{"$anchor": "my_anchor", "type": "null"}]: _validate_literal(v, _allowed))] | None
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
+    root: Any | None
 

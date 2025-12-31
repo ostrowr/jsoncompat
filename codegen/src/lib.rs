@@ -17,7 +17,8 @@ pub use model::{
 };
 pub use pydantic::{
     base_module as pydantic_base_module, generate_model as generate_pydantic_model,
-    PydanticGenerator, PydanticOptions,
+    generate_model_from_value as generate_pydantic_model_from_value, PydanticGenerator,
+    PydanticOptions,
 };
 
 /// High-level contract for language-specific code generators.

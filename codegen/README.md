@@ -40,6 +40,9 @@ The contract is `generate_model(schema, role)`: call once for each role you need
 applied only on the deserializer; serializer models rely on a shared base module that overrides
 `model_dump` / `model_dump_json` to exclude unset fields by default.
 
+The generated Python modules depend on `pydantic>=2` and the Rust-backed `jsonschema-rs` Python
+package for runtime validation.
+
 ## Supported JSON Schema (current)
 
 This crate is intentionally strict: unsupported features raise errors rather than generating

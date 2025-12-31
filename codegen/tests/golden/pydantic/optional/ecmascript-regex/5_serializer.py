@@ -26,13 +26,23 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
+
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "pattern": "^\\D$",
+  "type": "string"
+}
+"""
+
+_VALIDATE_FORMATS = False
 
 class Ecmascriptregex5Serializer(SerializerRootModel):
-    root: Annotated[str, Field(pattern="^\\D$")]
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
+    root: str
 

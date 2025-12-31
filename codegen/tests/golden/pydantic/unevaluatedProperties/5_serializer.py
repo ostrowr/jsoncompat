@@ -32,14 +32,30 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
+
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "foo": {
+      "type": "string"
+    }
+  },
+  "type": "object",
+  "unevaluatedProperties": false
+}
+"""
+
+_VALIDATE_FORMATS = False
 
 class Unevaluatedproperties5Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
     model_config = ConfigDict(extra="allow")
     foo: Annotated[str | None, Field(default=None)]
 

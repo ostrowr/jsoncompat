@@ -3,8 +3,8 @@ use crate::model::{
     AdditionalProperties, FieldSpec, ModelGraph, ModelRole, ModelSpec, SchemaType, StringFormat,
 };
 use crate::strings::sanitize_field_name;
-use crate::{build_model_graph, ModelGenerator};
-use json_schema_ast::SchemaNode;
+use crate::{build_model_graph, ModelGenerator, SchemaPath};
+use json_schema_ast::{build_and_resolve_schema, SchemaNode};
 use serde_json::Value;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -57,8 +57,16 @@ pub fn generate_model(
     role: ModelRole,
     options: PydanticOptions,
 ) -> Result<String, CodegenError> {
+    generate_model_from_value(&schema.to_json(), role, options)
+}
+
+pub fn generate_model_from_value(
+    schema_json: &Value,
+    role: ModelRole,
+    options: PydanticOptions,
+) -> Result<String, CodegenError> {
     let generator = PydanticGenerator::new(options);
-    generator.generate_model(schema, role)
+    generator.generate_from_value(schema_json, role)
 }
 
 impl PydanticGenerator {
@@ -66,9 +74,28 @@ impl PydanticGenerator {
         Self { options }
     }
 
-    pub fn generate(&self, graph: &ModelGraph, role: ModelRole) -> Result<String, CodegenError> {
+    pub fn generate_from_value(
+        &self,
+        schema_json: &Value,
+        role: ModelRole,
+    ) -> Result<String, CodegenError> {
+        let schema =
+            build_and_resolve_schema(schema_json).map_err(|e| CodegenError::InvalidSchema {
+                location: crate::SchemaPath::root(),
+                message: e.to_string(),
+            })?;
+        let graph = build_model_graph(&schema, &self.options.root_model_name)?;
+        self.generate(&graph, schema_json, role)
+    }
+
+    pub fn generate(
+        &self,
+        graph: &ModelGraph,
+        schema_json: &Value,
+        role: ModelRole,
+    ) -> Result<String, CodegenError> {
         let (ordered_models, needs_rebuild) = topo_sort_models(&graph.models);
-        let mut ctx = PyContext::new(&self.options);
+        let mut ctx = PyContext::new(&self.options, schema_json);
         let needs_root_wrapper = !matches!(
             &graph.root_type,
             SchemaType::Object(name) if name == &graph.root_name
@@ -78,14 +105,9 @@ impl PydanticGenerator {
 
         ctx.imports.add("pydantic", "ConfigDict");
         ctx.imports.add("pydantic", "Field");
-
-        let needs_model_validator = graph
-            .models
-            .values()
-            .any(|model| model.min_properties.is_some() || model.max_properties.is_some());
-        if needs_model_validator {
-            ctx.imports.add("pydantic", "model_validator");
-        }
+        ctx.imports.add("pydantic", "model_validator");
+        ctx.imports.add("typing", "ClassVar");
+        ctx.validate_formats = should_validate_formats(schema_json);
 
         if let Some(base_module) = &self.options.base_module {
             ctx.imports.add(base_module, "SerializerBase");
@@ -96,6 +118,7 @@ impl PydanticGenerator {
             }
         } else {
             ctx.imports.add("pydantic", "BaseModel");
+            ctx.imports.add("jsonschema_rs", "validator_for");
             if needs_root_wrapper {
                 ctx.imports.add("pydantic", "RootModel");
                 ctx.imports.add("typing", "Any");
@@ -112,6 +135,8 @@ impl PydanticGenerator {
                 }
             }
         }
+
+        emit_schema_helpers(&mut out, &mut ctx)?;
 
         for model_name in ordered_models {
             let model =
@@ -158,8 +183,7 @@ impl PydanticGenerator {
 
 impl ModelGenerator for PydanticGenerator {
     fn generate_model(&self, schema: &SchemaNode, role: ModelRole) -> Result<String, CodegenError> {
-        let graph = build_model_graph(schema, &self.options.root_model_name)?;
-        self.generate(&graph, role)
+        self.generate_from_value(&schema.to_json(), role)
     }
 }
 
@@ -168,8 +192,11 @@ pub fn base_module() -> String {
     let mut imports = ImportSet::new();
     imports.add("pydantic", "BaseModel");
     imports.add("pydantic", "ConfigDict");
+    imports.add("pydantic", "model_validator");
     imports.add("pydantic", "RootModel");
+    imports.add("jsonschema_rs", "validator_for");
     imports.add("typing", "Any");
+    imports.add("typing", "ClassVar");
 
     let mut out = CodeWriter::new();
     emit_literal_helpers(&mut out);
@@ -193,13 +220,17 @@ struct TypeExpr {
 struct PyContext {
     imports: ImportSet,
     options: PydanticOptions,
+    root_schema: Value,
+    validate_formats: bool,
 }
 
 impl PyContext {
-    fn new(options: &PydanticOptions) -> Self {
+    fn new(options: &PydanticOptions, root_schema: &Value) -> Self {
         Self {
             imports: ImportSet::new(),
             options: options.clone(),
+            root_schema: root_schema.clone(),
+            validate_formats: false,
         }
     }
 
@@ -281,8 +312,12 @@ impl PyContext {
             SchemaType::Integer(constraints) => {
                 let (field_args, _) = integer_field_args(constraints)?;
                 if constraints.type_enforced {
+                    let expr = match role {
+                        ModelRole::Serializer => "int | float".to_string(),
+                        ModelRole::Deserializer => "int".to_string(),
+                    };
                     return Ok(TypeExpr {
-                        expr: "int".to_string(),
+                        expr,
                         field_args,
                         validators: Vec::new(),
                     });
@@ -450,20 +485,132 @@ impl PyContext {
         }
     }
 
-    fn apply_metadata(&mut self, base: String, args: &[FieldArg], validators: &[String]) -> String {
-        if args.is_empty() && validators.is_empty() {
+    fn apply_metadata(
+        &mut self,
+        base: String,
+        args: &[FieldArg],
+        _validators: &[String],
+    ) -> String {
+        let filtered_args: Vec<&FieldArg> = args
+            .iter()
+            .filter(|arg| matches!(arg.key, "alias" | "default" | "default_factory"))
+            .collect();
+        if filtered_args.is_empty() {
             return base;
         }
         self.imports.add("typing", "Annotated");
         let mut meta = Vec::new();
-        meta.extend_from_slice(validators);
-        if !args.is_empty() {
+        if !filtered_args.is_empty() {
             self.imports.add("pydantic", "Field");
-            meta.push(format!("Field({})", render_field_args(args)));
+            meta.push(format!("Field({})", render_field_args(&filtered_args)));
         }
         let rendered = meta.join(", ");
         format!("Annotated[{base}, {rendered}]")
     }
+}
+
+fn schema_for_path(ctx: &PyContext, path: &SchemaPath) -> Value {
+    if path.as_segments().is_empty() {
+        return ctx.root_schema.clone();
+    }
+    if schema_at_path(&ctx.root_schema, path).is_none() {
+        return ctx.root_schema.clone();
+    }
+    let mut defs = serde_json::Map::new();
+    if let Value::Object(root) = &ctx.root_schema {
+        if let Some(Value::Object(existing_defs)) = root.get("$defs") {
+            defs.extend(existing_defs.clone());
+        }
+        if let Some(Value::Object(existing_defs)) = root.get("definitions") {
+            defs.entry("definitions".to_string())
+                .or_insert_with(|| Value::Object(existing_defs.clone()));
+        }
+    }
+    defs.insert("__root__".to_string(), ctx.root_schema.clone());
+
+    let mut schema = serde_json::Map::new();
+    if let Value::Object(root) = &ctx.root_schema {
+        for (key, value) in root {
+            if key == "$ref" || key == "$id" {
+                continue;
+            }
+            if key.starts_with('$') && key != "$defs" {
+                schema.insert(key.clone(), value.clone());
+            }
+            if key == "definitions" {
+                schema.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    schema.insert("$defs".to_string(), Value::Object(defs));
+    let suffix = path
+        .to_string()
+        .strip_prefix('#')
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| path.to_string());
+    schema.insert(
+        "$ref".to_string(),
+        Value::String(format!("#/$defs/__root__{suffix}")),
+    );
+    Value::Object(schema)
+}
+
+fn schema_at_path<'a>(schema: &'a Value, path: &SchemaPath) -> Option<&'a Value> {
+    let mut current = schema;
+    for segment in path.as_segments() {
+        match current {
+            Value::Object(map) => match map.get(segment) {
+                Some(next) => current = next,
+                None => return None,
+            },
+            Value::Array(items) => {
+                let idx = segment.parse::<usize>().ok()?;
+                current = items.get(idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current)
+}
+
+fn should_validate_formats(schema: &Value) -> bool {
+    if let Value::Object(obj) = schema {
+        if let Some(Value::Object(vocab)) = obj.get("$vocabulary") {
+            if vocab
+                .get("https://json-schema.org/draft/2020-12/vocab/format-assertion")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                || vocab
+                    .get("https://json-schema.org/draft/2019-09/vocab/format-assertion")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+        if let Some(Value::String(uri)) = obj.get("$schema") {
+            if uri.contains("format-assertion") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn emit_schema_helpers(out: &mut CodeWriter, ctx: &mut PyContext) -> Result<(), CodegenError> {
+    let rendered_schema = schema_string_literal(&ctx.root_schema)?;
+    out.push_line(&format!("_JSON_SCHEMA = {rendered_schema}"));
+    out.push_empty();
+    out.push_line(&format!(
+        "_VALIDATE_FORMATS = {}",
+        if ctx.validate_formats {
+            "True"
+        } else {
+            "False"
+        }
+    ));
+    out.push_empty();
+    Ok(())
 }
 
 struct PythonFieldNames {
@@ -555,9 +702,38 @@ fn emit_literal_helpers(out: &mut CodeWriter) {
 fn emit_serializer_base(out: &mut CodeWriter) {
     out.push_line("class SerializerBase(BaseModel):");
     out.indent();
+    out.push_line("__json_schema__: ClassVar[str | None] = None");
+    out.push_line("_validate_formats: ClassVar[bool] = False");
+    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
+    out.push_empty();
+    out.push_line("@classmethod");
+    out.push_line("def _get_jsonschema_validator(cls):");
+    out.indent();
+    out.push_line("if cls.__json_schema__ is None:");
+    out.indent();
+    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
+    out.dedent();
+    out.push_line("validator = cls._jsonschema_validator");
+    out.push_line("if validator is None:");
+    out.indent();
+    out.push_line(
+        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
+    );
+    out.push_line("cls._jsonschema_validator = validator");
+    out.dedent();
+    out.push_line("return validator");
+    out.dedent();
+    out.push_empty();
+    out.push_line("@model_validator(mode=\"before\")");
+    out.push_line("@classmethod");
+    out.push_line("def _validate_jsonschema(cls, value):");
+    out.indent();
+    out.push_line("cls._get_jsonschema_validator().validate(value)");
+    out.push_line("return value");
+    out.dedent();
+    out.push_empty();
     out.push_line("model_config = ConfigDict(");
     out.indent();
-    out.push_line("strict=True,");
     out.push_line("validate_by_alias=True,");
     out.push_line("validate_by_name=True,");
     out.push_line("serialize_by_alias=True,");
@@ -582,9 +758,38 @@ fn emit_serializer_base(out: &mut CodeWriter) {
 fn emit_deserializer_base(out: &mut CodeWriter) {
     out.push_line("class DeserializerBase(BaseModel):");
     out.indent();
+    out.push_line("__json_schema__: ClassVar[str | None] = None");
+    out.push_line("_validate_formats: ClassVar[bool] = False");
+    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
+    out.push_empty();
+    out.push_line("@classmethod");
+    out.push_line("def _get_jsonschema_validator(cls):");
+    out.indent();
+    out.push_line("if cls.__json_schema__ is None:");
+    out.indent();
+    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
+    out.dedent();
+    out.push_line("validator = cls._jsonschema_validator");
+    out.push_line("if validator is None:");
+    out.indent();
+    out.push_line(
+        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
+    );
+    out.push_line("cls._jsonschema_validator = validator");
+    out.dedent();
+    out.push_line("return validator");
+    out.dedent();
+    out.push_empty();
+    out.push_line("@model_validator(mode=\"before\")");
+    out.push_line("@classmethod");
+    out.push_line("def _validate_jsonschema(cls, value):");
+    out.indent();
+    out.push_line("cls._get_jsonschema_validator().validate(value)");
+    out.push_line("return value");
+    out.dedent();
+    out.push_empty();
     out.push_line("model_config = ConfigDict(");
     out.indent();
-    out.push_line("strict=True,");
     out.push_line("validate_by_alias=True,");
     out.push_line("validate_by_name=True,");
     out.push_line("serialize_by_alias=True,");
@@ -597,9 +802,38 @@ fn emit_deserializer_base(out: &mut CodeWriter) {
 fn emit_serializer_root_base(out: &mut CodeWriter) {
     out.push_line("class SerializerRootModel(RootModel[Any]):");
     out.indent();
+    out.push_line("__json_schema__: ClassVar[str | None] = None");
+    out.push_line("_validate_formats: ClassVar[bool] = False");
+    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
+    out.push_empty();
+    out.push_line("@classmethod");
+    out.push_line("def _get_jsonschema_validator(cls):");
+    out.indent();
+    out.push_line("if cls.__json_schema__ is None:");
+    out.indent();
+    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
+    out.dedent();
+    out.push_line("validator = cls._jsonschema_validator");
+    out.push_line("if validator is None:");
+    out.indent();
+    out.push_line(
+        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
+    );
+    out.push_line("cls._jsonschema_validator = validator");
+    out.dedent();
+    out.push_line("return validator");
+    out.dedent();
+    out.push_empty();
+    out.push_line("@model_validator(mode=\"before\")");
+    out.push_line("@classmethod");
+    out.push_line("def _validate_jsonschema(cls, value):");
+    out.indent();
+    out.push_line("cls._get_jsonschema_validator().validate(value)");
+    out.push_line("return value");
+    out.dedent();
+    out.push_empty();
     out.push_line("model_config = ConfigDict(");
     out.indent();
-    out.push_line("strict=True,");
     out.push_line("validate_by_alias=True,");
     out.push_line("validate_by_name=True,");
     out.push_line("serialize_by_alias=True,");
@@ -624,9 +858,38 @@ fn emit_serializer_root_base(out: &mut CodeWriter) {
 fn emit_deserializer_root_base(out: &mut CodeWriter) {
     out.push_line("class DeserializerRootModel(RootModel[Any]):");
     out.indent();
+    out.push_line("__json_schema__: ClassVar[str | None] = None");
+    out.push_line("_validate_formats: ClassVar[bool] = False");
+    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
+    out.push_empty();
+    out.push_line("@classmethod");
+    out.push_line("def _get_jsonschema_validator(cls):");
+    out.indent();
+    out.push_line("if cls.__json_schema__ is None:");
+    out.indent();
+    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
+    out.dedent();
+    out.push_line("validator = cls._jsonschema_validator");
+    out.push_line("if validator is None:");
+    out.indent();
+    out.push_line(
+        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
+    );
+    out.push_line("cls._jsonschema_validator = validator");
+    out.dedent();
+    out.push_line("return validator");
+    out.dedent();
+    out.push_empty();
+    out.push_line("@model_validator(mode=\"before\")");
+    out.push_line("@classmethod");
+    out.push_line("def _validate_jsonschema(cls, value):");
+    out.indent();
+    out.push_line("cls._get_jsonschema_validator().validate(value)");
+    out.push_line("return value");
+    out.dedent();
+    out.push_empty();
     out.push_line("model_config = ConfigDict(");
     out.indent();
-    out.push_line("strict=True,");
     out.push_line("validate_by_alias=True,");
     out.push_line("validate_by_name=True,");
     out.push_line("serialize_by_alias=True,");
@@ -653,6 +916,15 @@ fn emit_model(
 
     if let Some(doc) = model.description.as_ref().or(model.title.as_ref()) {
         out.push_line(&format!("\"\"\"{}\"\"\"", escape_docstring(doc)));
+    }
+
+    out.push_line("_validate_formats = _VALIDATE_FORMATS");
+    if model.schema_path.as_segments().is_empty() {
+        out.push_line("__json_schema__ = _JSON_SCHEMA");
+    } else {
+        let schema_for_model = schema_for_path(ctx, &model.schema_path);
+        let rendered_schema = schema_string_literal(&schema_for_model)?;
+        out.push_line(&format!("__json_schema__ = {rendered_schema}"));
     }
 
     if !model.requires_object {
@@ -687,50 +959,15 @@ fn emit_model(
         "model_config = ConfigDict(extra=\"{extra_value}\")"
     ));
 
-    if let AdditionalProperties::Typed(schema) = &model.additional_properties {
-        let extra_type = ctx.type_expr(schema, role)?;
-        let rendered = ctx.apply_metadata(
-            extra_type.expr,
-            &extra_type.field_args,
-            &extra_type.validators,
-        );
-        out.push_line(&format!("__pydantic_extra__: dict[str, {rendered}]"));
-    }
-
     let field_names = PythonFieldNames::new(&model.fields);
     let mut fields: Vec<&FieldSpec> = model.fields.iter().collect();
     fields.sort_by(|a, b| a.name.cmp(&b.name));
-
-    let mut fractional_multiples: Vec<(String, f64)> = Vec::new();
-    for field in &model.fields {
-        if let SchemaType::Integer(constraints) = &field.schema {
-            if let Some(m) = constraints.multiple_of {
-                if m.fract() != 0.0 {
-                    fractional_multiples.push((field_names.field_name(&field.name).to_string(), m));
-                }
-            }
-        }
-    }
-    if !fractional_multiples.is_empty() {
-        ctx.imports.add("decimal", "Decimal");
-        ctx.imports.add("decimal", "InvalidOperation");
-    }
 
     for field in fields {
         if !field.include_in_role(role) {
             continue;
         }
         emit_field(out, ctx, field, &field_names, role)?;
-    }
-
-    if model.min_properties.is_some() || model.max_properties.is_some() {
-        emit_property_validator(out, model)?;
-    }
-    if needs_custom_extra {
-        emit_additional_validator(out, ctx, model, role)?;
-    }
-    if !fractional_multiples.is_empty() {
-        emit_fractional_multiple_validator(out, &fractional_multiples)?;
     }
 
     out.dedent();
@@ -756,6 +993,8 @@ fn emit_root_model(
 
     out.push_line(&format!("class {class_name}({base}):"));
     out.indent();
+    out.push_line("_validate_formats = _VALIDATE_FORMATS");
+    out.push_line("__json_schema__ = _JSON_SCHEMA");
     out.push_line(&format!("root: {rendered_type}"));
     out.dedent();
     out.push_empty();
@@ -808,206 +1047,6 @@ fn emit_field(
     Ok(())
 }
 
-fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<(), CodegenError> {
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"after\")");
-    out.push_line("def _check_properties(self):");
-    out.indent();
-    out.push_line("keys = set(self.model_fields_set)");
-    out.push_line("extra = getattr(self, \"__pydantic_extra__\", None)");
-    out.push_line("if extra:");
-    out.indent();
-    out.push_line("keys.update(extra.keys())");
-    out.dedent();
-
-    if let Some(min_props) = model.min_properties {
-        out.push_line(&format!("if len(keys) < {min_props}:",));
-        out.indent();
-        out.push_line(&format!(
-            "raise ValueError(\"expected at least {min_props} properties\")"
-        ));
-        out.dedent();
-    }
-
-    if let Some(max_props) = model.max_properties {
-        out.push_line(&format!("if len(keys) > {max_props}:",));
-        out.indent();
-        out.push_line(&format!(
-            "raise ValueError(\"expected at most {max_props} properties\")"
-        ));
-        out.dedent();
-    }
-
-    out.push_line("return self");
-    out.dedent();
-    Ok(())
-}
-
-fn emit_additional_validator(
-    out: &mut CodeWriter,
-    ctx: &mut PyContext,
-    model: &ModelSpec,
-    role: ModelRole,
-) -> Result<(), CodegenError> {
-    ctx.imports.add("pydantic", "model_validator");
-    if !model.pattern_properties.is_empty() {
-        ctx.imports.add("re", "compile as re_compile");
-    }
-    let mut additional_adapter = None;
-    if let AdditionalProperties::Typed(schema) = &model.additional_properties {
-        ctx.imports.add("pydantic", "TypeAdapter");
-        let extra_type = ctx.type_expr(schema, role)?;
-        let rendered = ctx.apply_metadata(
-            extra_type.expr,
-            &extra_type.field_args,
-            &extra_type.validators,
-        );
-        additional_adapter = Some(rendered);
-    }
-    if !model.pattern_properties.is_empty() || additional_adapter.is_some() {
-        ctx.imports.add("typing", "ClassVar");
-    }
-
-    if !model.pattern_properties.is_empty() {
-        let patterns = model
-            .pattern_properties
-            .iter()
-            .map(|p| {
-                let normalized = normalize_pattern(p);
-                format!("re_compile(r{:?})", normalized)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_line(&format!(
-            "_pattern_properties: ClassVar[list] = [{patterns}]"
-        ));
-    } else {
-        out.push_line("_pattern_properties: ClassVar[list] = []");
-    }
-    if let Some(adapter) = additional_adapter.as_ref() {
-        out.push_line(&format!(
-            "_additional_adapter: ClassVar[TypeAdapter] = TypeAdapter({adapter}, config=ConfigDict(strict=True))"
-        ));
-    }
-
-    let mut allowed_props: Vec<String> = model.fields.iter().map(|f| f.name.clone()).collect();
-    allowed_props.sort();
-    if model.has_all_of {
-        allowed_props.clear();
-    }
-    let allowed_literal = if allowed_props.is_empty() {
-        "set()".to_string()
-    } else {
-        format!(
-            "{{{}}}",
-            allowed_props
-                .iter()
-                .map(|p| format!("{p:?}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
-    let name_len_check = model
-        .property_name_max
-        .map(|max| format!("if len(_key) > {max}: raise ValueError(\"property name too long\")"))
-        .unwrap_or_default();
-
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"before\")");
-    out.push_line("@classmethod");
-    out.push_line("def _validate_additional(cls, value):");
-    out.indent();
-    out.push_line("if not isinstance(value, dict):");
-    out.indent();
-    out.push_line("return value");
-    out.dedent();
-    if !name_len_check.is_empty() {
-        out.push_line("for _key in value.keys():");
-        out.indent();
-        out.push_line(&name_len_check);
-        out.dedent();
-    }
-    out.push_line(&format!("_allowed = {allowed_literal}"));
-    out.push_line("for _key, _val in value.items():");
-    out.indent();
-    out.push_line("if _key in _allowed:");
-    out.indent();
-    out.push_line("continue");
-    out.dedent();
-    out.push_line(
-        "if cls._pattern_properties and any(p.match(_key) for p in cls._pattern_properties):",
-    );
-    out.indent();
-    out.push_line("continue");
-    out.dedent();
-    match &model.additional_properties {
-        AdditionalProperties::Allow => {
-            out.push_line("continue");
-        }
-        AdditionalProperties::Forbid => {
-            out.push_line("raise ValueError(\"additional property not allowed\")");
-        }
-        AdditionalProperties::Typed(_) => {
-            out.push_line("try:");
-            out.indent();
-            out.push_line("cls._additional_adapter.validate_python(_val)");
-            out.dedent();
-            out.push_line("except Exception as exc:");
-            out.indent();
-            out.push_line(
-                "raise ValueError(\"additional property does not match schema\") from exc",
-            );
-            out.dedent();
-        }
-    }
-    out.dedent();
-    out.push_line("return value");
-    out.dedent();
-    Ok(())
-}
-
-fn emit_fractional_multiple_validator(
-    out: &mut CodeWriter,
-    fractional_multiples: &[(String, f64)],
-) -> Result<(), CodegenError> {
-    let entries = fractional_multiples
-        .iter()
-        .map(|(name, mult)| format!("({name:?}, {mult})"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    out.push_empty();
-    out.push_line(&format!("_fractional_multiples = [{entries}]"));
-    out.push_line("@model_validator(mode=\"after\")");
-    out.push_line("def _check_fractional_multiples(self):");
-    out.indent();
-    out.push_line("for _field, _mult in self._fractional_multiples:");
-    out.indent();
-    out.push_line("val = getattr(self, _field, None)");
-    out.push_line("if val is None:");
-    out.indent();
-    out.push_line("continue");
-    out.dedent();
-    out.push_line("if isinstance(val, bool) or not isinstance(val, (int, float)):");
-    out.indent();
-    out.push_line("continue");
-    out.dedent();
-    out.push_line("try:");
-    out.indent();
-    out.push_line("if (Decimal(val) % Decimal(str(_mult))) != 0:");
-    out.indent();
-    out.push_line("raise ValueError(\"value is not a multiple of constraint\")");
-    out.dedent();
-    out.dedent();
-    out.push_line("except (InvalidOperation, Exception) as exc:");
-    out.indent();
-    out.push_line("raise ValueError(\"value is not a multiple of constraint\") from exc");
-    out.dedent();
-    out.dedent();
-    out.push_line("return self");
-    out.dedent();
-    Ok(())
-}
-
 #[derive(Debug, Clone)]
 struct FieldArg {
     key: &'static str,
@@ -1020,7 +1059,7 @@ impl FieldArg {
     }
 }
 
-fn render_field_args(args: &[FieldArg]) -> String {
+fn render_field_args(args: &[&FieldArg]) -> String {
     args.iter()
         .map(|arg| format!("{}={}", arg.key, arg.value))
         .collect::<Vec<_>>()
@@ -1194,6 +1233,14 @@ fn default_expression(value: &Value) -> Result<DefaultExpr, CodegenError> {
     }
 }
 
+fn schema_string_literal(schema: &Value) -> Result<String, CodegenError> {
+    let pretty = serde_json::to_string_pretty(schema).map_err(|e| CodegenError::InvalidSchema {
+        location: crate::SchemaPath::root(),
+        message: format!("failed to serialize schema: {e}"),
+    })?;
+    Ok(format!("r\"\"\"\n{pretty}\n\"\"\""))
+}
+
 fn python_literal(value: &Value) -> Result<String, CodegenError> {
     match value {
         Value::Null => Ok("None".to_string()),
@@ -1256,6 +1303,9 @@ fn is_reserved_field_name(name: &str) -> bool {
                 | "model_rebuild"
                 | "model_json_schema"
                 | "__pydantic_extra__"
+                | "_jsonschema_validator"
+                | "_get_jsonschema_validator"
+                | "_validate_jsonschema"
         )
 }
 
@@ -1278,8 +1328,6 @@ impl ImportSet {
 
     fn render(&self) -> String {
         let mut out = String::new();
-        out.push_str("from __future__ import annotations\n\n");
-
         let mut grouped: BTreeMap<u8, Vec<(&String, &BTreeSet<String>)>> = BTreeMap::new();
         for (module, names) in &self.modules {
             grouped

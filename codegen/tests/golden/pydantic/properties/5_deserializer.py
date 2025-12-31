@@ -75,15 +75,63 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "__proto__": {
+      "type": "number"
+    },
+    "constructor": {
+      "type": "number"
+    },
+    "toString": {
+      "properties": {
+        "length": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class ModelDeserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
+{
+  "$defs": {
+    "__root__": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "__proto__": {
+          "type": "number"
+        },
+        "constructor": {
+          "type": "number"
+        },
+        "toString": {
+          "properties": {
+            "length": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$ref": "#/$defs/__root__/properties/toString",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
+"""
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):
@@ -94,6 +142,8 @@ class ModelDeserializer(DeserializerBase):
     length: Annotated[str | None, Field(default=None)]
 
 class Properties5Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

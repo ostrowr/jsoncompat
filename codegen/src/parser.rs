@@ -189,6 +189,7 @@ impl<'a> ModelGraphBuilder<'a> {
             requires_object,
             description,
             title,
+            schema_path: path.clone(),
         })
     }
 

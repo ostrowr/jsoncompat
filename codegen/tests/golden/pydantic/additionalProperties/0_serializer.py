@@ -60,16 +60,31 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
-from re import compile as re_compile
+
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^v": {}
+  },
+  "properties": {
+    "bar": {},
+    "foo": {}
+  }
+}
+"""
+
+_VALIDATE_FORMATS = False
 
 class Additionalproperties0Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):
@@ -79,19 +94,4 @@ class Additionalproperties0Serializer(SerializerBase):
     model_config = ConfigDict(extra="allow")
     bar: Annotated[Any | None, Field(default=None)]
     foo: Annotated[Any | None, Field(default=None)]
-    _pattern_properties: ClassVar[list] = [re_compile(r"^v")]
-
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_additional(cls, value):
-        if not isinstance(value, dict):
-            return value
-        _allowed = {"bar", "foo"}
-        for _key, _val in value.items():
-            if _key in _allowed:
-                continue
-            if cls._pattern_properties and any(p.match(_key) for p in cls._pattern_properties):
-                continue
-            raise ValueError("additional property not allowed")
-        return value
 

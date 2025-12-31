@@ -1,3 +1,4 @@
+use crate::error::SchemaPath;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -21,6 +22,7 @@ pub struct ModelSpec {
     pub requires_object: bool,
     pub description: Option<String>,
     pub title: Option<String>,
+    pub schema_path: SchemaPath,
 }
 
 #[derive(Debug, Clone)]

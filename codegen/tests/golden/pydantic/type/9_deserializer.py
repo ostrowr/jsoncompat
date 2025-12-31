@@ -44,16 +44,38 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Any
+from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
+
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": [
+    "array",
+    "object"
+  ]
+}
+"""
+
+_VALIDATE_FORMATS = False
 
 class ModelDeserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": [
+    "array",
+    "object"
+  ]
+}
+"""
     model_config = ConfigDict(extra="allow")
 
 class Type9Deserializer(DeserializerRootModel):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
     root: list[Any] | ModelDeserializer
 

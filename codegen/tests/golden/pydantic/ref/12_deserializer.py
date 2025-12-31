@@ -33,15 +33,33 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
+_JSON_SCHEMA = r"""
+{
+  "$defs": {
+    "foo\"bar": {
+      "type": "number"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "foo\"bar": {
+      "$ref": "#/$defs/foo%22bar"
+    }
+  }
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Ref12Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

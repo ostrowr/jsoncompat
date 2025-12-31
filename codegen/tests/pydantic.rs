@@ -15,15 +15,17 @@ fn pydantic_defaults_and_aliases() {
         "required": ["id"]
     });
 
-    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let _schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
     let options = PydanticOptions::default()
         .with_root_model_name("User")
         .with_base_module("json_schema_codegen_base");
 
-    let serializer_code = pydantic::generate_model(&schema, ModelRole::Serializer, options.clone())
-        .expect("serializer codegen failed");
-    let deserializer_code = pydantic::generate_model(&schema, ModelRole::Deserializer, options)
-        .expect("deserializer codegen failed");
+    let serializer_code =
+        pydantic::generate_model_from_value(&schema_json, ModelRole::Serializer, options.clone())
+            .expect("serializer codegen failed");
+    let deserializer_code =
+        pydantic::generate_model_from_value(&schema_json, ModelRole::Deserializer, options)
+            .expect("deserializer codegen failed");
 
     assert!(serializer_code.contains("json_schema_codegen_base"));
     assert!(serializer_code.contains("SerializerBase"));
@@ -44,11 +46,12 @@ fn pydantic_typed_additional_properties() {
         "additionalProperties": { "type": "string" }
     });
 
-    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
     let options = PydanticOptions::default().with_root_model_name("Metadata");
 
-    let code =
-        pydantic::generate_model(&schema, ModelRole::Serializer, options).expect("codegen failed");
+    build_and_resolve_schema(&schema_json).expect("schema build failed");
+
+    let code = pydantic::generate_model_from_value(&schema_json, ModelRole::Serializer, options)
+        .expect("codegen failed");
 
     assert!(code.contains("__pydantic_extra__: dict[str, str]"));
     assert!(code.contains("model_config = ConfigDict(extra=\"allow\")"));
@@ -65,9 +68,9 @@ fn rejects_enum_objects() {
         }
     });
 
-    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
-    let code = pydantic::generate_model(
-        &schema,
+    build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let code = pydantic::generate_model_from_value(
+        &schema_json,
         ModelRole::Serializer,
         PydanticOptions::default().with_root_model_name("Config"),
     )
@@ -86,9 +89,9 @@ fn object_keywords_without_type_allow_non_objects() {
         "minProperties": 1
     });
 
-    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
-    let code = pydantic::generate_model(
-        &schema,
+    build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let code = pydantic::generate_model_from_value(
+        &schema_json,
         ModelRole::Serializer,
         PydanticOptions::default().with_root_model_name("Root"),
     )
@@ -106,9 +109,9 @@ fn root_model_generated_for_primitives() {
         "minLength": 3
     });
 
-    let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
-    let code = pydantic::generate_model(
-        &schema,
+    build_and_resolve_schema(&schema_json).expect("schema build failed");
+    let code = pydantic::generate_model_from_value(
+        &schema_json,
         ModelRole::Serializer,
         PydanticOptions::default().with_root_model_name("Root"),
     )

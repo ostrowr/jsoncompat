@@ -39,14 +39,23 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Any
+from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
-from pydantic import ConfigDict, Field, TypeAdapter
+from pydantic import ConfigDict, Field, TypeAdapter, model_validator
 from pydantic.functional_validators import BeforeValidator
 
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "maxItems": 2
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Maxitems0Serializer(SerializerRootModel):
-    root: Annotated[Any, BeforeValidator(lambda v, _adapter=TypeAdapter(Annotated[list[Any], Field(max_length=2)], config=ConfigDict(strict=True)): v if not isinstance(v, list) else _adapter.validate_python(v))]
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
+    root: Any
 

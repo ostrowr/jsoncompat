@@ -68,16 +68,40 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase, _validate_literal
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic.functional_validators import BeforeValidator
 
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "bar": {
+      "enum": [
+        "bar"
+      ]
+    },
+    "foo": {
+      "enum": [
+        "foo"
+      ]
+    }
+  },
+  "required": [
+    "bar"
+  ],
+  "type": "object"
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Enum3Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
     model_config = ConfigDict(extra="allow")
-    bar: Annotated[Literal["bar"], BeforeValidator(lambda v, _allowed=["bar"]: _validate_literal(v, _allowed))]
-    foo: Annotated[Literal["foo"] | None, BeforeValidator(lambda v, _allowed=["foo"]: _validate_literal(v, _allowed)), Field(default=None)]
+    bar: Literal["bar"]
+    foo: Annotated[Literal["foo"] | None, Field(default=None)]
 

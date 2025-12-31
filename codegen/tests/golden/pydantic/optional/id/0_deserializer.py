@@ -55,14 +55,50 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Any
+from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic.functional_validators import BeforeValidator
 
+_JSON_SCHEMA = r"""
+{
+  "$defs": {
+    "id_in_enum": {
+      "enum": [
+        {
+          "$id": "https://localhost:1234/draft2020-12/id/my_identifier.json",
+          "type": "null"
+        }
+      ]
+    },
+    "real_id_in_schema": {
+      "$id": "https://localhost:1234/draft2020-12/id/my_identifier.json",
+      "type": "string"
+    },
+    "zzz_id_in_const": {
+      "const": {
+        "$id": "https://localhost:1234/draft2020-12/id/my_identifier.json",
+        "type": "null"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/id_in_enum"
+    },
+    {
+      "$ref": "https://localhost:1234/draft2020-12/id/my_identifier.json"
+    }
+  ]
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Id0Deserializer(DeserializerRootModel):
-    root: Annotated[Any, BeforeValidator(lambda v, _allowed=[{"$id": "https://localhost:1234/draft2020-12/id/my_identifier.json", "type": "null"}]: _validate_literal(v, _allowed))] | str
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
+    root: Any | str
 

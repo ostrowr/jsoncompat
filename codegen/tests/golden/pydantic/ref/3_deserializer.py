@@ -73,15 +73,45 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
+_JSON_SCHEMA = r"""
+{
+  "$defs": {
+    "percent%field": {
+      "type": "integer"
+    },
+    "slash/field": {
+      "type": "integer"
+    },
+    "tilde~field": {
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "percent": {
+      "$ref": "#/$defs/percent%25field"
+    },
+    "slash": {
+      "$ref": "#/$defs/slash~1field"
+    },
+    "tilde": {
+      "$ref": "#/$defs/tilde~0field"
+    }
+  }
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Ref3Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

@@ -35,15 +35,35 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Any
+from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
+_JSON_SCHEMA = r"""
+{
+  "$defs": {
+    "bar": {
+      "$anchor": "something",
+      "type": "string"
+    }
+  },
+  "$id": "urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "foo": {
+      "$ref": "urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed#something"
+    }
+  }
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Ref26Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

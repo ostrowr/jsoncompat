@@ -35,14 +35,28 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Any
+from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
-from pydantic import ConfigDict, Field, TypeAdapter
+from pydantic import ConfigDict, Field, TypeAdapter, model_validator
 from pydantic.functional_validators import BeforeValidator
 
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "items": {
+    "type": "number"
+  },
+  "unevaluatedItems": {
+    "type": "string"
+  }
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Unevaluateditems6Deserializer(DeserializerRootModel):
-    root: Annotated[Any, BeforeValidator(lambda v, _adapter=TypeAdapter(list[float], config=ConfigDict(strict=True)): v if not isinstance(v, list) else _adapter.validate_python(v))]
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
+    root: Any
 

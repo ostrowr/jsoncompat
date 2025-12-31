@@ -14,6 +14,33 @@ static WHITELIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 datatest_stable::harness!(fixture, FIXTURES_ROOT, ".*\\.json$");
 
+fn should_validate_formats(schema: &Value) -> bool {
+    if let Some(map) = schema.as_object() {
+        if let Some(vocab) = map.get("$vocabulary").and_then(|v| v.as_object()) {
+            if vocab
+                .get("https://json-schema.org/draft/2020-12/vocab/format-assertion")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                || vocab
+                    .get("https://json-schema.org/draft/2019-09/vocab/format-assertion")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+        if map
+            .get("$schema")
+            .and_then(|v| v.as_str())
+            .map(|s| s.contains("format-assertion"))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let regen = std::env::var_os("REGEN_CODEGEN_GOLDENS").is_some();
     let base_code = pydantic::base_module();
@@ -34,7 +61,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if !regen && is_whitelisted(&whitelist, &golden_rel_path, idx) {
             continue;
         }
-        let schema =
+        let _schema =
             build_and_resolve_schema(&schema_json).map_err(|e| format!("{rel_str}#{idx}: {e}"))?;
         let root_name = format!(
             "{}{}",
@@ -50,26 +77,44 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             .with_root_model_name(root_name.clone())
             .with_base_module(BASE_MODULE)
             .with_header_comment(format_header_comment(&schema_json, &tests));
-        let serializer =
-            match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
-                Ok(code) => code,
-                Err(err) => {
-                    if regen {
-                        update_whitelist(&golden_root, &golden_rel_path, idx, &err.to_string())?;
-                    }
-                    stub_model(ModelRole::Serializer, &options, &root_name, &err)
+        let serializer = match pydantic::generate_model_from_value(
+            &schema_json,
+            ModelRole::Serializer,
+            options.clone(),
+        ) {
+            Ok(code) => code,
+            Err(err) => {
+                if regen {
+                    update_whitelist(&golden_root, &golden_rel_path, idx, &err.to_string())?;
                 }
-            };
-        let deserializer =
-            match pydantic::generate_model(&schema, ModelRole::Deserializer, options.clone()) {
-                Ok(code) => code,
-                Err(err) => {
-                    if regen {
-                        update_whitelist(&golden_root, &golden_rel_path, idx, &err.to_string())?;
-                    }
-                    stub_model(ModelRole::Deserializer, &options, &root_name, &err)
+                stub_model(
+                    ModelRole::Serializer,
+                    &options,
+                    &root_name,
+                    &schema_json,
+                    &err,
+                )
+            }
+        };
+        let deserializer = match pydantic::generate_model_from_value(
+            &schema_json,
+            ModelRole::Deserializer,
+            options.clone(),
+        ) {
+            Ok(code) => code,
+            Err(err) => {
+                if regen {
+                    update_whitelist(&golden_root, &golden_rel_path, idx, &err.to_string())?;
                 }
-            };
+                stub_model(
+                    ModelRole::Deserializer,
+                    &options,
+                    &root_name,
+                    &schema_json,
+                    &err,
+                )
+            }
+        };
 
         let base_dir = golden_root.join(&golden_rel_path);
         fs::create_dir_all(&base_dir)?;
@@ -123,6 +168,7 @@ fn stub_model(
     role: ModelRole,
     options: &PydanticOptions,
     root_name: &str,
+    schema_json: &Value,
     err: &CodegenError,
 ) -> String {
     let class_name = match role {
@@ -140,14 +186,40 @@ fn stub_model(
         out.push_str("\"\"\"\n\n");
     }
 
-    out.push_str("from pydantic import BaseModel, ConfigDict\n\n");
-    out.push_str(&format!("class {class_name}(BaseModel):\n"));
-    out.push_str("    model_config = ConfigDict(extra=\"forbid\")\n\n");
-    out.push_str("    @classmethod\n");
-    out.push_str("    def __get_pydantic_core_schema__(cls, source, handler):\n");
+    let schema_str = schema_json.to_string();
+    let pretty_schema =
+        serde_json::to_string_pretty(schema_json).unwrap_or_else(|_| schema_str.clone());
+    out.push_str("from typing import ClassVar\n\n");
+    out.push_str("from jsonschema_rs import validator_for\n");
+    out.push_str("from pydantic import BaseModel, ConfigDict, model_validator\n\n");
+    let rendered_schema = format!("r\"\"\"\n{pretty_schema}\n\"\"\"");
+    out.push_str(&format!("_JSON_SCHEMA = {rendered_schema}\n"));
+    let validate_formats = should_validate_formats(schema_json);
     out.push_str(&format!(
-        "        raise NotImplementedError({:?})\n",
-        err.to_string()
+        "_VALIDATE_FORMATS = {}\n\n",
+        if validate_formats { "True" } else { "False" }
+    ));
+    out.push_str(&format!("class {class_name}(BaseModel):\n"));
+    out.push_str("    __json_schema__: ClassVar[str] = _JSON_SCHEMA\n");
+    out.push_str("    _jsonschema_validator: ClassVar[object | None] = None\n\n");
+    out.push_str("    @classmethod\n");
+    out.push_str("    def _get_jsonschema_validator(cls):\n");
+    out.push_str("        validator = cls._jsonschema_validator\n");
+    out.push_str("        if validator is None:\n");
+    out.push_str(
+        "            validator = validator_for(cls.__json_schema__, validate_formats=_VALIDATE_FORMATS)\n",
+    );
+    out.push_str("            cls._jsonschema_validator = validator\n");
+    out.push_str("        return validator\n\n");
+    out.push_str("    @model_validator(mode=\"before\")\n");
+    out.push_str("    @classmethod\n");
+    out.push_str("    def _validate_jsonschema(cls, value):\n");
+    out.push_str("        cls._get_jsonschema_validator().validate(value)\n");
+    out.push_str("        return value\n\n");
+    out.push_str("    model_config = ConfigDict(extra=\"forbid\")\n");
+    out.push_str(&format!(
+        "    __json_compat_error__: ClassVar[str] = {msg:?}\n",
+        msg = err.to_string()
     ));
     out
 }

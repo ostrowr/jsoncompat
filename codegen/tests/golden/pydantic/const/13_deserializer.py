@@ -30,14 +30,23 @@ Tests:
 ]
 """
 
-from __future__ import annotations
-
-from typing import Annotated, Literal
+from typing import ClassVar, Literal
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from pydantic.functional_validators import BeforeValidator
 
+_JSON_SCHEMA = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "const": 9007199254740992
+}
+"""
+
+_VALIDATE_FORMATS = False
+
 class Const13Deserializer(DeserializerRootModel):
-    root: Annotated[Literal[9007199254740992], BeforeValidator(lambda v, _allowed=[9007199254740992]: _validate_literal(v, _allowed))]
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = _JSON_SCHEMA
+    root: Literal[9007199254740992]
 

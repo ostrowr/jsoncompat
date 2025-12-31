@@ -1,8 +1,7 @@
-from __future__ import annotations
+from typing import Any, ClassVar
 
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict, RootModel
+from jsonschema_rs import validator_for
+from pydantic import BaseModel, ConfigDict, RootModel, model_validator
 
 def _json_equal(candidate, expected):
     if isinstance(expected, bool):
@@ -23,8 +22,27 @@ def _validate_literal(value, allowed):
     raise ValueError("value does not match literal constraint")
 
 class SerializerBase(BaseModel):
+    __json_schema__: ClassVar[str | None] = None
+    _validate_formats: ClassVar[bool] = False
+    _jsonschema_validator: ClassVar[object | None] = None
+
+    @classmethod
+    def _get_jsonschema_validator(cls):
+        if cls.__json_schema__ is None:
+            raise TypeError(f"{cls.__name__} is missing __json_schema__")
+        validator = cls._jsonschema_validator
+        if validator is None:
+            validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)
+            cls._jsonschema_validator = validator
+        return validator
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_jsonschema(cls, value):
+        cls._get_jsonschema_validator().validate(value)
+        return value
+
     model_config = ConfigDict(
-        strict=True,
         validate_by_alias=True,
         validate_by_name=True,
         serialize_by_alias=True,
@@ -39,16 +57,54 @@ class SerializerBase(BaseModel):
         return super().model_dump_json(**kwargs)
 
 class DeserializerBase(BaseModel):
+    __json_schema__: ClassVar[str | None] = None
+    _validate_formats: ClassVar[bool] = False
+    _jsonschema_validator: ClassVar[object | None] = None
+
+    @classmethod
+    def _get_jsonschema_validator(cls):
+        if cls.__json_schema__ is None:
+            raise TypeError(f"{cls.__name__} is missing __json_schema__")
+        validator = cls._jsonschema_validator
+        if validator is None:
+            validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)
+            cls._jsonschema_validator = validator
+        return validator
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_jsonschema(cls, value):
+        cls._get_jsonschema_validator().validate(value)
+        return value
+
     model_config = ConfigDict(
-        strict=True,
         validate_by_alias=True,
         validate_by_name=True,
         serialize_by_alias=True,
     )
 
 class SerializerRootModel(RootModel[Any]):
+    __json_schema__: ClassVar[str | None] = None
+    _validate_formats: ClassVar[bool] = False
+    _jsonschema_validator: ClassVar[object | None] = None
+
+    @classmethod
+    def _get_jsonschema_validator(cls):
+        if cls.__json_schema__ is None:
+            raise TypeError(f"{cls.__name__} is missing __json_schema__")
+        validator = cls._jsonschema_validator
+        if validator is None:
+            validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)
+            cls._jsonschema_validator = validator
+        return validator
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_jsonschema(cls, value):
+        cls._get_jsonschema_validator().validate(value)
+        return value
+
     model_config = ConfigDict(
-        strict=True,
         validate_by_alias=True,
         validate_by_name=True,
         serialize_by_alias=True,
@@ -63,8 +119,27 @@ class SerializerRootModel(RootModel[Any]):
         return super().model_dump_json(**kwargs)
 
 class DeserializerRootModel(RootModel[Any]):
+    __json_schema__: ClassVar[str | None] = None
+    _validate_formats: ClassVar[bool] = False
+    _jsonschema_validator: ClassVar[object | None] = None
+
+    @classmethod
+    def _get_jsonschema_validator(cls):
+        if cls.__json_schema__ is None:
+            raise TypeError(f"{cls.__name__} is missing __json_schema__")
+        validator = cls._jsonschema_validator
+        if validator is None:
+            validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)
+            cls._jsonschema_validator = validator
+        return validator
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_jsonschema(cls, value):
+        cls._get_jsonschema_validator().validate(value)
+        return value
+
     model_config = ConfigDict(
-        strict=True,
         validate_by_alias=True,
         validate_by_name=True,
         serialize_by_alias=True,
