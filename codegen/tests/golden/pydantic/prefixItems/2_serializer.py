@@ -1,7 +1,8 @@
 from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, TypeAdapter, model_validator
+from pydantic.functional_validators import BeforeValidator
 
 _VALIDATE_FORMATS = False
 

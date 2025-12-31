@@ -12,6 +12,7 @@ pub struct ModelGraphBuilder<'a> {
     names: NameAllocator,
     models: BTreeMap<String, ModelSpec>,
     ref_map: HashMap<String, String>,
+    warnings: HashSet<String>,
 }
 
 impl<'a> ModelGraphBuilder<'a> {
@@ -21,6 +22,7 @@ impl<'a> ModelGraphBuilder<'a> {
             names: NameAllocator::default(),
             models: BTreeMap::new(),
             ref_map: HashMap::new(),
+            warnings: HashSet::new(),
         }
     }
 
@@ -40,6 +42,13 @@ impl<'a> ModelGraphBuilder<'a> {
         })
     }
 
+    fn warn_type_inferred(&mut self, path: &SchemaPath, inferred: &str) {
+        let key = format!("{path}|{inferred}");
+        if self.warnings.insert(key) {
+            eprintln!("warning: inferred schema type '{inferred}' at {path} (no explicit 'type')");
+        }
+    }
+
     fn parse_root_schema(
         &mut self,
         schema: &Value,
@@ -54,6 +63,9 @@ impl<'a> ModelGraphBuilder<'a> {
                 }
                 if let Some(resolved_obj) = resolved.value.as_object() {
                     if is_object_like(resolved_obj) {
+                        if !has_explicit_type(resolved_obj) {
+                            self.warn_type_inferred(&resolved.path, "object");
+                        }
                         let requires_object = explicitly_object_type(resolved_obj);
                         self.ref_map
                             .insert(resolved.canonical.clone(), root_name.to_string());
@@ -71,6 +83,9 @@ impl<'a> ModelGraphBuilder<'a> {
             }
 
             if is_object_like(obj) {
+                if !has_explicit_type(obj) {
+                    self.warn_type_inferred(path, "object");
+                }
                 let requires_object = explicitly_object_type(obj);
                 let root_model =
                     self.parse_object_model(schema, path, root_name, requires_object)?;
@@ -256,6 +271,7 @@ impl<'a> ModelGraphBuilder<'a> {
                 feature: "false schema".to_string(),
             }),
             Value::Object(obj) => {
+                let has_explicit_type = has_explicit_type(obj);
                 if let Some(Value::String(ref_path)) = obj.get("$ref") {
                     return self.parse_ref(ref_path, path);
                 }
@@ -289,6 +305,9 @@ impl<'a> ModelGraphBuilder<'a> {
                 }
 
                 if is_object_like(obj) {
+                    if !has_explicit_type {
+                        self.warn_type_inferred(path, "object");
+                    }
                     return self.parse_object_schema(obj, path, false);
                 }
                 if obj.contains_key("items")
@@ -297,7 +316,13 @@ impl<'a> ModelGraphBuilder<'a> {
                     || obj.contains_key("contains")
                     || obj.contains_key("minContains")
                     || obj.contains_key("maxContains")
+                    || obj.contains_key("prefixItems")
+                    || obj.contains_key("uniqueItems")
+                    || obj.contains_key("unevaluatedItems")
                 {
+                    if !has_explicit_type {
+                        self.warn_type_inferred(path, "array");
+                    }
                     return self.parse_array_schema(obj, path, false);
                 }
                 if obj.contains_key("minLength")
@@ -305,6 +330,9 @@ impl<'a> ModelGraphBuilder<'a> {
                     || obj.contains_key("pattern")
                     || obj.contains_key("format")
                 {
+                    if !has_explicit_type {
+                        self.warn_type_inferred(path, "string");
+                    }
                     return self.parse_string_schema(obj, path, false);
                 }
                 if obj.contains_key("minimum")
@@ -313,6 +341,9 @@ impl<'a> ModelGraphBuilder<'a> {
                     || obj.contains_key("exclusiveMaximum")
                     || obj.contains_key("multipleOf")
                 {
+                    if !has_explicit_type {
+                        self.warn_type_inferred(path, "number");
+                    }
                     return self.parse_number_schema(obj, false, path, false);
                 }
 
@@ -347,6 +378,11 @@ impl<'a> ModelGraphBuilder<'a> {
         if is_object_schema(resolved.value) {
             self.ref_map
                 .insert(resolved.canonical.clone(), name.clone());
+            if let Some(resolved_obj) = resolved.value.as_object() {
+                if is_object_like(resolved_obj) && !has_explicit_type(resolved_obj) {
+                    self.warn_type_inferred(&resolved.path, "object");
+                }
+            }
             let requires_object = resolved
                 .value
                 .as_object()
@@ -581,26 +617,21 @@ impl<'a> ModelGraphBuilder<'a> {
         path: &SchemaPath,
         type_enforced: bool,
     ) -> Result<SchemaType, CodegenError> {
-        if obj.contains_key("prefixItems") || obj.contains_key("contains") {
-            return Err(CodegenError::UnsupportedFeature {
-                location: path.clone(),
-                feature: "prefixItems/contains".to_string(),
-            });
-        }
-        if obj.get("uniqueItems").and_then(|v| v.as_bool()) == Some(true) {
-            return Err(CodegenError::UnsupportedFeature {
-                location: path.clone(),
-                feature: "uniqueItems".to_string(),
-            });
-        }
-
         let items = match obj.get("items") {
-            None => SchemaType::Any,
-            Some(Value::Array(_)) => {
-                return Err(CodegenError::UnsupportedFeature {
-                    location: path.clone(),
-                    feature: "tuple-style items".to_string(),
-                })
+            None => match obj.get("prefixItems") {
+                Some(Value::Array(prefix)) if !prefix.is_empty() => {
+                    let first_path = path.push("prefixItems").push("0");
+                    self.parse_schema_type(&prefix[0], &first_path)?
+                }
+                _ => SchemaType::Any,
+            },
+            Some(Value::Array(items)) => {
+                if let Some(first) = items.first() {
+                    let first_path = path.push("items").push("0");
+                    self.parse_schema_type(first, &first_path)?
+                } else {
+                    SchemaType::Any
+                }
             }
             Some(other) => {
                 let items_path = path.push("items");
@@ -918,6 +949,13 @@ fn explicitly_object_type(obj: &Map<String, Value>) -> bool {
     false
 }
 
+fn has_explicit_type(obj: &Map<String, Value>) -> bool {
+    matches!(
+        obj.get("type"),
+        Some(Value::String(_)) | Some(Value::Array(_))
+    )
+}
+
 fn is_object_like(obj: &Map<String, Value>) -> bool {
     explicitly_object_type(obj)
         || obj.contains_key("properties")
@@ -925,6 +963,9 @@ fn is_object_like(obj: &Map<String, Value>) -> bool {
         || obj.contains_key("additionalProperties")
         || obj.contains_key("minProperties")
         || obj.contains_key("maxProperties")
+        || obj.contains_key("patternProperties")
+        || obj.contains_key("propertyNames")
+        || obj.contains_key("unevaluatedProperties")
 }
 
 fn is_object_schema(schema: &Value) -> bool {

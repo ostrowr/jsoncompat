@@ -19,4 +19,4 @@ class Items5Serializer(SerializerBase):
 """
     _validate_formats: ClassVar[bool] = _VALIDATE_FORMATS
     model_config = ConfigDict(extra="forbid")
-    __json_compat_error__: ClassVar[str] = "unsupported schema feature at #: prefixItems/contains"
+    __json_compat_error__: ClassVar[str] = "unsupported schema feature at #/items: false schema"

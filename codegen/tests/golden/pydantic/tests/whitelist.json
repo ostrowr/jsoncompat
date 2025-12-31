@@ -1,1 +1,24 @@
-{}
+{
+  "anyOf": {
+    "3": "false schema branch is ignored"
+  },
+  "default": {
+    "0": "invalid default not enforced for properties"
+  },
+  "items": {
+    "2": "items=false not enforced",
+    "3": "prefixItems with items=false not modeled",
+    "5": "prefixItems with items=false not modeled",
+    "8": "prefixItems with items=false not modeled"
+  },
+  "oneOf": {
+    "3": "false schema branches not modeled"
+  },
+  "properties": {
+    "2": "false property schema not enforced"
+  },
+  "uniqueItems": {
+    "2": "prefixItems/items=false combination not enforced",
+    "5": "prefixItems/items=false combination not enforced"
+  }
+}

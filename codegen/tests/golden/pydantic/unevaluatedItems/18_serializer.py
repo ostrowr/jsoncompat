@@ -1,12 +1,13 @@
 from typing import ClassVar
 
-from json_schema_codegen_base import SerializerBase, DeserializerBase
-from pydantic import ConfigDict
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from pydantic import ConfigDict, Field, model_validator
 
 _VALIDATE_FORMATS = False
 
-class Unevaluateditems18Serializer(SerializerBase):
-    __json_schema__: ClassVar[str] = r"""
+class Unevaluateditems18Serializer(SerializerRootModel):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "baseSchema": {
@@ -42,6 +43,5 @@ class Unevaluateditems18Serializer(SerializerBase):
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }
 """
-    _validate_formats: ClassVar[bool] = _VALIDATE_FORMATS
-    model_config = ConfigDict(extra="forbid")
-    __json_compat_error__: ClassVar[str] = "unsupported schema feature at #: prefixItems/contains"
+    root: list[str]
+
