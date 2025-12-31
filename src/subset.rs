@@ -197,11 +197,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             if !check_numeric_inclusion(smax.map(|v| v as f64), sexmax, pmax, pexmax, false) {
                 return false;
             }
-            if let (Some(pm), Some(sm)) = (p_mul, s_mul) {
-                if (sm - pm).abs() > f64::EPSILON {
-                    return false;
-                }
-            } else if p_mul.is_some() && s_mul.is_none() {
+            if !integer_multiple_subset(p_mul, s_mul) {
                 return false;
             }
             if let (Some(se), Some(pe)) = (s_en, p_en) {
@@ -368,6 +364,24 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
         _ => false,
     }
+}
+
+fn integer_multiple_subset(parent: Option<f64>, source: Option<f64>) -> bool {
+    let Some(pm) = parent else {
+        return true;
+    };
+    if let Some(sm) = source {
+        let ratio = sm / pm;
+        return (ratio.fract()).abs() < f64::EPSILON;
+    }
+    if pm <= 0.0 {
+        return false;
+    }
+    if pm > 1.0 {
+        return false;
+    }
+    let recip = 1.0 / pm;
+    (recip.fract()).abs() < f64::EPSILON
 }
 
 fn check_numeric_inclusion(
