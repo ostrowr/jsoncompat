@@ -1,1 +1,0 @@
-{"$id":"http://localhost:1234/draft2020-12/name-defs.json","$defs":{"orNull":{"type":["string","null"]}}}

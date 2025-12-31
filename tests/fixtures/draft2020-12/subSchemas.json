@@ -1,1 +1,0 @@
-{"$id":"http://localhost:1234/draft2020-12/subSchemas.json","$defs":{"integer":{"type":"integer"},"refToInteger":{"$ref":"#/$defs/integer"}}}

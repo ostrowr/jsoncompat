@@ -1,1 +1,0 @@
-{"$id":"http://localhost:1234/draft2020-12/nested/foo-ref-string.json","type":"object","properties":{"foo":{"type":"string"}},"required":["foo"],"additionalProperties":false}
