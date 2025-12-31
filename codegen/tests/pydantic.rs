@@ -53,7 +53,9 @@ fn pydantic_typed_additional_properties() {
     let code = pydantic::generate_model_from_value(&schema_json, ModelRole::Serializer, options)
         .expect("codegen failed");
 
-    assert!(code.contains("__pydantic_extra__: dict[str, str]"));
+    assert!(code.contains("_JSON_SCHEMA = r\"\"\""));
+    assert!(code.contains("\"additionalProperties\": {"));
+    assert!(code.contains("\"type\": \"string\""));
     assert!(code.contains("model_config = ConfigDict(extra=\"allow\")"));
 }
 
@@ -118,5 +120,6 @@ fn root_model_generated_for_primitives() {
     .expect("codegen failed");
 
     assert!(code.contains("class RootSerializer(SerializerRootModel):"));
-    assert!(code.contains("root: Annotated[str, Field(min_length=3)]"));
+    assert!(code.contains("root: str"));
+    assert!(code.contains("\"minLength\": 3"));
 }
