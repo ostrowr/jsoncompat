@@ -177,10 +177,13 @@ impl SchemaNode {
                 pattern,
                 enumeration,
                 format,
+                type_is_explicit,
                 annotations,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("type".into(), Value::String("string".into()));
+                if *type_is_explicit {
+                    obj.insert("type".into(), Value::String("string".into()));
+                }
                 if let Some(m) = min_length {
                     obj.insert("minLength".into(), Value::Number((*m).into()));
                 }
@@ -207,10 +210,13 @@ impl SchemaNode {
                 exclusive_maximum,
                 multiple_of,
                 enumeration,
+                type_is_explicit,
                 annotations,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("type".into(), Value::String("number".into()));
+                if *type_is_explicit {
+                    obj.insert("type".into(), Value::String("number".into()));
+                }
                 if let Some(m) = minimum {
                     obj.insert(
                         "minimum".into(),
@@ -259,10 +265,13 @@ impl SchemaNode {
                 exclusive_maximum,
                 multiple_of,
                 enumeration,
+                type_is_explicit,
                 annotations,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("type".into(), Value::String("integer".into()));
+                if *type_is_explicit {
+                    obj.insert("type".into(), Value::String("integer".into()));
+                }
                 if let Some(m) = minimum {
                     obj.insert("minimum".into(), Value::Number((*m).into()));
                 }
@@ -367,10 +376,13 @@ impl SchemaNode {
                 max_contains,
                 unique_items,
                 enumeration,
+                type_is_explicit,
                 annotations,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("type".into(), Value::String("array".into()));
+                if *type_is_explicit {
+                    obj.insert("type".into(), Value::String("array".into()));
+                }
                 if !prefix_items.is_empty() {
                     obj.insert(
                         "prefixItems".into(),
@@ -632,6 +644,7 @@ impl PartialEq for SchemaNode {
                         enumeration: ae,
                         format: af,
                         annotations: ann_a,
+                        ..
                     },
                     String {
                         min_length: bx,
@@ -640,6 +653,7 @@ impl PartialEq for SchemaNode {
                         enumeration: be,
                         format: bf,
                         annotations: ann_b,
+                        ..
                     },
                 ) => ax == bx && ay == by && ap == bp && ae == be && af == bf && ann_a == ann_b,
                 (
@@ -651,6 +665,7 @@ impl PartialEq for SchemaNode {
                         multiple_of: amul,
                         enumeration: aenum,
                         annotations: ann_a,
+                        ..
                     },
                     Number {
                         minimum: bmin,
@@ -660,6 +675,7 @@ impl PartialEq for SchemaNode {
                         multiple_of: bmul,
                         enumeration: benum,
                         annotations: ann_b,
+                        ..
                     },
                 ) => {
                     amin == bmin
@@ -679,6 +695,7 @@ impl PartialEq for SchemaNode {
                         multiple_of: amul,
                         enumeration: aenum,
                         annotations: ann_a,
+                        ..
                     },
                     Integer {
                         minimum: bmin,
@@ -688,6 +705,7 @@ impl PartialEq for SchemaNode {
                         multiple_of: bmul,
                         enumeration: benum,
                         annotations: ann_b,
+                        ..
                     },
                 ) => {
                     amin == bmin
@@ -729,8 +747,8 @@ impl PartialEq for SchemaNode {
                         max_properties: amax,
                         dependent_required: adep,
                         enumeration: aenum,
-                        type_is_explicit: aexplicit,
                         annotations: ann_a,
+                        ..
                     },
                     Object {
                         properties: bprops,
@@ -742,8 +760,8 @@ impl PartialEq for SchemaNode {
                         max_properties: bmax,
                         dependent_required: bdep,
                         enumeration: benum,
-                        type_is_explicit: bexplicit,
                         annotations: ann_b,
+                        ..
                     },
                 ) => {
                     if areq != breq
@@ -754,7 +772,6 @@ impl PartialEq for SchemaNode {
                         || ann_a != ann_b
                         || apn.is_some() != bpn.is_some()
                         || appat.len() != bppat.len()
-                        || aexplicit != bexplicit
                         || aprops.len() != bprops.len()
                     {
                         return false;
@@ -796,6 +813,7 @@ impl PartialEq for SchemaNode {
                         unique_items: auniq,
                         enumeration: aenum,
                         annotations: ann_a,
+                        ..
                     },
                     Array {
                         prefix_items: bprefix,
@@ -808,6 +826,7 @@ impl PartialEq for SchemaNode {
                         unique_items: buniq,
                         enumeration: benum,
                         annotations: ann_b,
+                        ..
                     },
                 ) => {
                     if amin != bmin
@@ -934,6 +953,7 @@ pub enum SchemaNodeKind {
         pattern: Option<String>,
         enumeration: Option<Vec<Value>>,
         format: Option<String>,
+        type_is_explicit: bool,
         annotations: SchemaAnnotations,
     },
     Number {
@@ -943,6 +963,7 @@ pub enum SchemaNodeKind {
         exclusive_maximum: bool,
         multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
+        type_is_explicit: bool,
         annotations: SchemaAnnotations,
     },
     Integer {
@@ -952,6 +973,7 @@ pub enum SchemaNodeKind {
         exclusive_maximum: bool,
         multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
+        type_is_explicit: bool,
         annotations: SchemaAnnotations,
     },
     Boolean {
@@ -986,6 +1008,7 @@ pub enum SchemaNodeKind {
         max_contains: Option<u64>,
         unique_items: bool,
         enumeration: Option<Vec<Value>>,
+        type_is_explicit: bool,
         annotations: SchemaAnnotations,
     },
 
@@ -1189,13 +1212,13 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
 
     match obj.get("type") {
         Some(Value::String(t)) => match t.as_str() {
-            "string" => parse_string_schema(obj),
-            "number" => parse_number_schema(obj, false),
-            "integer" => parse_number_schema(obj, true),
+            "string" => parse_string_schema(obj, true),
+            "number" => parse_number_schema(obj, false, true),
+            "integer" => parse_number_schema(obj, true, true),
             "boolean" => parse_boolean_schema(obj),
             "null" => parse_null_schema(obj),
             "object" => parse_object_schema(obj),
-            "array" => parse_array_schema(obj),
+            "array" => parse_array_schema(obj, true),
             _ => Ok(SchemaNode::any()),
         },
         Some(Value::Array(arr)) => {
@@ -1228,19 +1251,19 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
                 || obj.contains_key("minItems")
                 || obj.contains_key("maxItems")
             {
-                parse_array_schema(obj)
+                parse_array_schema(obj, false)
             } else if obj.contains_key("minLength")
                 || obj.contains_key("maxLength")
                 || obj.contains_key("pattern")
             {
-                parse_string_schema(obj)
+                parse_string_schema(obj, false)
             } else if obj.contains_key("minimum")
                 || obj.contains_key("maximum")
                 || obj.contains_key("exclusiveMinimum")
                 || obj.contains_key("exclusiveMaximum")
                 || obj.contains_key("multipleOf")
             {
-                parse_number_schema(obj, false)
+                parse_number_schema(obj, false, false)
             } else {
                 Ok(SchemaNode::any())
             }
@@ -1270,7 +1293,10 @@ fn parse_annotations(obj: &serde_json::Map<String, Value>) -> SchemaAnnotations 
     }
 }
 
-fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+fn parse_string_schema(
+    obj: &serde_json::Map<String, Value>,
+    type_is_explicit: bool,
+) -> Result<SchemaNode> {
     let min_length = obj.get("minLength").and_then(|v| v.as_u64());
     let max_length = obj.get("maxLength").and_then(|v| v.as_u64());
     let pattern = obj
@@ -1290,11 +1316,16 @@ fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         pattern,
         enumeration,
         format,
+        type_is_explicit,
         annotations,
     }))
 }
 
-fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> Result<SchemaNode> {
+fn parse_number_schema(
+    obj: &serde_json::Map<String, Value>,
+    integer: bool,
+    type_is_explicit: bool,
+) -> Result<SchemaNode> {
     let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
     let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
 
@@ -1329,6 +1360,7 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
             exclusive_maximum,
             multiple_of,
             enumeration,
+            type_is_explicit,
             annotations,
         }))
     } else {
@@ -1339,6 +1371,7 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
             exclusive_maximum,
             multiple_of,
             enumeration,
+            type_is_explicit,
             annotations,
         }))
     }
@@ -1452,7 +1485,10 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
     }))
 }
 
-fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+fn parse_array_schema(
+    obj: &serde_json::Map<String, Value>,
+    type_is_explicit: bool,
+) -> Result<SchemaNode> {
     let prefix_items = obj
         .get("prefixItems")
         .and_then(|v| v.as_array())
@@ -1505,6 +1541,7 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
         max_contains,
         unique_items,
         enumeration,
+        type_is_explicit,
         annotations,
     }))
 }

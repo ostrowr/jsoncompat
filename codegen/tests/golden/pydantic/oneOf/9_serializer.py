@@ -73,7 +73,7 @@ class ModelSerializer(SerializerBase):
         non_object_schema = core_schema.no_info_plain_validator_function(lambda v: v)
         return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))
     model_config = ConfigDict(extra="allow")
-    bar: Annotated[Any, Field()]
+    bar: Any
     baz: Annotated[Any | None, Field(default=None)]
 
 class Model2Serializer(SerializerBase):
@@ -84,7 +84,7 @@ class Model2Serializer(SerializerBase):
         non_object_schema = core_schema.no_info_plain_validator_function(lambda v: v)
         return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))
     model_config = ConfigDict(extra="allow")
-    foo: Annotated[Any, Field()]
+    foo: Any
 
 class Oneof9Serializer(SerializerRootModel):
     root: ModelSerializer | Model2Serializer

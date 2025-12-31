@@ -185,6 +185,7 @@ pub fn base_module() -> String {
 struct TypeExpr {
     expr: String,
     field_args: Vec<FieldArg>,
+    validators: Vec<String>,
 }
 
 struct PyContext {
@@ -218,11 +219,13 @@ impl PyContext {
                 Ok(TypeExpr {
                     expr: "Any".to_string(),
                     field_args: Vec::new(),
+                    validators: Vec::new(),
                 })
             }
             SchemaType::Bool => Ok(TypeExpr {
                 expr: "bool".to_string(),
                 field_args: Vec::new(),
+                validators: Vec::new(),
             }),
             SchemaType::String(constraints) => {
                 let base = match constraints.format {
@@ -252,33 +255,100 @@ impl PyContext {
                     }
                     None => "str".to_string(),
                 };
+                let field_args = constraint_args_for_string(constraints)?;
+                if constraints.type_enforced {
+                    return Ok(TypeExpr {
+                        expr: base,
+                        field_args,
+                        validators: Vec::new(),
+                    });
+                }
+                self.imports.add("typing", "Any");
+                self.imports.add("pydantic", "TypeAdapter");
+                self.imports.add("pydantic", "ConfigDict");
+                self.imports
+                    .add("pydantic.functional_validators", "BeforeValidator");
+                let adapter_type = self.apply_metadata(base, &field_args, &[]);
+                let validator = format!("BeforeValidator(lambda v, _adapter=TypeAdapter({adapter_type}, config=ConfigDict(strict=True)): v if not isinstance(v, str) else _adapter.validate_python(v))");
                 Ok(TypeExpr {
-                    expr: base,
-                    field_args: constraint_args_for_string(constraints)?,
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                    validators: vec![validator],
                 })
             }
             SchemaType::Integer(constraints) => {
                 let (field_args, _) = integer_field_args(constraints)?;
+                if constraints.type_enforced {
+                    return Ok(TypeExpr {
+                        expr: "int".to_string(),
+                        field_args,
+                        validators: Vec::new(),
+                    });
+                }
+                self.imports.add("typing", "Any");
+                self.imports.add("pydantic", "TypeAdapter");
+                self.imports.add("pydantic", "ConfigDict");
+                self.imports
+                    .add("pydantic.functional_validators", "BeforeValidator");
+                let adapter_type = self.apply_metadata("int".to_string(), &field_args, &[]);
+                let validator = format!("BeforeValidator(lambda v, _adapter=TypeAdapter({adapter_type}, config=ConfigDict(strict=True)): v if isinstance(v, bool) or not isinstance(v, int) else _adapter.validate_python(v))");
                 Ok(TypeExpr {
-                    expr: "int".to_string(),
-                    field_args,
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                    validators: vec![validator],
                 })
             }
-            SchemaType::Number(constraints) => Ok(TypeExpr {
-                expr: "float".to_string(),
-                field_args: constraint_args_for_number(constraints)?,
-            }),
+            SchemaType::Number(constraints) => {
+                let field_args = constraint_args_for_number(constraints)?;
+                if constraints.type_enforced {
+                    return Ok(TypeExpr {
+                        expr: "float".to_string(),
+                        field_args,
+                        validators: Vec::new(),
+                    });
+                }
+                self.imports.add("typing", "Any");
+                self.imports.add("pydantic", "TypeAdapter");
+                self.imports.add("pydantic", "ConfigDict");
+                self.imports
+                    .add("pydantic.functional_validators", "BeforeValidator");
+                let adapter_type = self.apply_metadata("float".to_string(), &field_args, &[]);
+                let validator = format!("BeforeValidator(lambda v, _adapter=TypeAdapter({adapter_type}, config=ConfigDict(strict=True)): v if isinstance(v, bool) or not isinstance(v, (int, float)) else _adapter.validate_python(v))");
+                Ok(TypeExpr {
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                    validators: vec![validator],
+                })
+            }
             SchemaType::Null => Ok(TypeExpr {
                 expr: "None".to_string(),
                 field_args: Vec::new(),
+                validators: Vec::new(),
             }),
             SchemaType::Array { items, constraints } => {
                 let inner = self.type_expr(items, role)?;
-                let inner_expr = self.apply_field_args(inner.expr, &inner.field_args);
+                let inner_expr =
+                    self.apply_metadata(inner.expr, &inner.field_args, &inner.validators);
                 let base = format!("list[{inner_expr}]");
+                let field_args = constraint_args_for_array(constraints)?;
+                if constraints.type_enforced {
+                    return Ok(TypeExpr {
+                        expr: base,
+                        field_args,
+                        validators: Vec::new(),
+                    });
+                }
+                self.imports.add("typing", "Any");
+                self.imports.add("pydantic", "TypeAdapter");
+                self.imports.add("pydantic", "ConfigDict");
+                self.imports
+                    .add("pydantic.functional_validators", "BeforeValidator");
+                let adapter_type = self.apply_metadata(base, &field_args, &[]);
+                let validator = format!("BeforeValidator(lambda v, _adapter=TypeAdapter({adapter_type}, config=ConfigDict(strict=True)): v if not isinstance(v, list) else _adapter.validate_python(v))");
                 Ok(TypeExpr {
-                    expr: base,
-                    field_args: constraint_args_for_array(constraints)?,
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                    validators: vec![validator],
                 })
             }
             SchemaType::Map {
@@ -286,16 +356,34 @@ impl PyContext {
                 constraints,
             } => {
                 let inner = self.type_expr(values, role)?;
-                let inner_expr = self.apply_field_args(inner.expr, &inner.field_args);
+                let inner_expr =
+                    self.apply_metadata(inner.expr, &inner.field_args, &inner.validators);
                 let base = format!("dict[str, {inner_expr}]");
+                let field_args = constraint_args_for_object(constraints)?;
+                if constraints.type_enforced {
+                    return Ok(TypeExpr {
+                        expr: base,
+                        field_args,
+                        validators: Vec::new(),
+                    });
+                }
+                self.imports.add("typing", "Any");
+                self.imports.add("pydantic", "TypeAdapter");
+                self.imports.add("pydantic", "ConfigDict");
+                self.imports
+                    .add("pydantic.functional_validators", "BeforeValidator");
+                let adapter_type = self.apply_metadata(base, &field_args, &[]);
+                let validator = format!("BeforeValidator(lambda v, _adapter=TypeAdapter({adapter_type}, config=ConfigDict(strict=True)): v if not isinstance(v, dict) else _adapter.validate_python(v))");
                 Ok(TypeExpr {
-                    expr: base,
-                    field_args: constraint_args_for_object(constraints)?,
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                    validators: vec![validator],
                 })
             }
             SchemaType::Object(name) => Ok(TypeExpr {
                 expr: self.class_name(name, role),
                 field_args: Vec::new(),
+                validators: Vec::new(),
             }),
             SchemaType::Literal(values) => {
                 self.imports.add("typing", "Literal");
@@ -307,6 +395,7 @@ impl PyContext {
                 Ok(TypeExpr {
                     expr: format!("Literal[{rendered}]"),
                     field_args: Vec::new(),
+                    validators: Vec::new(),
                 })
             }
             SchemaType::Union(variants) => {
@@ -315,33 +404,40 @@ impl PyContext {
                     .map(|variant| self.type_expr(variant, role))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
-                    .map(|t| self.apply_field_args(t.expr, &t.field_args))
+                    .map(|t| self.apply_metadata(t.expr, &t.field_args, &t.validators))
                     .collect::<Vec<_>>()
                     .join(" | ");
                 Ok(TypeExpr {
                     expr: rendered,
                     field_args: Vec::new(),
+                    validators: Vec::new(),
                 })
             }
             SchemaType::Nullable(inner) => {
                 let inner = self.type_expr(inner, role)?;
-                let applied = self.apply_field_args(inner.expr, &inner.field_args);
+                let applied = self.apply_metadata(inner.expr, &inner.field_args, &inner.validators);
                 Ok(TypeExpr {
                     expr: format!("{applied} | None"),
                     field_args: Vec::new(),
+                    validators: Vec::new(),
                 })
             }
         }
     }
 
-    fn apply_field_args(&mut self, base: String, args: &[FieldArg]) -> String {
-        if args.is_empty() {
+    fn apply_metadata(&mut self, base: String, args: &[FieldArg], validators: &[String]) -> String {
+        if args.is_empty() && validators.is_empty() {
             return base;
         }
         self.imports.add("typing", "Annotated");
-        self.imports.add("pydantic", "Field");
-        let rendered = render_field_args(args);
-        format!("Annotated[{base}, Field({rendered})]")
+        let mut meta = Vec::new();
+        meta.extend_from_slice(validators);
+        if !args.is_empty() {
+            self.imports.add("pydantic", "Field");
+            meta.push(format!("Field({})", render_field_args(args)));
+        }
+        let rendered = meta.join(", ");
+        format!("Annotated[{base}, {rendered}]")
     }
 }
 
@@ -524,7 +620,11 @@ fn emit_model(
 
     if let AdditionalProperties::Typed(schema) = &model.additional_properties {
         let extra_type = ctx.type_expr(schema, role)?;
-        let rendered = ctx.apply_field_args(extra_type.expr, &extra_type.field_args);
+        let rendered = ctx.apply_metadata(
+            extra_type.expr,
+            &extra_type.field_args,
+            &extra_type.validators,
+        );
         out.push_line(&format!("__pydantic_extra__: dict[str, {rendered}]"));
     }
 
@@ -582,7 +682,8 @@ fn emit_root_model(
         ModelRole::Deserializer => "DeserializerRootModel",
     };
     let type_expr = ctx.type_expr(schema, role)?;
-    let rendered_type = ctx.apply_field_args(type_expr.expr, &type_expr.field_args);
+    let rendered_type =
+        ctx.apply_metadata(type_expr.expr, &type_expr.field_args, &type_expr.validators);
 
     out.push_line(&format!("class {class_name}({base}):"));
     out.indent();
@@ -633,12 +734,8 @@ fn emit_field(
         args.push(FieldArg::new("default", "None".to_string()));
     }
 
-    ctx.imports.add("typing", "Annotated");
-    ctx.imports.add("pydantic", "Field");
-    let rendered_field_args = render_field_args(&args);
-    out.push_line(&format!(
-        "{field_name}: Annotated[{rendered_type}, Field({rendered_field_args})]"
-    ));
+    let annotated = ctx.apply_metadata(rendered_type, &args, &type_expr.validators);
+    out.push_line(&format!("{field_name}: {annotated}"));
     Ok(())
 }
 
@@ -691,7 +788,11 @@ fn emit_additional_validator(
     if let AdditionalProperties::Typed(schema) = &model.additional_properties {
         ctx.imports.add("pydantic", "TypeAdapter");
         let extra_type = ctx.type_expr(schema, role)?;
-        let rendered = ctx.apply_field_args(extra_type.expr, &extra_type.field_args);
+        let rendered = ctx.apply_metadata(
+            extra_type.expr,
+            &extra_type.field_args,
+            &extra_type.validators,
+        );
         additional_adapter = Some(rendered);
     }
     if !model.pattern_properties.is_empty() || additional_adapter.is_some() {
@@ -814,6 +915,10 @@ fn emit_fractional_multiple_validator(
     out.indent();
     out.push_line("val = getattr(self, _field, None)");
     out.push_line("if val is None:");
+    out.indent();
+    out.push_line("continue");
+    out.dedent();
+    out.push_line("if isinstance(val, bool) or not isinstance(val, (int, float)):");
     out.indent();
     out.push_line("continue");
     out.dedent();

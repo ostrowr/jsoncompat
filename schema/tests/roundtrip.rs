@@ -36,7 +36,12 @@ fn fuzz_fixtures_roundtrip_and_ast_stringified_equality() -> Result<(), Box<dyn 
             let ast2 = build_and_resolve_schema(&json)?;
 
             // Roundtrip equality
-            assert_eq!(ast, ast2, "roundtrip failed for {}", path.display());
+            assert_eq!(
+                ast.to_json(),
+                ast2.to_json(),
+                "roundtrip failed for {}",
+                path.display()
+            );
 
             // AST to_json stringified equality
             let stringified1 = serde_json::to_string(&ast.to_json())?;

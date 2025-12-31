@@ -77,6 +77,6 @@ from pydantic import ConfigDict, Field
 
 class Enum3Deserializer(DeserializerBase):
     model_config = ConfigDict(extra="allow")
-    bar: Annotated[Literal["bar"], Field()]
+    bar: Literal["bar"]
     foo: Annotated[Literal["foo"] | None, Field(default=None)]
 

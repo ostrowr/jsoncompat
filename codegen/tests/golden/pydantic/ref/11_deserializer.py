@@ -130,11 +130,11 @@ class ModelDeserializer(DeserializerBase):
     """node"""
     model_config = ConfigDict(extra="allow")
     subtree: Annotated[Any | None, Field(default=None)]
-    value: Annotated[float, Field()]
+    value: float
 
 class Ref11Deserializer(DeserializerBase):
     """tree of nodes"""
     model_config = ConfigDict(extra="allow")
-    meta: Annotated[str, Field()]
-    nodes: Annotated[list[ModelDeserializer], Field()]
+    meta: str
+    nodes: list[ModelDeserializer]
 

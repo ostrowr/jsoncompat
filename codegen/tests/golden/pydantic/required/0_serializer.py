@@ -62,5 +62,5 @@ class Required0Serializer(SerializerBase):
         return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))
     model_config = ConfigDict(extra="allow")
     bar: Annotated[Any | None, Field(default=None)]
-    foo: Annotated[Any, Field()]
+    foo: Any
 

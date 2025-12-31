@@ -1534,6 +1534,7 @@ fn combined_array_schema(subs: &[SchemaNode]) -> Option<SchemaNode> {
         max_contains: None,
         unique_items,
         enumeration: None,
+        type_is_explicit: false,
         annotations: SchemaAnnotations::default(),
     }))
 }
@@ -1613,6 +1614,7 @@ fn combined_numeric_schema(subs: &[SchemaNode]) -> Option<SchemaNode> {
             exclusive_maximum: false,
             multiple_of: None,
             enumeration: None,
+            type_is_explicit: false,
             annotations: SchemaAnnotations::default(),
         }));
     }
@@ -1624,6 +1626,7 @@ fn combined_numeric_schema(subs: &[SchemaNode]) -> Option<SchemaNode> {
         exclusive_maximum: max.map(|(_, excl)| excl).unwrap_or(false),
         multiple_of: None,
         enumeration: None,
+        type_is_explicit: false,
         annotations: SchemaAnnotations::default(),
     }))
 }

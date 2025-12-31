@@ -82,6 +82,6 @@ class Required4Deserializer(DeserializerBase):
         return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))
     model_config = ConfigDict(extra="allow")
     proto: Annotated[Any, Field(alias="__proto__")]
-    constructor: Annotated[Any, Field()]
+    constructor: Any
     to_string: Annotated[Any, Field(alias="toString")]
 

@@ -21,11 +21,13 @@ Tests:
 ]
 """
 
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
 
-class Prefixitems3Deserializer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+from typing import Any
 
-    @classmethod
-    def __get_pydantic_core_schema__(cls, source, handler):
-        raise NotImplementedError("unsupported schema feature at #: prefixItems/contains")
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from pydantic import ConfigDict, Field
+
+class Prefixitems3Deserializer(DeserializerRootModel):
+    root: Any
+

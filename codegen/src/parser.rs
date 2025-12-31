@@ -290,22 +290,29 @@ impl<'a> ModelGraphBuilder<'a> {
                 if is_object_like(obj) {
                     return self.parse_object_schema(obj, path, false);
                 }
-                if obj.contains_key("items") || obj.contains_key("minItems") {
-                    return self.parse_array_schema(obj, path);
+                if obj.contains_key("items")
+                    || obj.contains_key("minItems")
+                    || obj.contains_key("maxItems")
+                    || obj.contains_key("contains")
+                    || obj.contains_key("minContains")
+                    || obj.contains_key("maxContains")
+                {
+                    return self.parse_array_schema(obj, path, false);
                 }
                 if obj.contains_key("minLength")
                     || obj.contains_key("maxLength")
                     || obj.contains_key("pattern")
                     || obj.contains_key("format")
                 {
-                    return self.parse_string_schema(obj, path);
+                    return self.parse_string_schema(obj, path, false);
                 }
                 if obj.contains_key("minimum")
                     || obj.contains_key("maximum")
                     || obj.contains_key("exclusiveMinimum")
                     || obj.contains_key("exclusiveMaximum")
+                    || obj.contains_key("multipleOf")
                 {
-                    return self.parse_number_schema(obj, false, path);
+                    return self.parse_number_schema(obj, false, path, false);
                 }
 
                 Ok(SchemaType::Any)
@@ -483,12 +490,12 @@ impl<'a> ModelGraphBuilder<'a> {
         path: &SchemaPath,
     ) -> Result<SchemaType, CodegenError> {
         let mut schema = match type_str {
-            "string" => self.parse_string_schema(obj, path)?,
-            "number" => self.parse_number_schema(obj, false, path)?,
-            "integer" => self.parse_number_schema(obj, true, path)?,
+            "string" => self.parse_string_schema(obj, path, true)?,
+            "number" => self.parse_number_schema(obj, false, path, true)?,
+            "integer" => self.parse_number_schema(obj, true, path, true)?,
             "boolean" => SchemaType::Bool,
             "null" => SchemaType::Null,
-            "array" => self.parse_array_schema(obj, path)?,
+            "array" => self.parse_array_schema(obj, path, true)?,
             "object" => self.parse_object_schema(obj, path, true)?,
             other => {
                 return Err(CodegenError::UnsupportedFeature {
@@ -540,6 +547,7 @@ impl<'a> ModelGraphBuilder<'a> {
                         .get("maxProperties")
                         .and_then(|v| v.as_u64())
                         .map(|v| v as usize),
+                    type_enforced: requires_object,
                 };
                 let value_schema = match additional {
                     Some(Value::Object(extra)) => {
@@ -577,6 +585,7 @@ impl<'a> ModelGraphBuilder<'a> {
         &mut self,
         obj: &Map<String, Value>,
         path: &SchemaPath,
+        type_enforced: bool,
     ) -> Result<SchemaType, CodegenError> {
         if obj.contains_key("prefixItems") || obj.contains_key("contains") {
             return Err(CodegenError::UnsupportedFeature {
@@ -608,6 +617,7 @@ impl<'a> ModelGraphBuilder<'a> {
         let constraints = ArrayConstraints {
             min_items: obj.get("minItems").and_then(|v| v.as_u64()),
             max_items: obj.get("maxItems").and_then(|v| v.as_u64()),
+            type_enforced,
         };
 
         Ok(SchemaType::Array {
@@ -620,6 +630,7 @@ impl<'a> ModelGraphBuilder<'a> {
         &self,
         obj: &Map<String, Value>,
         path: &SchemaPath,
+        type_enforced: bool,
     ) -> Result<SchemaType, CodegenError> {
         if obj.contains_key("contentEncoding") || obj.contains_key("contentMediaType") {
             return Err(CodegenError::UnsupportedFeature {
@@ -639,6 +650,7 @@ impl<'a> ModelGraphBuilder<'a> {
                 .get("format")
                 .and_then(|v| v.as_str())
                 .and_then(parse_string_format),
+            type_enforced,
         };
 
         Ok(SchemaType::String(constraints))
@@ -649,6 +661,7 @@ impl<'a> ModelGraphBuilder<'a> {
         obj: &Map<String, Value>,
         integer: bool,
         path: &SchemaPath,
+        type_enforced: bool,
     ) -> Result<SchemaType, CodegenError> {
         let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
         let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
@@ -698,6 +711,7 @@ impl<'a> ModelGraphBuilder<'a> {
             exclusive_minimum,
             exclusive_maximum,
             multiple_of,
+            type_enforced,
         };
 
         Ok(if integer {

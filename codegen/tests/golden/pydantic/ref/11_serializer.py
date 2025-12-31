@@ -130,11 +130,11 @@ class ModelSerializer(SerializerBase):
     """node"""
     model_config = ConfigDict(extra="allow")
     subtree: Annotated[Any | None, Field(default=None)]
-    value: Annotated[float, Field()]
+    value: float
 
 class Ref11Serializer(SerializerBase):
     """tree of nodes"""
     model_config = ConfigDict(extra="allow")
-    meta: Annotated[str, Field()]
-    nodes: Annotated[list[ModelSerializer], Field()]
+    meta: str
+    nodes: list[ModelSerializer]
 

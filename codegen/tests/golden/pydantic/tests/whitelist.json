@@ -46,7 +46,7 @@
     "6": "unsupported schema feature at #: prefixItems/contains"
   },
   "default": {
-    "0": "default value at #/properties/foo does not match the schema: default value [] does not match Integer(NumberConstraints { minimum: None, maximum: None, exclusive_minimum: false, exclusive_maximum: false, multiple_of: None })"
+    "0": "default value at #/properties/foo does not match the schema: default value [] does not match Integer(NumberConstraints { minimum: None, maximum: None, exclusive_minimum: false, exclusive_maximum: false, multiple_of: None, type_enforced: true })"
   },
   "defs": {
     "0": "mismatch: invalid definition schema"
@@ -91,12 +91,6 @@
     "8": "unsupported enum/const value at #: [true]",
     "9": "mismatch: false is invalid"
   },
-  "exclusiveMaximum": {
-    "0": "mismatch: boundary point is invalid"
-  },
-  "exclusiveMinimum": {
-    "0": "mismatch: boundary point is invalid"
-  },
   "if-then-else": {
     "3": "mismatch: invalid through then",
     "4": "mismatch: invalid through else",
@@ -107,7 +101,6 @@
     "9": "mismatch: no redirects to then and fails"
   },
   "items": {
-    "0": "mismatch: ignores non-arrays",
     "2": "unsupported schema feature at #/items: false schema",
     "3": "unsupported schema feature at #: prefixItems/contains",
     "5": "unsupported schema feature at #: prefixItems/contains",
@@ -120,15 +113,6 @@
     "2": "unsupported schema feature at #: prefixItems/contains",
     "3": "unsupported schema feature at #: prefixItems/contains"
   },
-  "maxItems": {
-    "0": "mismatch: too long is invalid"
-  },
-  "maxLength": {
-    "0": "mismatch: ignores non-strings"
-  },
-  "maximum": {
-    "0": "mismatch: above the maximum is invalid"
-  },
   "minContains": {
     "1": "unsupported schema feature at #: prefixItems/contains",
     "2": "unsupported schema feature at #: prefixItems/contains",
@@ -137,19 +121,6 @@
     "5": "unsupported schema feature at #: prefixItems/contains",
     "6": "unsupported schema feature at #: prefixItems/contains",
     "7": "unsupported schema feature at #: prefixItems/contains"
-  },
-  "minItems": {
-    "0": "mismatch: too short is invalid"
-  },
-  "minLength": {
-    "0": "mismatch: ignores non-strings"
-  },
-  "minimum": {
-    "0": "mismatch: below the minimum is invalid",
-    "1": "mismatch: float below the minimum is invalid"
-  },
-  "multipleOf": {
-    "0": "mismatch: int by int fail"
   },
   "not": {
     "0": "mismatch: disallowed",
@@ -275,17 +246,11 @@
   "optional/id": {
     "0": "unsupported enum/const value at #/anyOf/0: {\"$id\":\"https://localhost:1234/draft2020-12/id/my_identifier.json\",\"type\":\"null\"}"
   },
-  "optional/no-schema": {
-    "0": "mismatch: a non-string is valid"
-  },
   "optional/non-bmp-regex": {
     "1": "mismatch: doesn't match one"
   },
   "optional/unknownKeyword": {
     "0": "mismatch: type matches non-schema in first anyOf"
-  },
-  "pattern": {
-    "0": "mismatch: ignores booleans"
   },
   "patternProperties": {
     "0": "mismatch: a single invalid match is invalid",
@@ -295,9 +260,7 @@
   },
   "prefixItems": {
     "0": "unsupported schema feature at #: prefixItems/contains",
-    "1": "unsupported schema feature at #: prefixItems/contains",
-    "2": "unsupported schema feature at #: prefixItems/contains",
-    "3": "unsupported schema feature at #: prefixItems/contains"
+    "1": "unsupported schema feature at #: prefixItems/contains"
   },
   "properties": {
     "1": "unsupported keyword patternProperties",
@@ -419,7 +382,6 @@
     "0": "mismatch: non-unique array of integers is invalid",
     "1": "unsupported schema feature at #: prefixItems/contains",
     "2": "unsupported schema feature at #: prefixItems/contains",
-    "4": "unsupported schema feature at #: prefixItems/contains",
     "5": "unsupported schema feature at #: prefixItems/contains"
   },
   "vocabulary": {

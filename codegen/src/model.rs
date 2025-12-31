@@ -83,6 +83,7 @@ pub struct StringConstraints {
     pub max_length: Option<u64>,
     pub pattern: Option<String>,
     pub format: Option<StringFormat>,
+    pub type_enforced: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -92,18 +93,21 @@ pub struct NumberConstraints {
     pub exclusive_minimum: bool,
     pub exclusive_maximum: bool,
     pub multiple_of: Option<f64>,
+    pub type_enforced: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ArrayConstraints {
     pub min_items: Option<u64>,
     pub max_items: Option<u64>,
+    pub type_enforced: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ObjectConstraints {
     pub min_properties: Option<usize>,
     pub max_properties: Option<usize>,
+    pub type_enforced: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
