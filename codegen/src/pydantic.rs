@@ -14,7 +14,7 @@ pub struct PydanticOptions {
     pub root_model_name: String,
     pub serializer_suffix: String,
     pub deserializer_suffix: String,
-    pub base_module: Option<String>,
+    pub base_module: String,
 }
 
 impl Default for PydanticOptions {
@@ -23,7 +23,7 @@ impl Default for PydanticOptions {
             root_model_name: "Model".to_string(),
             serializer_suffix: "Serializer".to_string(),
             deserializer_suffix: "Deserializer".to_string(),
-            base_module: None,
+            base_module: "json_schema_codegen_base".to_string(), // todo: convert to lib
         }
     }
 }
@@ -35,7 +35,7 @@ impl PydanticOptions {
     }
 
     pub fn with_base_module(mut self, module: impl Into<String>) -> Self {
-        self.base_module = Some(module.into());
+        self.base_module = module.into();
         self
     }
 }
@@ -100,35 +100,14 @@ impl PydanticGenerator {
         ctx.imports.add("pydantic", "ConfigDict");
         ctx.validate_formats = should_validate_formats(schema_json);
 
-        if let Some(base_module) = &self.options.base_module {
-            ctx.imports.add(base_module, "SerializerBase");
-            ctx.imports.add(base_module, "DeserializerBase");
-            ctx.imports.add(base_module, "Impossible");
-            if needs_root_wrapper {
-                ctx.imports.add(base_module, "SerializerRootModel");
-                ctx.imports.add(base_module, "DeserializerRootModel");
-            }
-        } else {
-            ctx.imports.add("pydantic", "BaseModel");
-            ctx.imports.add("pydantic", "model_validator");
-            ctx.imports.add("jsonschema_rs", "validator_for");
-            ctx.imports.add("typing", "ClassVar");
-            if needs_root_wrapper {
-                ctx.imports.add("pydantic", "RootModel");
-                ctx.imports.add("typing", "Any");
-            }
-            emit_impossible_type(&mut out);
-            emit_literal_helpers(&mut out);
-            match role {
-                ModelRole::Serializer => emit_serializer_base(&mut out),
-                ModelRole::Deserializer => emit_deserializer_base(&mut out),
-            }
-            if needs_root_wrapper {
-                match role {
-                    ModelRole::Serializer => emit_serializer_root_base(&mut out),
-                    ModelRole::Deserializer => emit_deserializer_root_base(&mut out),
-                }
-            }
+        let base_module = &self.options.base_module;
+
+        ctx.imports.add(base_module, "SerializerBase");
+        ctx.imports.add(base_module, "DeserializerBase");
+        ctx.imports.add(base_module, "Impossible");
+        if needs_root_wrapper {
+            ctx.imports.add(base_module, "SerializerRootModel");
+            ctx.imports.add(base_module, "DeserializerRootModel");
         }
 
         emit_schema_helpers(&mut out, &mut ctx)?;
@@ -172,31 +151,6 @@ impl ModelGenerator for PydanticGenerator {
     fn generate_model(&self, schema: &SchemaNode, role: ModelRole) -> Result<String, CodegenError> {
         self.generate_from_value(&schema.to_json(), role)
     }
-}
-
-/// Source for the reusable Pydantic base classes used by generated models.
-pub fn base_module() -> String {
-    let mut imports = ImportSet::new();
-    imports.add("pydantic", "BaseModel");
-    imports.add("pydantic", "ConfigDict");
-    imports.add("pydantic", "model_validator");
-    imports.add("pydantic", "RootModel");
-    imports.add("jsonschema_rs", "validator_for");
-    imports.add("typing", "Any");
-    imports.add("typing", "ClassVar");
-
-    let mut out = CodeWriter::new();
-    emit_impossible_type(&mut out);
-    emit_literal_helpers(&mut out);
-    emit_serializer_base(&mut out);
-    emit_deserializer_base(&mut out);
-    emit_serializer_root_base(&mut out);
-    emit_deserializer_root_base(&mut out);
-
-    let mut rendered = String::new();
-    rendered.push_str(&imports.render());
-    rendered.push_str(&out.finish());
-    rendered
 }
 
 struct TypeExpr {
@@ -431,9 +385,8 @@ impl PyContext {
 
                 self.imports
                     .add("pydantic.functional_validators", "BeforeValidator");
-                if let Some(base) = &self.options.base_module {
-                    self.imports.add(base, "_validate_literal");
-                }
+                self.imports
+                    .add(&self.options.base_module, "_validate_literal");
                 let allowed_literal = literal_values.join(", ");
                 let validator = format!(
                     "BeforeValidator(lambda v, _allowed=[{allowed_literal}]: _validate_literal(v, _allowed))"
@@ -645,273 +598,6 @@ impl PythonFieldNames {
     fn needs_alias(&self, json_name: &str) -> bool {
         self.field_name(json_name) != json_name
     }
-}
-
-fn emit_literal_helpers(out: &mut CodeWriter) {
-    out.push_line("def _json_equal(candidate, expected):");
-    out.indent();
-    out.push_line("if isinstance(expected, bool):");
-    out.indent();
-    out.push_line("return isinstance(candidate, bool) and candidate is expected");
-    out.dedent();
-    out.push_line("if expected is None:");
-    out.indent();
-    out.push_line("return candidate is None");
-    out.dedent();
-    out.push_line("if isinstance(expected, (int, float)) and not isinstance(expected, bool):");
-    out.indent();
-    out.push_line(
-        "return isinstance(candidate, (int, float)) and not isinstance(candidate, bool) and candidate == expected",
-    );
-    out.dedent();
-    out.push_line("if isinstance(expected, list):");
-    out.indent();
-    out.push_line(
-        "return isinstance(candidate, list) and len(candidate) == len(expected) and all(_json_equal(c, e) for c, e in zip(candidate, expected))",
-    );
-    out.dedent();
-    out.push_line("if isinstance(expected, dict):");
-    out.indent();
-    out.push_line(
-        "return isinstance(candidate, dict) and candidate.keys() == expected.keys() and all(_json_equal(candidate[k], v) for k, v in expected.items())",
-    );
-    out.dedent();
-    out.push_line("return candidate == expected");
-    out.dedent();
-    out.push_empty();
-
-    out.push_line("def _validate_literal(value, allowed):");
-    out.indent();
-    out.push_line("if any(_json_equal(value, expected) for expected in allowed):");
-    out.indent();
-    out.push_line("return value");
-    out.dedent();
-    out.push_line("raise ValueError(\"value does not match literal constraint\")");
-    out.dedent();
-    out.push_empty();
-}
-
-fn emit_impossible_type(out: &mut CodeWriter) {
-    out.push_line("class Impossible:");
-    out.indent();
-    out.push_line("@classmethod");
-    out.push_line("def __get_pydantic_core_schema__(cls, _source, _handler):");
-    out.indent();
-    out.push_line("from pydantic_core import core_schema");
-    out.push_line("def _raise(value):");
-    out.indent();
-    out.push_line("raise ValueError(\"value is never valid\")");
-    out.dedent();
-    out.push_line("return core_schema.no_info_plain_validator_function(_raise)");
-    out.dedent();
-    out.push_empty();
-    out.push_line("@classmethod");
-    out.push_line("def __get_pydantic_json_schema__(cls, core_schema, handler):");
-    out.indent();
-    out.push_line("return handler(core_schema)");
-    out.dedent();
-    out.dedent();
-    out.push_empty();
-}
-
-fn emit_serializer_base(out: &mut CodeWriter) {
-    out.push_line("class SerializerBase(BaseModel):");
-    out.indent();
-    out.push_line("__json_schema__: ClassVar[str | None] = None");
-    out.push_line("_validate_formats: ClassVar[bool] = False");
-    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
-    out.push_empty();
-    out.push_line("@classmethod");
-    out.push_line("def _get_jsonschema_validator(cls):");
-    out.indent();
-    out.push_line("if cls.__json_schema__ is None:");
-    out.indent();
-    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
-    out.dedent();
-    out.push_line("validator = cls._jsonschema_validator");
-    out.push_line("if validator is None:");
-    out.indent();
-    out.push_line(
-        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
-    );
-    out.push_line("cls._jsonschema_validator = validator");
-    out.dedent();
-    out.push_line("return validator");
-    out.dedent();
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"before\")");
-    out.push_line("@classmethod");
-    out.push_line("def _validate_jsonschema(cls, value):");
-    out.indent();
-    out.push_line("cls._get_jsonschema_validator().validate(value)");
-    out.push_line("return value");
-    out.dedent();
-    out.push_empty();
-    out.push_line("model_config = ConfigDict(");
-    out.indent();
-    out.push_line("validate_by_alias=True,");
-    out.push_line("validate_by_name=True,");
-    out.push_line("serialize_by_alias=True,");
-    out.dedent();
-    out.push_line(")");
-    out.push_empty();
-    out.push_line("def model_dump(self, **kwargs):");
-    out.indent();
-    out.push_line("kwargs.setdefault(\"exclude_unset\", True)");
-    out.push_line("return super().model_dump(**kwargs)");
-    out.dedent();
-    out.push_empty();
-    out.push_line("def model_dump_json(self, **kwargs):");
-    out.indent();
-    out.push_line("kwargs.setdefault(\"exclude_unset\", True)");
-    out.push_line("return super().model_dump_json(**kwargs)");
-    out.dedent();
-    out.dedent();
-    out.push_empty();
-}
-
-fn emit_deserializer_base(out: &mut CodeWriter) {
-    out.push_line("class DeserializerBase(BaseModel):");
-    out.indent();
-    out.push_line("__json_schema__: ClassVar[str | None] = None");
-    out.push_line("_validate_formats: ClassVar[bool] = False");
-    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
-    out.push_empty();
-    out.push_line("@classmethod");
-    out.push_line("def _get_jsonschema_validator(cls):");
-    out.indent();
-    out.push_line("if cls.__json_schema__ is None:");
-    out.indent();
-    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
-    out.dedent();
-    out.push_line("validator = cls._jsonschema_validator");
-    out.push_line("if validator is None:");
-    out.indent();
-    out.push_line(
-        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
-    );
-    out.push_line("cls._jsonschema_validator = validator");
-    out.dedent();
-    out.push_line("return validator");
-    out.dedent();
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"before\")");
-    out.push_line("@classmethod");
-    out.push_line("def _validate_jsonschema(cls, value):");
-    out.indent();
-    out.push_line("cls._get_jsonschema_validator().validate(value)");
-    out.push_line("return value");
-    out.dedent();
-    out.push_empty();
-    out.push_line("model_config = ConfigDict(");
-    out.indent();
-    out.push_line("validate_by_alias=True,");
-    out.push_line("validate_by_name=True,");
-    out.push_line("serialize_by_alias=True,");
-    out.dedent();
-    out.push_line(")");
-    out.dedent();
-    out.push_empty();
-}
-
-fn emit_serializer_root_base(out: &mut CodeWriter) {
-    out.push_line("class SerializerRootModel(RootModel[Any]):");
-    out.indent();
-    out.push_line("__json_schema__: ClassVar[str | None] = None");
-    out.push_line("_validate_formats: ClassVar[bool] = False");
-    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
-    out.push_empty();
-    out.push_line("@classmethod");
-    out.push_line("def _get_jsonschema_validator(cls):");
-    out.indent();
-    out.push_line("if cls.__json_schema__ is None:");
-    out.indent();
-    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
-    out.dedent();
-    out.push_line("validator = cls._jsonschema_validator");
-    out.push_line("if validator is None:");
-    out.indent();
-    out.push_line(
-        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
-    );
-    out.push_line("cls._jsonschema_validator = validator");
-    out.dedent();
-    out.push_line("return validator");
-    out.dedent();
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"before\")");
-    out.push_line("@classmethod");
-    out.push_line("def _validate_jsonschema(cls, value):");
-    out.indent();
-    out.push_line("cls._get_jsonschema_validator().validate(value)");
-    out.push_line("return value");
-    out.dedent();
-    out.push_empty();
-    out.push_line("model_config = ConfigDict(");
-    out.indent();
-    out.push_line("validate_by_alias=True,");
-    out.push_line("validate_by_name=True,");
-    out.push_line("serialize_by_alias=True,");
-    out.dedent();
-    out.push_line(")");
-    out.push_empty();
-    out.push_line("def model_dump(self, **kwargs):");
-    out.indent();
-    out.push_line("kwargs.setdefault(\"exclude_unset\", True)");
-    out.push_line("return super().model_dump(**kwargs)");
-    out.dedent();
-    out.push_empty();
-    out.push_line("def model_dump_json(self, **kwargs):");
-    out.indent();
-    out.push_line("kwargs.setdefault(\"exclude_unset\", True)");
-    out.push_line("return super().model_dump_json(**kwargs)");
-    out.dedent();
-    out.dedent();
-    out.push_empty();
-}
-
-fn emit_deserializer_root_base(out: &mut CodeWriter) {
-    out.push_line("class DeserializerRootModel(RootModel[Any]):");
-    out.indent();
-    out.push_line("__json_schema__: ClassVar[str | None] = None");
-    out.push_line("_validate_formats: ClassVar[bool] = False");
-    out.push_line("_jsonschema_validator: ClassVar[object | None] = None");
-    out.push_empty();
-    out.push_line("@classmethod");
-    out.push_line("def _get_jsonschema_validator(cls):");
-    out.indent();
-    out.push_line("if cls.__json_schema__ is None:");
-    out.indent();
-    out.push_line("raise TypeError(f\"{cls.__name__} is missing __json_schema__\")");
-    out.dedent();
-    out.push_line("validator = cls._jsonschema_validator");
-    out.push_line("if validator is None:");
-    out.indent();
-    out.push_line(
-        "validator = validator_for(cls.__json_schema__, validate_formats=cls._validate_formats)",
-    );
-    out.push_line("cls._jsonschema_validator = validator");
-    out.dedent();
-    out.push_line("return validator");
-    out.dedent();
-    out.push_empty();
-    out.push_line("@model_validator(mode=\"before\")");
-    out.push_line("@classmethod");
-    out.push_line("def _validate_jsonschema(cls, value):");
-    out.indent();
-    out.push_line("cls._get_jsonschema_validator().validate(value)");
-    out.push_line("return value");
-    out.dedent();
-    out.push_empty();
-    out.push_line("model_config = ConfigDict(");
-    out.indent();
-    out.push_line("validate_by_alias=True,");
-    out.push_line("validate_by_name=True,");
-    out.push_line("serialize_by_alias=True,");
-    out.dedent();
-    out.push_line(")");
-    out.dedent();
-    out.push_empty();
 }
 
 fn emit_model(

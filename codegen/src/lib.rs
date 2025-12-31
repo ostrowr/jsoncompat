@@ -16,7 +16,7 @@ pub use model::{
     StringFormat,
 };
 pub use pydantic::{
-    base_module as pydantic_base_module, generate_model as generate_pydantic_model,
+    generate_model as generate_pydantic_model,
     generate_model_from_value as generate_pydantic_model_from_value, PydanticGenerator,
     PydanticOptions,
 };

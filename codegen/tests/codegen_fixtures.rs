@@ -179,10 +179,8 @@ fn stub_model(
     let pretty_schema =
         serde_json::to_string_pretty(schema_json).unwrap_or_else(|_| schema_str.clone());
     out.push_str("from typing import ClassVar\n\n");
-    let base = options
-        .base_module
-        .as_deref()
-        .expect("base module must be configured");
+    let base = &options.base_module;
+
     out.push_str(&format!(
         "from {base} import SerializerBase, DeserializerBase, Impossible\n"
     ));

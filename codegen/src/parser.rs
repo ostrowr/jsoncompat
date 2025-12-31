@@ -66,7 +66,8 @@ impl<'a> ModelGraphBuilder<'a> {
                         if !has_explicit_type(resolved_obj) {
                             self.warn_type_inferred(&resolved.path, "object");
                         }
-                        let requires_object = explicitly_object_type(resolved_obj);
+                        let requires_object = explicitly_object_type(resolved_obj)
+                            || !has_explicit_type(resolved_obj);
                         self.ref_map
                             .insert(resolved.canonical.clone(), root_name.to_string());
                         let root_model = self.parse_object_model(
@@ -83,10 +84,12 @@ impl<'a> ModelGraphBuilder<'a> {
             }
 
             if is_object_like(obj) {
-                if !has_explicit_type(obj) {
+                let requires_object = if has_explicit_type(obj) {
+                    explicitly_object_type(obj)
+                } else {
                     self.warn_type_inferred(path, "object");
-                }
-                let requires_object = explicitly_object_type(obj);
+                    true
+                };
                 let root_model =
                     self.parse_object_model(schema, path, root_name, requires_object)?;
                 self.models.insert(root_name.to_string(), root_model);
@@ -306,10 +309,13 @@ impl<'a> ModelGraphBuilder<'a> {
                 }
 
                 if is_object_like(obj) {
-                    if !has_explicit_type {
+                    let requires_object = if has_explicit_type {
+                        explicitly_object_type(obj)
+                    } else {
                         self.warn_type_inferred(path, "object");
-                    }
-                    return self.parse_object_schema(obj, path, false);
+                        true
+                    };
+                    return self.parse_object_schema(obj, path, requires_object);
                 }
                 if obj.contains_key("items")
                     || obj.contains_key("minItems")

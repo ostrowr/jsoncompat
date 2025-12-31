@@ -7,5 +7,22 @@
   },
   "vocabulary": {
     "0": "unsupported schema feature at #/properties/badProperty: false schema"
+  },
+  "additionalProperties": {
+    "0": "object type enforced"
+  },
+  "minProperties": {
+    "0": "object type enforced"
+  },
+  "properties": {
+    "0": "object type enforced",
+    "5": "object type enforced"
+  },
+  "maxProperties": {
+    "0": "object type enforced"
+  },
+  "required": {
+    "0": "object type enforced",
+    "4": "object type enforced"
   }
 }
