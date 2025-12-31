@@ -1,9 +1,11 @@
+use fancy_regex::Regex;
 use json_schema_ast::{
     ast::{instance_is_valid_against, SchemaAnnotations},
     SchemaNode, SchemaNodeKind,
 };
 use rand::{distributions::Distribution, Rng};
 use serde_json::{Map, Value};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Satisfiability {
@@ -623,6 +625,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             required,
             additional,
             property_names,
+            pattern_properties,
             min_properties,
             max_properties,
             enumeration,
@@ -654,7 +657,12 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     !matches!(&*prop_schema.borrow(), BoolSchema(true) | Any) && rng.gen_bool(0.7)
                 };
                 if include {
-                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    let Some(schema) =
+                        effective_schema_for_key(k, Some(prop_schema), pattern_properties)
+                    else {
+                        continue;
+                    };
+                    let val = generate_value(&schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                 }
             }
@@ -673,7 +681,12 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     if map.contains_key(&key) {
                         continue;
                     }
-                    let val = generate_value(additional, rng, depth.saturating_sub(1));
+                    let Some(schema) =
+                        effective_schema_for_key(&key, Some(additional), pattern_properties)
+                    else {
+                        continue;
+                    };
+                    let val = generate_value(&schema, rng, depth.saturating_sub(1));
                     map.insert(key, val);
                 }
 
@@ -685,7 +698,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                             attempts += 1;
                             continue;
                         }
-                        let val = generate_value(additional, rng, depth.saturating_sub(1));
+                        let Some(schema) =
+                            effective_schema_for_key(&key, Some(additional), pattern_properties)
+                        else {
+                            attempts += 1;
+                            continue;
+                        };
+                        let val = generate_value(&schema, rng, depth.saturating_sub(1));
                         map.insert(key, val);
                         attempts += 1;
                     }
@@ -697,7 +716,12 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     if map.contains_key(k) {
                         continue;
                     }
-                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    let Some(schema) =
+                        effective_schema_for_key(k, Some(prop_schema), pattern_properties)
+                    else {
+                        continue;
+                    };
+                    let val = generate_value(&schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                     if map.len() >= min_p {
                         break;
@@ -707,7 +731,12 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             if map.is_empty() && min_p > 0 && !properties.is_empty() {
                 if let Some((k, schema)) = properties.iter().next() {
-                    let val = generate_value(schema, rng, depth.saturating_sub(1));
+                    let Some(effective) =
+                        effective_schema_for_key(k, Some(schema), pattern_properties)
+                    else {
+                        return Value::Null;
+                    };
+                    let val = generate_value(&effective, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                 }
             }
@@ -1187,6 +1216,53 @@ fn random_key_with_schema(rng: &mut impl Rng, name_schema: Option<&SchemaNode>) 
     }
 
     random_key(rng)
+}
+
+fn effective_schema_for_key(
+    key: &str,
+    base: Option<&SchemaNode>,
+    patterns: &HashMap<String, SchemaNode>,
+) -> Option<SchemaNode> {
+    let mut parts = Vec::new();
+    if let Some(b) = base {
+        parts.push(b.clone());
+    }
+
+    for (pat, schema) in patterns {
+        if let Ok(re) = Regex::new(pat) {
+            if re.is_match(key).unwrap_or(false) {
+                parts.push(schema.clone());
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    let mut filtered = Vec::new();
+    for schema in parts {
+        let include = {
+            let guard = schema.borrow();
+            match &*guard {
+                SchemaNodeKind::BoolSchema(true) | SchemaNodeKind::Any => false,
+                SchemaNodeKind::BoolSchema(false) => return None,
+                _ => true,
+            }
+        };
+        if include {
+            filtered.push(schema);
+        }
+    }
+
+    if filtered.is_empty() {
+        return Some(SchemaNode::any());
+    }
+    if filtered.len() == 1 {
+        return filtered.into_iter().next();
+    }
+
+    Some(SchemaNode::new(SchemaNodeKind::AllOf(filtered)))
 }
 
 fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> String {
