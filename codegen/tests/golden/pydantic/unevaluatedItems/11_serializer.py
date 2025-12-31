@@ -1,12 +1,13 @@
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from json_schema_codegen_base import SerializerBase, DeserializerBase
-from pydantic import ConfigDict
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from pydantic import ConfigDict, Field, model_validator
 
 _VALIDATE_FORMATS = False
 
-class Unevaluateditems11Serializer(SerializerBase):
-    __json_schema__: ClassVar[str] = r"""
+class Unevaluateditems11Serializer(SerializerRootModel):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "anyOf": [
@@ -36,6 +37,5 @@ class Unevaluateditems11Serializer(SerializerBase):
   "unevaluatedItems": false
 }
 """
-    _validate_formats: ClassVar[bool] = _VALIDATE_FORMATS
-    model_config = ConfigDict(extra="forbid")
-    __json_compat_error__: ClassVar[str] = "unsupported schema feature at #/allOf/0: allOf with non-object schema"
+    root: Any
+

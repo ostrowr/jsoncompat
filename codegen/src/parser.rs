@@ -412,6 +412,7 @@ impl<'a> ModelGraphBuilder<'a> {
         }
 
         let mut merged = Map::new();
+        let mut non_object = false;
         for (idx, sub) in subs.iter().enumerate() {
             let sub_path = path.push("allOf").push(idx.to_string());
             let resolved = if let Some(Value::String(ref_path)) =
@@ -426,21 +427,18 @@ impl<'a> ModelGraphBuilder<'a> {
                     segments: sub_path.as_segments().to_vec(),
                 }
             };
-            let obj =
-                resolved
-                    .value
-                    .as_object()
-                    .ok_or_else(|| CodegenError::UnsupportedFeature {
-                        location: resolved.path.clone(),
-                        feature: "allOf with non-object schema".to_string(),
-                    })?;
+            let Some(obj) = resolved.value.as_object() else {
+                non_object = true;
+                continue;
+            };
             if !is_object_like(obj) {
-                return Err(CodegenError::UnsupportedFeature {
-                    location: resolved.path.clone(),
-                    feature: "allOf with non-object schema".to_string(),
-                });
+                non_object = true;
+                continue;
             }
             merge_object_schema(&mut merged, obj, &resolved.path)?;
+        }
+        if non_object {
+            return Ok(SchemaType::Any);
         }
         merged.insert("__allOf_props__".to_string(), Value::Bool(true));
         let merged_value = Value::Object(merged);

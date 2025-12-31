@@ -151,13 +151,10 @@ def _has_unsupported_remote(schema) -> bool:
 )
 def test_serializers_accept_fixture_tests(rel_path: str, idx: int, schema, tests):
     if not tests:
-        pytest.skip("no fixture tests available")
+        pytest.fail(f"no tests found for {rel_path}#{idx}")
 
     reason = whitelist_reason(rel_path, idx)
     is_whitelisted = reason is not None
-
-    if _has_unsupported_remote(schema):
-        pytest.skip("remote schemas are not supported in this test harness yet")
 
     validate_formats = should_validate_formats(schema)
     try:
@@ -178,15 +175,8 @@ def test_serializers_accept_fixture_tests(rel_path: str, idx: int, schema, tests
         if is_whitelisted:
             return
         pytest.fail(f"no serializer class found for {rel_path}#{idx}")
-    compat_error = getattr(cls, "__json_compat_error__", None)
-    if compat_error:
-        pytest.skip(f"unsupported schema: {compat_error}")
-    try:
-        cls.model_rebuild()
-    except Exception:
-        if is_whitelisted:
-            return
-        raise
+
+    cls.model_rebuild()
 
     all_passed = True
     for test in tests:
