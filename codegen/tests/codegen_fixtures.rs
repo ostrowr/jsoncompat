@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[test]
-fn fuzz_fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
+fn fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
     let regen = std::env::var_os("REGEN_CODEGEN_GOLDENS").is_some();
     let base_module = "json_schema_codegen_base";
     let base_code = pydantic::base_module();
