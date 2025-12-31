@@ -180,33 +180,32 @@ fn stub_model(
     let pretty_schema =
         serde_json::to_string_pretty(schema_json).unwrap_or_else(|_| schema_str.clone());
     out.push_str("from typing import ClassVar\n\n");
-    out.push_str("from jsonschema_rs import validator_for\n");
-    out.push_str("from pydantic import BaseModel, ConfigDict, model_validator\n\n");
+    if let Some(base) = options.base_module.as_deref() {
+        out.push_str(&format!(
+            "from {base} import SerializerBase, DeserializerBase\n"
+        ));
+    } else {
+        out.push_str("from jsonschema_rs import validator_for\n");
+        out.push_str("from pydantic import BaseModel, ConfigDict, model_validator\n\n");
+    }
+    if options.base_module.is_some() {
+        out.push_str("from pydantic import ConfigDict\n\n");
+    }
     let rendered_schema = format!("r\"\"\"\n{pretty_schema}\n\"\"\"");
     let validate_formats = should_validate_formats(schema_json);
     out.push_str(&format!(
         "_VALIDATE_FORMATS = {}\n\n",
         if validate_formats { "True" } else { "False" }
     ));
-    out.push_str(&format!("class {class_name}(BaseModel):\n"));
+    let base_class = match role {
+        ModelRole::Serializer => "SerializerBase",
+        ModelRole::Deserializer => "DeserializerBase",
+    };
+    out.push_str(&format!("class {class_name}({base_class}):\n"));
     out.push_str("    __json_schema__: ClassVar[str] = ");
     out.push_str(&rendered_schema);
     out.push('\n');
-    out.push_str("    _jsonschema_validator: ClassVar[object | None] = None\n\n");
-    out.push_str("    @classmethod\n");
-    out.push_str("    def _get_jsonschema_validator(cls):\n");
-    out.push_str("        validator = cls._jsonschema_validator\n");
-    out.push_str("        if validator is None:\n");
-    out.push_str(
-        "            validator = validator_for(cls.__json_schema__, validate_formats=_VALIDATE_FORMATS)\n",
-    );
-    out.push_str("            cls._jsonschema_validator = validator\n");
-    out.push_str("        return validator\n\n");
-    out.push_str("    @model_validator(mode=\"before\")\n");
-    out.push_str("    @classmethod\n");
-    out.push_str("    def _validate_jsonschema(cls, value):\n");
-    out.push_str("        cls._get_jsonschema_validator().validate(value)\n");
-    out.push_str("        return value\n\n");
+    out.push_str("    _validate_formats: ClassVar[bool] = _VALIDATE_FORMATS\n");
     out.push_str("    model_config = ConfigDict(extra=\"forbid\")\n");
     out.push_str(&format!(
         "    __json_compat_error__: ClassVar[str] = {msg:?}\n",
