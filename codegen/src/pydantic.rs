@@ -257,10 +257,13 @@ impl PyContext {
                     field_args: constraint_args_for_string(constraints)?,
                 })
             }
-            SchemaType::Integer(constraints) => Ok(TypeExpr {
-                expr: "int".to_string(),
-                field_args: constraint_args_for_number(constraints)?,
-            }),
+            SchemaType::Integer(constraints) => {
+                let (field_args, _) = integer_field_args(constraints)?;
+                Ok(TypeExpr {
+                    expr: "int".to_string(),
+                    field_args,
+                })
+            }
             SchemaType::Number(constraints) => Ok(TypeExpr {
                 expr: "float".to_string(),
                 field_args: constraint_args_for_number(constraints)?,
@@ -529,6 +532,21 @@ fn emit_model(
     let mut fields: Vec<&FieldSpec> = model.fields.iter().collect();
     fields.sort_by(|a, b| a.name.cmp(&b.name));
 
+    let mut fractional_multiples: Vec<(String, f64)> = Vec::new();
+    for field in &model.fields {
+        if let SchemaType::Integer(constraints) = &field.schema {
+            if let Some(m) = constraints.multiple_of {
+                if m.fract() != 0.0 {
+                    fractional_multiples.push((field_names.field_name(&field.name).to_string(), m));
+                }
+            }
+        }
+    }
+    if !fractional_multiples.is_empty() {
+        ctx.imports.add("decimal", "Decimal");
+        ctx.imports.add("decimal", "InvalidOperation");
+    }
+
     for field in fields {
         if !field.include_in_role(role) {
             continue;
@@ -541,6 +559,9 @@ fn emit_model(
     }
     if needs_custom_extra {
         emit_additional_validator(out, ctx, model, role)?;
+    }
+    if !fractional_multiples.is_empty() {
+        emit_fractional_multiple_validator(out, &fractional_multiples)?;
     }
 
     out.dedent();
@@ -681,7 +702,10 @@ fn emit_additional_validator(
         let patterns = model
             .pattern_properties
             .iter()
-            .map(|p| format!("re_compile(r{p:?})"))
+            .map(|p| {
+                let normalized = normalize_pattern(p);
+                format!("re_compile(r{:?})", normalized)
+            })
             .collect::<Vec<_>>()
             .join(", ");
         out.push_line(&format!(
@@ -772,6 +796,44 @@ fn emit_additional_validator(
     Ok(())
 }
 
+fn emit_fractional_multiple_validator(
+    out: &mut CodeWriter,
+    fractional_multiples: &[(String, f64)],
+) -> Result<(), CodegenError> {
+    let entries = fractional_multiples
+        .iter()
+        .map(|(name, mult)| format!("({name:?}, {mult})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_empty();
+    out.push_line(&format!("_fractional_multiples = [{entries}]"));
+    out.push_line("@model_validator(mode=\"after\")");
+    out.push_line("def _check_fractional_multiples(self):");
+    out.indent();
+    out.push_line("for _field, _mult in self._fractional_multiples:");
+    out.indent();
+    out.push_line("val = getattr(self, _field, None)");
+    out.push_line("if val is None:");
+    out.indent();
+    out.push_line("continue");
+    out.dedent();
+    out.push_line("try:");
+    out.indent();
+    out.push_line("if (Decimal(val) % Decimal(str(_mult))) != 0:");
+    out.indent();
+    out.push_line("raise ValueError(\"value is not a multiple of constraint\")");
+    out.dedent();
+    out.dedent();
+    out.push_line("except (InvalidOperation, Exception) as exc:");
+    out.indent();
+    out.push_line("raise ValueError(\"value is not a multiple of constraint\") from exc");
+    out.dedent();
+    out.dedent();
+    out.push_line("return self");
+    out.dedent();
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 struct FieldArg {
     key: &'static str,
@@ -791,6 +853,38 @@ fn render_field_args(args: &[FieldArg]) -> String {
         .join(", ")
 }
 
+fn normalize_pattern(pattern: &str) -> String {
+    // Translate ECMA-style control escapes (\cX) into literal control characters
+    // so Python's regex engine can compile them.
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && matches!(chars.peek(), Some('c')) {
+            // consume 'c'
+            let _ = chars.next();
+            if let Some(ctrl) = chars.next() {
+                if ctrl.is_ascii_alphabetic() {
+                    let upper = ctrl.to_ascii_uppercase();
+                    let code = (upper as u8) ^ 0x40;
+                    out.push(char::from(code));
+                    continue;
+                } else {
+                    out.push('\\');
+                    out.push('c');
+                    out.push(ctrl);
+                    continue;
+                }
+            } else {
+                out.push('\\');
+                out.push('c');
+                break;
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn constraint_args_for_string(
     constraints: &crate::model::StringConstraints,
 ) -> Result<Vec<FieldArg>, CodegenError> {
@@ -802,7 +896,11 @@ fn constraint_args_for_string(
         args.push(FieldArg::new("max_length", max.to_string()));
     }
     if let Some(pattern) = &constraints.pattern {
-        args.push(FieldArg::new("pattern", python_string_literal(pattern)?));
+        let normalized = normalize_pattern(pattern);
+        args.push(FieldArg::new(
+            "pattern",
+            python_string_literal(&normalized)?,
+        ));
     }
     Ok(args)
 }
@@ -831,6 +929,37 @@ fn constraint_args_for_number(
         args.push(FieldArg::new("multiple_of", float_literal(multiple_of)));
     }
     Ok(args)
+}
+
+fn integer_field_args(
+    constraints: &crate::model::NumberConstraints,
+) -> Result<(Vec<FieldArg>, Option<f64>), CodegenError> {
+    let mut args = Vec::new();
+    if let Some(min) = constraints.minimum {
+        let key = if constraints.exclusive_minimum {
+            "gt"
+        } else {
+            "ge"
+        };
+        args.push(FieldArg::new(key, float_literal(min)));
+    }
+    if let Some(max) = constraints.maximum {
+        let key = if constraints.exclusive_maximum {
+            "lt"
+        } else {
+            "le"
+        };
+        args.push(FieldArg::new(key, float_literal(max)));
+    }
+    let mut fractional_multiple = None;
+    if let Some(multiple_of) = constraints.multiple_of {
+        if multiple_of.fract() == 0.0 {
+            args.push(FieldArg::new("multiple_of", float_literal(multiple_of)));
+        } else {
+            fractional_multiple = Some(multiple_of);
+        }
+    }
+    Ok((args, fractional_multiple))
 }
 
 fn constraint_args_for_array(

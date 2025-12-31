@@ -18,11 +18,9 @@ Tests:
 
 from __future__ import annotations
 
-from typing import Annotated
-
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
 from pydantic import ConfigDict, Field
 
 class Multipleof4Serializer(SerializerRootModel):
-    root: Annotated[int, Field(multiple_of=0.00000001)]
+    root: int
 

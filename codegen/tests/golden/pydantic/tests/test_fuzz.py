@@ -103,10 +103,11 @@ def whitelist_reason(rel_path: str, idx: int) -> str | None:
     list(collect_fixtures()),
 )
 def test_serializers_accept_fixture_tests(rel_path: str, idx: int, schema, tests):
-    if (reason := whitelist_reason(rel_path, idx)) is not None:
-        pytest.skip(reason)
     if not tests:
         pytest.skip("no fixture tests available")
+
+    reason = whitelist_reason(rel_path, idx)
+    is_whitelisted = reason is not None
 
     glb = load_serializer_module(rel_path, idx)
     cls = find_serializer_class(glb)
@@ -114,6 +115,7 @@ def test_serializers_accept_fixture_tests(rel_path: str, idx: int, schema, tests
         pytest.skip("no serializer class found")
     cls.model_rebuild()
 
+    all_passed = True
     for test in tests:
         valid = bool(test.get("valid"))
         data = test.get("data")
@@ -122,4 +124,13 @@ def test_serializers_accept_fixture_tests(rel_path: str, idx: int, schema, tests
             ok = True
         except Exception:
             ok = False
-        assert ok == valid, f"{rel_path}#{idx} test {test.get('description', '')}"
+        success = ok == valid
+        if not is_whitelisted:
+            assert success, f"{rel_path}#{idx} test {test.get('description', '')}"
+        else:
+            all_passed &= success
+
+    if is_whitelisted and all_passed:
+        pytest.fail(
+            f"Whitelisted failure now passes; please remove entry for {rel_path}#{idx}"
+        )

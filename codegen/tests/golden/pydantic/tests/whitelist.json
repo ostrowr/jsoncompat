@@ -1,15 +1,9 @@
 {
-  "allOf": {
-    "1": "unsupported keyword allOf"
-  },
   "anchor": {
-    "0": "mismatch: mismatch",
-    "1": "mismatch: mismatch",
     "2": "mismatch: mismatch",
     "3": "unsupported keyword allOf"
   },
   "anyOf": {
-    "0": "mismatch: neither anyOf valid",
     "5": "mismatch: second anyOf valid (complex)"
   },
   "const": {
@@ -51,7 +45,6 @@
   "dynamicRef": {
     "0": "mismatch: An array containing non-strings is invalid",
     "1": "mismatch: An array containing non-strings is invalid",
-    "10": "unsupported keyword $dynamicRef",
     "11": "mismatch: number list with string values",
     "12": "mismatch: string matches /$defs/thingy, but the $dynamicRef does not stop here",
     "13": "unsupported keyword unevaluatedProperties",
@@ -63,9 +56,6 @@
     "3": "unsupported keyword $dynamicRef",
     "4": "unsupported keyword $dynamicRef",
     "5": "unsupported keyword $dynamicRef",
-    "6": "unsupported keyword $dynamicRef",
-    "7": "unsupported keyword $dynamicRef",
-    "8": "unsupported keyword $dynamicRef",
     "9": "unsupported keyword $dynamicRef"
   },
   "enum": {
@@ -103,18 +93,13 @@
     "3": "mismatch: actual < minContains < maxContains"
   },
   "maxItems": {
-    "0": "mismatch: too long is invalid",
-    "1": "mismatch: too long is invalid"
+    "0": "mismatch: too long is invalid"
   },
   "maxLength": {
     "0": "mismatch: ignores non-strings"
   },
-  "maxProperties": {
-    "0": "mismatch: ignores arrays"
-  },
   "maximum": {
-    "0": "mismatch: above the maximum is invalid",
-    "1": "mismatch: above the maximum is invalid"
+    "0": "mismatch: above the maximum is invalid"
   },
   "minContains": {
     "1": "mismatch: empty data",
@@ -125,25 +110,17 @@
     "7": "mismatch: too many"
   },
   "minItems": {
-    "0": "mismatch: too short is invalid",
-    "1": "mismatch: too short is invalid"
+    "0": "mismatch: too short is invalid"
   },
   "minLength": {
     "0": "mismatch: ignores non-strings"
-  },
-  "minProperties": {
-    "0": "mismatch: ignores arrays"
   },
   "minimum": {
     "0": "mismatch: below the minimum is invalid",
     "1": "mismatch: float below the minimum is invalid"
   },
   "multipleOf": {
-    "0": "mismatch: int by int fail",
-    "1": "mismatch: 35 is not multiple of 1.5",
-    "2": "mismatch: 0.00751 is not multiple of 0.0001",
-    "3": "load error: Error building \"model\" validator:\n  SchemaError: Error building \"int\" validator:\n  ValueError: 'multiple_of' must be coercible to an integer",
-    "4": "load error: Error building \"model\" validator:\n  SchemaError: Error building \"int\" validator:\n  ValueError: 'multiple_of' must be coercible to an integer"
+    "0": "mismatch: int by int fail"
   },
   "not": {
     "0": "mismatch: disallowed",
@@ -166,12 +143,6 @@
   "optional/anchor": {
     "0": "enum contains non-primitive values not supported yet"
   },
-  "optional/bignum": {
-    "3": "float bound rounding mismatch",
-    "4": "mismatch: comparison works for high numbers",
-    "5": "float bound rounding mismatch",
-    "6": "mismatch: comparison works for very negative numbers"
-  },
   "optional/dependencies-compatibility": {
     "0": "mismatch: missing dependency",
     "2": "mismatch: missing dependency",
@@ -191,8 +162,6 @@
     "17": "unsupported keyword patternProperties",
     "18": "unsupported keyword patternProperties",
     "19": "unsupported keyword patternProperties",
-    "2": "load error: Error building \"model\" validator:\n  SchemaError: Error building \"str\" validator:\n  SchemaError: regex parse error:\n    ^\\cC$\n     ^^\nerror: unrecognized escape sequence",
-    "3": "load error: Error building \"model\" validator:\n  SchemaError: Error building \"str\" validator:\n  SchemaError: regex parse error:\n    ^\\cc$\n     ^^\nerror: unrecognized escape sequence",
     "4": "mismatch: NKO DIGIT ZERO does not match (unlike e.g. Python)",
     "5": "mismatch: NKO DIGIT ZERO matches (unlike e.g. Python)",
     "6": "mismatch: latin-1 e-acute does not match (unlike e.g. Python)",
@@ -294,7 +263,6 @@
     "1": "mismatch: array with two items is invalid"
   },
   "properties": {
-    "0": "mismatch: ignores arrays",
     "1": "unsupported keyword patternProperties",
     "5": "mismatch: ignores arrays"
   },
@@ -312,8 +280,6 @@
     "14": "enum contains non-primitive values not supported yet",
     "15": "mismatch: invalid on inner field",
     "16": "mismatch: invalid on inner field",
-    "18": "mismatch: data is invalid against first definition",
-    "19": "mismatch: data is invalid against first definition",
     "2": "mismatch: mismatch array",
     "20": "URN-scoped refs not resolved yet",
     "25": "remote-style URN ref not resolved yet",
@@ -342,10 +308,6 @@
     "7": "remote $ref resolution not supported yet",
     "8": "mismatch: invalid",
     "9": "mismatch: string is invalid"
-  },
-  "required": {
-    "0": "mismatch: ignores arrays",
-    "4": "mismatch: ignores arrays"
   },
   "type": {
     "0": "mismatch: a float with zero fractional part is an integer",
@@ -387,10 +349,8 @@
     "37": "mismatch: string property is invalid",
     "39": "unsupported keyword dependentSchemas",
     "4": "mismatch: with unevaluated properties",
-    "5": "unsupported keyword unevaluatedProperties",
     "6": "unsupported keyword allOf",
     "7": "unsupported keyword allOf",
-    "8": "unsupported keyword allOf",
     "9": "unsupported keyword allOf"
   },
   "uniqueItems": {

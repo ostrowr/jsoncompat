@@ -126,16 +126,6 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         for _ in 0..N_ITERATIONS {
             let candidate = generate_value(&ast, &mut rng, 6);
             if !compiled.is_valid(&candidate) {
-                if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
-                    panic!(
-                            "{}", &format!(
-                                "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance:\n{}",
-                                rel_str,
-                                serde_json::to_string_pretty(&schema_json)?,
-                                serde_json::to_string_pretty(&candidate)?
-                            )
-                        );
-                }
                 success = false;
                 break;
             }
@@ -150,10 +140,16 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             (false, true) => {
-                // Allowed failure – proceed.
+                // Allowed failure – proceed without failing the suite.
             }
             (false, false) => {
-                panic!("Should have panicked above, but didn't: schema #{idx} in {rel_str}");
+                panic!(
+                    "{}", &format!(
+                        "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance generation produced invalid samples",
+                        rel_str,
+                        serde_json::to_string_pretty(&schema_json)?
+                    )
+                );
             }
         }
     }

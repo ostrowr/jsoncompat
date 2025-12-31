@@ -29,5 +29,5 @@ from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, Se
 from pydantic import ConfigDict, Field
 
 class Ecmascriptregex3Deserializer(DeserializerRootModel):
-    root: Annotated[str, Field(pattern="^\\cc$")]
+    root: Annotated[str, Field(pattern="^\u0003$")]
 
