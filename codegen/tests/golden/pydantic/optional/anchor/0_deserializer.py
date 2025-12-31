@@ -62,11 +62,14 @@ Tests:
 ]
 """
 
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
 
-class Anchor0Deserializer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+from typing import Annotated, Any
 
-    @classmethod
-    def __get_pydantic_core_schema__(cls, source, handler):
-        raise NotImplementedError("unsupported enum/const value at #/anyOf/0: {\"$anchor\":\"my_anchor\",\"type\":\"null\"}")
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
+from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
+
+class Anchor0Deserializer(DeserializerRootModel):
+    root: Annotated[Any, BeforeValidator(lambda v, _allowed=[{"$anchor": "my_anchor", "type": "null"}]: _validate_literal(v, _allowed))] | None
+

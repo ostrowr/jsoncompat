@@ -30,11 +30,12 @@ Tests:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
 from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
 
 class Enum2Serializer(SerializerRootModel):
-    root: Literal[6, None]
+    root: Annotated[Literal[6, None], BeforeValidator(lambda v, _allowed=[6, None]: _validate_literal(v, _allowed))]
 

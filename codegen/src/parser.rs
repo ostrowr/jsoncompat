@@ -362,7 +362,7 @@ impl<'a> ModelGraphBuilder<'a> {
     fn parse_literal(
         &self,
         values: &[Value],
-        path: &SchemaPath,
+        _path: &SchemaPath,
     ) -> Result<SchemaType, CodegenError> {
         let mut literals = Vec::new();
         for value in values {
@@ -371,12 +371,7 @@ impl<'a> ModelGraphBuilder<'a> {
                 Value::Bool(b) => crate::model::LiteralValue::Bool(*b),
                 Value::String(s) => crate::model::LiteralValue::String(s.clone()),
                 Value::Number(n) => crate::model::LiteralValue::Number(n.clone()),
-                other => {
-                    return Err(CodegenError::UnsupportedEnumValue {
-                        location: path.clone(),
-                        value: other.clone(),
-                    })
-                }
+                other => crate::model::LiteralValue::Json(other.clone()),
             };
             literals.push(lit);
         }

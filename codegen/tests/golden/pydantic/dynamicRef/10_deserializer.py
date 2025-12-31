@@ -55,8 +55,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from json_schema_codegen_base import DeserializerBase, SerializerBase
+from json_schema_codegen_base import DeserializerBase, SerializerBase, _validate_literal
 from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
 from pydantic_core import core_schema
 
 class ModelDeserializer(DeserializerBase):
@@ -72,5 +73,5 @@ class Dynamicref10Deserializer(DeserializerBase):
         return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))
     model_config = ConfigDict(extra="allow")
     bar: Annotated[ModelDeserializer | None, Field(default=None)]
-    foo: Annotated[Literal["pass"] | None, Field(default=None)]
+    foo: Annotated[Literal["pass"] | None, BeforeValidator(lambda v, _allowed=["pass"]: _validate_literal(v, _allowed)), Field(default=None)]
 

@@ -72,11 +72,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from json_schema_codegen_base import DeserializerBase, SerializerBase
+from json_schema_codegen_base import DeserializerBase, SerializerBase, _validate_literal
 from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
 
 class Enum3Serializer(SerializerBase):
     model_config = ConfigDict(extra="allow")
-    bar: Literal["bar"]
-    foo: Annotated[Literal["foo"] | None, Field(default=None)]
+    bar: Annotated[Literal["bar"], BeforeValidator(lambda v, _allowed=["bar"]: _validate_literal(v, _allowed))]
+    foo: Annotated[Literal["foo"] | None, BeforeValidator(lambda v, _allowed=["foo"]: _validate_literal(v, _allowed)), Field(default=None)]
 

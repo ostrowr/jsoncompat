@@ -38,11 +38,14 @@ Tests:
 ]
 """
 
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
 
-class Ref14Deserializer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+from typing import Annotated, Any
 
-    @classmethod
-    def __get_pydantic_core_schema__(cls, source, handler):
-        raise NotImplementedError("unsupported enum/const value at #: {\"$ref\":\"#/$defs/a_string\"}")
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
+from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
+
+class Ref14Deserializer(DeserializerRootModel):
+    root: Annotated[Any, BeforeValidator(lambda v, _allowed=[{"$ref": "#/$defs/a_string"}]: _validate_literal(v, _allowed))]
+

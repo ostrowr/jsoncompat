@@ -24,18 +24,7 @@
   "boolean_schema": {
     "1": "unsupported schema feature at #: false schema"
   },
-  "const": {
-    "1": "unsupported enum/const value at #: {\"baz\":\"bax\",\"foo\":\"bar\"}",
-    "10": "mismatch: false is invalid",
-    "11": "mismatch: true is invalid",
-    "2": "unsupported enum/const value at #: [{\"foo\":\"bar\"}]",
-    "4": "mismatch: integer zero is invalid",
-    "5": "mismatch: integer one is invalid",
-    "6": "unsupported enum/const value at #: [false]",
-    "7": "unsupported enum/const value at #: [true]",
-    "8": "unsupported enum/const value at #: {\"a\":false}",
-    "9": "unsupported enum/const value at #: {\"a\":true}"
-  },
+  "const": {},
   "contains": {
     "0": "unsupported schema feature at #: prefixItems/contains",
     "1": "unsupported schema feature at #: prefixItems/contains",
@@ -80,17 +69,7 @@
     "5": "unsupported keyword $dynamicRef",
     "9": "unsupported keyword $dynamicRef"
   },
-  "enum": {
-    "1": "unsupported enum/const value at #: []",
-    "10": "unsupported enum/const value at #: [0]",
-    "11": "mismatch: true is invalid",
-    "12": "unsupported enum/const value at #: [1]",
-    "5": "mismatch: integer zero is invalid",
-    "6": "unsupported enum/const value at #: [false]",
-    "7": "mismatch: integer one is invalid",
-    "8": "unsupported enum/const value at #: [true]",
-    "9": "mismatch: false is invalid"
-  },
+  "enum": {},
   "if-then-else": {
     "3": "mismatch: invalid through then",
     "4": "mismatch: invalid through else",
@@ -243,9 +222,7 @@
   "optional/format/uuid": {
     "0": "mismatch: wrong length"
   },
-  "optional/id": {
-    "0": "unsupported enum/const value at #/anyOf/0: {\"$id\":\"https://localhost:1234/draft2020-12/id/my_identifier.json\",\"type\":\"null\"}"
-  },
+  "optional/id": {},
   "optional/non-bmp-regex": {
     "1": "mismatch: doesn't match one"
   },
@@ -279,7 +256,6 @@
     "10": "unsupported schema feature at #: false schema",
     "11": "deep recursive structure not supported yet",
     "13": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
-    "14": "unsupported enum/const value at #: {\"$ref\":\"#/$defs/a_string\"}",
     "15": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "16": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "17": "unsupported schema feature at #/allOf/0: allOf with non-object schema",

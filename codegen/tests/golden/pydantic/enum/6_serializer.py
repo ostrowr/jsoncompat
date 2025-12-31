@@ -35,11 +35,14 @@ Tests:
 ]
 """
 
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
 
-class Enum6Serializer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+from typing import Annotated, Any
 
-    @classmethod
-    def __get_pydantic_core_schema__(cls, source, handler):
-        raise NotImplementedError("unsupported enum/const value at #: [false]")
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
+from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
+
+class Enum6Serializer(SerializerRootModel):
+    root: Annotated[Any, BeforeValidator(lambda v, _allowed=[[False]]: _validate_literal(v, _allowed))]
+

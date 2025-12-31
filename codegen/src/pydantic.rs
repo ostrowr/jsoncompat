@@ -100,6 +100,7 @@ impl PydanticGenerator {
                 ctx.imports.add("pydantic", "RootModel");
                 ctx.imports.add("typing", "Any");
             }
+            emit_literal_helpers(&mut out);
             match role {
                 ModelRole::Serializer => emit_serializer_base(&mut out),
                 ModelRole::Deserializer => emit_deserializer_base(&mut out),
@@ -171,6 +172,7 @@ pub fn base_module() -> String {
     imports.add("typing", "Any");
 
     let mut out = CodeWriter::new();
+    emit_literal_helpers(&mut out);
     emit_serializer_base(&mut out);
     emit_deserializer_base(&mut out);
     emit_serializer_root_base(&mut out);
@@ -386,16 +388,39 @@ impl PyContext {
                 validators: Vec::new(),
             }),
             SchemaType::Literal(values) => {
-                self.imports.add("typing", "Literal");
-                let rendered = values
-                    .iter()
-                    .map(literal_value)
-                    .collect::<Result<Vec<_>, CodegenError>>()?
-                    .join(", ");
+                let mut literal_values = Vec::new();
+                let mut literal_types = Vec::new();
+                let mut all_simple = true;
+                for value in values {
+                    literal_values.push(python_literal(&value.to_value())?);
+                    match literal_value(value)? {
+                        Some(rendered) => literal_types.push(rendered),
+                        None => all_simple = false,
+                    }
+                }
+
+                self.imports
+                    .add("pydantic.functional_validators", "BeforeValidator");
+                if let Some(base) = &self.options.base_module {
+                    self.imports.add(base, "_validate_literal");
+                }
+                let allowed_literal = literal_values.join(", ");
+                let validator = format!(
+                    "BeforeValidator(lambda v, _allowed=[{allowed_literal}]: _validate_literal(v, _allowed))"
+                );
+
+                let expr = if all_simple && !literal_types.is_empty() {
+                    self.imports.add("typing", "Literal");
+                    format!("Literal[{}]", literal_types.join(", "))
+                } else {
+                    self.imports.add("typing", "Any");
+                    "Any".to_string()
+                };
+
                 Ok(TypeExpr {
-                    expr: format!("Literal[{rendered}]"),
+                    expr,
                     field_args: Vec::new(),
-                    validators: Vec::new(),
+                    validators: vec![validator],
                 })
             }
             SchemaType::Union(variants) => {
@@ -481,6 +506,50 @@ impl PythonFieldNames {
     fn needs_alias(&self, json_name: &str) -> bool {
         self.field_name(json_name) != json_name
     }
+}
+
+fn emit_literal_helpers(out: &mut CodeWriter) {
+    out.push_line("def _json_equal(candidate, expected):");
+    out.indent();
+    out.push_line("if isinstance(expected, bool):");
+    out.indent();
+    out.push_line("return isinstance(candidate, bool) and candidate is expected");
+    out.dedent();
+    out.push_line("if expected is None:");
+    out.indent();
+    out.push_line("return candidate is None");
+    out.dedent();
+    out.push_line("if isinstance(expected, (int, float)) and not isinstance(expected, bool):");
+    out.indent();
+    out.push_line(
+        "return isinstance(candidate, (int, float)) and not isinstance(candidate, bool) and candidate == expected",
+    );
+    out.dedent();
+    out.push_line("if isinstance(expected, list):");
+    out.indent();
+    out.push_line(
+        "return isinstance(candidate, list) and len(candidate) == len(expected) and all(_json_equal(c, e) for c, e in zip(candidate, expected))",
+    );
+    out.dedent();
+    out.push_line("if isinstance(expected, dict):");
+    out.indent();
+    out.push_line(
+        "return isinstance(candidate, dict) and candidate.keys() == expected.keys() and all(_json_equal(candidate[k], v) for k, v in expected.items())",
+    );
+    out.dedent();
+    out.push_line("return candidate == expected");
+    out.dedent();
+    out.push_empty();
+
+    out.push_line("def _validate_literal(value, allowed):");
+    out.indent();
+    out.push_line("if any(_json_equal(value, expected) for expected in allowed):");
+    out.indent();
+    out.push_line("return value");
+    out.dedent();
+    out.push_line("raise ValueError(\"value does not match literal constraint\")");
+    out.dedent();
+    out.push_empty();
 }
 
 fn emit_serializer_base(out: &mut CodeWriter) {
@@ -1093,13 +1162,21 @@ fn constraint_args_for_object(
     Ok(args)
 }
 
-fn literal_value(value: &crate::model::LiteralValue) -> Result<String, CodegenError> {
-    match value {
-        crate::model::LiteralValue::Null => Ok("None".to_string()),
-        crate::model::LiteralValue::Bool(v) => Ok(if *v { "True" } else { "False" }.to_string()),
-        crate::model::LiteralValue::String(s) => python_string_literal(s),
-        crate::model::LiteralValue::Number(n) => Ok(n.to_string()),
-    }
+fn literal_value(value: &crate::model::LiteralValue) -> Result<Option<String>, CodegenError> {
+    let rendered = match value {
+        crate::model::LiteralValue::Null => "None".to_string(),
+        crate::model::LiteralValue::Bool(v) => {
+            if *v {
+                "True".to_string()
+            } else {
+                "False".to_string()
+            }
+        }
+        crate::model::LiteralValue::String(s) => python_string_literal(s)?,
+        crate::model::LiteralValue::Number(n) => n.to_string(),
+        crate::model::LiteralValue::Json(_) => return Ok(None),
+    };
+    Ok(Some(rendered))
 }
 
 enum DefaultExpr {

@@ -148,7 +148,7 @@ impl SchemaType {
             SchemaType::Null => true,
             SchemaType::Nullable(_) => true,
             SchemaType::Union(variants) => variants.iter().any(|v| v.allows_null()),
-            SchemaType::Literal(values) => values.iter().any(|v| matches!(v, LiteralValue::Null)),
+            SchemaType::Literal(values) => values.iter().any(|v| v.is_null()),
             _ => false,
         }
     }
@@ -160,16 +160,60 @@ pub enum LiteralValue {
     Bool(bool),
     String(String),
     Number(serde_json::Number),
+    Json(Value),
 }
 
 impl LiteralValue {
-    pub fn matches_value(&self, value: &Value) -> bool {
-        match (self, value) {
-            (LiteralValue::Null, Value::Null) => true,
-            (LiteralValue::Bool(a), Value::Bool(b)) => a == b,
-            (LiteralValue::String(a), Value::String(b)) => a == b,
-            (LiteralValue::Number(a), Value::Number(b)) => a == b,
-            _ => false,
+    pub fn is_null(&self) -> bool {
+        matches!(self, LiteralValue::Null)
+    }
+
+    pub fn is_simple(&self) -> bool {
+        matches!(
+            self,
+            LiteralValue::Null
+                | LiteralValue::Bool(_)
+                | LiteralValue::String(_)
+                | LiteralValue::Number(_)
+        )
+    }
+
+    pub fn to_value(&self) -> Value {
+        match self {
+            LiteralValue::Null => Value::Null,
+            LiteralValue::Bool(v) => Value::Bool(*v),
+            LiteralValue::String(v) => Value::String(v.clone()),
+            LiteralValue::Number(v) => Value::Number(v.clone()),
+            LiteralValue::Json(v) => v.clone(),
         }
+    }
+
+    pub fn matches_value(&self, value: &Value) -> bool {
+        json_values_equal(&self.to_value(), value)
+    }
+}
+
+fn json_values_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Number(x), Value::Number(y)) => match (x.as_f64(), y.as_f64()) {
+            (Some(lhs), Some(rhs)) => (lhs - rhs).abs() < f64::EPSILON,
+            _ => x == y,
+        },
+        (Value::String(x), Value::String(y)) => x == y,
+        (Value::Array(xs), Value::Array(ys)) => {
+            xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| json_values_equal(x, y))
+        }
+        (Value::Object(xs), Value::Object(ys)) => {
+            if xs.len() != ys.len() {
+                return false;
+            }
+            xs.keys().all(|k| ys.contains_key(k))
+                && xs
+                    .iter()
+                    .all(|(k, v)| ys.get(k).is_some_and(|other| json_values_equal(v, other)))
+        }
+        _ => false,
     }
 }

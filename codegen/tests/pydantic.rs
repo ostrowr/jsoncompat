@@ -66,15 +66,17 @@ fn rejects_enum_objects() {
     });
 
     let schema = build_and_resolve_schema(&schema_json).expect("schema build failed");
-    let err = pydantic::generate_model(
+    let code = pydantic::generate_model(
         &schema,
         ModelRole::Serializer,
         PydanticOptions::default().with_root_model_name("Config"),
     )
-    .expect_err("expected enum object to be rejected");
+    .expect("enum object should be supported");
 
-    let message = err.to_string();
-    assert!(message.contains("unsupported enum/const value"));
+    assert!(
+        code.contains("_validate_literal"),
+        "expected literal helper to be emitted for object enum"
+    );
 }
 
 #[test]

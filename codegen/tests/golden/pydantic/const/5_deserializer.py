@@ -27,11 +27,12 @@ Tests:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel, _validate_literal
 from pydantic import ConfigDict, Field
+from pydantic.functional_validators import BeforeValidator
 
 class Const5Deserializer(DeserializerRootModel):
-    root: Literal[True]
+    root: Annotated[Literal[True], BeforeValidator(lambda v, _allowed=[True]: _validate_literal(v, _allowed))]
 
