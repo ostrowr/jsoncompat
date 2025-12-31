@@ -21,35 +21,19 @@ const N_ITERATIONS: usize = 1000;
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
-    // Remaining failing schemas in allOf.json – indices 4 and 5 correspond
-    // to `[true, false]` and `[false, false]` where no valid instance exists.
-    // TODO – we need to handle the impossible case more elegantly
-    map.insert("allOf.json".to_string(), [4, 5].iter().cloned().collect());
-    // Remaining tricky `oneOf` schemas – currently only #7 (boolean schemas)
-    // is impossible to satisfy generically.
-    map.insert(
-        "oneOf.json".to_string(),
-        [2, 4, 5].iter().cloned().collect(),
-    );
-    map.insert("not.json".to_string(), [4, 5, 8].iter().cloned().collect());
-    map.insert(
-        "unevaluatedItems.json".to_string(),
-        [12].iter().cloned().collect(),
-    );
-    map.insert(
-        "unevaluatedProperties.json".to_string(),
-        [16].iter().cloned().collect(),
-    );
 
-    map.insert("items.json".to_string(), HashSet::new());
-    map.insert("uniqueItems.json".to_string(), HashSet::new());
-
-    map.insert("properties.json".to_string(), [1].iter().cloned().collect());
-
+    map.insert(
+        "infinite-loop-detection.json".to_string(),
+        [0].iter().cloned().collect(),
+    );
     map.insert(
         "anchor.json".to_string(),
         [0, 1, 2, 3].iter().cloned().collect(),
+    );
+    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
+    map.insert(
+        "dynamicRef.json".to_string(),
+        [2, 13, 14, 15, 16, 17].iter().cloned().collect(),
     );
     map.insert(
         "additionalProperties.json".to_string(),
@@ -57,12 +41,11 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
 
     map.insert(
-        "infinite-loop-detection.json".to_string(),
+        "optional/anchor.json".to_string(),
         [0].iter().cloned().collect(),
     );
-
     map.insert(
-        "optional/anchor.json".to_string(),
+        "optional/cross-draft.json".to_string(),
         [0].iter().cloned().collect(),
     );
     map.insert(
@@ -84,37 +67,26 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         "optional/unknownKeyword.json".to_string(),
         [0].iter().cloned().collect(),
     );
-    map.insert("optional/id.json".to_string(), HashSet::new());
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
 
-    map.insert(
-        "dynamicRef.json".to_string(),
-        [2, 13, 14, 15, 16, 17, 20].iter().cloned().collect(),
-    );
-    map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
-    map.insert(
-        "ref.json".to_string(),
-        [6, 10, 17, 19, 27, 28, 29, 30, 31]
-            .iter()
-            .cloned()
-            .collect(),
-    );
+    map.insert("properties.json".to_string(), [1].iter().cloned().collect());
 
-    map.insert("if-then-else.json".to_string(), HashSet::new());
-
-    map.insert("vocabulary.json".to_string(), HashSet::new());
     map.insert(
         "refRemote.json".to_string(),
         [8, 11, 12, 13, 14].iter().cloned().collect(),
     );
     map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
+        "ref.json".to_string(),
+        [6, 17, 19, 27, 28, 29, 30, 31].iter().cloned().collect(),
     );
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
+
+    map.insert(
+        "unevaluatedItems.json".to_string(),
+        [12].iter().cloned().collect(),
+    );
+    map.insert(
+        "unevaluatedProperties.json".to_string(),
+        [16].iter().cloned().collect(),
+    );
 
     map
 }
