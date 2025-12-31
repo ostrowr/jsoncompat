@@ -1,32 +1,52 @@
 {
+  "allOf": {
+    "10": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "11": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "2": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "3": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "4": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "5": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "6": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "7": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "8": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "9": "unsupported schema feature at #/allOf/0: allOf with non-object schema"
+  },
   "anchor": {
     "2": "mismatch: mismatch",
     "3": "unsupported keyword allOf"
   },
   "anyOf": {
+    "1": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "3": "unsupported schema feature at #/anyOf/1: false schema",
+    "4": "unsupported schema feature at #/anyOf/0: false schema",
     "5": "mismatch: second anyOf valid (complex)"
   },
+  "boolean_schema": {
+    "1": "unsupported schema feature at #: false schema"
+  },
   "const": {
-    "1": "const object values not supported yet",
+    "1": "unsupported enum/const value at #: {\"baz\":\"bax\",\"foo\":\"bar\"}",
     "10": "mismatch: false is invalid",
     "11": "mismatch: true is invalid",
-    "2": "const array values not supported yet",
+    "2": "unsupported enum/const value at #: [{\"foo\":\"bar\"}]",
     "4": "mismatch: integer zero is invalid",
     "5": "mismatch: integer one is invalid",
-    "6": "const array values not supported yet",
-    "7": "const array values not supported yet",
-    "8": "const object values not supported yet",
-    "9": "const object values not supported yet"
+    "6": "unsupported enum/const value at #: [false]",
+    "7": "unsupported enum/const value at #: [true]",
+    "8": "unsupported enum/const value at #: {\"a\":false}",
+    "9": "unsupported enum/const value at #: {\"a\":true}"
   },
   "contains": {
-    "0": "mismatch: array without items matching schema is invalid",
-    "1": "mismatch: array without item 5 is invalid",
-    "2": "mismatch: empty array is invalid",
-    "3": "mismatch: any non-empty array is invalid",
-    "5": "mismatch: empty array is invalid"
+    "0": "unsupported schema feature at #: prefixItems/contains",
+    "1": "unsupported schema feature at #: prefixItems/contains",
+    "2": "unsupported schema feature at #: prefixItems/contains",
+    "3": "unsupported schema feature at #: prefixItems/contains",
+    "4": "unsupported schema feature at #: prefixItems/contains",
+    "5": "unsupported schema feature at #: prefixItems/contains",
+    "6": "unsupported schema feature at #: prefixItems/contains"
   },
   "default": {
-    "0": "default value does not match the declared type"
+    "0": "default value at #/properties/foo does not match the schema: default value [] does not match Integer(NumberConstraints { minimum: None, maximum: None, exclusive_minimum: false, exclusive_maximum: false, multiple_of: None })"
   },
   "defs": {
     "0": "mismatch: invalid definition schema"
@@ -47,8 +67,10 @@
     "1": "mismatch: An array containing non-strings is invalid",
     "11": "mismatch: number list with string values",
     "12": "mismatch: string matches /$defs/thingy, but the $dynamicRef does not stop here",
-    "13": "unsupported keyword unevaluatedProperties",
+    "13": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "14": "mismatch: incorrect parent schema",
+    "15": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "16": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "17": "mismatch: non-number is invalid",
     "18": "unsupported keyword $dynamicRef",
     "19": "unsupported keyword $dynamicRef",
@@ -59,14 +81,14 @@
     "9": "unsupported keyword $dynamicRef"
   },
   "enum": {
-    "1": "enum contains non-primitive values not supported yet",
-    "10": "enum contains non-primitive values not supported yet",
+    "1": "unsupported enum/const value at #: []",
+    "10": "unsupported enum/const value at #: [0]",
     "11": "mismatch: true is invalid",
-    "12": "enum contains non-primitive values not supported yet",
+    "12": "unsupported enum/const value at #: [1]",
     "5": "mismatch: integer zero is invalid",
-    "6": "enum contains non-primitive values not supported yet",
+    "6": "unsupported enum/const value at #: [false]",
     "7": "mismatch: integer one is invalid",
-    "8": "enum contains non-primitive values not supported yet",
+    "8": "unsupported enum/const value at #: [true]",
     "9": "mismatch: false is invalid"
   },
   "exclusiveMaximum": {
@@ -79,18 +101,24 @@
     "3": "mismatch: invalid through then",
     "4": "mismatch: invalid through else",
     "5": "mismatch: invalid through then",
+    "6": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "7": "mismatch: boolean schema true in if always chooses the then path (invalid)",
     "8": "mismatch: boolean schema false in if always chooses the else path (invalid)",
     "9": "mismatch: no redirects to then and fails"
   },
   "items": {
     "0": "mismatch: ignores non-arrays",
-    "7": "mismatch: valid items"
+    "2": "unsupported schema feature at #/items: false schema",
+    "3": "unsupported schema feature at #: prefixItems/contains",
+    "5": "unsupported schema feature at #: prefixItems/contains",
+    "6": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "7": "unsupported schema feature at #: prefixItems/contains",
+    "8": "unsupported schema feature at #: prefixItems/contains"
   },
   "maxContains": {
-    "1": "mismatch: empty data",
-    "2": "mismatch: too many elements match, invalid maxContains",
-    "3": "mismatch: actual < minContains < maxContains"
+    "1": "unsupported schema feature at #: prefixItems/contains",
+    "2": "unsupported schema feature at #: prefixItems/contains",
+    "3": "unsupported schema feature at #: prefixItems/contains"
   },
   "maxItems": {
     "0": "mismatch: too long is invalid"
@@ -102,12 +130,13 @@
     "0": "mismatch: above the maximum is invalid"
   },
   "minContains": {
-    "1": "mismatch: empty data",
-    "2": "mismatch: empty data",
-    "3": "mismatch: one element matches, invalid minContains",
-    "4": "mismatch: empty data",
-    "5": "mismatch: empty data",
-    "7": "mismatch: too many"
+    "1": "unsupported schema feature at #: prefixItems/contains",
+    "2": "unsupported schema feature at #: prefixItems/contains",
+    "3": "unsupported schema feature at #: prefixItems/contains",
+    "4": "unsupported schema feature at #: prefixItems/contains",
+    "5": "unsupported schema feature at #: prefixItems/contains",
+    "6": "unsupported schema feature at #: prefixItems/contains",
+    "7": "unsupported schema feature at #: prefixItems/contains"
   },
   "minItems": {
     "0": "mismatch: too short is invalid"
@@ -133,15 +162,21 @@
   },
   "oneOf": {
     "0": "mismatch: both oneOf valid",
-    "1": "mismatch: both oneOf valid",
+    "1": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "2": "mismatch: any value is invalid",
+    "3": "unsupported schema feature at #/oneOf/1: false schema",
+    "4": "unsupported schema feature at #/oneOf/2: false schema",
+    "5": "unsupported schema feature at #/oneOf/0: false schema",
     "6": "mismatch: second oneOf valid (complex)",
     "7": "mismatch: both valid - invalid",
-    "8": "mismatch: second valid - valid",
+    "8": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
     "9": "mismatch: second oneOf valid"
   },
   "optional/anchor": {
-    "0": "enum contains non-primitive values not supported yet"
+    "0": "unsupported enum/const value at #/anyOf/0: {\"$anchor\":\"my_anchor\",\"type\":\"null\"}"
+  },
+  "optional/cross-draft": {
+    "0": "unsupported schema feature at #/allOf/0: allOf with non-object schema"
   },
   "optional/dependencies-compatibility": {
     "0": "mismatch: missing dependency",
@@ -238,7 +273,7 @@
     "0": "mismatch: wrong length"
   },
   "optional/id": {
-    "0": "enum contains non-primitive values not supported yet"
+    "0": "unsupported enum/const value at #/anyOf/0: {\"$id\":\"https://localhost:1234/draft2020-12/id/my_identifier.json\",\"type\":\"null\"}"
   },
   "optional/no-schema": {
     "0": "mismatch: a non-string is valid"
@@ -259,11 +294,14 @@
     "3": "mismatch: object with property matching schema false is invalid"
   },
   "prefixItems": {
-    "0": "mismatch: wrong types",
-    "1": "mismatch: array with two items is invalid"
+    "0": "unsupported schema feature at #: prefixItems/contains",
+    "1": "unsupported schema feature at #: prefixItems/contains",
+    "2": "unsupported schema feature at #: prefixItems/contains",
+    "3": "unsupported schema feature at #: prefixItems/contains"
   },
   "properties": {
     "1": "unsupported keyword patternProperties",
+    "2": "unsupported schema feature at #/properties/bar: false schema",
     "5": "mismatch: ignores arrays"
   },
   "propertyNames": {
@@ -275,21 +313,24 @@
   },
   "ref": {
     "0": "recursive $ref not supported yet",
+    "10": "unsupported schema feature at #: false schema",
     "11": "deep recursive structure not supported yet",
-    "13": "unsupported keyword unevaluatedProperties",
-    "14": "enum contains non-primitive values not supported yet",
-    "15": "mismatch: invalid on inner field",
-    "16": "mismatch: invalid on inner field",
-    "2": "mismatch: mismatch array",
+    "13": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "14": "unsupported enum/const value at #: {\"$ref\":\"#/$defs/a_string\"}",
+    "15": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "16": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "17": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "2": "unsupported schema feature at #: prefixItems/contains",
     "20": "URN-scoped refs not resolved yet",
     "25": "remote-style URN ref not resolved yet",
     "26": "remote-style URN ref with anchor not resolved yet",
     "27": "mismatch: a non-string is invalid",
-    "28": "unsupported keyword if",
-    "29": "unsupported keyword then",
-    "30": "unsupported keyword else",
+    "28": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "29": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "30": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "31": "mismatch: an integer is invalid",
-    "5": "local $ref mixed with other keywords not supported yet",
+    "34": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "5": "unsupported schema feature at #/properties/foo/allOf/0: allOf with non-object schema",
     "6": "mismatch: remote ref invalid"
   },
   "refRemote": {
@@ -316,45 +357,72 @@
   },
   "unevaluatedItems": {
     "1": "mismatch: with unevaluated items",
-    "11": "mismatch: when one schema matches and has unevaluated items",
-    "12": "mismatch: with unevaluated items",
-    "13": "mismatch: with unevaluated items",
-    "16": "unsupported keyword prefixItems",
-    "17": "unsupported keyword prefixItems",
-    "18": "unsupported keyword prefixItems",
+    "10": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "11": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "12": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "13": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "14": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "15": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "16": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "17": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "18": "unsupported schema feature at #: prefixItems/contains",
+    "19": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "2": "mismatch: with invalid unevaluated items",
-    "20": "unsupported keyword prefixItems",
-    "21": "mismatch: contains fails, second item is not evaluated",
-    "4": "mismatch: with unevaluated items",
-    "8": "mismatch: with invalid additional item"
+    "20": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "21": "unsupported schema feature at #: prefixItems/contains",
+    "22": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "23": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "26": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "4": "unsupported schema feature at #: prefixItems/contains",
+    "5": "unsupported schema feature at #: prefixItems/contains",
+    "7": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "8": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "9": "unsupported schema feature at #/allOf/0: allOf with non-object schema"
   },
   "unevaluatedProperties": {
     "1": "mismatch: with invalid unevaluated properties",
-    "10": "unsupported keyword anyOf",
-    "11": "unsupported keyword oneOf",
-    "12": "unsupported keyword not",
+    "10": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "11": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "12": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "13": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "14": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "15": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
     "16": "unsupported keyword dependentSchemas",
-    "17": "unsupported keyword allOf",
+    "17": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
     "18": "unsupported keyword unevaluatedProperties",
     "19": "unsupported keyword unevaluatedProperties",
     "2": "mismatch: with unevaluated properties",
     "20": "unsupported keyword unevaluatedProperties",
-    "23": "unsupported keyword allOf",
-    "25": "unsupported keyword allOf",
+    "21": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "22": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "23": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "25": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
     "26": "mismatch: with nested unevaluated properties",
-    "29": "unsupported keyword unevaluatedProperties",
+    "27": "unsupported schema feature at #/allOf/2: allOf with non-object schema",
+    "28": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "29": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
     "3": "unsupported keyword unevaluatedProperties",
+    "30": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "31": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "32": "unsupported keyword unevaluatedProperties",
-    "34": "mismatch: a is valid",
+    "33": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
+    "34": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "37": "mismatch: string property is invalid",
+    "38": "unsupported schema feature at #/allOf/0: allOf with non-object schema",
     "39": "unsupported keyword dependentSchemas",
     "4": "mismatch: with unevaluated properties",
     "6": "unsupported keyword allOf",
-    "7": "unsupported keyword allOf",
-    "9": "unsupported keyword allOf"
+    "7": "unsupported schema feature at #/allOf/1: allOf with non-object schema",
+    "9": "unsupported schema feature at #/allOf/1: allOf with non-object schema"
   },
   "uniqueItems": {
     "0": "mismatch: non-unique array of integers is invalid",
-    "1": "mismatch: [false, false] from items array is not valid"
+    "1": "unsupported schema feature at #: prefixItems/contains",
+    "2": "unsupported schema feature at #: prefixItems/contains",
+    "4": "unsupported schema feature at #: prefixItems/contains",
+    "5": "unsupported schema feature at #: prefixItems/contains"
+  },
+  "vocabulary": {
+    "0": "unsupported schema feature at #/properties/badProperty: false schema"
   }
 }

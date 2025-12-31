@@ -62,8 +62,6 @@ def collect_fixtures():
 
 def load_serializer_module(rel_path: str, idx: int):
     serializer_path = GOLDENS / rel_path / f"{idx}_serializer.py"
-    if not serializer_path.exists():
-        pytest.skip(f"missing serializer golden for {rel_path}#{idx}")
     code = serializer_path.read_text(encoding="utf-8")
     module_key = (
         rel_path.replace("/", "_")
@@ -109,11 +107,23 @@ def test_serializers_accept_fixture_tests(rel_path: str, idx: int, schema, tests
     reason = whitelist_reason(rel_path, idx)
     is_whitelisted = reason is not None
 
-    glb = load_serializer_module(rel_path, idx)
+    try:
+        glb = load_serializer_module(rel_path, idx)
+    except Exception:
+        if is_whitelisted:
+            return
+        raise
     cls = find_serializer_class(glb)
     if cls is None:
-        pytest.skip("no serializer class found")
-    cls.model_rebuild()
+        if is_whitelisted:
+            return
+        pytest.fail(f"no serializer class found for {rel_path}#{idx}")
+    try:
+        cls.model_rebuild()
+    except Exception:
+        if is_whitelisted:
+            return
+        raise
 
     all_passed = True
     for test in tests:

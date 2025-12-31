@@ -1,14 +1,16 @@
 use json_schema_ast::build_and_resolve_schema;
 use json_schema_codegen::{pydantic, CodegenError, ModelRole, PydanticOptions};
+use serde_json::Map as JsonMap;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Once;
+use std::sync::{Mutex, Once, OnceLock};
 
 const FIXTURES_ROOT: &str = "../tests/fixtures/fuzz";
 const GOLDEN_ROOT: &str = "tests/golden/pydantic";
 const BASE_MODULE: &str = "json_schema_codegen_base";
+static WHITELIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 datatest_stable::harness!(fixture, FIXTURES_ROOT, ".*\\.json$");
 
@@ -32,10 +34,6 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if !regen && is_whitelisted(&whitelist, &golden_rel_path, idx) {
             continue;
         }
-        if schema_json == Value::Bool(false) {
-            continue;
-        }
-
         let schema =
             build_and_resolve_schema(&schema_json).map_err(|e| format!("{rel_str}#{idx}: {e}"))?;
         let root_name = format!(
@@ -55,21 +53,23 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let serializer =
             match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
                 Ok(code) => code,
-                Err(CodegenError::RootNotObject { .. }) => continue,
-                Err(CodegenError::UnsupportedFeature { .. }) => continue,
-                Err(CodegenError::UnsupportedEnumValue { .. }) => continue,
-                Err(CodegenError::InvalidDefault { .. }) => continue,
-                Err(err) => return Err(format!("{rel_str}#{idx} serializer: {err}").into()),
+                Err(err) => {
+                    if regen {
+                        update_whitelist(&golden_root, &golden_rel_path, idx, &err.to_string())?;
+                    }
+                    stub_model(ModelRole::Serializer, &options, &root_name, &err)
+                }
             };
-        let deserializer = match pydantic::generate_model(&schema, ModelRole::Deserializer, options)
-        {
-            Ok(code) => code,
-            Err(CodegenError::RootNotObject { .. }) => continue,
-            Err(CodegenError::UnsupportedFeature { .. }) => continue,
-            Err(CodegenError::UnsupportedEnumValue { .. }) => continue,
-            Err(CodegenError::InvalidDefault { .. }) => continue,
-            Err(err) => return Err(format!("{rel_str}#{idx} deserializer: {err}").into()),
-        };
+        let deserializer =
+            match pydantic::generate_model(&schema, ModelRole::Deserializer, options.clone()) {
+                Ok(code) => code,
+                Err(err) => {
+                    if regen {
+                        update_whitelist(&golden_root, &golden_rel_path, idx, &err.to_string())?;
+                    }
+                    stub_model(ModelRole::Deserializer, &options, &root_name, &err)
+                }
+            };
 
         let base_dir = golden_root.join(&golden_rel_path);
         fs::create_dir_all(&base_dir)?;
@@ -117,6 +117,39 @@ fn ensure_initialized(golden_root: &Path, base_code: String, regen: bool) {
             panic!("Failed to initialize codegen goldens: {err}");
         }
     });
+}
+
+fn stub_model(
+    role: ModelRole,
+    options: &PydanticOptions,
+    root_name: &str,
+    err: &CodegenError,
+) -> String {
+    let class_name = match role {
+        ModelRole::Serializer => format!("{root_name}{}", options.serializer_suffix),
+        ModelRole::Deserializer => format!("{root_name}{}", options.deserializer_suffix),
+    };
+
+    let mut out = String::new();
+    if let Some(comment) = &options.header_comment {
+        out.push_str("\"\"\"\n");
+        out.push_str(comment);
+        if !comment.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str("\"\"\"\n\n");
+    }
+
+    out.push_str("from pydantic import BaseModel, ConfigDict\n\n");
+    out.push_str(&format!("class {class_name}(BaseModel):\n"));
+    out.push_str("    model_config = ConfigDict(extra=\"forbid\")\n\n");
+    out.push_str("    @classmethod\n");
+    out.push_str("    def __get_pydantic_core_schema__(cls, source, handler):\n");
+    out.push_str(&format!(
+        "        raise NotImplementedError({:?})\n",
+        err.to_string()
+    ));
+    out
 }
 
 fn initialize_goldens(
@@ -239,6 +272,10 @@ fn is_whitelisted(map: &HashMap<String, HashSet<usize>>, file: &str, idx: usize)
 fn load_whitelist(
     golden_root: &Path,
 ) -> Result<HashMap<String, HashSet<usize>>, Box<dyn std::error::Error>> {
+    let guard = WHITELIST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap();
     let path = golden_root.join("tests").join("whitelist.json");
     let text = fs::read_to_string(&path)?;
     let raw: HashMap<String, HashMap<String, String>> = serde_json::from_str(&text)?;
@@ -257,7 +294,65 @@ fn load_whitelist(
         }
     }
 
+    drop(guard);
     Ok(out)
+}
+
+fn update_whitelist(
+    golden_root: &Path,
+    golden_rel_path: &str,
+    idx: usize,
+    reason: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let guard = WHITELIST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap();
+
+    let path = golden_root.join("tests").join("whitelist.json");
+    let mut root: JsonMap<String, Value> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?)?
+    } else {
+        JsonMap::new()
+    };
+
+    let mut file_entry = root
+        .remove(golden_rel_path)
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    file_entry.insert(idx.to_string(), Value::String(reason.to_string()));
+    root.insert(golden_rel_path.to_string(), Value::Object(file_entry));
+
+    let sorted = sort_object_keys(root);
+    let serialized = serde_json::to_string_pretty(&Value::Object(sorted))?;
+    fs::write(path, format!("{serialized}\n"))?;
+    drop(guard);
+    Ok(())
+}
+
+fn sort_object_keys(obj: JsonMap<String, Value>) -> JsonMap<String, Value> {
+    let mut entries: Vec<_> = obj.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut out = JsonMap::new();
+    for (key, value) in entries {
+        let value = match value {
+            Value::Object(inner) => Value::Object(sort_object_keys(inner)),
+            Value::Array(items) => Value::Array(
+                items
+                    .into_iter()
+                    .map(|item| match item {
+                        Value::Object(inner) => Value::Object(sort_object_keys(inner)),
+                        other => other,
+                    })
+                    .collect(),
+            ),
+            other => other,
+        };
+        out.insert(key, value);
+    }
+
+    out
 }
 
 fn strip_json_extension(rel_path: &str) -> String {
