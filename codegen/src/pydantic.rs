@@ -243,6 +243,14 @@ impl PyContext {
                     validators: Vec::new(),
                 })
             }
+            SchemaType::Never => {
+                self.imports.add("typing", "Any");
+                Ok(TypeExpr {
+                    expr: "Any".to_string(),
+                    field_args: Vec::new(),
+                    validators: Vec::new(),
+                })
+            }
             SchemaType::Bool => Ok(TypeExpr {
                 expr: "bool".to_string(),
                 field_args: Vec::new(),

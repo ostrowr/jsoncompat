@@ -1,24 +1,8 @@
 {
-  "anyOf": {
-    "3": "false schema branch is ignored"
-  },
   "default": {
-    "0": "invalid default not enforced for properties"
+    "0": "default value at #/properties/foo does not match the schema: default value [] does not match Integer(NumberConstraints { minimum: None, maximum: None, exclusive_minimum: false, exclusive_maximum: false, multiple_of: None, type_enforced: true })"
   },
-  "items": {
-    "2": "items=false not enforced",
-    "3": "prefixItems with items=false not modeled",
-    "5": "prefixItems with items=false not modeled",
-    "8": "prefixItems with items=false not modeled"
-  },
-  "oneOf": {
-    "3": "false schema branches not modeled"
-  },
-  "properties": {
-    "2": "false property schema not enforced"
-  },
-  "uniqueItems": {
-    "2": "prefixItems/items=false combination not enforced",
-    "5": "prefixItems/items=false combination not enforced"
+  "vocabulary": {
+    "0": "unsupported schema feature at #/properties/badProperty: false schema"
   }
 }

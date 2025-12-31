@@ -125,6 +125,7 @@ pub enum StringFormat {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemaType {
     Any,
+    Never,
     Bool,
     String(StringConstraints),
     Integer(NumberConstraints),

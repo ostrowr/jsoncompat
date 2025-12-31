@@ -266,10 +266,7 @@ impl<'a> ModelGraphBuilder<'a> {
     ) -> Result<SchemaType, CodegenError> {
         match schema {
             Value::Bool(true) => Ok(SchemaType::Any),
-            Value::Bool(false) => Err(CodegenError::UnsupportedFeature {
-                location: path.clone(),
-                feature: "false schema".to_string(),
-            }),
+            Value::Bool(false) => Ok(SchemaType::Never),
             Value::Object(obj) => {
                 let has_explicit_type = has_explicit_type(obj);
                 if let Some(Value::String(ref_path)) = obj.get("$ref") {
@@ -285,11 +282,15 @@ impl<'a> ModelGraphBuilder<'a> {
                 }
 
                 if let Some(Value::Array(subs)) = obj.get("anyOf") {
-                    return self.parse_union(subs, path, "anyOf");
+                    let union = self.parse_union(subs, path, "anyOf")?;
+                    let constrained = self.apply_type_hint(union, obj, path)?;
+                    return Ok(constrained);
                 }
 
                 if let Some(Value::Array(subs)) = obj.get("oneOf") {
-                    return self.parse_union(subs, path, "oneOf");
+                    let union = self.parse_union(subs, path, "oneOf")?;
+                    let constrained = self.apply_type_hint(union, obj, path)?;
+                    return Ok(constrained);
                 }
 
                 if let Some(Value::Array(subs)) = obj.get("allOf") {
@@ -433,6 +434,129 @@ impl<'a> ModelGraphBuilder<'a> {
             variants.push(self.parse_schema_type(sub, &sub_path)?);
         }
         Ok(normalize_union(variants))
+    }
+
+    fn apply_type_hint(
+        &mut self,
+        schema: SchemaType,
+        obj: &Map<String, Value>,
+        path: &SchemaPath,
+    ) -> Result<SchemaType, CodegenError> {
+        let Some(type_val) = obj.get("type") else {
+            return Ok(schema);
+        };
+
+        match type_val {
+            Value::String(t) => self.enforce_type(schema, t, path),
+            Value::Array(types) => {
+                let mut constrained = Vec::new();
+                for (idx, t) in types.iter().enumerate() {
+                    let type_str = t.as_str().ok_or_else(|| CodegenError::InvalidSchema {
+                        location: path.push("type").push(idx.to_string()),
+                        message: "type entries must be strings".to_string(),
+                    })?;
+                    constrained.push(self.enforce_type(schema.clone(), type_str, path)?);
+                }
+                Ok(normalize_union(constrained))
+            }
+            _ => Err(CodegenError::InvalidSchema {
+                location: path.clone(),
+                message: "type must be a string or array".to_string(),
+            }),
+        }
+    }
+
+    fn enforce_type(
+        &self,
+        schema: SchemaType,
+        type_str: &str,
+        path: &SchemaPath,
+    ) -> Result<SchemaType, CodegenError> {
+        fn enforce_for_type(schema: SchemaType, type_str: &str) -> SchemaType {
+            match schema {
+                SchemaType::String(mut c) if type_str == "string" => {
+                    c.type_enforced = true;
+                    SchemaType::String(c)
+                }
+                SchemaType::Integer(mut c) if type_str == "integer" || type_str == "number" => {
+                    c.type_enforced = true;
+                    SchemaType::Integer(c)
+                }
+                SchemaType::Number(mut c) if type_str == "number" => {
+                    c.type_enforced = true;
+                    SchemaType::Number(c)
+                }
+                SchemaType::Array {
+                    items,
+                    mut constraints,
+                } if type_str == "array" => {
+                    constraints.type_enforced = true;
+                    SchemaType::Array { items, constraints }
+                }
+                SchemaType::Map {
+                    values,
+                    mut constraints,
+                } if type_str == "object" => {
+                    constraints.type_enforced = true;
+                    SchemaType::Map {
+                        values,
+                        constraints,
+                    }
+                }
+                SchemaType::Union(variants) => {
+                    let mapped: Vec<SchemaType> = variants
+                        .into_iter()
+                        .map(|v| enforce_for_type(v, type_str))
+                        .collect();
+                    normalize_union(mapped)
+                }
+                SchemaType::Nullable(inner) => {
+                    SchemaType::Nullable(Box::new(enforce_for_type(*inner, type_str)))
+                }
+                SchemaType::Any => match type_str {
+                    "string" => SchemaType::String(StringConstraints {
+                        type_enforced: true,
+                        ..Default::default()
+                    }),
+                    "number" => SchemaType::Number(NumberConstraints {
+                        type_enforced: true,
+                        ..Default::default()
+                    }),
+                    "integer" => SchemaType::Integer(NumberConstraints {
+                        type_enforced: true,
+                        ..Default::default()
+                    }),
+                    "boolean" => SchemaType::Bool,
+                    "null" => SchemaType::Null,
+                    "array" => SchemaType::Array {
+                        items: Box::new(SchemaType::Any),
+                        constraints: ArrayConstraints {
+                            type_enforced: true,
+                            ..Default::default()
+                        },
+                    },
+                    "object" => SchemaType::Map {
+                        values: Box::new(SchemaType::Any),
+                        constraints: ObjectConstraints {
+                            type_enforced: true,
+                            ..Default::default()
+                        },
+                    },
+                    _ => SchemaType::Any,
+                },
+                other => other,
+            }
+        }
+
+        match type_str {
+            "string" | "number" | "integer" | "boolean" | "null" | "array" | "object" => {
+                Ok(enforce_for_type(schema, type_str))
+            }
+            other => Err(CodegenError::UnsupportedFeature {
+                location: path.clone(),
+                feature: format!("type '{other}'"),
+            }),
+        }
     }
 
     fn parse_all_of(
@@ -884,9 +1008,16 @@ fn normalize_union(types: Vec<SchemaType>) -> SchemaType {
 
     let mut dedup = Vec::new();
     for ty in flat {
+        if matches!(ty, SchemaType::Never) {
+            continue;
+        }
         if !dedup.contains(&ty) {
             dedup.push(ty);
         }
+    }
+
+    if dedup.is_empty() {
+        return SchemaType::Never;
     }
 
     let has_null = dedup.iter().any(|t| matches!(t, SchemaType::Null));
@@ -1045,6 +1176,7 @@ fn merge_object_schema(
 fn default_matches_schema(schema: &SchemaType, value: &Value) -> bool {
     match schema {
         SchemaType::Any => true,
+        SchemaType::Never => false,
         SchemaType::Bool => matches!(value, Value::Bool(_)),
         SchemaType::String(_) => matches!(value, Value::String(_)),
         SchemaType::Integer(_) => {

@@ -1,12 +1,13 @@
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from json_schema_codegen_base import SerializerBase, DeserializerBase
-from pydantic import ConfigDict
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from pydantic import ConfigDict, Field, model_validator
 
 _VALIDATE_FORMATS = False
 
-class Items3Serializer(SerializerBase):
-    __json_schema__: ClassVar[str] = r"""
+class Items3Serializer(SerializerRootModel):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "item": {
@@ -44,6 +45,5 @@ class Items3Serializer(SerializerBase):
   "type": "array"
 }
 """
-    _validate_formats: ClassVar[bool] = _VALIDATE_FORMATS
-    model_config = ConfigDict(extra="forbid")
-    __json_compat_error__: ClassVar[str] = "unsupported schema feature at #/items: false schema"
+    root: list[Any]
+
