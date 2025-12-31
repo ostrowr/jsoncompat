@@ -487,10 +487,33 @@ fn emit_model(
         out.push_line(&format!("\"\"\"{}\"\"\"", escape_docstring(doc)));
     }
 
-    let extra_value = match &model.additional_properties {
-        AdditionalProperties::Allow => "allow",
-        AdditionalProperties::Forbid => "forbid",
-        AdditionalProperties::Typed(_) => "allow",
+    if !model.requires_object {
+        ctx.imports.add("pydantic_core", "core_schema");
+        out.push_empty();
+        out.push_line("@classmethod");
+        out.push_line("def __get_pydantic_core_schema__(cls, source, handler):");
+        out.indent();
+        out.push_line("model_schema = handler(source)");
+        out.push_line(
+            "non_object_schema = core_schema.no_info_plain_validator_function(lambda v: v)",
+        );
+        out.push_line(
+            "return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))",
+        );
+        out.dedent();
+    }
+
+    let needs_custom_extra = !model.pattern_properties.is_empty()
+        || model.property_name_max.is_some()
+        || !matches!(model.additional_properties, AdditionalProperties::Allow);
+    let extra_value = if needs_custom_extra {
+        "allow"
+    } else {
+        match &model.additional_properties {
+            AdditionalProperties::Allow => "allow",
+            AdditionalProperties::Forbid => "forbid",
+            AdditionalProperties::Typed(_) => "allow",
+        }
     };
     out.push_line(&format!(
         "model_config = ConfigDict(extra=\"{extra_value}\")"
@@ -515,6 +538,9 @@ fn emit_model(
 
     if model.min_properties.is_some() || model.max_properties.is_some() {
         emit_property_validator(out, model)?;
+    }
+    if needs_custom_extra {
+        emit_additional_validator(out, ctx, model, role)?;
     }
 
     out.dedent();
@@ -626,6 +652,122 @@ fn emit_property_validator(out: &mut CodeWriter, model: &ModelSpec) -> Result<()
     }
 
     out.push_line("return self");
+    out.dedent();
+    Ok(())
+}
+
+fn emit_additional_validator(
+    out: &mut CodeWriter,
+    ctx: &mut PyContext,
+    model: &ModelSpec,
+    role: ModelRole,
+) -> Result<(), CodegenError> {
+    ctx.imports.add("pydantic", "model_validator");
+    if !model.pattern_properties.is_empty() {
+        ctx.imports.add("re", "compile as re_compile");
+    }
+    let mut additional_adapter = None;
+    if let AdditionalProperties::Typed(schema) = &model.additional_properties {
+        ctx.imports.add("pydantic", "TypeAdapter");
+        let extra_type = ctx.type_expr(schema, role)?;
+        let rendered = ctx.apply_field_args(extra_type.expr, &extra_type.field_args);
+        additional_adapter = Some(rendered);
+    }
+    if !model.pattern_properties.is_empty() || additional_adapter.is_some() {
+        ctx.imports.add("typing", "ClassVar");
+    }
+
+    if !model.pattern_properties.is_empty() {
+        let patterns = model
+            .pattern_properties
+            .iter()
+            .map(|p| format!("re_compile(r{p:?})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_line(&format!(
+            "_pattern_properties: ClassVar[list] = [{patterns}]"
+        ));
+    } else {
+        out.push_line("_pattern_properties: ClassVar[list] = []");
+    }
+    if let Some(adapter) = additional_adapter.as_ref() {
+        out.push_line(&format!(
+            "_additional_adapter: ClassVar[TypeAdapter] = TypeAdapter({adapter}, config=ConfigDict(strict=True))"
+        ));
+    }
+
+    let mut allowed_props: Vec<String> = model.fields.iter().map(|f| f.name.clone()).collect();
+    allowed_props.sort();
+    if model.has_all_of {
+        allowed_props.clear();
+    }
+    let allowed_literal = if allowed_props.is_empty() {
+        "set()".to_string()
+    } else {
+        format!(
+            "{{{}}}",
+            allowed_props
+                .iter()
+                .map(|p| format!("{p:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let name_len_check = model
+        .property_name_max
+        .map(|max| format!("if len(_key) > {max}: raise ValueError(\"property name too long\")"))
+        .unwrap_or_default();
+
+    out.push_empty();
+    out.push_line("@model_validator(mode=\"before\")");
+    out.push_line("@classmethod");
+    out.push_line("def _validate_additional(cls, value):");
+    out.indent();
+    out.push_line("if not isinstance(value, dict):");
+    out.indent();
+    out.push_line("return value");
+    out.dedent();
+    if !name_len_check.is_empty() {
+        out.push_line("for _key in value.keys():");
+        out.indent();
+        out.push_line(&name_len_check);
+        out.dedent();
+    }
+    out.push_line(&format!("_allowed = {allowed_literal}"));
+    out.push_line("for _key, _val in value.items():");
+    out.indent();
+    out.push_line("if _key in _allowed:");
+    out.indent();
+    out.push_line("continue");
+    out.dedent();
+    out.push_line(
+        "if cls._pattern_properties and any(p.match(_key) for p in cls._pattern_properties):",
+    );
+    out.indent();
+    out.push_line("continue");
+    out.dedent();
+    match &model.additional_properties {
+        AdditionalProperties::Allow => {
+            out.push_line("continue");
+        }
+        AdditionalProperties::Forbid => {
+            out.push_line("raise ValueError(\"additional property not allowed\")");
+        }
+        AdditionalProperties::Typed(_) => {
+            out.push_line("try:");
+            out.indent();
+            out.push_line("cls._additional_adapter.validate_python(_val)");
+            out.dedent();
+            out.push_line("except Exception as exc:");
+            out.indent();
+            out.push_line(
+                "raise ValueError(\"additional property does not match schema\") from exc",
+            );
+            out.dedent();
+        }
+    }
+    out.dedent();
+    out.push_line("return value");
     out.dedent();
     Ok(())
 }

@@ -1,12 +1,4 @@
 {
-  "additionalProperties": {
-    "0": "unsupported keyword patternProperties",
-    "1": "unsupported keyword patternProperties",
-    "3": "mismatch: an additional invalid property is invalid",
-    "5": "unsupported keyword allOf",
-    "7": "unsupported keyword propertyNames",
-    "8": "unsupported keyword dependentSchemas"
-  },
   "allOf": {
     "1": "unsupported keyword allOf"
   },

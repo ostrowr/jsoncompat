@@ -54,10 +54,15 @@ impl<'a> ModelGraphBuilder<'a> {
                 }
                 if let Some(resolved_obj) = resolved.value.as_object() {
                     if is_object_like(resolved_obj) {
+                        let requires_object = explicitly_object_type(resolved_obj);
                         self.ref_map
                             .insert(resolved.canonical.clone(), root_name.to_string());
-                        let root_model =
-                            self.parse_object_model(resolved.value, &resolved.path, root_name)?;
+                        let root_model = self.parse_object_model(
+                            resolved.value,
+                            &resolved.path,
+                            root_name,
+                            requires_object,
+                        )?;
                         self.models.insert(root_name.to_string(), root_model);
                         return Ok(SchemaType::Object(root_name.to_string()));
                     }
@@ -66,7 +71,9 @@ impl<'a> ModelGraphBuilder<'a> {
             }
 
             if is_object_like(obj) {
-                let root_model = self.parse_object_model(schema, path, root_name)?;
+                let requires_object = explicitly_object_type(obj);
+                let root_model =
+                    self.parse_object_model(schema, path, root_name, requires_object)?;
                 self.models.insert(root_name.to_string(), root_model);
                 return Ok(SchemaType::Object(root_name.to_string()));
             }
@@ -80,6 +87,7 @@ impl<'a> ModelGraphBuilder<'a> {
         schema: &Value,
         path: &SchemaPath,
         name: &str,
+        requires_object: bool,
     ) -> Result<ModelSpec, CodegenError> {
         let obj = schema
             .as_object()
@@ -87,13 +95,6 @@ impl<'a> ModelGraphBuilder<'a> {
                 location: path.clone(),
                 message: "object schema must be a JSON object".to_string(),
             })?;
-
-        if has_unsupported_object_keywords(obj) {
-            return Err(CodegenError::UnsupportedFeature {
-                location: path.clone(),
-                feature: "patternProperties/propertyNames/dependentSchemas/dependentRequired/unevaluatedProperties".to_string(),
-            });
-        }
 
         let description = obj
             .get("description")
@@ -158,12 +159,34 @@ impl<'a> ModelGraphBuilder<'a> {
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
 
+        let pattern_properties = obj
+            .get("patternProperties")
+            .and_then(|v| v.as_object())
+            .map(|map| map.keys().cloned().collect())
+            .unwrap_or_default();
+
+        let property_name_max = obj
+            .get("propertyNames")
+            .and_then(|v| v.as_object())
+            .and_then(|o| o.get("maxLength"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+
+        let has_all_of = obj
+            .get("__allOf_props__")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
         Ok(ModelSpec {
             name: name.to_string(),
             fields,
             additional_properties,
             min_properties,
             max_properties,
+            pattern_properties,
+            property_name_max,
+            has_all_of,
+            requires_object,
             description,
             title,
         })
@@ -265,7 +288,7 @@ impl<'a> ModelGraphBuilder<'a> {
                 }
 
                 if is_object_like(obj) {
-                    return self.parse_object_schema(obj, path);
+                    return self.parse_object_schema(obj, path, false);
                 }
                 if obj.contains_key("items") || obj.contains_key("minItems") {
                     return self.parse_array_schema(obj, path);
@@ -316,7 +339,12 @@ impl<'a> ModelGraphBuilder<'a> {
         if is_object_schema(resolved.value) {
             self.ref_map
                 .insert(resolved.canonical.clone(), name.clone());
-            let model = self.parse_object_model(resolved.value, &resolved.path, &name)?;
+            let requires_object = resolved
+                .value
+                .as_object()
+                .is_some_and(explicitly_object_type);
+            let model =
+                self.parse_object_model(resolved.value, &resolved.path, &name, requires_object)?;
             self.models.insert(name.clone(), model);
             Ok(SchemaType::Object(name))
         } else {
@@ -411,6 +439,7 @@ impl<'a> ModelGraphBuilder<'a> {
             }
             merge_object_schema(&mut merged, obj, &resolved.path)?;
         }
+        merged.insert("__allOf_props__".to_string(), Value::Bool(true));
         let merged_value = Value::Object(merged);
         self.parse_schema_type(&merged_value, path)
     }
@@ -460,7 +489,7 @@ impl<'a> ModelGraphBuilder<'a> {
             "boolean" => SchemaType::Bool,
             "null" => SchemaType::Null,
             "array" => self.parse_array_schema(obj, path)?,
-            "object" => self.parse_object_schema(obj, path)?,
+            "object" => self.parse_object_schema(obj, path, true)?,
             other => {
                 return Err(CodegenError::UnsupportedFeature {
                     location: path.clone(),
@@ -483,6 +512,7 @@ impl<'a> ModelGraphBuilder<'a> {
         &mut self,
         obj: &Map<String, Value>,
         path: &SchemaPath,
+        requires_object: bool,
     ) -> Result<SchemaType, CodegenError> {
         let has_properties = obj.get("properties").is_some() || obj.get("required").is_some();
         let additional = obj.get("additionalProperties");
@@ -490,7 +520,12 @@ impl<'a> ModelGraphBuilder<'a> {
         if !has_properties {
             if let Some(Value::Bool(false)) = additional {
                 let name = self.names.allocate(&sanitize_type_name("EmptyObject"))?;
-                let model = self.parse_object_model(&Value::Object(obj.clone()), path, &name)?;
+                let model = self.parse_object_model(
+                    &Value::Object(obj.clone()),
+                    path,
+                    &name,
+                    requires_object,
+                )?;
                 self.models.insert(name.clone(), model);
                 return Ok(SchemaType::Object(name));
             }
@@ -532,7 +567,8 @@ impl<'a> ModelGraphBuilder<'a> {
         } else {
             self.names.allocate(&name_hint)?
         };
-        let model = self.parse_object_model(&Value::Object(obj.clone()), path, &name)?;
+        let model =
+            self.parse_object_model(&Value::Object(obj.clone()), path, &name, requires_object)?;
         self.models.insert(name.clone(), model);
         Ok(SchemaType::Object(name))
     }
@@ -864,16 +900,18 @@ fn parse_string_format(value: &str) -> Option<StringFormat> {
     }
 }
 
-fn has_unsupported_object_keywords(obj: &Map<String, Value>) -> bool {
-    obj.contains_key("patternProperties")
-        || obj.contains_key("propertyNames")
-        || obj.contains_key("dependentSchemas")
-        || obj.contains_key("dependentRequired")
-        || obj.contains_key("unevaluatedProperties")
+fn explicitly_object_type(obj: &Map<String, Value>) -> bool {
+    if obj.get("type").and_then(|v| v.as_str()) == Some("object") {
+        return true;
+    }
+    if let Some(types) = obj.get("type").and_then(|v| v.as_array()) {
+        return types.iter().any(|v| v.as_str() == Some("object"));
+    }
+    false
 }
 
 fn is_object_like(obj: &Map<String, Value>) -> bool {
-    obj.get("type").and_then(|v| v.as_str()) == Some("object")
+    explicitly_object_type(obj)
         || obj.contains_key("properties")
         || obj.contains_key("required")
         || obj.contains_key("additionalProperties")

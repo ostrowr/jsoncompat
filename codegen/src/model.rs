@@ -15,6 +15,10 @@ pub struct ModelSpec {
     pub additional_properties: AdditionalProperties,
     pub min_properties: Option<usize>,
     pub max_properties: Option<usize>,
+    pub pattern_properties: Vec<String>,
+    pub property_name_max: Option<usize>,
+    pub has_all_of: bool,
+    pub requires_object: bool,
     pub description: Option<String>,
     pub title: Option<String>,
 }

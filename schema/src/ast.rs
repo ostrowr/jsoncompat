@@ -410,14 +410,18 @@ impl SchemaNode {
                 required,
                 additional,
                 property_names,
+                pattern_properties,
                 min_properties,
                 max_properties,
                 dependent_required,
                 enumeration,
+                type_is_explicit,
                 annotations,
             } => {
                 let mut obj = serde_json::Map::new();
-                obj.insert("type".into(), Value::String("object".into()));
+                if *type_is_explicit {
+                    obj.insert("type".into(), Value::String("object".into()));
+                }
 
                 if !properties.is_empty() {
                     let mut props_map = serde_json::Map::new();
@@ -444,6 +448,14 @@ impl SchemaNode {
                     _ => {
                         obj.insert("additionalProperties".into(), additional.to_json());
                     }
+                }
+
+                if !pattern_properties.is_empty() {
+                    let mut pp_map = serde_json::Map::new();
+                    for (k, v) in pattern_properties {
+                        pp_map.insert(k.clone(), v.to_json());
+                    }
+                    obj.insert("patternProperties".into(), Value::Object(pp_map));
                 }
 
                 if let Some(mp) = min_properties {
@@ -712,10 +724,12 @@ impl PartialEq for SchemaNode {
                         required: areq,
                         additional: aaddl,
                         property_names: apn,
+                        pattern_properties: appat,
                         min_properties: amin,
                         max_properties: amax,
                         dependent_required: adep,
                         enumeration: aenum,
+                        type_is_explicit: aexplicit,
                         annotations: ann_a,
                     },
                     Object {
@@ -723,10 +737,12 @@ impl PartialEq for SchemaNode {
                         required: breq,
                         additional: baddl,
                         property_names: bpn,
+                        pattern_properties: bppat,
                         min_properties: bmin,
                         max_properties: bmax,
                         dependent_required: bdep,
                         enumeration: benum,
+                        type_is_explicit: bexplicit,
                         annotations: ann_b,
                     },
                 ) => {
@@ -737,9 +753,19 @@ impl PartialEq for SchemaNode {
                         || aenum != benum
                         || ann_a != ann_b
                         || apn.is_some() != bpn.is_some()
+                        || appat.len() != bppat.len()
+                        || aexplicit != bexplicit
                         || aprops.len() != bprops.len()
                     {
                         return false;
+                    }
+                    for (k, aval) in appat {
+                        let Some(bval) = bppat.get(k) else {
+                            return false;
+                        };
+                        if !eq_inner(aval, bval, seen) {
+                            return false;
+                        }
                     }
                     for (k, aval) in aprops {
                         let Some(bval) = bprops.get(k) else {
@@ -942,10 +968,12 @@ pub enum SchemaNodeKind {
         required: HashSet<String>,
         additional: SchemaNode,
         property_names: Option<SchemaNode>,
+        pattern_properties: HashMap<String, SchemaNode>,
         min_properties: Option<usize>,
         max_properties: Option<usize>,
         dependent_required: HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
+        type_is_explicit: bool,
         annotations: SchemaAnnotations,
     },
     Array {
@@ -1367,6 +1395,13 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         Some(other) => Some(build_schema_ast(other)?),
     };
 
+    let mut pattern_properties = HashMap::new();
+    if let Some(Value::Object(patterns)) = obj.get("patternProperties") {
+        for (pat, val) in patterns {
+            pattern_properties.insert(pat.clone(), build_schema_ast(val)?);
+        }
+    }
+
     let min_properties = obj
         .get("minProperties")
         .and_then(|v| v.as_u64())
@@ -1395,6 +1430,11 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         })
         .unwrap_or_default();
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let type_is_explicit = match obj.get("type") {
+        Some(Value::String(s)) if s == "object" => true,
+        Some(Value::Array(types)) => types.iter().any(|v| v.as_str() == Some("object")),
+        _ => false,
+    };
     let annotations = parse_annotations(obj);
 
     Ok(SchemaNode::new(SchemaNodeKind::Object {
@@ -1402,10 +1442,12 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         required,
         additional,
         property_names,
+        pattern_properties,
         min_properties,
         max_properties,
         dependent_required,
         enumeration,
+        type_is_explicit,
         annotations,
     }))
 }
@@ -1727,6 +1769,7 @@ fn resolve_refs_internal(
         properties,
         additional,
         property_names,
+        pattern_properties,
         ..
     } = &mut *node.borrow_mut()
     {
@@ -1736,6 +1779,9 @@ fn resolve_refs_internal(
         resolve_refs_internal(additional, root_json, stack, cache)?;
         if let Some(pn) = property_names {
             resolve_refs_internal(pn, root_json, stack, cache)?;
+        }
+        for child in pattern_properties.values_mut() {
+            resolve_refs_internal(child, root_json, stack, cache)?;
         }
         return Ok(());
     }

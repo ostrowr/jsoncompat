@@ -37,11 +37,11 @@ Tests:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
 from pydantic import ConfigDict, Field
 
 class Ref19Deserializer(DeserializerRootModel):
-    root: Any
+    root: Annotated[float, Field(le=10.0)]
 
