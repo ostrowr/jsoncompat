@@ -1,7 +1,7 @@
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any
 
-from json_schema_codegen_base import DeserializerBase, SerializerBase
-from pydantic import ConfigDict, Field, model_validator
+from json_schema_codegen_base import DeserializerBase, Impossible, SerializerBase
+from pydantic import ConfigDict, Field
 from pydantic_core import core_schema
 
 _VALIDATE_FORMATS = False
@@ -24,6 +24,6 @@ class Properties2Deserializer(DeserializerBase):
         non_object_schema = core_schema.no_info_plain_validator_function(lambda v: v)
         return core_schema.tagged_union_schema({True: model_schema, False: non_object_schema}, discriminator=lambda v: isinstance(v, dict))
     model_config = ConfigDict(extra="allow")
-    bar: Annotated[Any | None, Field(default=None)]
+    bar: Annotated[Impossible | None, Field(default=None)]
     foo: Annotated[Any | None, Field(default=None)]
 

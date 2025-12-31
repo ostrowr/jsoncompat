@@ -3,6 +3,18 @@ from typing import Any, ClassVar
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, RootModel, model_validator
 
+class Impossible:
+    @classmethod
+    def __get_pydantic_core_schema__(cls, _source, _handler):
+        from pydantic_core import core_schema
+        def _raise(value):
+            raise ValueError("value is never valid")
+        return core_schema.no_info_plain_validator_function(_raise)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        return handler(core_schema)
+
 def _json_equal(candidate, expected):
     if isinstance(expected, bool):
         return isinstance(candidate, bool) and candidate is expected

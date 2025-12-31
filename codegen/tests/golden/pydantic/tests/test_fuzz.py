@@ -86,18 +86,6 @@ def find_serializer_class(glb: dict[str, object]):
         for obj in glb.values()
         if isinstance(obj, type) and obj.__name__.endswith("Serializer")
     ]
-    target_schema = glb.get("_JSON_SCHEMA")
-    if target_schema is not None:
-        schema_candidates = [
-            c for c in candidates if getattr(c, "__json_schema__", None) == target_schema
-        ]
-        if schema_candidates:
-            root_schema_candidates = [
-                c for c in schema_candidates if issubclass(c, SerializerRootModel)
-            ]
-            if root_schema_candidates:
-                return root_schema_candidates[-1]
-            return schema_candidates[-1]
     root_candidates = [c for c in candidates if issubclass(c, SerializerRootModel)]
     if root_candidates:
         return root_candidates[-1]

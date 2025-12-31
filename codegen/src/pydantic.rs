@@ -98,25 +98,26 @@ impl PydanticGenerator {
         let mut out = CodeWriter::new();
 
         ctx.imports.add("pydantic", "ConfigDict");
-        ctx.imports.add("pydantic", "Field");
-        ctx.imports.add("pydantic", "model_validator");
-        ctx.imports.add("typing", "ClassVar");
         ctx.validate_formats = should_validate_formats(schema_json);
 
         if let Some(base_module) = &self.options.base_module {
             ctx.imports.add(base_module, "SerializerBase");
             ctx.imports.add(base_module, "DeserializerBase");
+            ctx.imports.add(base_module, "Impossible");
             if needs_root_wrapper {
                 ctx.imports.add(base_module, "SerializerRootModel");
                 ctx.imports.add(base_module, "DeserializerRootModel");
             }
         } else {
             ctx.imports.add("pydantic", "BaseModel");
+            ctx.imports.add("pydantic", "model_validator");
             ctx.imports.add("jsonschema_rs", "validator_for");
+            ctx.imports.add("typing", "ClassVar");
             if needs_root_wrapper {
                 ctx.imports.add("pydantic", "RootModel");
                 ctx.imports.add("typing", "Any");
             }
+            emit_impossible_type(&mut out);
             emit_literal_helpers(&mut out);
             match role {
                 ModelRole::Serializer => emit_serializer_base(&mut out),
@@ -185,6 +186,7 @@ pub fn base_module() -> String {
     imports.add("typing", "ClassVar");
 
     let mut out = CodeWriter::new();
+    emit_impossible_type(&mut out);
     emit_literal_helpers(&mut out);
     emit_serializer_base(&mut out);
     emit_deserializer_base(&mut out);
@@ -243,14 +245,11 @@ impl PyContext {
                     validators: Vec::new(),
                 })
             }
-            SchemaType::Never => {
-                self.imports.add("typing", "Any");
-                Ok(TypeExpr {
-                    expr: "Any".to_string(),
-                    field_args: Vec::new(),
-                    validators: Vec::new(),
-                })
-            }
+            SchemaType::Never => Ok(TypeExpr {
+                expr: "Impossible".to_string(),
+                field_args: Vec::new(),
+                validators: Vec::new(),
+            }),
             SchemaType::Bool => Ok(TypeExpr {
                 expr: "bool".to_string(),
                 field_args: Vec::new(),
@@ -688,6 +687,29 @@ fn emit_literal_helpers(out: &mut CodeWriter) {
     out.push_line("return value");
     out.dedent();
     out.push_line("raise ValueError(\"value does not match literal constraint\")");
+    out.dedent();
+    out.push_empty();
+}
+
+fn emit_impossible_type(out: &mut CodeWriter) {
+    out.push_line("class Impossible:");
+    out.indent();
+    out.push_line("@classmethod");
+    out.push_line("def __get_pydantic_core_schema__(cls, _source, _handler):");
+    out.indent();
+    out.push_line("from pydantic_core import core_schema");
+    out.push_line("def _raise(value):");
+    out.indent();
+    out.push_line("raise ValueError(\"value is never valid\")");
+    out.dedent();
+    out.push_line("return core_schema.no_info_plain_validator_function(_raise)");
+    out.dedent();
+    out.push_empty();
+    out.push_line("@classmethod");
+    out.push_line("def __get_pydantic_json_schema__(cls, core_schema, handler):");
+    out.indent();
+    out.push_line("return handler(core_schema)");
+    out.dedent();
     out.dedent();
     out.push_empty();
 }

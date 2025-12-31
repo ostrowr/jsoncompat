@@ -43,10 +43,9 @@ fn should_validate_formats(schema: &Value) -> bool {
 
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let regen = std::env::var_os("REGEN_CODEGEN_GOLDENS").is_some();
-    let base_code = pydantic::base_module();
     let fixtures_root = PathBuf::from(FIXTURES_ROOT);
     let golden_root = PathBuf::from(GOLDEN_ROOT);
-    ensure_initialized(&golden_root, base_code, regen);
+    ensure_initialized(&golden_root, regen)?;
 
     let whitelist = load_whitelist(&golden_root)?;
     let rel_path = file.strip_prefix(&fixtures_root).unwrap_or(file);
@@ -152,15 +151,15 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn ensure_initialized(golden_root: &Path, base_code: String, regen: bool) {
+fn ensure_initialized(golden_root: &Path, regen: bool) -> Result<(), Box<dyn std::error::Error>> {
     static INIT: Once = Once::new();
 
     let golden_root = golden_root.to_path_buf();
+    let mut init_result: Result<(), Box<dyn std::error::Error>> = Ok(());
     INIT.call_once(|| {
-        if let Err(err) = initialize_goldens(&golden_root, BASE_MODULE, &base_code, regen) {
-            panic!("Failed to initialize codegen goldens: {err}");
-        }
+        init_result = initialize_goldens(&golden_root, BASE_MODULE, regen);
     });
+    init_result
 }
 
 fn stub_model(
@@ -180,17 +179,14 @@ fn stub_model(
     let pretty_schema =
         serde_json::to_string_pretty(schema_json).unwrap_or_else(|_| schema_str.clone());
     out.push_str("from typing import ClassVar\n\n");
-    if let Some(base) = options.base_module.as_deref() {
-        out.push_str(&format!(
-            "from {base} import SerializerBase, DeserializerBase\n"
-        ));
-    } else {
-        out.push_str("from jsonschema_rs import validator_for\n");
-        out.push_str("from pydantic import BaseModel, ConfigDict, model_validator\n\n");
-    }
-    if options.base_module.is_some() {
-        out.push_str("from pydantic import ConfigDict\n\n");
-    }
+    let base = options
+        .base_module
+        .as_deref()
+        .expect("base module must be configured");
+    out.push_str(&format!(
+        "from {base} import SerializerBase, DeserializerBase, Impossible\n"
+    ));
+    out.push_str("from pydantic import ConfigDict\n\n");
     let rendered_schema = format!("r\"\"\"\n{pretty_schema}\n\"\"\"");
     let validate_formats = should_validate_formats(schema_json);
     out.push_str(&format!(
@@ -217,7 +213,6 @@ fn stub_model(
 fn initialize_goldens(
     golden_root: &Path,
     base_module: &str,
-    base_code: &str,
     regen: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if regen && golden_root.exists() {
@@ -232,6 +227,7 @@ fn initialize_goldens(
                 || name_str == ".venv"
                 || name_str == ".uv_cache"
                 || name_str == ".pytest_cache"
+                || name_str == format!("{base_module}.py")
             {
                 continue;
             }
@@ -244,23 +240,12 @@ fn initialize_goldens(
     }
 
     let base_path = golden_root.join(format!("{base_module}.py"));
-    if regen {
-        if let Some(parent) = base_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&base_path, base_code)?;
-    } else {
-        let expected_base = fs::read_to_string(&base_path).map_err(|_| {
-            format!(
-                "Missing base module golden {}; set REGEN_CODEGEN_GOLDENS=1 to refresh",
-                base_path.display()
-            )
-        })?;
-        if base_code != expected_base {
-            return Err(
-                "Base module golden mismatch; set REGEN_CODEGEN_GOLDENS=1 to refresh".into(),
-            );
-        }
+    if !base_path.exists() {
+        return Err(format!(
+            "Missing base module {}; please add it to the goldens",
+            base_path.display()
+        )
+        .into());
     }
 
     Ok(())

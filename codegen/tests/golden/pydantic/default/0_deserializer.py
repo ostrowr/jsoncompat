@@ -1,6 +1,6 @@
 from typing import ClassVar
 
-from json_schema_codegen_base import SerializerBase, DeserializerBase
+from json_schema_codegen_base import SerializerBase, DeserializerBase, Impossible
 from pydantic import ConfigDict
 
 _VALIDATE_FORMATS = False

@@ -2,6 +2,9 @@
   "default": {
     "0": "default value at #/properties/foo does not match the schema: default value [] does not match Integer(NumberConstraints { minimum: None, maximum: None, exclusive_minimum: false, exclusive_maximum: false, multiple_of: None, type_enforced: true })"
   },
+  "items": {
+    "3": "nested items=false not enforced"
+  },
   "vocabulary": {
     "0": "unsupported schema feature at #/properties/badProperty: false schema"
   }
