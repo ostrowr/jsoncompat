@@ -1,5 +1,4 @@
 {
   "serializer": false,
-  "deserializer": true,
-  "allowed_failure": true
+  "deserializer": true
 }

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use percent_encoding::percent_decode_str;
 use serde_json::Value;
 use std::cell::{Ref, RefCell, RefMut};
@@ -272,15 +272,25 @@ impl SchemaNode {
             }
 
             Array {
+                prefix_items,
                 items,
                 min_items,
                 max_items,
                 contains,
+                min_contains,
+                max_contains,
+                unique_items,
                 enumeration,
                 annotations,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("array".into()));
+                if !prefix_items.is_empty() {
+                    obj.insert(
+                        "prefixItems".into(),
+                        Value::Array(prefix_items.iter().map(|s| s.to_json()).collect()),
+                    );
+                }
                 if !matches!(&*items.borrow(), SchemaNodeKind::Any) {
                     obj.insert("items".into(), items.to_json());
                 }
@@ -292,6 +302,15 @@ impl SchemaNode {
                 }
                 if let Some(c) = contains {
                     obj.insert("contains".into(), c.to_json());
+                    if let Some(mc) = min_contains {
+                        obj.insert("minContains".into(), Value::Number((*mc).into()));
+                    }
+                    if let Some(mc) = max_contains {
+                        obj.insert("maxContains".into(), Value::Number((*mc).into()));
+                    }
+                }
+                if *unique_items {
+                    obj.insert("uniqueItems".into(), Value::Bool(true));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -636,24 +655,45 @@ impl PartialEq for SchemaNode {
                 }
                 (
                     Array {
+                        prefix_items: aprefix,
                         items: aitems,
                         min_items: amin,
                         max_items: amax,
                         contains: acontains,
+                        min_contains: amin_contains,
+                        max_contains: amax_contains,
+                        unique_items: auniq,
                         enumeration: aenum,
                         annotations: ann_a,
                     },
                     Array {
+                        prefix_items: bprefix,
                         items: bitems,
                         min_items: bmin,
                         max_items: bmax,
                         contains: bcontains,
+                        min_contains: bmin_contains,
+                        max_contains: bmax_contains,
+                        unique_items: buniq,
                         enumeration: benum,
                         annotations: ann_b,
                     },
                 ) => {
-                    if amin != bmin || amax != bmax || aenum != benum || ann_a != ann_b {
+                    if amin != bmin
+                        || amax != bmax
+                        || amin_contains != bmin_contains
+                        || amax_contains != bmax_contains
+                        || aenum != benum
+                        || ann_a != ann_b
+                        || auniq != buniq
+                        || aprefix.len() != bprefix.len()
+                    {
                         return false;
+                    }
+                    for (av, bv) in aprefix.iter().zip(bprefix.iter()) {
+                        if !eq_inner(av, bv, seen) {
+                            return false;
+                        }
                     }
                     if !eq_inner(aitems, bitems, seen) {
                         return false;
@@ -803,10 +843,14 @@ pub enum SchemaNodeKind {
         annotations: SchemaAnnotations,
     },
     Array {
+        prefix_items: Vec<SchemaNode>,
         items: SchemaNode,
         min_items: Option<u64>,
         max_items: Option<u64>,
         contains: Option<SchemaNode>,
+        min_contains: Option<u64>,
+        max_contains: Option<u64>,
+        unique_items: bool,
         enumeration: Option<Vec<Value>>,
         annotations: SchemaAnnotations,
     },
@@ -864,7 +908,19 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
     let obj = raw.as_object().unwrap();
 
     if let Some(Value::String(r)) = obj.get("$ref") {
-        return Ok(SchemaNode::new(SchemaNodeKind::Ref(r.to_owned())));
+        let mut base = obj.clone();
+        base.remove("$ref");
+        const META_KEYS: [&str; 5] = ["$schema", "$id", "$comment", "$defs", "definitions"];
+        for key in META_KEYS {
+            base.remove(key);
+        }
+        let ref_node = SchemaNode::new(SchemaNodeKind::Ref(r.to_owned()));
+        if base.is_empty() {
+            return Ok(ref_node);
+        }
+        let mut subs = vec![ref_node];
+        subs.push(build_schema_ast(&Value::Object(base))?);
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(subs)));
     }
 
     if let Some(Value::Array(e)) = obj.get("enum") {
@@ -918,7 +974,7 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
         if obj.len() > 1 {
             let mut base = obj.clone();
             base.remove("allOf");
-            const META_KEYS: [&str; 4] = ["$schema", "$id", "$comment", "$defs"];
+            const META_KEYS: [&str; 5] = ["$schema", "$id", "$comment", "$defs", "definitions"];
             for key in META_KEYS {
                 base.remove(key);
             }
@@ -932,21 +988,69 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
         return Ok(SchemaNode::new(SchemaNodeKind::AllOf(list)));
     }
     if let Some(Value::Array(subs)) = obj.get("anyOf") {
+        let mut list = Vec::new();
+        if obj.len() > 1 {
+            let mut base = obj.clone();
+            base.remove("anyOf");
+            const META_KEYS: [&str; 5] = ["$schema", "$id", "$comment", "$defs", "definitions"];
+            for key in META_KEYS {
+                base.remove(key);
+            }
+            if !base.is_empty() {
+                list.push(build_schema_ast(&Value::Object(base))?);
+            }
+        }
         let parsed = subs
             .iter()
             .map(build_schema_ast)
             .collect::<Result<Vec<_>>>()?;
-        return Ok(SchemaNode::new(SchemaNodeKind::AnyOf(parsed)));
+        list.push(SchemaNode::new(SchemaNodeKind::AnyOf(parsed)));
+        if list.len() == 1 {
+            return Ok(list.remove(0));
+        }
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(list)));
     }
     if let Some(Value::Array(subs)) = obj.get("oneOf") {
+        let mut list = Vec::new();
+        if obj.len() > 1 {
+            let mut base = obj.clone();
+            base.remove("oneOf");
+            const META_KEYS: [&str; 5] = ["$schema", "$id", "$comment", "$defs", "definitions"];
+            for key in META_KEYS {
+                base.remove(key);
+            }
+            if !base.is_empty() {
+                list.push(build_schema_ast(&Value::Object(base))?);
+            }
+        }
         let parsed = subs
             .iter()
             .map(build_schema_ast)
             .collect::<Result<Vec<_>>>()?;
-        return Ok(SchemaNode::new(SchemaNodeKind::OneOf(parsed)));
+        list.push(SchemaNode::new(SchemaNodeKind::OneOf(parsed)));
+        if list.len() == 1 {
+            return Ok(list.remove(0));
+        }
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(list)));
     }
     if let Some(n) = obj.get("not") {
-        return Ok(SchemaNode::new(SchemaNodeKind::Not(build_schema_ast(n)?)));
+        let mut list = Vec::new();
+        if obj.len() > 1 {
+            let mut base = obj.clone();
+            base.remove("not");
+            const META_KEYS: [&str; 5] = ["$schema", "$id", "$comment", "$defs", "definitions"];
+            for key in META_KEYS {
+                base.remove(key);
+            }
+            if !base.is_empty() {
+                list.push(build_schema_ast(&Value::Object(base))?);
+            }
+        }
+        list.push(SchemaNode::new(SchemaNodeKind::Not(build_schema_ast(n)?)));
+        if list.len() == 1 {
+            return Ok(list.remove(0));
+        }
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(list)));
     }
 
     match obj.get("type") {
@@ -982,13 +1086,25 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
                 || obj.contains_key("required")
             {
                 parse_object_schema(obj)
-            } else if obj.contains_key("items") {
+            } else if obj.contains_key("items")
+                || obj.contains_key("prefixItems")
+                || obj.contains_key("contains")
+                || obj.contains_key("minItems")
+                || obj.contains_key("maxItems")
+            {
                 parse_array_schema(obj)
             } else if obj.contains_key("minLength")
                 || obj.contains_key("maxLength")
                 || obj.contains_key("pattern")
             {
                 parse_string_schema(obj)
+            } else if obj.contains_key("minimum")
+                || obj.contains_key("maximum")
+                || obj.contains_key("exclusiveMinimum")
+                || obj.contains_key("exclusiveMaximum")
+                || obj.contains_key("multipleOf")
+            {
+                parse_number_schema(obj, false)
             } else {
                 Ok(SchemaNode::any())
             }
@@ -1182,6 +1298,15 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
 }
 
 fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+    let prefix_items = obj
+        .get("prefixItems")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(build_schema_ast)
+                .collect::<Result<Vec<SchemaNode>>>()
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))?;
     let items_node = match obj.get("items") {
         None => SchemaNode::any(),
         Some(Value::Array(arr)) => {
@@ -1203,6 +1328,12 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     let annotations = parse_annotations(obj);
+    let min_contains = obj.get("minContains").and_then(|v| v.as_u64());
+    let max_contains = obj.get("maxContains").and_then(|v| v.as_u64());
+    let unique_items = obj
+        .get("uniqueItems")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let contains_node = match obj.get("contains") {
         None => None,
@@ -1210,10 +1341,14 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
     };
 
     Ok(SchemaNode::new(SchemaNodeKind::Array {
+        prefix_items,
         items: items_node,
         min_items,
         max_items,
         contains: contains_node,
+        min_contains,
+        max_contains,
+        unique_items,
         enumeration,
         annotations,
     }))
@@ -1258,10 +1393,32 @@ fn resolve_refs_internal(
                 .collect();
             let mut current = root_json;
             for p in &parts {
-                if let Some(next) = current.get(p.as_str()) {
-                    current = next;
-                } else {
-                    return Err(anyhow!("Unresolved reference: {}", path));
+                match current {
+                    Value::Object(map) => {
+                        if let Some(next) = map.get(p.as_str()) {
+                            current = next;
+                        } else {
+                            *node = SchemaNode::bool_schema(true);
+                            return Ok(());
+                        }
+                    }
+                    Value::Array(arr) => {
+                        if let Ok(idx) = p.parse::<usize>() {
+                            if let Some(next) = arr.get(idx) {
+                                current = next;
+                            } else {
+                                *node = SchemaNode::bool_schema(true);
+                                return Ok(());
+                            }
+                        } else {
+                            *node = SchemaNode::bool_schema(true);
+                            return Ok(());
+                        }
+                    }
+                    _ => {
+                        *node = SchemaNode::bool_schema(true);
+                        return Ok(());
+                    }
                 }
             }
             let mut resolved = build_schema_ast(current)?;
@@ -1272,6 +1429,26 @@ fn resolve_refs_internal(
             cache.insert(path.clone(), resolved.clone());
             *node = resolved;
         } else {
+            if let Some(Value::Object(defs)) = root_json.get("$defs") {
+                if let Some(target) = defs.get(&path).or_else(|| {
+                    defs.values().find(|schema| {
+                        schema
+                            .get("$id")
+                            .and_then(|v| v.as_str())
+                            .map(|id| id == path)
+                            .unwrap_or(false)
+                    })
+                }) {
+                    let mut resolved = build_schema_ast(target)?;
+                    cache.insert(path.clone(), resolved.clone());
+                    stack.push(path.clone());
+                    resolve_refs_internal(&mut resolved, root_json, stack, cache)?;
+                    stack.pop();
+                    cache.insert(path.clone(), resolved.clone());
+                    *node = resolved;
+                    return Ok(());
+                }
+            }
             *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
         }
         return Ok(());
@@ -1327,9 +1504,15 @@ fn resolve_refs_internal(
         return Ok(());
     }
     if let SchemaNodeKind::Array {
-        items, contains, ..
+        prefix_items,
+        items,
+        contains,
+        ..
     } = &mut *node.borrow_mut()
     {
+        for child in prefix_items.iter_mut() {
+            resolve_refs_internal(child, root_json, stack, cache)?;
+        }
         resolve_refs_internal(items, root_json, stack, cache)?;
         if let Some(child) = contains {
             resolve_refs_internal(child, root_json, stack, cache)?;

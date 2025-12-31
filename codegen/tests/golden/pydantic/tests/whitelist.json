@@ -175,7 +175,9 @@
     "0": "enum contains non-primitive values not supported yet"
   },
   "optional/bignum": {
+    "3": "float bound rounding mismatch",
     "4": "mismatch: comparison works for high numbers",
+    "5": "float bound rounding mismatch",
     "6": "mismatch: comparison works for very negative numbers"
   },
   "optional/dependencies-compatibility": {

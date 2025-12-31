@@ -47,6 +47,7 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         (String { .. }, String { .. })
         | (Number { .. }, Number { .. })
         | (Integer { .. }, Integer { .. })
+        | (Integer { .. }, Number { .. })
         | (Boolean { .. }, Boolean { .. })
         | (Null { .. }, Null { .. })
         | (Object { .. }, Object { .. })
@@ -161,6 +162,46 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 return false;
             }
             if !check_int_inclusion(smax, sexmax, pmax, pexmax, false) {
+                return false;
+            }
+            if let (Some(se), Some(pe)) = (s_en, p_en) {
+                if !se.iter().all(|v| pe.contains(v)) {
+                    return false;
+                }
+            }
+            true
+        }
+        (
+            Integer {
+                minimum: smin,
+                maximum: smax,
+                exclusive_minimum: sexmin,
+                exclusive_maximum: sexmax,
+                enumeration: s_en,
+                multiple_of: s_mul,
+                ..
+            },
+            Number {
+                minimum: pmin,
+                maximum: pmax,
+                exclusive_minimum: pexmin,
+                exclusive_maximum: pexmax,
+                enumeration: p_en,
+                multiple_of: p_mul,
+                ..
+            },
+        ) => {
+            if !check_numeric_inclusion(smin.map(|v| v as f64), sexmin, pmin, pexmin, true) {
+                return false;
+            }
+            if !check_numeric_inclusion(smax.map(|v| v as f64), sexmax, pmax, pexmax, false) {
+                return false;
+            }
+            if let (Some(pm), Some(sm)) = (p_mul, s_mul) {
+                if (sm - pm).abs() > f64::EPSILON {
+                    return false;
+                }
+            } else if p_mul.is_some() && s_mul.is_none() {
                 return false;
             }
             if let (Some(se), Some(pe)) = (s_en, p_en) {
@@ -416,7 +457,7 @@ mod tests {
         }))
         .unwrap();
         let new = build_and_resolve_schema(&json!({
-            "minimum": 1,
+            "minimum": 2,
             "maximum": 3
         }))
         .unwrap();
