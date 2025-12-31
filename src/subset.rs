@@ -374,14 +374,7 @@ fn integer_multiple_subset(parent: Option<f64>, source: Option<f64>) -> bool {
         let ratio = sm / pm;
         return (ratio.fract()).abs() < f64::EPSILON;
     }
-    if pm <= 0.0 {
-        return false;
-    }
-    if pm > 1.0 {
-        return false;
-    }
-    let recip = 1.0 / pm;
-    (recip.fract()).abs() < f64::EPSILON
+    (pm.fract()).abs() < f64::EPSILON
 }
 
 fn check_numeric_inclusion(
@@ -490,5 +483,34 @@ mod tests {
         .unwrap();
 
         assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn integer_without_multipleof_not_subset_of_fractional_multipleof_number() {
+        let parent = build_and_resolve_schema(&json!({
+            "type": "number",
+            "multipleOf": 0.5
+        }))
+        .unwrap();
+        let child = build_and_resolve_schema(&json!({
+            "type": "integer"
+        }))
+        .unwrap();
+        assert!(!is_subschema_of(&child, &parent));
+    }
+
+    #[test]
+    fn integer_with_stricter_multipleof_is_subset_of_fractional_number_multipleof() {
+        let parent = build_and_resolve_schema(&json!({
+            "type": "number",
+            "multipleOf": 0.5
+        }))
+        .unwrap();
+        let child = build_and_resolve_schema(&json!({
+            "type": "integer",
+            "multipleOf": 2
+        }))
+        .unwrap();
+        assert!(is_subschema_of(&child, &parent));
     }
 }
