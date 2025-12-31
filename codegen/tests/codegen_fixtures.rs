@@ -4,23 +4,128 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Once;
 
-#[test]
-fn fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
+const FIXTURES_ROOT: &str = "../tests/fixtures/fuzz";
+const GOLDEN_ROOT: &str = "tests/golden/pydantic";
+const BASE_MODULE: &str = "json_schema_codegen_base";
+
+datatest_stable::harness!(fixture, FIXTURES_ROOT, ".*\\.json$");
+
+fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let regen = std::env::var_os("REGEN_CODEGEN_GOLDENS").is_some();
-    let base_module = "json_schema_codegen_base";
     let base_code = pydantic::base_module();
+    let fixtures_root = PathBuf::from(FIXTURES_ROOT);
+    let golden_root = PathBuf::from(GOLDEN_ROOT);
+    ensure_initialized(&golden_root, base_code, regen);
 
-    let fixtures_root = PathBuf::from("../tests/fixtures/fuzz");
-    let golden_root = PathBuf::from("tests/golden/pydantic");
     let whitelist = load_whitelist(&golden_root)?;
+    let rel_path = file.strip_prefix(&fixtures_root).unwrap_or(file);
+    let rel_str = rel_path.to_string_lossy().replace('\\', "/");
 
+    let content = fs::read(file)?;
+    let root: Value = serde_json::from_slice(&content)?;
+    let schemas = collect_schemas(&root);
+
+    for (schema_json, idx, tests) in schemas {
+        let golden_rel_path = strip_json_extension(&rel_str);
+        if is_whitelisted(&whitelist, &golden_rel_path, idx) {
+            continue;
+        }
+        if schema_json == Value::Bool(false) {
+            continue;
+        }
+
+        let schema =
+            build_and_resolve_schema(&schema_json).map_err(|e| format!("{rel_str}#{idx}: {e}"))?;
+        let root_name = format!(
+            "{}{}",
+            sanitize_type_name(
+                file.file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .as_ref()
+            ),
+            idx
+        );
+        let options = PydanticOptions::default()
+            .with_root_model_name(root_name.clone())
+            .with_base_module(BASE_MODULE)
+            .with_header_comment(format_header_comment(&schema_json, &tests));
+        let serializer =
+            match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
+                Ok(code) => code,
+                Err(CodegenError::RootNotObject { .. }) => continue,
+                Err(CodegenError::UnsupportedFeature { .. }) => continue,
+                Err(err) => return Err(format!("{rel_str}#{idx} serializer: {err}").into()),
+            };
+        let deserializer = match pydantic::generate_model(&schema, ModelRole::Deserializer, options)
+        {
+            Ok(code) => code,
+            Err(CodegenError::RootNotObject { .. }) => continue,
+            Err(CodegenError::UnsupportedFeature { .. }) => continue,
+            Err(err) => return Err(format!("{rel_str}#{idx} deserializer: {err}").into()),
+        };
+
+        let base_dir = golden_root.join(&golden_rel_path);
+        fs::create_dir_all(&base_dir)?;
+        let serializer_path = base_dir.join(format!("{idx}_serializer.py"));
+        let deserializer_path = base_dir.join(format!("{idx}_deserializer.py"));
+
+        if regen {
+            fs::write(&serializer_path, serializer)?;
+            fs::write(&deserializer_path, deserializer)?;
+            continue;
+        }
+
+        let expected_serializer = fs::read_to_string(&serializer_path).map_err(|_| {
+            format!(
+                "Missing golden file {}; set REGEN_CODEGEN_GOLDENS=1 to refresh",
+                serializer_path.display()
+            )
+        })?;
+        let expected_deserializer = fs::read_to_string(&deserializer_path).map_err(|_| {
+            format!(
+                "Missing golden file {}; set REGEN_CODEGEN_GOLDENS=1 to refresh",
+                deserializer_path.display()
+            )
+        })?;
+
+        assert_eq!(
+            serializer, expected_serializer,
+            "Serializer golden mismatch for {rel_str}#{idx}; set REGEN_CODEGEN_GOLDENS=1 to refresh"
+        );
+        assert_eq!(
+            deserializer, expected_deserializer,
+            "Deserializer golden mismatch for {rel_str}#{idx}; set REGEN_CODEGEN_GOLDENS=1 to refresh"
+        );
+    }
+
+    Ok(())
+}
+
+fn ensure_initialized(golden_root: &Path, base_code: String, regen: bool) {
+    static INIT: Once = Once::new();
+
+    let golden_root = golden_root.to_path_buf();
+    INIT.call_once(|| {
+        if let Err(err) = initialize_goldens(&golden_root, BASE_MODULE, &base_code, regen) {
+            panic!("Failed to initialize codegen goldens: {err}");
+        }
+    });
+}
+
+fn initialize_goldens(
+    golden_root: &Path,
+    base_module: &str,
+    base_code: &str,
+    regen: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     if regen && golden_root.exists() {
-        for entry in fs::read_dir(&golden_root)? {
+        for entry in fs::read_dir(golden_root)? {
             let entry = entry?;
             let path = entry.path();
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
+            let name_str = entry.file_name().to_string_lossy().to_string();
             if name_str == "tests"
                 || name_str == "pyproject.toml"
                 || name_str == "README.md"
@@ -44,7 +149,7 @@ fn fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(parent) = base_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&base_path, &base_code)?;
+        fs::write(&base_path, base_code)?;
     } else {
         let expected_base = fs::read_to_string(&base_path).map_err(|_| {
             format!(
@@ -52,96 +157,9 @@ fn fixtures_pydantic_goldens() -> Result<(), Box<dyn std::error::Error>> {
                 base_path.display()
             )
         })?;
-        assert_eq!(
-            base_code, expected_base,
-            "Base module golden mismatch; set REGEN_CODEGEN_GOLDENS=1 to refresh"
-        );
-    }
-
-    for entry in walkdir::WalkDir::new(&fixtures_root)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_file())
-    {
-        if entry.path().extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        let rel_path = entry
-            .path()
-            .strip_prefix(&fixtures_root)
-            .unwrap()
-            .to_string_lossy()
-            .replace('\\', "/");
-        let content = fs::read(entry.path())?;
-        let root: Value = serde_json::from_slice(&content)?;
-        let schemas = collect_schemas(&root);
-
-        for (schema_json, idx, tests) in schemas {
-            let golden_rel_path = strip_json_extension(&rel_path);
-            if is_whitelisted(&whitelist, &golden_rel_path, idx) {
-                continue;
-            }
-            if schema_json == Value::Bool(false) {
-                continue;
-            }
-
-            let schema = build_and_resolve_schema(&schema_json)
-                .map_err(|e| format!("{rel_path}#{idx}: {e}"))?;
-            let root_name = format!(
-                "{}{}",
-                sanitize_type_name(entry.path().file_stem().unwrap().to_string_lossy().as_ref()),
-                idx
-            );
-            let options = PydanticOptions::default()
-                .with_root_model_name(root_name.clone())
-                .with_base_module(base_module)
-                .with_header_comment(format_header_comment(&schema_json, &tests));
-            let serializer =
-                match pydantic::generate_model(&schema, ModelRole::Serializer, options.clone()) {
-                    Ok(code) => code,
-                    Err(CodegenError::RootNotObject { .. }) => continue,
-                    Err(CodegenError::UnsupportedFeature { .. }) => continue,
-                    Err(err) => return Err(format!("{rel_path}#{idx} serializer: {err}").into()),
-                };
-            let deserializer =
-                match pydantic::generate_model(&schema, ModelRole::Deserializer, options) {
-                    Ok(code) => code,
-                    Err(CodegenError::RootNotObject { .. }) => continue,
-                    Err(CodegenError::UnsupportedFeature { .. }) => continue,
-                    Err(err) => return Err(format!("{rel_path}#{idx} deserializer: {err}").into()),
-                };
-
-            let base_dir = golden_root.join(&golden_rel_path);
-            fs::create_dir_all(&base_dir)?;
-            let serializer_path = base_dir.join(format!("{idx}_serializer.py"));
-            let deserializer_path = base_dir.join(format!("{idx}_deserializer.py"));
-
-            if regen {
-                fs::write(&serializer_path, serializer)?;
-                fs::write(&deserializer_path, deserializer)?;
-                continue;
-            }
-
-            let expected_serializer = fs::read_to_string(&serializer_path).map_err(|_| {
-                format!(
-                    "Missing golden file {}; set REGEN_CODEGEN_GOLDENS=1 to refresh",
-                    serializer_path.display()
-                )
-            })?;
-            let expected_deserializer = fs::read_to_string(&deserializer_path).map_err(|_| {
-                format!(
-                    "Missing golden file {}; set REGEN_CODEGEN_GOLDENS=1 to refresh",
-                    deserializer_path.display()
-                )
-            })?;
-
-            assert_eq!(
-                serializer, expected_serializer,
-                "Serializer golden mismatch for {rel_path}#{idx}; set REGEN_CODEGEN_GOLDENS=1 to refresh"
-            );
-            assert_eq!(
-                deserializer, expected_deserializer,
-                "Deserializer golden mismatch for {rel_path}#{idx}; set REGEN_CODEGEN_GOLDENS=1 to refresh"
+        if base_code != expected_base {
+            return Err(
+                "Base module golden mismatch; set REGEN_CODEGEN_GOLDENS=1 to refresh".into(),
             );
         }
     }
