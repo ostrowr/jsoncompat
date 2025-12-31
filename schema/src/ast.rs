@@ -4,7 +4,10 @@ use serde_json::Value;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::io::{Read, Write};
 use std::rc::Rc;
+use std::str::FromStr;
+use url::Url;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SchemaAnnotations {
@@ -39,6 +42,89 @@ fn annotate_object(obj: &mut serde_json::Map<String, Value>, annotations: &Schem
     }
 }
 
+fn split_url_and_fragment(path: &str) -> Option<(String, Option<String>)> {
+    let mut parts = path.splitn(2, '#');
+    let base = parts.next()?.to_string();
+    if base.is_empty() {
+        return None;
+    }
+    let frag = parts.next().map(|s| s.to_string());
+    Some((base, frag))
+}
+
+fn resolve_fragment<'a>(root: &'a Value, fragment: &str) -> Option<&'a Value> {
+    if fragment.is_empty() {
+        return Some(root);
+    }
+
+    if let Some(ptr) = fragment.strip_prefix('/') {
+        let parts: Vec<String> = ptr
+            .split('/')
+            .map(|token| {
+                let mut decoded = percent_decode_str(token).decode_utf8_lossy().into_owned();
+                decoded = decoded.replace("~1", "/");
+                decoded = decoded.replace("~0", "~");
+                decoded
+            })
+            .collect();
+
+        let mut current = root;
+        for p in &parts {
+            match current {
+                Value::Object(map) => {
+                    if let Some(next) = map.get(p.as_str()) {
+                        current = next;
+                    } else {
+                        return None;
+                    }
+                }
+                Value::Array(arr) => {
+                    if let Ok(idx) = p.parse::<usize>() {
+                        if let Some(next) = arr.get(idx) {
+                            current = next;
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        return Some(current);
+    }
+
+    find_ref_target(root, None, Some(fragment))
+}
+
+fn fetch_remote_http(url: &str) -> Option<Value> {
+    let mut parsed = Url::parse(url).ok()?;
+    if parsed.scheme() != "http" {
+        let _ = parsed.set_scheme("http");
+    }
+    let host = parsed.host_str()?;
+    let port = parsed.port_or_known_default()?;
+    let path = parsed[url::Position::BeforePath..url::Position::AfterPath].to_string();
+
+    let mut stream = std::net::TcpStream::connect((host, port)).ok()?;
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        path, host
+    );
+    stream.write_all(request.as_bytes()).ok()?;
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).ok()?;
+
+    let response = String::from_utf8_lossy(&buf);
+    let mut parts = response.splitn(2, "\r\n\r\n");
+    let status_line = response.lines().next().unwrap_or("");
+    if !status_line.contains("200") {
+        return None;
+    }
+    let body = parts.nth(1).unwrap_or("");
+    serde_json::from_str(body).ok()
+}
 impl SchemaNode {
     pub fn new(kind: SchemaNodeKind) -> Self {
         Self(Rc::new(RefCell::new(kind)))
@@ -1439,13 +1525,70 @@ fn resolve_refs_internal(
             return Ok(());
         }
 
+        if let Some((base_url, fragment)) = split_url_and_fragment(&path) {
+            if let Some(remote_root) = fetch_remote_http(base_url.as_str()) {
+                stack.push(path.clone());
+                let target = if let Some(frag) = fragment {
+                    resolve_fragment(&remote_root, &frag)
+                } else {
+                    Some(&remote_root)
+                };
+
+                if let Some(target_val) = target {
+                    let mut resolved = build_schema_ast(target_val)?;
+                    resolve_refs_internal(&mut resolved, &remote_root, stack, cache)?;
+                    cache.insert(path.clone(), resolved.clone());
+                    *node = resolved;
+                    stack.pop();
+                    return Ok(());
+                }
+                stack.pop();
+            }
+        }
+
+        if !path.starts_with('#') && !path.contains("://") {
+            if let Some(base) = root_json.get("$id").and_then(|v| v.as_str()) {
+                if let Ok(base_url) = Url::from_str(base) {
+                    if let Ok(joined) = base_url.join(&path) {
+                        if let Some((remote_url, fragment)) =
+                            split_url_and_fragment(joined.as_str())
+                        {
+                            if let Some(remote_root) = fetch_remote_http(remote_url.as_str()) {
+                                stack.push(path.clone());
+                                let target = if let Some(frag) = fragment {
+                                    resolve_fragment(&remote_root, &frag)
+                                } else {
+                                    Some(&remote_root)
+                                };
+                                if let Some(target_val) = target {
+                                    let mut resolved = build_schema_ast(target_val)?;
+                                    resolve_refs_internal(
+                                        &mut resolved,
+                                        &remote_root,
+                                        stack,
+                                        cache,
+                                    )?;
+                                    cache.insert(path.clone(), resolved.clone());
+                                    *node = resolved;
+                                    stack.pop();
+                                    return Ok(());
+                                }
+                                stack.pop();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(stripped) = path.strip_prefix("#/") {
             let parts: Vec<String> = stripped
                 .split('/')
                 .map(|token| {
                     let mut decoded = percent_decode_str(token).decode_utf8_lossy().into_owned();
                     decoded = decoded.replace("~1", "/");
-                    decoded.replace("~0", "~")
+                    decoded = decoded.replace("~0", "~");
+                    decoded
                 })
                 .collect();
             let mut current = root_json;

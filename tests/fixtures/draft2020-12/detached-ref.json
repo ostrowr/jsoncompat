@@ -1,0 +1,1 @@
+{"$id":"http://localhost:1234/draft2020-12/detached-ref.json","$defs":{"foo":{"$anchor":"foo","type":"number"}}}

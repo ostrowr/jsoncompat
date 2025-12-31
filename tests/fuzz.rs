@@ -7,7 +7,10 @@ use rand::{rngs::StdRng, SeedableRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::thread;
+use tiny_http::{Response, Server, StatusCode};
 
 const N_ITERATIONS: usize = 1000;
 
@@ -20,44 +23,54 @@ const N_ITERATIONS: usize = 1000;
 /// }
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
-    let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-
-    map.insert(
-        "optional/unknownKeyword.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
+    let map: HashMap<String, HashSet<usize>> = HashMap::new();
 
     map
 }
 
-fn inline_known_remotes(schema: &mut Value) {
-    match schema {
-        Value::Object(map) => {
-            if let Some(Value::String(r)) = map.get("$ref") {
-                if is_integer_remote(r) {
-                    *schema = serde_json::json!({"type": "integer"});
-                    return;
-                }
-            }
-            for value in map.values_mut() {
-                inline_known_remotes(value);
-            }
-        }
-        Value::Array(arr) => {
-            for value in arr {
-                inline_known_remotes(value);
-            }
-        }
-        _ => {}
-    }
+fn remote_root() -> &'static PathBuf {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    ROOT.get_or_init(|| {
+        fs::canonicalize("tests/fixtures").expect("missing tests/fixtures directory")
+    })
 }
 
-fn is_integer_remote(r: &str) -> bool {
-    r.contains("integer.json")
-        || r.contains("folderInteger.json")
-        || r.contains("refToInteger")
-        || r.contains("subSchemas.json")
-        || r.contains("locationIndependentIdentifier.json")
+fn start_fixture_server() {
+    static START: OnceLock<()> = OnceLock::new();
+    START.get_or_init(|| {
+        let server = Server::http("127.0.0.1:0").expect("failed to start fixture server");
+        let addr_str = server.server_addr().to_string();
+        let port: u16 = addr_str
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(1234);
+        std::env::set_var("JSONCOMPAT_FIXTURE_PORT", port.to_string());
+        thread::spawn(move || {
+            for req in server.incoming_requests() {
+                let path = req.url().trim_start_matches('/');
+                if let Some(body) = remote_body(path) {
+                    let response = Response::from_data(body).with_status_code(StatusCode(200));
+                    let _ = req.respond(response);
+                } else {
+                    let _ =
+                        req.respond(Response::from_string("").with_status_code(StatusCode(404)));
+                }
+            }
+        });
+    });
+}
+
+fn remote_body(path: &str) -> Option<Vec<u8>> {
+    let root = remote_root();
+    let requested = root.join(path.trim_start_matches('/'));
+    if let Ok(canon) = requested.canonicalize() {
+        if !canon.starts_with(root) {
+            return None;
+        }
+        return fs::read(canon).ok();
+    }
+    None
 }
 
 // -------------------------------------------------------------------------
@@ -67,6 +80,8 @@ fn is_integer_remote(r: &str) -> bool {
 datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
 
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    start_fixture_server();
+
     let bytes = fs::read(file)?;
     let root: Value = serde_json::from_slice(&bytes)?;
 
@@ -104,10 +119,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let mut schema_json = schema_json.clone();
-        inline_known_remotes(&mut schema_json);
-
-        let ast = build_and_resolve_schema(&schema_json)?;
+        let ast = build_and_resolve_schema(schema_json)?;
 
         if matches!(satisfiability(&ast), Satisfiability::Never) {
             continue;

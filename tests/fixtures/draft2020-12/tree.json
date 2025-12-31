@@ -1,0 +1,1 @@
+{"$id":"http://localhost:1234/draft2020-12/tree.json","$dynamicAnchor":"node","type":"object","properties":{"data":{"type":"integer"},"children":{"type":"array","items":{"$dynamicRef":"#node"}}},"required":["data"],"additionalProperties":false}

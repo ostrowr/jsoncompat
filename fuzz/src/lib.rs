@@ -372,12 +372,32 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 }
             }
 
-            random_any(rng, depth)
+            for _ in 0..32 {
+                let candidate = random_any(rng, depth);
+                if validators.iter().all(|v| {
+                    v.as_ref()
+                        .map(|val| val.is_valid(&candidate))
+                        .unwrap_or(true)
+                }) {
+                    return candidate;
+                }
+            }
+
+            Value::Null
         }
 
         AnyOf(subs) if !subs.is_empty() => {
-            let idx = rng.gen_range(0..subs.len());
-            generate_value(&subs[idx], rng, depth.saturating_sub(1))
+            let viable: Vec<_> = subs
+                .iter()
+                .filter(|s| !matches!(satisfiability(s), Satisfiability::Never))
+                .collect();
+            if viable.is_empty() {
+                let idx = rng.gen_range(0..subs.len());
+                generate_value(&subs[idx], rng, depth.saturating_sub(1))
+            } else {
+                let idx = rng.gen_range(0..viable.len());
+                generate_value(viable[idx], rng, depth.saturating_sub(1))
+            }
         }
 
         OneOf(subs) if !subs.is_empty() => {
