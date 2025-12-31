@@ -7,7 +7,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::OnceLock;
 use std::thread;
 use tiny_http::{Response, Server, StatusCode};
@@ -26,13 +26,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let map: HashMap<String, HashSet<usize>> = HashMap::new();
 
     map
-}
-
-fn remote_root() -> &'static PathBuf {
-    static ROOT: OnceLock<PathBuf> = OnceLock::new();
-    ROOT.get_or_init(|| {
-        fs::canonicalize("tests/fixtures").expect("missing tests/fixtures directory")
-    })
 }
 
 fn start_fixture_server() {
@@ -61,16 +54,34 @@ fn start_fixture_server() {
     });
 }
 
-fn remote_body(path: &str) -> Option<Vec<u8>> {
-    let root = remote_root();
-    let requested = root.join(path.trim_start_matches('/'));
-    if let Ok(canon) = requested.canonicalize() {
-        if !canon.starts_with(root) {
-            return None;
-        }
-        return fs::read(canon).ok();
+fn remote_body(path: &str) -> Option<&'static [u8]> {
+    match path.trim_start_matches('/') {
+        "draft2020-12/integer.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/integer.json","type":"integer"}"##),
+        "draft2020-12/subSchemas.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/subSchemas.json","$defs":{"integer":{"type":"integer"},"refToInteger":{"$ref":"#/$defs/integer"}}}"##),
+        "draft2020-12/locationIndependentIdentifier.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/locationIndependentIdentifier.json","$anchor":"foo","type":"integer","$defs":{"refToInteger":{"$ref":"#foo"}}}"##),
+        "draft2020-12/folderInteger.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/folderInteger.json","type":"integer"}"##),
+        "draft2020-12/baseUriChange/folderInteger.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/baseUriChange/folderInteger.json","type":"integer"}"##),
+        "draft2020-12/baseUriChangeFolder/folderInteger.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/baseUriChangeFolder/folderInteger.json","type":"integer"}"##),
+        "draft2020-12/baseUriChangeFolderInSubschema/folderInteger.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/baseUriChangeFolderInSubschema/folderInteger.json","type":"integer"}"##),
+        "draft2020-12/name-defs.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/name-defs.json","$defs":{"orNull":{"type":["string","null"]}}}"##),
+        "draft2020-12/ref-and-defs.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/ref-and-defs.json","$defs":{"bar":{"type":"string"}},"$ref":"#/$defs/bar"}"##),
+        "draft2020-12/tree.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/tree.json","$dynamicAnchor":"node","type":"object","properties":{"data":{"type":"integer"},"children":{"type":"array","items":{"$dynamicRef":"#node"}}},"required":["data"],"additionalProperties":false}"##),
+        "draft2020-12/extendible-dynamic-ref.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/extendible-dynamic-ref.json","$dynamicRef":"#elements"}"##),
+        "draft2020-12/detached-dynamicref.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/detached-dynamicref.json","$defs":{"foo":{"$dynamicAnchor":"foo","type":"number"}}}"##),
+        "draft2020-12/detached-ref.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/detached-ref.json","$defs":{"foo":{"$anchor":"foo","type":"number"}}}"##),
+        "draft2020-12/nested/foo-ref-string.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/nested/foo-ref-string.json","type":"object","properties":{"foo":{"type":"string"}},"required":["foo"],"additionalProperties":false}"##),
+        "different-id-ref-string.json" => Some(br##"{"$id":"urn:example:string","type":"string"}"##),
+        "urn-ref-string.json" => Some(br##"{"$id":"urn:example:string","type":"string"}"##),
+        "nested-absolute-ref-to-string.json" => Some(br##"{"$id":"http://localhost:1234/nested-absolute-ref-to-string.json","type":"string"}"##),
+        "draft2020-12/unknownKeyword/my_identifier.json" => Some(br##"{"$id":"https://localhost:1234/draft2020-12/unknownKeyword/my_identifier.json","type":"string"}"##),
+        "draft2020-12/id/my_identifier.json" => Some(br##"{"$id":"https://localhost:1234/draft2020-12/id/my_identifier.json","type":"string"}"##),
+        "draft2019-09/ignore-prefixItems.json" => Some(br##"{"$id":"http://localhost:1234/draft2019-09/ignore-prefixItems.json","items":true}"##),
+        "draft2020-12/strict-tree.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/strict-tree.json","$dynamicAnchor":"node","type":"object","properties":{"data":{"type":"integer"},"children":{"type":"array","items":{"$ref":"tree.json"}}},"required":["data"],"additionalProperties":false}"##),
+        "draft2020-12/strict-extendible.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/strict-extendible.json","$ref":"extendible-dynamic-ref.json"}"##),
+        "draft2020-12/strict-extendible-allof-defs-first.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/strict-extendible-allof-defs-first.json","allOf":[{"$ref":"extendible-dynamic-ref.json"}]}"##),
+        "draft2020-12/strict-extendible-allof-ref-first.json" => Some(br##"{"$id":"http://localhost:1234/draft2020-12/strict-extendible-allof-ref-first.json","allOf":[{"$ref":"extendible-dynamic-ref.json"}]}"##),
+        _ => None,
     }
-    None
 }
 
 // -------------------------------------------------------------------------
