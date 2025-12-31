@@ -22,55 +22,9 @@ const N_ITERATIONS: usize = 1000;
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
 
-    map.insert("anchor.json".to_string(), HashSet::new());
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
-    map.insert(
-        "dynamicRef.json".to_string(),
-        [2, 13, 14, 15, 16, 17].iter().cloned().collect(),
-    );
-    map.insert("optional/anchor.json".to_string(), HashSet::new());
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/ecmascript-regex.json".to_string(),
-        [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-            30, 31,
-        ]
-        .iter()
-        .cloned()
-        .collect(),
-    );
-    map.insert(
-        "optional/non-bmp-regex.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
         "optional/unknownKeyword.json".to_string(),
         [0].iter().cloned().collect(),
-    );
-
-    map.insert("properties.json".to_string(), [1].iter().cloned().collect());
-
-    map.insert(
-        "refRemote.json".to_string(),
-        [8, 11, 12, 13, 14].iter().cloned().collect(),
-    );
-    map.insert(
-        "ref.json".to_string(),
-        [6, 17, 19, 27, 28, 29, 30, 31].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "unevaluatedItems.json".to_string(),
-        [12].iter().cloned().collect(),
-    );
-    map.insert(
-        "unevaluatedProperties.json".to_string(),
-        [16].iter().cloned().collect(),
     );
 
     map
@@ -159,12 +113,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let compile_target = if rel_str.contains("anchor") {
-            ast.to_json()
-        } else {
-            schema_json.clone()
-        };
-        let compiled = compile(&compile_target)?;
+        let compiled = compile(&ast.to_json())?;
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 

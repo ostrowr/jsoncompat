@@ -1,5 +1,8 @@
-use json_schema_ast::{ast::instance_is_valid_against, SchemaNode, SchemaNodeKind};
-use rand::Rng;
+use json_schema_ast::{
+    ast::{instance_is_valid_against, SchemaAnnotations},
+    SchemaNode, SchemaNodeKind,
+};
+use rand::{distributions::Distribution, Rng};
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,7 +217,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             //   1. bail out if any subschema is `false` (the intersection is empty),
             //   2. when all branches describe objects, merge their generated
             //      property maps so the final instance satisfies every branch,
-            //   3. otherwise fall back to any non-trivial branch (ignoring
+            //   3. when all branches describe arrays, merge their element
+            //      constraints positionally,
+            //   4. otherwise fall back to any non-trivial branch (ignoring
             //      `true`/`Any`) which is usually sufficient for simple
             //      intersections such as `[{}, {"type": "number"}]`.
             if subs
@@ -222,6 +227,22 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 .any(|s| matches!(&*s.borrow(), BoolSchema(false)))
             {
                 return Value::Null;
+            }
+
+            if subs.iter().all(|s| as_effective_array_schema(s).is_some()) {
+                let arrays: Vec<_> = subs.iter().filter_map(as_effective_array_schema).collect();
+                if let Some(synth) = combined_array_schema(&arrays) {
+                    return generate_value(&synth, rng, depth.saturating_sub(1));
+                }
+            }
+
+            if subs
+                .iter()
+                .all(|s| matches!(&*s.borrow(), Number { .. } | Integer { .. }))
+            {
+                if let Some(synth) = combined_numeric_schema(subs) {
+                    return generate_value(&synth, rng, depth.saturating_sub(1));
+                }
             }
 
             if subs.iter().all(|s| matches!(&*s.borrow(), Object { .. })) {
@@ -289,6 +310,56 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 .map(|s| json_schema_ast::compile(&s.to_json()).ok())
                 .collect();
 
+            if let Some((idx, branches)) =
+                subs.iter()
+                    .enumerate()
+                    .find_map(|(i, s)| match &*s.borrow() {
+                        SchemaNodeKind::OneOf(list) | SchemaNodeKind::AnyOf(list) => {
+                            Some((i, list.clone()))
+                        }
+                        _ => None,
+                    })
+            {
+                let mut base_arrays = Vec::new();
+                for (j, sub) in subs.iter().enumerate() {
+                    if j == idx {
+                        continue;
+                    }
+                    match as_effective_array_schema(sub) {
+                        Some(arr) => base_arrays.push(arr),
+                        None => {
+                            base_arrays.clear();
+                            break;
+                        }
+                    }
+                }
+
+                if !base_arrays.is_empty()
+                    && branches
+                        .iter()
+                        .all(|b| as_effective_array_schema(b).is_some())
+                {
+                    for branch in branches {
+                        let mut merged = base_arrays.clone();
+                        if let Some(arr_branch) = as_effective_array_schema(&branch) {
+                            merged.push(arr_branch);
+                        }
+                        if let Some(arr) = combined_array_schema(&merged) {
+                            for _ in 0..8 {
+                                let candidate = generate_value(&arr, rng, depth.saturating_sub(1));
+                                if validators.iter().all(|v| {
+                                    v.as_ref()
+                                        .map(|val| val.is_valid(&candidate))
+                                        .unwrap_or(true)
+                                }) {
+                                    return candidate;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             for _ in 0..32 {
                 let pick = rng.gen_range(0..subs.len());
                 let candidate = generate_value(&subs[pick], rng, depth.saturating_sub(1));
@@ -343,12 +414,72 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             min_length,
             max_length,
             enumeration,
+            pattern,
             ..
         } => {
             if let Some(e) = enumeration {
                 if !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
+                }
+            }
+
+            if let Some(p) = pattern {
+                let validator = json_schema_ast::compile(&schema.to_json()).ok();
+                if let Some(literal) = literal_from_pattern(p) {
+                    if validator
+                        .as_ref()
+                        .map(|v| v.is_valid(&Value::String(literal.clone())))
+                        .unwrap_or(true)
+                    {
+                        return Value::String(literal);
+                    }
+                }
+                for _ in 0..128 {
+                    let candidate = if let Some(s) =
+                        generate_string_matching_pattern(p, *min_length, *max_length, rng)
+                    {
+                        s
+                    } else {
+                        let len_min = min_length.unwrap_or(0);
+                        let len_max = max_length.unwrap_or(len_min + 8).max(len_min);
+                        let len = if len_min <= len_max {
+                            rng.gen_range(len_min..=len_max.min(len_min + 16))
+                        } else {
+                            len_min
+                        };
+                        random_string_fixed(rng, len as usize)
+                    };
+
+                    if validator
+                        .as_ref()
+                        .map(|v| v.is_valid(&Value::String(candidate.clone())))
+                        .unwrap_or(true)
+                    {
+                        return Value::String(candidate);
+                    }
+                }
+
+                if let Some(vld) = validator.as_ref() {
+                    let stripped = p.trim_start_matches('^').trim_end_matches('$');
+                    let alphabet = pattern_alphabet(p);
+                    let len_min = min_length.unwrap_or(stripped.len() as u64) as usize;
+                    let mut len_max = max_length
+                        .map(|v| v as usize)
+                        .unwrap_or(len_min.saturating_add(8));
+                    if len_min > len_max {
+                        len_max = len_min;
+                    }
+                    let upper = len_max.min(len_min.saturating_add(8));
+
+                    for len in len_min..=upper {
+                        for _ in 0..64 {
+                            let candidate = random_string_from_alphabet(rng, len, &alphabet);
+                            if vld.is_valid(&Value::String(candidate.clone())) {
+                                return Value::String(candidate);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -598,8 +729,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             let mut max_len = max_items
                 .map(|v| v as usize)
-                .unwrap_or(min_len.saturating_add(5))
-                .max(min_len);
+                .unwrap_or(min_len.saturating_add(5));
+
+            let prefix_target = prefix_items.len();
+            if prefix_target > min_len {
+                min_len = prefix_target.min(max_len);
+            }
+
+            max_len = max_len.max(min_len);
             if matches!(items_sat, Satisfiability::Never) {
                 max_len = max_len.min(prefix_items.len());
             }
@@ -976,10 +1113,12 @@ fn random_key(rng: &mut impl Rng) -> String {
 
 fn random_key_with_schema(rng: &mut impl Rng, name_schema: Option<&SchemaNode>) -> String {
     let mut len_hint: Option<(usize, usize)> = None;
+    let mut pattern: Option<String> = None;
     if let Some(schema) = name_schema {
         if let SchemaNodeKind::String {
             min_length,
             max_length,
+            pattern: pat,
             ..
         } = &*schema.borrow()
         {
@@ -989,6 +1128,7 @@ fn random_key_with_schema(rng: &mut impl Rng, name_schema: Option<&SchemaNode>) 
                 .unwrap_or_else(|| min.saturating_add(8))
                 .max(min);
             len_hint = Some((min, max.min(min.saturating_add(16))));
+            pattern = pat.clone();
         }
     }
 
@@ -1006,6 +1146,18 @@ fn random_key_with_schema(rng: &mut impl Rng, name_schema: Option<&SchemaNode>) 
         };
 
         if let Some(schema) = name_schema {
+            if let Some(pat) = pattern.as_deref() {
+                if let Some(candidate) = generate_string_matching_pattern(
+                    pat,
+                    len_hint.map(|(min, _)| min as u64),
+                    len_hint.map(|(_, max)| max as u64),
+                    rng,
+                ) {
+                    if instance_is_valid_against(&Value::String(candidate.clone()), schema) {
+                        return candidate;
+                    }
+                }
+            }
             if instance_is_valid_against(&Value::String(key.clone()), schema) {
                 return key;
             }
@@ -1026,6 +1178,388 @@ fn random_string_fixed(rng: &mut impl Rng, len: usize) -> String {
     (0..len)
         .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
         .collect()
+}
+
+fn random_string_from_alphabet(rng: &mut impl Rng, len: usize, alphabet: &[char]) -> String {
+    if alphabet.is_empty() {
+        return random_string_fixed(rng, len);
+    }
+    (0..len)
+        .map(|_| {
+            let idx = rng.gen_range(0..alphabet.len());
+            alphabet[idx]
+        })
+        .collect()
+}
+
+fn pattern_alphabet(pattern: &str) -> Vec<char> {
+    use std::collections::HashSet;
+
+    let mut set: HashSet<char> = pattern.chars().filter(|c| c.is_alphanumeric()).collect();
+
+    let mut iter = pattern.chars().peekable();
+    while let Some(ch) = iter.next() {
+        if ch == '\\' {
+            if let Some(next) = iter.next() {
+                match next {
+                    't' => {
+                        set.insert('\t');
+                    }
+                    'n' => {
+                        set.insert('\n');
+                    }
+                    'r' => {
+                        set.insert('\r');
+                    }
+                    'c' => {
+                        if let Some(ctrl) = iter.next() {
+                            let code = (ctrl as u32) & 0x1F;
+                            if let Some(c) = char::from_u32(code) {
+                                set.insert(c);
+                            }
+                        }
+                    }
+                    'd' => {
+                        set.insert('0');
+                    }
+                    'D' | 'S' | 'w' => {
+                        set.insert('a');
+                    }
+                    'W' => {
+                        set.insert('!');
+                    }
+                    's' => {
+                        set.insert(' ');
+                    }
+                    'p' => {
+                        if pattern.to_lowercase().contains("\\p{digit}") {
+                            for d in '0'..='9' {
+                                set.insert(d);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if set.is_empty() {
+        set.insert('a');
+        set.insert('0');
+    }
+    set.insert(' ');
+    set.insert('\t');
+
+    set.into_iter().collect()
+}
+
+fn literal_from_pattern(pattern: &str) -> Option<String> {
+    let core = pattern.trim_start_matches('^').trim_end_matches('$');
+    if core.is_empty() {
+        return Some(String::new());
+    }
+    let mut out = String::new();
+    let mut iter = core.chars();
+    while let Some(ch) = iter.next() {
+        match ch {
+            '\\' => match iter.next() {
+                Some('t') => out.push('\t'),
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('c') => {
+                    if let Some(ctrl) = iter.next() {
+                        let code = (ctrl as u32) & 0x1F;
+                        out.push(char::from_u32(code)?);
+                    } else {
+                        return None;
+                    }
+                }
+                Some('d') => out.push('0'),
+                Some('D') => out.push('a'),
+                Some('S') => out.push('a'),
+                Some('w') => out.push('a'),
+                Some('W') => out.push('!'),
+                Some('s') => out.push(' '),
+                Some('p') => {
+                    if let Some('{') = iter.next() {
+                        let mut prop = String::new();
+                        for ch in iter.by_ref() {
+                            if ch == '}' {
+                                break;
+                            }
+                            prop.push(ch);
+                        }
+                        let lc = prop.to_lowercase();
+                        if lc == "digit" || lc == "nd" {
+                            out.push('0');
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+                Some(lit @ ('\\' | '/' | '_' | '-' | ' ' | ':')) => out.push(lit),
+                Some(other) => out.push(other),
+                None => return None,
+            },
+            '.' => return None,
+            '+' | '*' | '?' => {
+                // Already emitted a minimal instance of the previous token.
+            }
+            '[' | ']' | '(' | ')' | '{' | '}' | '|' => return None,
+            literal => out.push(literal),
+        }
+    }
+    Some(out)
+}
+
+fn generate_string_matching_pattern(
+    pattern: &str,
+    min_length: Option<u64>,
+    max_length: Option<u64>,
+    rng: &mut impl Rng,
+) -> Option<String> {
+    let lower = min_length.unwrap_or(0) as usize;
+    let upper_hint = max_length.map(|v| v as usize).unwrap_or(64).max(lower);
+    // Bound the generator to avoid runaway expansions on unbounded patterns.
+    let size_limit = upper_hint.max(lower.saturating_add(8)).min(256);
+    let dist = rand_regex::Regex::compile(pattern, size_limit as u32).ok()?;
+    for _ in 0..32 {
+        let candidate: String = dist.sample(rng);
+        let len = candidate.len();
+        if len >= lower && len <= upper_hint {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn as_effective_array_schema(node: &SchemaNode) -> Option<SchemaNode> {
+    match &*node.borrow() {
+        SchemaNodeKind::Array { .. } => Some(node.clone()),
+        SchemaNodeKind::Not(inner) => match &*inner.borrow() {
+            SchemaNodeKind::Not(deeper) => {
+                if matches!(&*deeper.borrow(), SchemaNodeKind::Array { .. }) {
+                    Some(deeper.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn combined_array_schema(subs: &[SchemaNode]) -> Option<SchemaNode> {
+    use SchemaNodeKind::Array;
+
+    let mut max_prefix = 0usize;
+    let mut min_items: Option<u64> = None;
+    let mut max_items: Option<u64> = None;
+    let mut unique_items = false;
+    let mut item_parts: Vec<SchemaNode> = Vec::new();
+
+    for s in subs {
+        if let Array {
+            prefix_items,
+            items,
+            min_items: mi,
+            max_items: ma,
+            contains,
+            enumeration,
+            unique_items: uniq,
+            ..
+        } = &*s.borrow()
+        {
+            if contains.is_some() || enumeration.is_some() {
+                return None;
+            }
+            max_prefix = max_prefix.max(prefix_items.len());
+            if let Some(v) = mi {
+                min_items = Some(min_items.unwrap_or(0).max(*v));
+            }
+            if let Some(v) = ma {
+                max_items = Some(max_items.map(|cur| cur.min(*v)).unwrap_or(*v));
+            }
+            unique_items |= *uniq;
+            item_parts.push(items.clone());
+        } else {
+            return None;
+        }
+    }
+
+    if let (Some(min), Some(max)) = (min_items, max_items) {
+        if min > max {
+            return None;
+        }
+    }
+
+    let merged_items = match item_parts.len() {
+        0 => SchemaNode::any(),
+        1 => item_parts.into_iter().next().unwrap(),
+        _ => SchemaNode::new(SchemaNodeKind::AllOf(item_parts)),
+    };
+
+    let mut merged_prefix = Vec::new();
+    for idx in 0..max_prefix {
+        let mut parts = Vec::new();
+        for s in subs {
+            if let SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                ..
+            } = &*s.borrow()
+            {
+                if let Some(p) = prefix_items.get(idx) {
+                    parts.push(p.clone());
+                } else {
+                    parts.push(items.clone());
+                }
+            }
+        }
+        let merged = if parts.len() == 1 {
+            parts.remove(0)
+        } else {
+            SchemaNode::new(SchemaNodeKind::AllOf(parts))
+        };
+        merged_prefix.push(merged);
+    }
+
+    Some(SchemaNode::new(SchemaNodeKind::Array {
+        prefix_items: merged_prefix,
+        items: merged_items,
+        min_items,
+        max_items,
+        contains: None,
+        min_contains: None,
+        max_contains: None,
+        unique_items,
+        enumeration: None,
+        annotations: SchemaAnnotations::default(),
+    }))
+}
+
+fn combined_numeric_schema(subs: &[SchemaNode]) -> Option<SchemaNode> {
+    use SchemaNodeKind::*;
+
+    let mut min: Option<(f64, bool)> = None;
+    let mut max: Option<(f64, bool)> = None;
+    let mut all_integer = true;
+
+    for s in subs {
+        match &*s.borrow() {
+            Number {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                ..
+            } => {
+                all_integer = false;
+                if let Some(m) = minimum {
+                    min = Some(tighten_lower(min, *m, *exclusive_minimum));
+                }
+                if let Some(m) = maximum {
+                    max = Some(tighten_upper(max, *m, *exclusive_maximum));
+                }
+            }
+            Integer {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                ..
+            } => {
+                if let Some(m) = minimum {
+                    min = Some(tighten_lower(min, *m as f64, *exclusive_minimum));
+                }
+                if let Some(m) = maximum {
+                    max = Some(tighten_upper(max, *m as f64, *exclusive_maximum));
+                }
+            }
+            _ => return None,
+        }
+    }
+
+    if let (Some((lo, lo_excl)), Some((hi, hi_excl))) = (min, max) {
+        if lo > hi || (lo == hi && (lo_excl || hi_excl)) {
+            return None;
+        }
+    }
+
+    if all_integer {
+        let min_i = min.map(|(v, excl)| {
+            let mut out = v.ceil() as i64;
+            if excl && (out as f64) <= v {
+                out += 1;
+            }
+            out
+        });
+        let max_i = max.map(|(v, excl)| {
+            let mut out = v.floor() as i64;
+            if excl && (out as f64) >= v {
+                out -= 1;
+            }
+            out
+        });
+        if let (Some(lo), Some(hi)) = (min_i, max_i) {
+            if lo > hi {
+                return None;
+            }
+        }
+        return Some(SchemaNode::new(Integer {
+            minimum: min_i,
+            maximum: max_i,
+            exclusive_minimum: false,
+            exclusive_maximum: false,
+            multiple_of: None,
+            enumeration: None,
+            annotations: SchemaAnnotations::default(),
+        }));
+    }
+
+    Some(SchemaNode::new(Number {
+        minimum: min.map(|(v, _)| v),
+        maximum: max.map(|(v, _)| v),
+        exclusive_minimum: min.map(|(_, excl)| excl).unwrap_or(false),
+        exclusive_maximum: max.map(|(_, excl)| excl).unwrap_or(false),
+        multiple_of: None,
+        enumeration: None,
+        annotations: SchemaAnnotations::default(),
+    }))
+}
+
+fn tighten_lower(current: Option<(f64, bool)>, candidate: f64, excl: bool) -> (f64, bool) {
+    match current {
+        None => (candidate, excl),
+        Some((v, e)) => {
+            if candidate > v {
+                (candidate, excl)
+            } else if (candidate - v).abs() < f64::EPSILON {
+                (v, e || excl)
+            } else {
+                (v, e)
+            }
+        }
+    }
+}
+
+fn tighten_upper(current: Option<(f64, bool)>, candidate: f64, excl: bool) -> (f64, bool) {
+    match current {
+        None => (candidate, excl),
+        Some((v, e)) => {
+            if candidate < v {
+                (candidate, excl)
+            } else if (candidate - v).abs() < f64::EPSILON {
+                (v, e || excl)
+            } else {
+                (v, e)
+            }
+        }
+    }
 }
 
 // lots to improve here:
