@@ -1,4 +1,4 @@
-use json_schema_ast::{SchemaNode, SchemaNodeKind};
+use json_schema_ast::{ast::instance_is_valid_against, SchemaNode, SchemaNodeKind};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -230,8 +230,23 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 let mut combined = Map::new();
                 for sub in subs {
                     if let Value::Object(obj) = generate_value(sub, rng, depth.saturating_sub(1)) {
-                        for (k, v) in obj {
-                            combined.insert(k, v);
+                        if let Object {
+                            properties,
+                            additional,
+                            ..
+                        } = &*sub.borrow()
+                        {
+                            let allow_extra =
+                                !matches!(&*additional.borrow(), BoolSchema(true) | Any);
+                            for (k, v) in obj {
+                                if allow_extra || properties.contains_key(&k) {
+                                    combined.insert(k, v);
+                                }
+                            }
+                        } else {
+                            for (k, v) in obj {
+                                combined.insert(k, v);
+                            }
                         }
                     }
                 }
@@ -456,6 +471,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             properties,
             required,
             additional,
+            property_names,
             min_properties,
             max_properties,
             enumeration,
@@ -469,6 +485,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             }
 
             let mut map = Map::new();
+            let name_schema = property_names.as_ref();
             for (k, prop_schema) in properties {
                 let must_include = required.contains(k);
                 if matches!(satisfiability(prop_schema), Satisfiability::Never) {
@@ -501,7 +518,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 // until we reach the minimum before attempting the probabilistic
                 // extras.
                 while map.len() < min_p {
-                    let key = random_key(rng);
+                    let key = random_key_with_schema(rng, name_schema);
                     if map.contains_key(&key) {
                         continue;
                     }
@@ -512,7 +529,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 if rng.gen_bool(0.3) {
                     let mut attempts = 0;
                     while rng.gen_bool(0.5) && (map.len() < max_p) && attempts < 5 {
-                        let key = random_key(rng);
+                        let key = random_key_with_schema(rng, name_schema);
                         if map.contains_key(&key) {
                             attempts += 1;
                             continue;
@@ -957,8 +974,55 @@ fn random_key(rng: &mut impl Rng) -> String {
     random_string(rng, 3..8)
 }
 
+fn random_key_with_schema(rng: &mut impl Rng, name_schema: Option<&SchemaNode>) -> String {
+    let mut len_hint: Option<(usize, usize)> = None;
+    if let Some(schema) = name_schema {
+        if let SchemaNodeKind::String {
+            min_length,
+            max_length,
+            ..
+        } = &*schema.borrow()
+        {
+            let min = min_length.unwrap_or(0) as usize;
+            let max = max_length
+                .map(|v| v as usize)
+                .unwrap_or_else(|| min.saturating_add(8))
+                .max(min);
+            len_hint = Some((min, max.min(min.saturating_add(16))));
+        }
+    }
+
+    for _ in 0..32 {
+        let key = if let Some((min, max)) = len_hint {
+            let upper = max.max(min);
+            let len = if min <= upper {
+                rng.gen_range(min..=upper)
+            } else {
+                min
+            };
+            random_string_fixed(rng, len)
+        } else {
+            random_key(rng)
+        };
+
+        if let Some(schema) = name_schema {
+            if instance_is_valid_against(&Value::String(key.clone()), schema) {
+                return key;
+            }
+        } else {
+            return key;
+        }
+    }
+
+    random_key(rng)
+}
+
 fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> String {
     let len = rng.gen_range(len_range);
+    random_string_fixed(rng, len)
+}
+
+fn random_string_fixed(rng: &mut impl Rng, len: usize) -> String {
     (0..len)
         .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
         .collect()

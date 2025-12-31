@@ -1,0 +1,31 @@
+"""
+Schema:
+{
+  "$ref": "http://localhost:1234/draft2020-12/detached-dynamicref.json#/$defs/foo"
+}
+
+Tests:
+[
+  {
+    "data": 1,
+    "description": "number is valid",
+    "valid": true
+  },
+  {
+    "data": "a",
+    "description": "non-number is invalid",
+    "valid": false
+  }
+]
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from pydantic import ConfigDict, Field
+
+class Dynamicref17Serializer(SerializerRootModel):
+    root: Any
+

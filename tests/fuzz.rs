@@ -23,10 +23,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
 
     map.insert(
-        "infinite-loop-detection.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
         "anchor.json".to_string(),
         [0, 1, 2, 3].iter().cloned().collect(),
     );
@@ -35,11 +31,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         "dynamicRef.json".to_string(),
         [2, 13, 14, 15, 16, 17].iter().cloned().collect(),
     );
-    map.insert(
-        "additionalProperties.json".to_string(),
-        [5].iter().cloned().collect(),
-    );
-
     map.insert(
         "optional/anchor.json".to_string(),
         [0].iter().cloned().collect(),

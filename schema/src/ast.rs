@@ -323,6 +323,7 @@ impl SchemaNode {
                 properties,
                 required,
                 additional,
+                property_names,
                 min_properties,
                 max_properties,
                 dependent_required,
@@ -364,6 +365,14 @@ impl SchemaNode {
                 }
                 if let Some(mp) = max_properties {
                     obj.insert("maxProperties".into(), Value::Number((*mp).into()));
+                }
+                if let Some(pn) = property_names {
+                    match &*pn.borrow() {
+                        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => {}
+                        _ => {
+                            obj.insert("propertyNames".into(), pn.to_json());
+                        }
+                    }
                 }
 
                 if !dependent_required.is_empty() {
@@ -616,6 +625,7 @@ impl PartialEq for SchemaNode {
                         properties: aprops,
                         required: areq,
                         additional: aaddl,
+                        property_names: apn,
                         min_properties: amin,
                         max_properties: amax,
                         dependent_required: adep,
@@ -626,6 +636,7 @@ impl PartialEq for SchemaNode {
                         properties: bprops,
                         required: breq,
                         additional: baddl,
+                        property_names: bpn,
                         min_properties: bmin,
                         max_properties: bmax,
                         dependent_required: bdep,
@@ -639,6 +650,7 @@ impl PartialEq for SchemaNode {
                         || adep != bdep
                         || aenum != benum
                         || ann_a != ann_b
+                        || apn.is_some() != bpn.is_some()
                         || aprops.len() != bprops.len()
                     {
                         return false;
@@ -651,7 +663,14 @@ impl PartialEq for SchemaNode {
                             return false;
                         }
                     }
-                    eq_inner(aaddl, baddl, seen)
+                    if !eq_inner(aaddl, baddl, seen) {
+                        return false;
+                    }
+                    match (apn, bpn) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => eq_inner(a, b, seen),
+                        _ => false,
+                    }
                 }
                 (
                     Array {
@@ -836,6 +855,7 @@ pub enum SchemaNodeKind {
         properties: HashMap<String, SchemaNode>,
         required: HashSet<String>,
         additional: SchemaNode,
+        property_names: Option<SchemaNode>,
         min_properties: Option<usize>,
         max_properties: Option<usize>,
         dependent_required: HashMap<String, Vec<String>>,
@@ -1084,6 +1104,8 @@ pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
                 || obj.contains_key("minProperties")
                 || obj.contains_key("maxProperties")
                 || obj.contains_key("required")
+                || obj.contains_key("additionalProperties")
+                || obj.contains_key("dependentRequired")
             {
                 parse_object_schema(obj)
             } else if obj.contains_key("items")
@@ -1254,6 +1276,10 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         Some(Value::Bool(b)) => SchemaNode::bool_schema(*b),
         Some(other) => build_schema_ast(other)?,
     };
+    let property_names = match obj.get("propertyNames") {
+        None => None,
+        Some(other) => Some(build_schema_ast(other)?),
+    };
 
     let min_properties = obj
         .get("minProperties")
@@ -1289,6 +1315,7 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
         properties,
         required,
         additional,
+        property_names,
         min_properties,
         max_properties,
         dependent_required,
@@ -1494,6 +1521,7 @@ fn resolve_refs_internal(
     if let SchemaNodeKind::Object {
         properties,
         additional,
+        property_names,
         ..
     } = &mut *node.borrow_mut()
     {
@@ -1501,6 +1529,9 @@ fn resolve_refs_internal(
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
         resolve_refs_internal(additional, root_json, stack, cache)?;
+        if let Some(pn) = property_names {
+            resolve_refs_internal(pn, root_json, stack, cache)?;
+        }
         return Ok(());
     }
     if let SchemaNodeKind::Array {

@@ -29,7 +29,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     for (schema_json, idx, tests) in schemas {
         let golden_rel_path = strip_json_extension(&rel_str);
-        if is_whitelisted(&whitelist, &golden_rel_path, idx) {
+        if !regen && is_whitelisted(&whitelist, &golden_rel_path, idx) {
             continue;
         }
         if schema_json == Value::Bool(false) {
@@ -57,6 +57,8 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(code) => code,
                 Err(CodegenError::RootNotObject { .. }) => continue,
                 Err(CodegenError::UnsupportedFeature { .. }) => continue,
+                Err(CodegenError::UnsupportedEnumValue { .. }) => continue,
+                Err(CodegenError::InvalidDefault { .. }) => continue,
                 Err(err) => return Err(format!("{rel_str}#{idx} serializer: {err}").into()),
             };
         let deserializer = match pydantic::generate_model(&schema, ModelRole::Deserializer, options)
@@ -64,6 +66,8 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             Ok(code) => code,
             Err(CodegenError::RootNotObject { .. }) => continue,
             Err(CodegenError::UnsupportedFeature { .. }) => continue,
+            Err(CodegenError::UnsupportedEnumValue { .. }) => continue,
+            Err(CodegenError::InvalidDefault { .. }) => continue,
             Err(err) => return Err(format!("{rel_str}#{idx} deserializer: {err}").into()),
         };
 

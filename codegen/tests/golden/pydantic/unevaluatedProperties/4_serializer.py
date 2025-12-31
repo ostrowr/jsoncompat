@@ -1,0 +1,41 @@
+"""
+Schema:
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "patternProperties": {
+    "^foo": {
+      "type": "string"
+    }
+  },
+  "type": "object",
+  "unevaluatedProperties": false
+}
+
+Tests:
+[
+  {
+    "data": {
+      "foo": "foo"
+    },
+    "description": "with no unevaluated properties",
+    "valid": true
+  },
+  {
+    "data": {
+      "bar": "bar",
+      "foo": "foo"
+    },
+    "description": "with unevaluated properties",
+    "valid": false
+  }
+]
+"""
+
+from __future__ import annotations
+
+from json_schema_codegen_base import DeserializerBase, SerializerBase
+from pydantic import ConfigDict, Field
+
+class Unevaluatedproperties4Serializer(SerializerBase):
+    model_config = ConfigDict(extra="allow")
+

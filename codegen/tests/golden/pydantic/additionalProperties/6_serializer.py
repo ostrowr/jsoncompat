@@ -21,11 +21,10 @@ Tests:
 
 from __future__ import annotations
 
-from typing import Any
-
-from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
+from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field
 
-class Additionalproperties6Serializer(SerializerRootModel):
-    root: Any
+class Additionalproperties6Serializer(SerializerBase):
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, None]
 

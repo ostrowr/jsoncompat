@@ -24,3 +24,4 @@ from pydantic import ConfigDict, Field
 
 class Bignum3Serializer(SerializerRootModel):
     root: Annotated[float, Field(le=18446744073709552000.0)]
+
