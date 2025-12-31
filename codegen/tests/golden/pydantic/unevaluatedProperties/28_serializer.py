@@ -1,49 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "unevaluatedProperties": true
-    },
-    {
-      "properties": {
-        "foo": {
-          "type": "string"
-        }
-      },
-      "unevaluatedProperties": false
-    }
-  ],
-  "type": "object"
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": "foo"
-    },
-    "description": "with no nested unevaluated properties",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": "bar",
-      "foo": "foo"
-    },
-    "description": "with nested unevaluated properties",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Unevaluatedproperties28Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "allOf": [
@@ -62,10 +25,6 @@ _JSON_SCHEMA = r"""
   "type": "object"
 }
 """
-_VALIDATE_FORMATS = False
-
-class Unevaluatedproperties28Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

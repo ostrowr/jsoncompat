@@ -1,46 +1,12 @@
-"""
-Schema:
-{
-  "$dynamicAnchor": "node",
-  "$id": "http://localhost:1234/draft2020-12/strict-tree.json",
-  "$ref": "tree.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "unevaluatedProperties": false
-}
-
-Tests:
-[
-  {
-    "data": {
-      "children": [
-        {
-          "daat": 1
-        }
-      ]
-    },
-    "description": "instance with misspelled field",
-    "valid": false
-  },
-  {
-    "data": {
-      "children": [
-        {
-          "data": 1
-        }
-      ]
-    },
-    "description": "instance with correct field",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Dynamicref13Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$dynamicAnchor": "node",
   "$id": "http://localhost:1234/draft2020-12/strict-tree.json",
@@ -49,10 +15,6 @@ _JSON_SCHEMA = r"""
   "unevaluatedProperties": false
 }
 """
-_VALIDATE_FORMATS = False
-
-class Dynamicref13Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

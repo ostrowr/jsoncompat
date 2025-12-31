@@ -1,126 +1,12 @@
-"""
-Schema:
-{
-  "$defs": {
-    "one": {
-      "properties": {
-        "a": true
-      }
-    },
-    "two": {
-      "properties": {
-        "x": true
-      },
-      "required": [
-        "x"
-      ]
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "$ref": "#/$defs/one"
-    },
-    {
-      "properties": {
-        "b": true
-      }
-    },
-    {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/two"
-        },
-        {
-          "properties": {
-            "y": true
-          },
-          "required": [
-            "y"
-          ]
-        }
-      ]
-    }
-  ],
-  "unevaluatedProperties": false
-}
-
-Tests:
-[
-  {
-    "data": {},
-    "description": "Empty is invalid (no x or y)",
-    "valid": false
-  },
-  {
-    "data": {
-      "a": 1,
-      "b": 1
-    },
-    "description": "a and b are invalid (no x or y)",
-    "valid": false
-  },
-  {
-    "data": {
-      "x": 1,
-      "y": 1
-    },
-    "description": "x and y are invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "a": 1,
-      "x": 1
-    },
-    "description": "a and x are valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "a": 1,
-      "y": 1
-    },
-    "description": "a and y are valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "a": 1,
-      "b": 1,
-      "x": 1
-    },
-    "description": "a and b and x are valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "a": 1,
-      "b": 1,
-      "y": 1
-    },
-    "description": "a and b and y are valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "a": 1,
-      "b": 1,
-      "x": 1,
-      "y": 1
-    },
-    "description": "a and b and x and y are invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Unevaluatedproperties33Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$defs": {
     "one": {
@@ -166,10 +52,6 @@ _JSON_SCHEMA = r"""
   "unevaluatedProperties": false
 }
 """
-_VALIDATE_FORMATS = False
-
-class Unevaluatedproperties33Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

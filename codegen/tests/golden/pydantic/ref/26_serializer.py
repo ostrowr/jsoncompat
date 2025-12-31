@@ -1,47 +1,14 @@
-"""
-Schema:
-{
-  "$defs": {
-    "bar": {
-      "$anchor": "something",
-      "type": "string"
-    }
-  },
-  "$id": "urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo": {
-      "$ref": "urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed#something"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": "bar"
-    },
-    "description": "a string is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": 12
-    },
-    "description": "a non-string is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref26Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "bar": {
@@ -58,12 +25,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Ref26Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

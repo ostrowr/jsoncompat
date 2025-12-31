@@ -56,7 +56,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let root: Value = serde_json::from_slice(&content)?;
     let schemas = collect_schemas(&root);
 
-    for (schema_json, idx, tests) in schemas {
+    for (schema_json, idx, _tests) in schemas {
         let golden_rel_path = strip_json_extension(&rel_str);
         if !regen && is_whitelisted(&whitelist, &golden_rel_path, idx) {
             continue;
@@ -75,8 +75,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         );
         let options = PydanticOptions::default()
             .with_root_model_name(root_name.clone())
-            .with_base_module(BASE_MODULE)
-            .with_header_comment(format_header_comment(&schema_json, &tests));
+            .with_base_module(BASE_MODULE);
         let serializer = match pydantic::generate_model_from_value(
             &schema_json,
             ModelRole::Serializer,
@@ -177,15 +176,6 @@ fn stub_model(
     };
 
     let mut out = String::new();
-    if let Some(comment) = &options.header_comment {
-        out.push_str("\"\"\"\n");
-        out.push_str(comment);
-        if !comment.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str("\"\"\"\n\n");
-    }
-
     let schema_str = schema_json.to_string();
     let pretty_schema =
         serde_json::to_string_pretty(schema_json).unwrap_or_else(|_| schema_str.clone());
@@ -193,14 +183,15 @@ fn stub_model(
     out.push_str("from jsonschema_rs import validator_for\n");
     out.push_str("from pydantic import BaseModel, ConfigDict, model_validator\n\n");
     let rendered_schema = format!("r\"\"\"\n{pretty_schema}\n\"\"\"");
-    out.push_str(&format!("_JSON_SCHEMA = {rendered_schema}\n"));
     let validate_formats = should_validate_formats(schema_json);
     out.push_str(&format!(
         "_VALIDATE_FORMATS = {}\n\n",
         if validate_formats { "True" } else { "False" }
     ));
     out.push_str(&format!("class {class_name}(BaseModel):\n"));
-    out.push_str("    __json_schema__: ClassVar[str] = _JSON_SCHEMA\n");
+    out.push_str("    __json_schema__: ClassVar[str] = ");
+    out.push_str(&rendered_schema);
+    out.push('\n');
     out.push_str("    _jsonschema_validator: ClassVar[object | None] = None\n\n");
     out.push_str("    @classmethod\n");
     out.push_str("    def _get_jsonschema_validator(cls):\n");
@@ -437,24 +428,4 @@ fn strip_json_extension(rel_path: &str) -> String {
     } else {
         rel_path.to_string()
     }
-}
-
-fn format_header_comment(schema: &Value, tests: &[Value]) -> String {
-    let mut out = String::new();
-    out.push_str("Schema:\n");
-    match serde_json::to_string_pretty(schema) {
-        Ok(s) => out.push_str(&s),
-        Err(_) => out.push_str("<unserializable schema>"),
-    }
-    out.push_str("\n\nTests:\n");
-    if tests.is_empty() {
-        out.push_str("[]");
-    } else {
-        match serde_json::to_string_pretty(tests) {
-            Ok(s) => out.push_str(&s),
-            Err(_) => out.push_str("<unserializable tests>"),
-        }
-    }
-    out.push('\n');
-    out
 }

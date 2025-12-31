@@ -1,45 +1,14 @@
-"""
-Schema:
-{
-  "$defs": {
-    "is-string": {
-      "type": "string"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "$ref": {
-      "$ref": "#/$defs/is-string"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "$ref": "a"
-    },
-    "description": "property named $ref valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "$ref": 2
-    },
-    "description": "property named $ref invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref8Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "is-string": {
@@ -54,12 +23,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Ref8Deserializer(DeserializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

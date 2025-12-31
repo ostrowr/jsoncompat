@@ -1,31 +1,14 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": {
-    "type": "null"
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": null
-    },
-    "description": "allows null values",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Additionalproperties6Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
@@ -33,12 +16,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Additionalproperties6Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

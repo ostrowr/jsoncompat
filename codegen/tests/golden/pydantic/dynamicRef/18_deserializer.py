@@ -1,47 +1,14 @@
-"""
-Schema:
-{
-  "$defs": {
-    "false": false,
-    "true": true
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "false": {
-      "$dynamicRef": "#/$defs/false"
-    },
-    "true": {
-      "$dynamicRef": "#/$defs/true"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "true": 1
-    },
-    "description": "follow $dynamicRef to a true schema",
-    "valid": true
-  },
-  {
-    "data": {
-      "false": 1
-    },
-    "description": "follow $dynamicRef to a false schema",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Dynamicref18Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "false": false,
@@ -58,12 +25,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Dynamicref18Deserializer(DeserializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

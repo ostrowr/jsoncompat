@@ -1,85 +1,14 @@
-"""
-Schema:
-{
-  "$defs": {
-    "percent%field": {
-      "type": "integer"
-    },
-    "slash/field": {
-      "type": "integer"
-    },
-    "tilde~field": {
-      "type": "integer"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "percent": {
-      "$ref": "#/$defs/percent%25field"
-    },
-    "slash": {
-      "$ref": "#/$defs/slash~1field"
-    },
-    "tilde": {
-      "$ref": "#/$defs/tilde~0field"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "slash": "aoeu"
-    },
-    "description": "slash invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "tilde": "aoeu"
-    },
-    "description": "tilde invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "percent": "aoeu"
-    },
-    "description": "percent invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "slash": 123
-    },
-    "description": "slash valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "tilde": 123
-    },
-    "description": "tilde valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "percent": 123
-    },
-    "description": "percent valid",
-    "valid": true
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref3Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "percent%field": {
@@ -106,12 +35,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Ref3Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

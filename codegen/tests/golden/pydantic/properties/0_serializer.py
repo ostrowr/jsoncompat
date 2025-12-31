@@ -1,70 +1,14 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "bar": {
-      "type": "string"
-    },
-    "foo": {
-      "type": "integer"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": "baz",
-      "foo": 1
-    },
-    "description": "both properties present and valid is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": {},
-      "foo": 1
-    },
-    "description": "one property invalid is invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": {},
-      "foo": []
-    },
-    "description": "both properties invalid is invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "quux": []
-    },
-    "description": "doesn't invalidate other properties",
-    "valid": true
-  },
-  {
-    "data": [],
-    "description": "ignores arrays",
-    "valid": true
-  },
-  {
-    "data": 12,
-    "description": "ignores other non-objects",
-    "valid": true
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Properties0Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
@@ -77,12 +21,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Properties0Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

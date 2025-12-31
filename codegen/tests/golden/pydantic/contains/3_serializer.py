@@ -1,47 +1,17 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contains": false
-}
-
-Tests:
-[
-  {
-    "data": [
-      "foo"
-    ],
-    "description": "any non-empty array is invalid",
-    "valid": false
-  },
-  {
-    "data": [],
-    "description": "empty array is invalid",
-    "valid": false
-  },
-  {
-    "data": "contains does not apply to strings",
-    "description": "non-arrays are valid",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Contains3Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contains": false
 }
 """
-_VALIDATE_FORMATS = False
-
-class Contains3Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

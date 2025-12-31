@@ -1,39 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "allOf": [
-        {
-          "type": "null"
-        }
-      ]
-    }
-  ]
-}
-
-Tests:
-[
-  {
-    "data": null,
-    "description": "null is valid",
-    "valid": true
-  },
-  {
-    "data": 123,
-    "description": "anything non-null is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Allof10Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "allOf": [
@@ -47,10 +20,6 @@ _JSON_SCHEMA = r"""
   ]
 }
 """
-_VALIDATE_FORMATS = False
-
-class Allof10Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

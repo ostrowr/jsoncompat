@@ -1,67 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "oneOf": [
-    {
-      "required": [
-        "foo",
-        "bar"
-      ]
-    },
-    {
-      "required": [
-        "foo",
-        "baz"
-      ]
-    }
-  ],
-  "type": "object"
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": 2
-    },
-    "description": "both invalid - invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": 2,
-      "foo": 1
-    },
-    "description": "first valid - valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "baz": 3,
-      "foo": 1
-    },
-    "description": "second valid - valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": 2,
-      "baz": 3,
-      "foo": 1
-    },
-    "description": "both valid - invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Oneof8Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "oneOf": [
@@ -81,10 +26,6 @@ _JSON_SCHEMA = r"""
   "type": "object"
 }
 """
-_VALIDATE_FORMATS = False
-
-class Oneof8Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

@@ -1,48 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contains": {
-    "const": 1
-  },
-  "maxContains": 3,
-  "minContains": 1
-}
-
-Tests:
-[
-  {
-    "data": [],
-    "description": "actual < minContains < maxContains",
-    "valid": false
-  },
-  {
-    "data": [
-      1,
-      1
-    ],
-    "description": "minContains < actual < maxContains",
-    "valid": true
-  },
-  {
-    "data": [
-      1,
-      1,
-      1,
-      1
-    ],
-    "description": "minContains < maxContains < actual",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Maxcontains3Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contains": {
@@ -52,10 +16,6 @@ _JSON_SCHEMA = r"""
   "minContains": 1
 }
 """
-_VALIDATE_FORMATS = False
-
-class Maxcontains3Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

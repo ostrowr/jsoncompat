@@ -1,61 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "oneOf": [
-    {
-      "prefixItems": [
-        true,
-        {
-          "const": "bar"
-        }
-      ]
-    },
-    {
-      "prefixItems": [
-        true,
-        {
-          "const": "baz"
-        }
-      ]
-    }
-  ],
-  "prefixItems": [
-    {
-      "const": "foo"
-    }
-  ],
-  "unevaluatedItems": false
-}
-
-Tests:
-[
-  {
-    "data": [
-      "foo",
-      "bar"
-    ],
-    "description": "with no unevaluated items",
-    "valid": true
-  },
-  {
-    "data": [
-      "foo",
-      "bar",
-      42
-    ],
-    "description": "with unevaluated items",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Unevaluateditems12Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "oneOf": [
@@ -84,10 +35,6 @@ _JSON_SCHEMA = r"""
   "unevaluatedItems": false
 }
 """
-_VALIDATE_FORMATS = False
-
-class Unevaluateditems12Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

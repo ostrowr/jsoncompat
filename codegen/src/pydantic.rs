@@ -15,7 +15,6 @@ pub struct PydanticOptions {
     pub serializer_suffix: String,
     pub deserializer_suffix: String,
     pub base_module: Option<String>,
-    pub header_comment: Option<String>,
 }
 
 impl Default for PydanticOptions {
@@ -25,7 +24,6 @@ impl Default for PydanticOptions {
             serializer_suffix: "Serializer".to_string(),
             deserializer_suffix: "Deserializer".to_string(),
             base_module: None,
-            header_comment: None,
         }
     }
 }
@@ -38,11 +36,6 @@ impl PydanticOptions {
 
     pub fn with_base_module(mut self, module: impl Into<String>) -> Self {
         self.base_module = Some(module.into());
-        self
-    }
-
-    pub fn with_header_comment(mut self, comment: impl Into<String>) -> Self {
-        self.header_comment = Some(comment.into());
         self
     }
 }
@@ -95,7 +88,8 @@ impl PydanticGenerator {
         role: ModelRole,
     ) -> Result<String, CodegenError> {
         let (ordered_models, needs_rebuild) = topo_sort_models(&graph.models);
-        let mut ctx = PyContext::new(&self.options, schema_json);
+        let root_literal = schema_string_literal(schema_json)?;
+        let mut ctx = PyContext::new(&self.options, schema_json, root_literal);
         let needs_root_wrapper = !matches!(
             &graph.root_type,
             SchemaType::Object(name) if name == &graph.root_name
@@ -167,14 +161,6 @@ impl PydanticGenerator {
         }
 
         let mut rendered = String::new();
-        if let Some(comment) = &self.options.header_comment {
-            rendered.push_str("\"\"\"\n");
-            rendered.push_str(comment);
-            if !comment.ends_with('\n') {
-                rendered.push('\n');
-            }
-            rendered.push_str("\"\"\"\n\n");
-        }
         rendered.push_str(&ctx.imports.render());
         rendered.push_str(&out.finish());
         Ok(rendered)
@@ -222,15 +208,17 @@ struct PyContext {
     options: PydanticOptions,
     root_schema: Value,
     validate_formats: bool,
+    root_schema_literal: String,
 }
 
 impl PyContext {
-    fn new(options: &PydanticOptions, root_schema: &Value) -> Self {
+    fn new(options: &PydanticOptions, root_schema: &Value, root_schema_literal: String) -> Self {
         Self {
             imports: ImportSet::new(),
             options: options.clone(),
             root_schema: root_schema.clone(),
             validate_formats: false,
+            root_schema_literal,
         }
     }
 
@@ -598,9 +586,6 @@ fn should_validate_formats(schema: &Value) -> bool {
 }
 
 fn emit_schema_helpers(out: &mut CodeWriter, ctx: &mut PyContext) -> Result<(), CodegenError> {
-    let rendered_schema = schema_string_literal(&ctx.root_schema)?;
-    out.push_line(&format!("_JSON_SCHEMA = {rendered_schema}"));
-    out.push_empty();
     out.push_line(&format!(
         "_VALIDATE_FORMATS = {}",
         if ctx.validate_formats {
@@ -920,7 +905,7 @@ fn emit_model(
 
     out.push_line("_validate_formats = _VALIDATE_FORMATS");
     if model.schema_path.as_segments().is_empty() {
-        out.push_line("__json_schema__ = _JSON_SCHEMA");
+        out.push_line(&format!("__json_schema__ = {}", ctx.root_schema_literal));
     } else {
         let schema_for_model = schema_for_path(ctx, &model.schema_path);
         let rendered_schema = schema_string_literal(&schema_for_model)?;
@@ -994,7 +979,7 @@ fn emit_root_model(
     out.push_line(&format!("class {class_name}({base}):"));
     out.indent();
     out.push_line("_validate_formats = _VALIDATE_FORMATS");
-    out.push_line("__json_schema__ = _JSON_SCHEMA");
+    out.push_line(&format!("__json_schema__ = {}", ctx.root_schema_literal));
     out.push_line(&format!("root: {rendered_type}"));
     out.dedent();
     out.push_empty();

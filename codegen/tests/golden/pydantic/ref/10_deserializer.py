@@ -1,29 +1,12 @@
-"""
-Schema:
-{
-  "$defs": {
-    "bool": false
-  },
-  "$ref": "#/$defs/bool",
-  "$schema": "https://json-schema.org/draft/2020-12/schema"
-}
-
-Tests:
-[
-  {
-    "data": "foo",
-    "description": "any value is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref10Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$defs": {
     "bool": false
@@ -32,10 +15,6 @@ _JSON_SCHEMA = r"""
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }
 """
-_VALIDATE_FORMATS = False
-
-class Ref10Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

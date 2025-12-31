@@ -1,43 +1,14 @@
-"""
-Schema:
-{
-  "$comment": "URIs do not have to have HTTP(s) schemes",
-  "$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "minimum": 30,
-  "properties": {
-    "foo": {
-      "$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": 37
-    },
-    "description": "valid under the URN IDed schema",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": 12
-    },
-    "description": "invalid under the URN IDed schema",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref20Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$comment": "URIs do not have to have HTTP(s) schemes",
   "$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed",
@@ -50,12 +21,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Ref20Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

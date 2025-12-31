@@ -1,110 +1,9 @@
-"""
-Schema:
-{
-  "$defs": {
-    "bar": {
-      "$id": "bar",
-      "properties": {
-        "baz": {
-          "$dynamicRef": "extended#meta"
-        }
-      },
-      "type": "object"
-    },
-    "extended": {
-      "$dynamicAnchor": "meta",
-      "$id": "extended",
-      "properties": {
-        "bar": {
-          "$ref": "bar"
-        }
-      },
-      "type": "object"
-    }
-  },
-  "$dynamicAnchor": "meta",
-  "$id": "https://test.json-schema.org/relative-dynamic-reference/root",
-  "$ref": "extended",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo": {
-      "const": "pass"
-    }
-  },
-  "type": "object"
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": {
-        "baz": {
-          "foo": "pass"
-        }
-      },
-      "foo": "pass"
-    },
-    "description": "The recursive part is valid against the root",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": {
-        "baz": {
-          "foo": "fail"
-        }
-      },
-      "foo": "pass"
-    },
-    "description": "The recursive part is not valid against the root",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar, Literal
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase, _validate_literal
 from pydantic import ConfigDict, Field, model_validator
 from pydantic.functional_validators import BeforeValidator
 from pydantic_core import core_schema
-
-_JSON_SCHEMA = r"""
-{
-  "$defs": {
-    "bar": {
-      "$id": "bar",
-      "properties": {
-        "baz": {
-          "$dynamicRef": "extended#meta"
-        }
-      },
-      "type": "object"
-    },
-    "extended": {
-      "$dynamicAnchor": "meta",
-      "$id": "extended",
-      "properties": {
-        "bar": {
-          "$ref": "bar"
-        }
-      },
-      "type": "object"
-    }
-  },
-  "$dynamicAnchor": "meta",
-  "$id": "https://test.json-schema.org/relative-dynamic-reference/root",
-  "$ref": "extended",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo": {
-      "const": "pass"
-    }
-  },
-  "type": "object"
-}
-"""
 
 _VALIDATE_FORMATS = False
 
@@ -150,7 +49,41 @@ class ModelSerializer(SerializerBase):
 
 class Dynamicref9Serializer(SerializerBase):
     _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
+    __json_schema__ = r"""
+{
+  "$defs": {
+    "bar": {
+      "$id": "bar",
+      "properties": {
+        "baz": {
+          "$dynamicRef": "extended#meta"
+        }
+      },
+      "type": "object"
+    },
+    "extended": {
+      "$dynamicAnchor": "meta",
+      "$id": "extended",
+      "properties": {
+        "bar": {
+          "$ref": "bar"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$dynamicAnchor": "meta",
+  "$id": "https://test.json-schema.org/relative-dynamic-reference/root",
+  "$ref": "extended",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "foo": {
+      "const": "pass"
+    }
+  },
+  "type": "object"
+}
+"""
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

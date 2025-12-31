@@ -1,60 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contains": {
-    "multipleOf": 3
-  },
-  "items": {
-    "multipleOf": 2
-  }
-}
-
-Tests:
-[
-  {
-    "data": [
-      2,
-      4,
-      8
-    ],
-    "description": "matches items, does not match contains",
-    "valid": false
-  },
-  {
-    "data": [
-      3,
-      6,
-      9
-    ],
-    "description": "does not match items, matches contains",
-    "valid": false
-  },
-  {
-    "data": [
-      6,
-      12
-    ],
-    "description": "matches both items and contains",
-    "valid": true
-  },
-  {
-    "data": [
-      1,
-      5
-    ],
-    "description": "matches neither items nor contains",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Contains4Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contains": {
@@ -65,10 +17,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Contains4Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

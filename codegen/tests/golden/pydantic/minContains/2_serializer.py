@@ -1,70 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contains": {
-    "const": 1
-  },
-  "minContains": 2
-}
-
-Tests:
-[
-  {
-    "data": [],
-    "description": "empty data",
-    "valid": false
-  },
-  {
-    "data": [
-      1
-    ],
-    "description": "all elements match, invalid minContains",
-    "valid": false
-  },
-  {
-    "data": [
-      1,
-      2
-    ],
-    "description": "some elements match, invalid minContains",
-    "valid": false
-  },
-  {
-    "data": [
-      1,
-      1
-    ],
-    "description": "all elements match, valid minContains (exactly as needed)",
-    "valid": true
-  },
-  {
-    "data": [
-      1,
-      1,
-      1
-    ],
-    "description": "all elements match, valid minContains (more than needed)",
-    "valid": true
-  },
-  {
-    "data": [
-      1,
-      2,
-      1
-    ],
-    "description": "some elements match, valid minContains",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Mincontains2Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contains": {
@@ -73,10 +15,6 @@ _JSON_SCHEMA = r"""
   "minContains": 2
 }
 """
-_VALIDATE_FORMATS = False
-
-class Mincontains2Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

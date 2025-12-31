@@ -1,81 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "anyOf": [
-    {
-      "prefixItems": [
-        true,
-        {
-          "const": "bar"
-        }
-      ]
-    },
-    {
-      "prefixItems": [
-        true,
-        true,
-        {
-          "const": "baz"
-        }
-      ]
-    }
-  ],
-  "prefixItems": [
-    {
-      "const": "foo"
-    }
-  ],
-  "unevaluatedItems": false
-}
-
-Tests:
-[
-  {
-    "data": [
-      "foo",
-      "bar"
-    ],
-    "description": "when one schema matches and has no unevaluated items",
-    "valid": true
-  },
-  {
-    "data": [
-      "foo",
-      "bar",
-      42
-    ],
-    "description": "when one schema matches and has unevaluated items",
-    "valid": false
-  },
-  {
-    "data": [
-      "foo",
-      "bar",
-      "baz"
-    ],
-    "description": "when two schemas match and has no unevaluated items",
-    "valid": true
-  },
-  {
-    "data": [
-      "foo",
-      "bar",
-      "baz",
-      42
-    ],
-    "description": "when two schemas match and has unevaluated items",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Unevaluateditems11Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "anyOf": [
@@ -105,10 +36,6 @@ _JSON_SCHEMA = r"""
   "unevaluatedItems": false
 }
 """
-_VALIDATE_FORMATS = False
-
-class Unevaluateditems11Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

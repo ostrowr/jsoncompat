@@ -1,69 +1,12 @@
-"""
-Schema:
-{
-  "$id": "http://localhost:1234/draft2020-12/strict-extendible-allof-defs-first.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "$ref": "extendible-dynamic-ref.json"
-    },
-    {
-      "$defs": {
-        "elements": {
-          "$dynamicAnchor": "elements",
-          "additionalProperties": false,
-          "properties": {
-            "a": true
-          },
-          "required": [
-            "a"
-          ]
-        }
-      }
-    }
-  ]
-}
-
-Tests:
-[
-  {
-    "data": {
-      "a": true
-    },
-    "description": "incorrect parent schema",
-    "valid": false
-  },
-  {
-    "data": {
-      "elements": [
-        {
-          "b": 1
-        }
-      ]
-    },
-    "description": "incorrect extended schema",
-    "valid": false
-  },
-  {
-    "data": {
-      "elements": [
-        {
-          "a": 1
-        }
-      ]
-    },
-    "description": "correct extended schema",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Dynamicref15Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$id": "http://localhost:1234/draft2020-12/strict-extendible-allof-defs-first.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -88,10 +31,6 @@ _JSON_SCHEMA = r"""
   ]
 }
 """
-_VALIDATE_FORMATS = False
-
-class Dynamicref15Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

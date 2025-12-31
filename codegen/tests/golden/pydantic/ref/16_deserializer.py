@@ -1,67 +1,12 @@
-"""
-Schema:
-{
-  "$id": "http://example.com/schema-refs-absolute-uris-defs1.json",
-  "$ref": "schema-refs-absolute-uris-defs2.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo": {
-      "$defs": {
-        "inner": {
-          "properties": {
-            "bar": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "$id": "http://example.com/schema-refs-absolute-uris-defs2.json",
-      "$ref": "#/$defs/inner"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": "a",
-      "foo": {
-        "bar": 1
-      }
-    },
-    "description": "invalid on inner field",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": 1,
-      "foo": {
-        "bar": "a"
-      }
-    },
-    "description": "invalid on outer field",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": "a",
-      "foo": {
-        "bar": "a"
-      }
-    },
-    "description": "valid on both fields",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref16Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$id": "http://example.com/schema-refs-absolute-uris-defs1.json",
   "$ref": "schema-refs-absolute-uris-defs2.json",
@@ -83,10 +28,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Ref16Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

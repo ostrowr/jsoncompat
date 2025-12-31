@@ -1,35 +1,12 @@
-"""
-Schema:
-{
-  "$ref": "http://example.com/ref/else",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "else": {
-    "$id": "http://example.com/ref/else",
-    "type": "integer"
-  }
-}
-
-Tests:
-[
-  {
-    "data": "foo",
-    "description": "a non-integer is invalid due to the $ref",
-    "valid": false
-  },
-  {
-    "data": 12,
-    "description": "an integer is valid",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref30Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$ref": "http://example.com/ref/else",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -39,10 +16,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Ref30Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

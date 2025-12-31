@@ -1,52 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contains": {
-    "const": 5
-  }
-}
-
-Tests:
-[
-  {
-    "data": [
-      3,
-      4,
-      5
-    ],
-    "description": "array with item 5 is valid",
-    "valid": true
-  },
-  {
-    "data": [
-      3,
-      4,
-      5,
-      5
-    ],
-    "description": "array with two items 5 is valid",
-    "valid": true
-  },
-  {
-    "data": [
-      1,
-      2,
-      3,
-      4
-    ],
-    "description": "array without item 5 is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Contains1Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contains": {
@@ -54,10 +14,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Contains1Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

@@ -1,99 +1,8 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "anyOf": [
-    {
-      "properties": {
-        "bar": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "bar"
-      ]
-    },
-    {
-      "properties": {
-        "foo": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "foo"
-      ]
-    }
-  ]
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": 2
-    },
-    "description": "first anyOf valid (complex)",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": "baz"
-    },
-    "description": "second anyOf valid (complex)",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": 2,
-      "foo": "baz"
-    },
-    "description": "both anyOf valid (complex)",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": "quux",
-      "foo": 2
-    },
-    "description": "neither anyOf valid (complex)",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
-
-_JSON_SCHEMA = r"""
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "anyOf": [
-    {
-      "properties": {
-        "bar": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "bar"
-      ]
-    },
-    {
-      "properties": {
-        "foo": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "foo"
-      ]
-    }
-  ]
-}
-"""
 
 _VALIDATE_FORMATS = False
 
@@ -187,6 +96,32 @@ class Model2Serializer(SerializerBase):
 
 class Anyof5Serializer(SerializerRootModel):
     _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
+    __json_schema__ = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "properties": {
+        "bar": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bar"
+      ]
+    },
+    {
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "foo"
+      ]
+    }
+  ]
+}
+"""
     root: ModelSerializer | Model2Serializer
 

@@ -53,7 +53,7 @@ fn pydantic_typed_additional_properties() {
     let code = pydantic::generate_model_from_value(&schema_json, ModelRole::Serializer, options)
         .expect("codegen failed");
 
-    assert!(code.contains("_JSON_SCHEMA = r\"\"\""));
+    assert!(code.contains("__json_schema__ = r\"\"\""));
     assert!(code.contains("\"additionalProperties\": {"));
     assert!(code.contains("\"type\": \"string\""));
     assert!(code.contains("model_config = ConfigDict(extra=\"allow\")"));

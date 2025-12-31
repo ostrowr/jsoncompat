@@ -1,92 +1,8 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "oneOf": [
-    {
-      "properties": {
-        "bar": true,
-        "baz": true
-      },
-      "required": [
-        "bar"
-      ]
-    },
-    {
-      "properties": {
-        "foo": true
-      },
-      "required": [
-        "foo"
-      ]
-    }
-  ]
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": 8
-    },
-    "description": "first oneOf valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": "foo"
-    },
-    "description": "second oneOf valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": 8,
-      "foo": "foo"
-    },
-    "description": "both oneOf valid",
-    "valid": false
-  },
-  {
-    "data": {
-      "baz": "quux"
-    },
-    "description": "neither oneOf valid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
-
-_JSON_SCHEMA = r"""
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "oneOf": [
-    {
-      "properties": {
-        "bar": true,
-        "baz": true
-      },
-      "required": [
-        "bar"
-      ]
-    },
-    {
-      "properties": {
-        "foo": true
-      },
-      "required": [
-        "foo"
-      ]
-    }
-  ]
-}
-"""
 
 _VALIDATE_FORMATS = False
 
@@ -175,6 +91,29 @@ class Model2Serializer(SerializerBase):
 
 class Oneof9Serializer(SerializerRootModel):
     _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
+    __json_schema__ = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "properties": {
+        "bar": true,
+        "baz": true
+      },
+      "required": [
+        "bar"
+      ]
+    },
+    {
+      "properties": {
+        "foo": true
+      },
+      "required": [
+        "foo"
+      ]
+    }
+  ]
+}
+"""
     root: ModelSerializer | Model2Serializer
 

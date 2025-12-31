@@ -1,44 +1,12 @@
-"""
-Schema:
-{
-  "$defs": {
-    "": {
-      "$defs": {
-        "": {
-          "type": "number"
-        }
-      }
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "$ref": "#/$defs//$defs/"
-    }
-  ]
-}
-
-Tests:
-[
-  {
-    "data": 1,
-    "description": "number is valid",
-    "valid": true
-  },
-  {
-    "data": "a",
-    "description": "non-number is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref34Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$defs": {
     "": {
@@ -57,10 +25,6 @@ _JSON_SCHEMA = r"""
   ]
 }
 """
-_VALIDATE_FORMATS = False
-
-class Ref34Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

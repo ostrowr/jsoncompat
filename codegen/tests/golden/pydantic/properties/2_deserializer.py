@@ -1,51 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "bar": false,
-    "foo": true
-  }
-}
-
-Tests:
-[
-  {
-    "data": {},
-    "description": "no property present is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": 1
-    },
-    "description": "only 'true' property present is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": 2
-    },
-    "description": "only 'false' property present is invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": 2,
-      "foo": 1
-    },
-    "description": "both properties present is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Properties2Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
@@ -54,10 +15,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Properties2Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

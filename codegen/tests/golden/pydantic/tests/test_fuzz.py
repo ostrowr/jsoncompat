@@ -96,15 +96,15 @@ def find_serializer_class(glb: dict[str, object]):
                 c for c in schema_candidates if issubclass(c, SerializerRootModel)
             ]
             if root_schema_candidates:
-                return root_schema_candidates[0]
-            return schema_candidates[0]
+                return root_schema_candidates[-1]
+            return schema_candidates[-1]
     root_candidates = [c for c in candidates if issubclass(c, SerializerRootModel)]
     if root_candidates:
-        return root_candidates[0]
+        return root_candidates[-1]
     base_candidates = [c for c in candidates if issubclass(c, SerializerBase)]
     if base_candidates:
-        return base_candidates[0]
-    return candidates[0] if candidates else None
+        return base_candidates[-1]
+    return candidates[-1] if candidates else None
 
 
 @pytest.fixture(scope="session", autouse=True)

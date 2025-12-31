@@ -1,56 +1,12 @@
-"""
-Schema:
-{
-  "$defs": {
-    "reffed": {
-      "type": "array"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo": {
-      "$ref": "#/$defs/reffed",
-      "maxItems": 2
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": []
-    },
-    "description": "ref valid, maxItems valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": [
-        1,
-        2,
-        3
-      ]
-    },
-    "description": "ref valid, maxItems invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "foo": "string"
-    },
-    "description": "ref invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref5Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$defs": {
     "reffed": {
@@ -66,10 +22,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Ref5Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

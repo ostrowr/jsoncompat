@@ -1,55 +1,14 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "dependentSchemas": {
-    "foo": {},
-    "foo2": {
-      "properties": {
-        "bar": {}
-      }
-    }
-  },
-  "properties": {
-    "foo2": {}
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": ""
-    },
-    "description": "additionalProperties doesn't consider dependentSchemas",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": ""
-    },
-    "description": "additionalProperties can't see bar",
-    "valid": false
-  },
-  {
-    "data": {
-      "bar": "",
-      "foo2": ""
-    },
-    "description": "additionalProperties can't see bar even when foo2 is present",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Additionalproperties8Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -66,12 +25,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Additionalproperties8Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

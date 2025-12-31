@@ -1,58 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "properties": {
-        "foo": true
-      },
-      "unevaluatedProperties": false
-    }
-  ],
-  "anyOf": [
-    {
-      "properties": {
-        "bar": true
-      }
-    }
-  ],
-  "type": "object"
-}
-
-Tests:
-[
-  {
-    "data": {
-      "bar": 1,
-      "foo": 1
-    },
-    "description": "base case: both properties present",
-    "valid": false
-  },
-  {
-    "data": {
-      "foo": 1
-    },
-    "description": "in place applicator siblings, bar is missing",
-    "valid": true
-  },
-  {
-    "data": {
-      "bar": 1
-    },
-    "description": "in place applicator siblings, foo is missing",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Unevaluatedproperties30Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "allOf": [
@@ -73,10 +27,6 @@ _JSON_SCHEMA = r"""
   "type": "object"
 }
 """
-_VALIDATE_FORMATS = False
-
-class Unevaluatedproperties30Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

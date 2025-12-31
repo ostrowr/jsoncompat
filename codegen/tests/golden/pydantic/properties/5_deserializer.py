@@ -1,106 +1,8 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "__proto__": {
-      "type": "number"
-    },
-    "constructor": {
-      "type": "number"
-    },
-    "toString": {
-      "properties": {
-        "length": {
-          "type": "string"
-        }
-      }
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": [],
-    "description": "ignores arrays",
-    "valid": true
-  },
-  {
-    "data": 12,
-    "description": "ignores other non-objects",
-    "valid": true
-  },
-  {
-    "data": {},
-    "description": "none of the properties mentioned",
-    "valid": true
-  },
-  {
-    "data": {
-      "__proto__": "foo"
-    },
-    "description": "__proto__ not valid",
-    "valid": false
-  },
-  {
-    "data": {
-      "toString": {
-        "length": 37
-      }
-    },
-    "description": "toString not valid",
-    "valid": false
-  },
-  {
-    "data": {
-      "constructor": {
-        "length": 37
-      }
-    },
-    "description": "constructor not valid",
-    "valid": false
-  },
-  {
-    "data": {
-      "__proto__": 12,
-      "constructor": 37,
-      "toString": {
-        "length": "foo"
-      }
-    },
-    "description": "all present and valid",
-    "valid": true
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
-
-_JSON_SCHEMA = r"""
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "__proto__": {
-      "type": "number"
-    },
-    "constructor": {
-      "type": "number"
-    },
-    "toString": {
-      "properties": {
-        "length": {
-          "type": "string"
-        }
-      }
-    }
-  }
-}
-"""
 
 _VALIDATE_FORMATS = False
 
@@ -143,7 +45,26 @@ class ModelDeserializer(DeserializerBase):
 
 class Properties5Deserializer(DeserializerBase):
     _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
+    __json_schema__ = r"""
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "__proto__": {
+      "type": "number"
+    },
+    "constructor": {
+      "type": "number"
+    },
+    "toString": {
+      "properties": {
+        "length": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+"""
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

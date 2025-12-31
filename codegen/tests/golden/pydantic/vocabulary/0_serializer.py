@@ -1,48 +1,12 @@
-"""
-Schema:
-{
-  "$id": "https://schema/using/no/validation",
-  "$schema": "http://localhost:1234/draft2020-12/metaschema-no-validation.json",
-  "properties": {
-    "badProperty": false,
-    "numberProperty": {
-      "minimum": 10
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "badProperty": "this property should not exist"
-    },
-    "description": "applicator vocabulary still works",
-    "valid": false
-  },
-  {
-    "data": {
-      "numberProperty": 20
-    },
-    "description": "no validation: valid number",
-    "valid": true
-  },
-  {
-    "data": {
-      "numberProperty": 1
-    },
-    "description": "no validation: invalid number, but it still validates",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Vocabulary0Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$id": "https://schema/using/no/validation",
   "$schema": "http://localhost:1234/draft2020-12/metaschema-no-validation.json",
@@ -54,10 +18,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Vocabulary0Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

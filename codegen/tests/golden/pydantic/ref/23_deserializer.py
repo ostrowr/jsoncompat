@@ -1,47 +1,14 @@
-"""
-Schema:
-{
-  "$comment": "RFC 8141 §2.3.1",
-  "$defs": {
-    "bar": {
-      "type": "string"
-    }
-  },
-  "$id": "urn:example:foo-bar-baz-qux?+CCResolve:cc=uk",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo": {
-      "$ref": "#/$defs/bar"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": "bar"
-    },
-    "description": "a string is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": 12
-    },
-    "description": "a non-string is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref23Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$comment": "RFC 8141 §2.3.1",
   "$defs": {
@@ -58,12 +25,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Ref23Deserializer(DeserializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

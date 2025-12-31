@@ -1,42 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "if": {
-    "prefixItems": [
-      {
-        "const": "a"
-      }
-    ]
-  },
-  "unevaluatedItems": false
-}
-
-Tests:
-[
-  {
-    "data": [
-      "a"
-    ],
-    "description": "valid in case if is evaluated",
-    "valid": true
-  },
-  {
-    "data": [
-      "b"
-    ],
-    "description": "invalid in case if is evaluated",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Unevaluateditems26Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "if": {
@@ -49,10 +19,6 @@ _JSON_SCHEMA = r"""
   "unevaluatedItems": false
 }
 """
-_VALIDATE_FORMATS = False
-
-class Unevaluateditems26Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

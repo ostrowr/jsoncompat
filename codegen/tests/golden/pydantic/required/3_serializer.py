@@ -1,49 +1,14 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "required": [
-    "foo\nbar",
-    "foo\"bar",
-    "foo\\bar",
-    "foo\rbar",
-    "foo\tbar",
-    "foo\fbar"
-  ]
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo\tbar": 1,
-      "foo\nbar": 1,
-      "foo\fbar": 1,
-      "foo\rbar": 1,
-      "foo\"bar": 1,
-      "foo\\bar": 1
-    },
-    "description": "object with all properties present is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo\nbar": "1",
-      "foo\"bar": "1"
-    },
-    "description": "object with some properties missing is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Required3Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "required": [
@@ -56,12 +21,6 @@ _JSON_SCHEMA = r"""
   ]
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Required3Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

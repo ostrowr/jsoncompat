@@ -1,73 +1,14 @@
-"""
-Schema:
-false
-
-Tests:
-[
-  {
-    "data": 1,
-    "description": "number is invalid",
-    "valid": false
-  },
-  {
-    "data": "foo",
-    "description": "string is invalid",
-    "valid": false
-  },
-  {
-    "data": true,
-    "description": "boolean true is invalid",
-    "valid": false
-  },
-  {
-    "data": false,
-    "description": "boolean false is invalid",
-    "valid": false
-  },
-  {
-    "data": null,
-    "description": "null is invalid",
-    "valid": false
-  },
-  {
-    "data": {
-      "foo": "bar"
-    },
-    "description": "object is invalid",
-    "valid": false
-  },
-  {
-    "data": {},
-    "description": "empty object is invalid",
-    "valid": false
-  },
-  {
-    "data": [
-      "foo"
-    ],
-    "description": "array is invalid",
-    "valid": false
-  },
-  {
-    "data": [],
-    "description": "empty array is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
-false
-"""
 _VALIDATE_FORMATS = False
 
 class BooleanSchema1Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
+    __json_schema__: ClassVar[str] = r"""
+false
+"""
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

@@ -1,65 +1,14 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "foo\tbar": {
-      "type": "number"
-    },
-    "foo\nbar": {
-      "type": "number"
-    },
-    "foo\fbar": {
-      "type": "number"
-    },
-    "foo\rbar": {
-      "type": "number"
-    },
-    "foo\"bar": {
-      "type": "number"
-    },
-    "foo\\bar": {
-      "type": "number"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo\tbar": 1,
-      "foo\nbar": 1,
-      "foo\fbar": 1,
-      "foo\rbar": 1,
-      "foo\"bar": 1,
-      "foo\\bar": 1
-    },
-    "description": "object with all numbers is valid",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo\tbar": "1",
-      "foo\nbar": "1",
-      "foo\fbar": "1",
-      "foo\rbar": "1",
-      "foo\"bar": "1",
-      "foo\\bar": "1"
-    },
-    "description": "object with strings is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Properties3Deserializer(DeserializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
@@ -84,12 +33,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Properties3Deserializer(DeserializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

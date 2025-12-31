@@ -1,71 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "items": false,
-  "prefixItems": [
-    {
-      "type": "boolean"
-    },
-    {
-      "type": "boolean"
-    }
-  ],
-  "uniqueItems": true
-}
-
-Tests:
-[
-  {
-    "data": [
-      false,
-      true
-    ],
-    "description": "[false, true] from items array is valid",
-    "valid": true
-  },
-  {
-    "data": [
-      true,
-      false
-    ],
-    "description": "[true, false] from items array is valid",
-    "valid": true
-  },
-  {
-    "data": [
-      false,
-      false
-    ],
-    "description": "[false, false] from items array is not valid",
-    "valid": false
-  },
-  {
-    "data": [
-      true,
-      true
-    ],
-    "description": "[true, true] from items array is not valid",
-    "valid": false
-  },
-  {
-    "data": [
-      false,
-      true,
-      null
-    ],
-    "description": "extra items are invalid even if unique",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Uniqueitems2Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "items": false,
@@ -80,10 +21,6 @@ _JSON_SCHEMA = r"""
   "uniqueItems": true
 }
 """
-_VALIDATE_FORMATS = False
-
-class Uniqueitems2Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

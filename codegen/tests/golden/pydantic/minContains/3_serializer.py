@@ -1,39 +1,12 @@
-"""
-Schema:
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contains": {
-    "const": 1
-  },
-  "minContains": 2
-}
-
-Tests:
-[
-  {
-    "data": [
-      1
-    ],
-    "description": "one element matches, invalid minContains",
-    "valid": false
-  },
-  {
-    "data": [
-      1,
-      1
-    ],
-    "description": "both elements match, valid minContains",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Mincontains3Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contains": {
@@ -42,10 +15,6 @@ _JSON_SCHEMA = r"""
   "minContains": 2
 }
 """
-_VALIDATE_FORMATS = False
-
-class Mincontains3Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

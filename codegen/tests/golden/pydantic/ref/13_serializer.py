@@ -1,38 +1,12 @@
-"""
-Schema:
-{
-  "$defs": {
-    "A": {
-      "unevaluatedProperties": false
-    }
-  },
-  "$ref": "#/$defs/A",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "prop1": {
-      "type": "string"
-    }
-  }
-}
-
-Tests:
-[
-  {
-    "data": {
-      "prop1": "match"
-    },
-    "description": "referenced subschema doesn't see annotations from properties",
-    "valid": false
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref13Serializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$defs": {
     "A": {
@@ -48,10 +22,6 @@ _JSON_SCHEMA = r"""
   }
 }
 """
-_VALIDATE_FORMATS = False
-
-class Ref13Serializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod

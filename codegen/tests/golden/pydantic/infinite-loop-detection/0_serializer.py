@@ -1,54 +1,14 @@
-"""
-Schema:
-{
-  "$defs": {
-    "int": {
-      "type": "integer"
-    }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "allOf": [
-    {
-      "properties": {
-        "foo": {
-          "$ref": "#/$defs/int"
-        }
-      }
-    },
-    {
-      "additionalProperties": {
-        "$ref": "#/$defs/int"
-      }
-    }
-  ]
-}
-
-Tests:
-[
-  {
-    "data": {
-      "foo": 1
-    },
-    "description": "passing case",
-    "valid": true
-  },
-  {
-    "data": {
-      "foo": "a string"
-    },
-    "description": "failing case",
-    "valid": false
-  }
-]
-"""
-
 from typing import Annotated, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, SerializerBase
 from pydantic import ConfigDict, Field, model_validator
 from pydantic_core import core_schema
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Infiniteloopdetection0Serializer(SerializerBase):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "int": {
@@ -72,12 +32,6 @@ _JSON_SCHEMA = r"""
   ]
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Infiniteloopdetection0Serializer(SerializerBase):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
 
     @classmethod
     def __get_pydantic_core_schema__(cls, source, handler):

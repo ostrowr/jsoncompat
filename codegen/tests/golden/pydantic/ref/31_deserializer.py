@@ -1,42 +1,13 @@
-"""
-Schema:
-{
-  "$defs": {
-    "a": {
-      "$id": "http://example.com/ref/absref/foobar.json",
-      "type": "number"
-    },
-    "b": {
-      "$id": "http://example.com/absref/foobar.json",
-      "type": "string"
-    }
-  },
-  "$id": "http://example.com/ref/absref.json",
-  "$ref": "/absref/foobar.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema"
-}
-
-Tests:
-[
-  {
-    "data": "foo",
-    "description": "a string is valid",
-    "valid": true
-  },
-  {
-    "data": 12,
-    "description": "an integer is invalid",
-    "valid": false
-  }
-]
-"""
-
 from typing import Any, ClassVar
 
 from json_schema_codegen_base import DeserializerBase, DeserializerRootModel, SerializerBase, SerializerRootModel
 from pydantic import ConfigDict, Field, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class Ref31Deserializer(DeserializerRootModel):
+    _validate_formats = _VALIDATE_FORMATS
+    __json_schema__ = r"""
 {
   "$defs": {
     "a": {
@@ -53,11 +24,5 @@ _JSON_SCHEMA = r"""
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }
 """
-
-_VALIDATE_FORMATS = False
-
-class Ref31Deserializer(DeserializerRootModel):
-    _validate_formats = _VALIDATE_FORMATS
-    __json_schema__ = _JSON_SCHEMA
     root: Any
 

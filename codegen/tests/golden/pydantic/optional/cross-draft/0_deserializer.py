@@ -1,42 +1,18 @@
-"""
-Schema:
-{
-  "$ref": "http://localhost:1234/draft2019-09/ignore-prefixItems.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "array"
-}
-
-Tests:
-[
-  {
-    "comment": "if the implementation is not processing the $ref as a 2019-09 schema, this test will fail",
-    "data": [
-      1,
-      2,
-      3
-    ],
-    "description": "first item not a string is valid",
-    "valid": true
-  }
-]
-"""
-
 from typing import ClassVar
 
 from jsonschema_rs import validator_for
 from pydantic import BaseModel, ConfigDict, model_validator
 
-_JSON_SCHEMA = r"""
+_VALIDATE_FORMATS = False
+
+class CrossDraft0Deserializer(BaseModel):
+    __json_schema__: ClassVar[str] = r"""
 {
   "$ref": "http://localhost:1234/draft2019-09/ignore-prefixItems.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "array"
 }
 """
-_VALIDATE_FORMATS = False
-
-class CrossDraft0Deserializer(BaseModel):
-    __json_schema__: ClassVar[str] = _JSON_SCHEMA
     _jsonschema_validator: ClassVar[object | None] = None
 
     @classmethod
