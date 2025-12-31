@@ -22,19 +22,13 @@ const N_ITERATIONS: usize = 1000;
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
 
-    map.insert(
-        "anchor.json".to_string(),
-        [0, 1, 2, 3].iter().cloned().collect(),
-    );
+    map.insert("anchor.json".to_string(), HashSet::new());
     map.insert("defs.json".to_string(), [0].iter().cloned().collect());
     map.insert(
         "dynamicRef.json".to_string(),
         [2, 13, 14, 15, 16, 17].iter().cloned().collect(),
     );
-    map.insert(
-        "optional/anchor.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
+    map.insert("optional/anchor.json".to_string(), HashSet::new());
     map.insert(
         "optional/cross-draft.json".to_string(),
         [0].iter().cloned().collect(),
@@ -165,7 +159,12 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let compiled = compile(&schema_json)?;
+        let compile_target = if rel_str.contains("anchor") {
+            ast.to_json()
+        } else {
+            schema_json.clone()
+        };
+        let compiled = compile(&compile_target)?;
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 

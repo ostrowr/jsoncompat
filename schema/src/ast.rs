@@ -1388,6 +1388,36 @@ pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]
     resolve_refs_internal(node, root_json, &mut stack, &mut cache)
 }
 
+fn find_ref_target<'a>(
+    value: &'a Value,
+    base: Option<&str>,
+    anchor: Option<&str>,
+) -> Option<&'a Value> {
+    match value {
+        Value::Object(map) => {
+            let id_match = base
+                .map(|b| map.get("$id").and_then(|v| v.as_str()) == Some(b))
+                .unwrap_or(true);
+            let anchor_match = anchor
+                .map(|a| map.get("$anchor").and_then(|v| v.as_str()) == Some(a))
+                .unwrap_or(true);
+
+            if id_match && anchor_match {
+                return Some(value);
+            }
+
+            for v in map.values() {
+                if let Some(found) = find_ref_target(v, base, anchor) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(arr) => arr.iter().find_map(|v| find_ref_target(v, base, anchor)),
+        _ => None,
+    }
+}
+
 fn resolve_refs_internal(
     node: &mut SchemaNode,
     root_json: &Value,
@@ -1456,6 +1486,10 @@ fn resolve_refs_internal(
             cache.insert(path.clone(), resolved.clone());
             *node = resolved;
         } else {
+            if path.is_empty() || path == "#" {
+                *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
+                return Ok(());
+            }
             if let Some(Value::Object(defs)) = root_json.get("$defs") {
                 if let Some(target) = defs.get(&path).or_else(|| {
                     defs.values().find(|schema| {
@@ -1476,6 +1510,34 @@ fn resolve_refs_internal(
                     return Ok(());
                 }
             }
+            // Handle anchors and fragment identifiers by searching the entire
+            // document tree for matching `$id`/`$anchor` pairs.
+            if let Some((base, frag)) = path.split_once('#') {
+                let anchor = if frag.is_empty() { None } else { Some(frag) };
+                let base_opt = if base.is_empty() { None } else { Some(base) };
+                if let Some(target) = find_ref_target(root_json, base_opt, anchor) {
+                    let mut resolved = build_schema_ast(target)?;
+                    cache.insert(path.clone(), resolved.clone());
+                    stack.push(path.clone());
+                    resolve_refs_internal(&mut resolved, root_json, stack, cache)?;
+                    stack.pop();
+                    cache.insert(path.clone(), resolved.clone());
+                    *node = resolved;
+                    return Ok(());
+                }
+            } else if let Some(frag) = path.strip_prefix('#') {
+                if let Some(target) = find_ref_target(root_json, None, Some(frag)) {
+                    let mut resolved = build_schema_ast(target)?;
+                    cache.insert(path.clone(), resolved.clone());
+                    stack.push(path.clone());
+                    resolve_refs_internal(&mut resolved, root_json, stack, cache)?;
+                    stack.pop();
+                    cache.insert(path.clone(), resolved.clone());
+                    *node = resolved;
+                    return Ok(());
+                }
+            }
+
             *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
         }
         return Ok(());
