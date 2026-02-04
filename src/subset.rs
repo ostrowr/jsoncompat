@@ -20,10 +20,6 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         (_, Any) => true,
         (Any, _) => false,
 
-        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
-        (Enum(_), _) => false,
-        (_, Enum(_)) => false,
-
         (AllOf(subs), _) => subs.iter().all(|s| is_subschema_of(s, sup)),
         (_, AllOf(sups)) => sups.iter().all(|s| is_subschema_of(sub, s)),
 
@@ -32,6 +28,10 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
         (OneOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
         (_, OneOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
+
+        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
+        (Enum(_), _) => false,
+        (_, Enum(_)) => false,
 
         (Not(subn), _) => match &*subn.borrow() {
             Any | BoolSchema(true) => true,

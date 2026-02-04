@@ -1,0 +1,1 @@
+{"anyOf": [{"enum": ["a", "b"]}, {"type": "null"}]}
