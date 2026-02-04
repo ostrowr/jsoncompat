@@ -1,7 +1,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use ::jsoncompat::{build_and_resolve_schema, check_compat, Role};
+use ::jsoncompat::{Role, build_and_resolve_schema, check_compat};
 use json_schema_fuzz::generate_value;
 
 use rand::thread_rng;

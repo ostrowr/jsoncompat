@@ -3,7 +3,7 @@
 use json_schema_ast::compile;
 use json_schema_fuzz::generate_value;
 use jsoncompat::build_and_resolve_schema;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -203,7 +203,8 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             if !compiled.is_valid(&candidate) {
                 if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
                     panic!(
-                        "{}", &format!(
+                        "{}",
+                        &format!(
                             "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance:\n{}",
                             rel_str,
                             serde_json::to_string_pretty(schema_json)?,

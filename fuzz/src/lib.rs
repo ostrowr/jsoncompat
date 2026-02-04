@@ -1,4 +1,4 @@
-use json_schema_ast::{compile, SchemaNode, SchemaNodeKind};
+use json_schema_ast::{SchemaNode, SchemaNodeKind, compile};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -578,7 +578,7 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
     use serde_json::json;
 
     #[test]

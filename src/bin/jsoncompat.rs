@@ -1,6 +1,6 @@
 //! Command‑line interface for the `jsoncompat` crate.
 
-use console::{pad_str, Alignment};
+use console::{Alignment, pad_str};
 use owo_colors::OwoColorize;
 use std::{
     fs,
@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_ast::{compile, JSONSchema};
+use json_schema_ast::{JSONSchema, compile};
 use jsoncompat as backcompat;
 
 use rand::Rng;

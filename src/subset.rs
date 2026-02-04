@@ -1,5 +1,5 @@
 use crate::SchemaNode;
-use json_schema_ast::{compile, SchemaNodeKind};
+use json_schema_ast::{SchemaNodeKind, compile};
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
@@ -321,20 +321,12 @@ fn check_numeric_inclusion(
 
     if is_min {
         if p_excl {
-            if s_excl {
-                subv >= supv
-            } else {
-                subv > supv
-            }
+            if s_excl { subv >= supv } else { subv > supv }
         } else {
             subv >= supv
         }
     } else if p_excl {
-        if s_excl {
-            subv <= supv
-        } else {
-            subv < supv
-        }
+        if s_excl { subv <= supv } else { subv < supv }
     } else {
         subv <= supv
     }
@@ -355,20 +347,12 @@ fn check_int_inclusion(
 
     if is_min {
         if p_excl {
-            if s_excl {
-                subv >= supv
-            } else {
-                subv > supv
-            }
+            if s_excl { subv >= supv } else { subv > supv }
         } else {
             subv >= supv
         }
     } else if p_excl {
-        if s_excl {
-            subv <= supv
-        } else {
-            subv < supv
-        }
+        if s_excl { subv <= supv } else { subv < supv }
     } else {
         subv <= supv
     }

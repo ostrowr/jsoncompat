@@ -1,7 +1,7 @@
 use json_schema_ast::compile;
 use json_schema_fuzz::generate_value;
-use jsoncompat::{build_and_resolve_schema, check_compat, Role};
-use rand::{rngs::StdRng, SeedableRng};
+use jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
