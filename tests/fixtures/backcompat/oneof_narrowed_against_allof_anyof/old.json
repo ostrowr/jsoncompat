@@ -1,0 +1,6 @@
+{
+  "allOf": [
+    {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "boolean"}]},
+    {}
+  ]
+}

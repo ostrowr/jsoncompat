@@ -20,18 +20,21 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         (_, Any) => true,
         (Any, _) => false,
 
+        // Keep sub-combinator handlers before sup-combinator handlers so when
+        // both sides are unions we reason branch-wise on `sub` first.
+        (AnyOf(subs), _) | (OneOf(subs), _) => {
+            subs.iter().all(|branch| is_subschema_of(branch, sup))
+        }
+        (AllOf(subs), _) => subs.iter().all(|schema| is_subschema_of(schema, sup)),
+
+        (_, AnyOf(sups)) | (_, OneOf(sups)) => {
+            sups.iter().any(|branch| is_subschema_of(sub, branch))
+        }
+        (_, AllOf(sups)) => sups.iter().all(|schema| is_subschema_of(sub, schema)),
+
         (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
         (Enum(_), _) => false,
         (_, Enum(_)) => false,
-
-        (AllOf(subs), _) => subs.iter().all(|s| is_subschema_of(s, sup)),
-        (_, AllOf(sups)) => sups.iter().all(|s| is_subschema_of(sub, s)),
-
-        (AnyOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
-        (_, AnyOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
-
-        (OneOf(subs), _) => subs.iter().all(|branch| is_subschema_of(branch, sup)),
-        (_, OneOf(sups)) => sups.iter().any(|branch| is_subschema_of(sub, branch)),
 
         (Not(subn), _) => match &*subn.borrow() {
             Any | BoolSchema(true) => true,
