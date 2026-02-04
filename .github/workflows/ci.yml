@@ -135,9 +135,9 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
+          - runner: macos-15-intel
             target: x86_64
-          - runner: macos-14
+          - runner: macos-latest
             target: aarch64
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -262,15 +262,11 @@ jobs:
           tree js-packages
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm (tag builds only)
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           echo "Publishing WebAssembly web package …"
@@ -295,10 +291,10 @@ jobs:
           - os: ubuntu-latest
             ext: ""
             asset_name: jsoncompat-linux-x86_64
-          - os: macos-13 # x86_64 runner
+          - os: macos-15-intel # x86_64 runner
             ext: ""
             asset_name: jsoncompat-macos-x86_64
-          - os: macos-14 # arm (Apple Silicon)
+          - os: macos-latest # arm (Apple Silicon)
             ext: ""
             asset_name: jsoncompat-macos-aarch64
           - os: windows-latest
