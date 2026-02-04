@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 use json_schema_fuzz::generate_value;
 use jsoncompat::{Role, build_and_resolve_schema, check_compat};
 
-use rand::thread_rng;
+use rand::rng;
 use serde_json::Value as JsonValue;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -62,7 +62,7 @@ pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue
     let schema_ast = build_and_resolve_schema(&raw)
         .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let v = generate_value(&schema_ast, &mut rng, depth);
     serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialization failure: {e}")))
 }

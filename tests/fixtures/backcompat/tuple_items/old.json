@@ -1,1 +1,1 @@
-{"type":"array","items":[{"type":"integer"},{"type":"string"}]}
+{"type":"array","prefixItems":[{"type":"integer"},{"type":"string"}],"items":true}

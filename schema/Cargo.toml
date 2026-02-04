@@ -8,9 +8,10 @@ license = "MIT"
 
 
 [dependencies]
-serde_json = "1.0.135"
-anyhow = "1.0.95"
-# by default, jsonschema tries to use reqwest to resolve remote schemas, which is not supported in wasm
-jsonschema = { version = "0.16", features = ["draft202012"], default-features = false}
-url = "2.5.4"
-percent-encoding = "2.3.1"
+serde_json = "1.0.149"
+anyhow = "1.0.100"
+# By default, jsonschema enables HTTP/file retrieval via reqwest. Keep defaults
+# off so this crate can be used in wasm builds.
+jsonschema = { version = "0.40", default-features = false }
+url = "2.5.8"
+percent-encoding = "2.3.2"
