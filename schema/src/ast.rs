@@ -103,22 +103,20 @@ impl SchemaNode {
                         Value::Number(serde_json::Number::from_f64(*m).unwrap()),
                     );
                 }
-                if *exclusive_minimum {
-                    if let Some(m) = minimum {
+                if *exclusive_minimum
+                    && let Some(m) = minimum {
                         obj.insert(
                             "exclusiveMinimum".into(),
                             Value::Number(serde_json::Number::from_f64(*m).unwrap()),
                         );
                     }
-                }
-                if *exclusive_maximum {
-                    if let Some(m) = maximum {
+                if *exclusive_maximum
+                    && let Some(m) = maximum {
                         obj.insert(
                             "exclusiveMaximum".into(),
                             Value::Number(serde_json::Number::from_f64(*m).unwrap()),
                         );
                     }
-                }
                 if let Some(mo) = multiple_of {
                     obj.insert(
                         "multipleOf".into(),
@@ -147,16 +145,14 @@ impl SchemaNode {
                 if let Some(m) = maximum {
                     obj.insert("maximum".into(), Value::Number((*m).into()));
                 }
-                if *exclusive_minimum {
-                    if let Some(m) = minimum {
+                if *exclusive_minimum
+                    && let Some(m) = minimum {
                         obj.insert("exclusiveMinimum".into(), Value::Number((*m).into()));
                     }
-                }
-                if *exclusive_maximum {
-                    if let Some(m) = maximum {
+                if *exclusive_maximum
+                    && let Some(m) = maximum {
                         obj.insert("exclusiveMaximum".into(), Value::Number((*m).into()));
                     }
-                }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
@@ -1285,43 +1281,38 @@ pub fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
         }
 
         String { enumeration, .. } => {
-            if let Some(e) = enumeration {
-                if !e.contains(val) {
+            if let Some(e) = enumeration
+                && !e.contains(val) {
                     return false;
                 }
-            }
             val.is_string()
         }
         Number { enumeration, .. } => {
-            if let Some(e) = enumeration {
-                if !e.contains(val) {
+            if let Some(e) = enumeration
+                && !e.contains(val) {
                     return false;
                 }
-            }
             val.is_number()
         }
         Integer { enumeration, .. } => {
-            if let Some(e) = enumeration {
-                if !e.contains(val) {
+            if let Some(e) = enumeration
+                && !e.contains(val) {
                     return false;
                 }
-            }
             val.as_i64().is_some()
         }
         Boolean { enumeration } => {
-            if let Some(e) = enumeration {
-                if !e.contains(val) {
+            if let Some(e) = enumeration
+                && !e.contains(val) {
                     return false;
                 }
-            }
             val.is_boolean()
         }
         Null { enumeration } => {
-            if let Some(e) = enumeration {
-                if !e.contains(val) {
+            if let Some(e) = enumeration
+                && !e.contains(val) {
                     return false;
                 }
-            }
             val.is_null()
         }
         Object { .. } | Array { .. } => true,

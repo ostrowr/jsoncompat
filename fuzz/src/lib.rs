@@ -133,12 +133,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             enumeration,
             ..
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
 
             let len_min = min_length.unwrap_or(0);
             let len_max = max_length.unwrap_or(len_min + 5).max(len_min);
@@ -160,12 +159,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             multiple_of,
             ..
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
             if multiple_of.is_some() {
                 let low = minimum.unwrap_or(f64::NEG_INFINITY);
                 let high = maximum.unwrap_or(f64::INFINITY);
@@ -178,8 +176,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let high = maximum.unwrap_or(1_000_000.0).min(1_000_000.0);
             let mut val = rng.gen_range(low..=high);
 
-            if let Some(mo) = multiple_of {
-                if *mo > 0.0 {
+            if let Some(mo) = multiple_of
+                && *mo > 0.0 {
                     let k = (val / *mo).floor();
                     val = k * *mo;
                     if val < low || val > high {
@@ -187,7 +185,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                         val = k * *mo;
                     }
                 }
-            }
 
             Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| 0.into()))
         }
@@ -199,12 +196,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             multiple_of,
             ..
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
             if multiple_of.is_some() {
                 let low = minimum.unwrap_or(i64::MIN);
                 let high = maximum.unwrap_or(i64::MAX);
@@ -217,8 +213,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let high = maximum.unwrap_or(1000).min(1_000_000);
             let mut val = rng.gen_range(low..=high);
 
-            if let Some(mo_f) = multiple_of {
-                if *mo_f > 0.0 {
+            if let Some(mo_f) = multiple_of
+                && *mo_f > 0.0 {
                     let mo = (*mo_f).round() as i64;
                     if mo != 0 {
                         val = (val / mo) * mo;
@@ -230,28 +226,25 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                         }
                     }
                 }
-            }
 
             Value::Number(val.into())
         }
 
         Boolean { enumeration } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
             Value::Bool(rng.gen_bool(0.5))
         }
 
         Null { enumeration } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
             Value::Null
         }
 
@@ -266,12 +259,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             ..
         } => {
             let property_name_validator = build_property_name_validator(property_names);
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
 
             let mut map = Map::new();
             for (k, prop_schema) in properties {
@@ -354,8 +346,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 }
             }
 
-            if map.is_empty() && min_p > 0 && !properties.is_empty() {
-                if let Some((k, schema)) = properties
+            if map.is_empty() && min_p > 0 && !properties.is_empty()
+                && let Some((k, schema)) = properties
                     .iter()
                     .find(|(name, _)| property_name_allows(property_name_validator.as_ref(), name))
                     .or_else(|| properties.iter().next())
@@ -363,7 +355,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     let val = generate_value(schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                 }
-            }
 
             Value::Object(map)
         }
@@ -375,12 +366,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             contains,
             enumeration,
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
+            if let Some(e) = enumeration
+                && !e.is_empty() {
                     let idx = rng.gen_range(0..e.len());
                     return e[idx].clone();
                 }
-            }
             let base_min = if contains.is_some() {
                 min_items.unwrap_or(0).max(1)
             } else {
@@ -410,11 +400,10 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             then_schema,
             else_schema,
         } => {
-            if rng.gen_bool(0.5) {
-                if let Some(t) = then_schema {
+            if rng.gen_bool(0.5)
+                && let Some(t) = then_schema {
                     return generate_value(t, rng, depth.saturating_sub(1));
                 }
-            }
             if let Some(e) = else_schema {
                 generate_value(e, rng, depth.saturating_sub(1))
             } else {
