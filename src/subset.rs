@@ -1,5 +1,5 @@
 use crate::SchemaNode;
-use json_schema_ast::{compile, SchemaNodeKind};
+use json_schema_ast::{SchemaNodeKind, compile};
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
@@ -89,20 +89,20 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 ..
             },
         ) => {
-            if let Some(pm) = pmin {
-                if smin.unwrap_or(0) < pm {
-                    return false;
-                }
+            if let Some(pm) = pmin
+                && smin.unwrap_or(0) < pm
+            {
+                return false;
             }
-            if let Some(px) = pmax {
-                if smax.unwrap_or(u64::MAX) > px {
-                    return false;
-                }
+            if let Some(px) = pmax
+                && smax.unwrap_or(u64::MAX) > px
+            {
+                return false;
             }
-            if let (Some(se), Some(pe)) = (s_enum, p_enum) {
-                if !se.iter().all(|v| pe.contains(v)) {
-                    return false;
-                }
+            if let (Some(se), Some(pe)) = (s_enum, p_enum)
+                && !se.iter().all(|v| pe.contains(v))
+            {
+                return false;
             }
             true
         }
@@ -131,10 +131,10 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             if !check_numeric_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
-            if let (Some(se), Some(pe)) = (s_en, p_en) {
-                if !se.iter().all(|v| pe.contains(v)) {
-                    return false;
-                }
+            if let (Some(se), Some(pe)) = (s_en, p_en)
+                && !se.iter().all(|v| pe.contains(v))
+            {
+                return false;
             }
             true
         }
@@ -163,20 +163,20 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             if !check_int_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
-            if let (Some(se), Some(pe)) = (s_en, p_en) {
-                if !se.iter().all(|v| pe.contains(v)) {
-                    return false;
-                }
+            if let (Some(se), Some(pe)) = (s_en, p_en)
+                && !se.iter().all(|v| pe.contains(v))
+            {
+                return false;
             }
             true
         }
 
         (Boolean { enumeration: s_e }, Boolean { enumeration: p_e })
         | (Null { enumeration: s_e }, Null { enumeration: p_e }) => {
-            if let (Some(se), Some(pe)) = (s_e, p_e) {
-                if !se.iter().all(|v| pe.contains(v)) {
-                    return false;
-                }
+            if let (Some(se), Some(pe)) = (s_e, p_e)
+                && !se.iter().all(|v| pe.contains(v))
+            {
+                return false;
             }
             true
         }
@@ -203,21 +203,21 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 enumeration: p_en,
             },
         ) => {
-            if let Some(pm) = pmin {
-                if smin.unwrap_or(0) < pm {
-                    return false;
-                }
+            if let Some(pm) = pmin
+                && smin.unwrap_or(0) < pm
+            {
+                return false;
             }
-            if let Some(px) = pmax {
-                if smax.unwrap_or(usize::MAX) > px {
-                    return false;
-                }
+            if let Some(px) = pmax
+                && smax.unwrap_or(usize::MAX) > px
+            {
+                return false;
             }
 
-            if let (Some(se), Some(pe)) = (s_en, p_en) {
-                if !se.iter().all(|v| pe.contains(v)) {
-                    return false;
-                }
+            if let (Some(se), Some(pe)) = (s_en, p_en)
+                && !se.iter().all(|v| pe.contains(v))
+            {
+                return false;
             }
 
             if !preq.is_subset(&sreq) {
@@ -281,23 +281,23 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 ..
             },
         ) => {
-            if let Some(pm) = pmin {
-                if smin.unwrap_or(0) < pm {
-                    return false;
-                }
+            if let Some(pm) = pmin
+                && smin.unwrap_or(0) < pm
+            {
+                return false;
             }
-            if let Some(px) = pmax {
-                if smax.unwrap_or(u64::MAX) > px {
-                    return false;
-                }
+            if let Some(px) = pmax
+                && smax.unwrap_or(u64::MAX) > px
+            {
+                return false;
             }
             if !is_subschema_of(&sitems, &pitems) {
                 return false;
             }
-            if let (Some(se), Some(pe)) = (s_en, p_en) {
-                if !se.iter().all(|v| pe.contains(v)) {
-                    return false;
-                }
+            if let (Some(se), Some(pe)) = (s_en, p_en)
+                && !se.iter().all(|v| pe.contains(v))
+            {
+                return false;
             }
             true
         }
@@ -321,20 +321,12 @@ fn check_numeric_inclusion(
 
     if is_min {
         if p_excl {
-            if s_excl {
-                subv >= supv
-            } else {
-                subv > supv
-            }
+            if s_excl { subv >= supv } else { subv > supv }
         } else {
             subv >= supv
         }
     } else if p_excl {
-        if s_excl {
-            subv <= supv
-        } else {
-            subv < supv
-        }
+        if s_excl { subv <= supv } else { subv < supv }
     } else {
         subv <= supv
     }
@@ -355,20 +347,12 @@ fn check_int_inclusion(
 
     if is_min {
         if p_excl {
-            if s_excl {
-                subv >= supv
-            } else {
-                subv > supv
-            }
+            if s_excl { subv >= supv } else { subv > supv }
         } else {
             subv >= supv
         }
     } else if p_excl {
-        if s_excl {
-            subv <= supv
-        } else {
-            subv < supv
-        }
+        if s_excl { subv <= supv } else { subv < supv }
     } else {
         subv <= supv
     }

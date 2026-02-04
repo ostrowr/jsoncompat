@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use json_schema_fuzz::generate_value;
-use jsoncompat::{build_and_resolve_schema, check_compat, Role};
+use jsoncompat::{Role, build_and_resolve_schema, check_compat};
 
 use rand::thread_rng;
 use serde_json::Value as JsonValue;

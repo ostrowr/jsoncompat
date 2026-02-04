@@ -4,7 +4,7 @@
 # `import { ... } from 'jsoncompat'`.
 name = "jsoncompat_wasm"
 version = "0.2.4"
-edition = "2021"
+edition = "2024"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
@@ -38,5 +38,4 @@ optional = true
 
 [dev-dependencies]
 wasm-bindgen-test = "0.2"
-
 

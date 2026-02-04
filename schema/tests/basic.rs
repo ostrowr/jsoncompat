@@ -1,6 +1,6 @@
 use json_schema_ast as schema;
 
-use schema::{build_and_resolve_schema, build_schema_ast, compile, SchemaNodeKind};
+use schema::{SchemaNodeKind, build_and_resolve_schema, build_schema_ast, compile};
 use serde_json::json;
 
 #[test]

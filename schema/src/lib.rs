@@ -4,7 +4,7 @@
 pub mod ast;
 
 pub use ast::{
-    build_and_resolve_schema, build_schema_ast, resolve_refs, SchemaNode, SchemaNodeKind,
+    SchemaNode, SchemaNodeKind, build_and_resolve_schema, build_schema_ast, resolve_refs,
 };
 
 use anyhow::{Context, Result};

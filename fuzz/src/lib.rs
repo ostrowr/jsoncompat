@@ -1,4 +1,4 @@
-use json_schema_ast::{compile, SchemaNode, SchemaNodeKind};
+use json_schema_ast::{SchemaNode, SchemaNodeKind, compile};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -133,11 +133,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             enumeration,
             ..
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
 
             let len_min = min_length.unwrap_or(0);
@@ -160,11 +160,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             multiple_of,
             ..
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
             if multiple_of.is_some() {
                 let low = minimum.unwrap_or(f64::NEG_INFINITY);
@@ -178,14 +178,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let high = maximum.unwrap_or(1_000_000.0).min(1_000_000.0);
             let mut val = rng.gen_range(low..=high);
 
-            if let Some(mo) = multiple_of {
-                if *mo > 0.0 {
-                    let k = (val / *mo).floor();
+            if let Some(mo) = multiple_of
+                && *mo > 0.0
+            {
+                let k = (val / *mo).floor();
+                val = k * *mo;
+                if val < low || val > high {
+                    let k = (low / *mo).ceil();
                     val = k * *mo;
-                    if val < low || val > high {
-                        let k = (low / *mo).ceil();
-                        val = k * *mo;
-                    }
                 }
             }
 
@@ -199,11 +199,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             multiple_of,
             ..
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
             if multiple_of.is_some() {
                 let low = minimum.unwrap_or(i64::MIN);
@@ -217,17 +217,17 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             let high = maximum.unwrap_or(1000).min(1_000_000);
             let mut val = rng.gen_range(low..=high);
 
-            if let Some(mo_f) = multiple_of {
-                if *mo_f > 0.0 {
-                    let mo = (*mo_f).round() as i64;
-                    if mo != 0 {
-                        val = (val / mo) * mo;
-                        if val < low {
-                            val += mo;
-                        }
-                        if val > high {
-                            val -= mo;
-                        }
+            if let Some(mo_f) = multiple_of
+                && *mo_f > 0.0
+            {
+                let mo = (*mo_f).round() as i64;
+                if mo != 0 {
+                    val = (val / mo) * mo;
+                    if val < low {
+                        val += mo;
+                    }
+                    if val > high {
+                        val -= mo;
                     }
                 }
             }
@@ -236,21 +236,21 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         }
 
         Boolean { enumeration } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
             Value::Bool(rng.gen_bool(0.5))
         }
 
         Null { enumeration } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
             Value::Null
         }
@@ -266,11 +266,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             ..
         } => {
             let property_name_validator = build_property_name_validator(property_names);
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
 
             let mut map = Map::new();
@@ -354,15 +354,16 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 }
             }
 
-            if map.is_empty() && min_p > 0 && !properties.is_empty() {
-                if let Some((k, schema)) = properties
+            if map.is_empty()
+                && min_p > 0
+                && !properties.is_empty()
+                && let Some((k, schema)) = properties
                     .iter()
                     .find(|(name, _)| property_name_allows(property_name_validator.as_ref(), name))
                     .or_else(|| properties.iter().next())
-                {
-                    let val = generate_value(schema, rng, depth.saturating_sub(1));
-                    map.insert(k.clone(), val);
-                }
+            {
+                let val = generate_value(schema, rng, depth.saturating_sub(1));
+                map.insert(k.clone(), val);
             }
 
             Value::Object(map)
@@ -375,11 +376,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             contains,
             enumeration,
         } => {
-            if let Some(e) = enumeration {
-                if !e.is_empty() {
-                    let idx = rng.gen_range(0..e.len());
-                    return e[idx].clone();
-                }
+            if let Some(e) = enumeration
+                && !e.is_empty()
+            {
+                let idx = rng.gen_range(0..e.len());
+                return e[idx].clone();
             }
             let base_min = if contains.is_some() {
                 min_items.unwrap_or(0).max(1)
@@ -410,10 +411,10 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             then_schema,
             else_schema,
         } => {
-            if rng.gen_bool(0.5) {
-                if let Some(t) = then_schema {
-                    return generate_value(t, rng, depth.saturating_sub(1));
-                }
+            if rng.gen_bool(0.5)
+                && let Some(t) = then_schema
+            {
+                return generate_value(t, rng, depth.saturating_sub(1));
             }
             if let Some(e) = else_schema {
                 generate_value(e, rng, depth.saturating_sub(1))
@@ -578,7 +579,7 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
     use serde_json::json;
 
     #[test]
