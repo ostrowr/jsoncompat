@@ -16,7 +16,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         BoolSchema(true) | Any => random_any(rng, depth),
 
         Enum(vals) if !vals.is_empty() => {
-            let idx = rng.gen_range(0..vals.len());
+            let idx = rng.random_range(0..vals.len());
             vals[idx].clone()
         }
 
@@ -93,7 +93,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         }
 
         AnyOf(subs) if !subs.is_empty() => {
-            let idx = rng.gen_range(0..subs.len());
+            let idx = rng.random_range(0..subs.len());
             generate_value(&subs[idx], rng, depth.saturating_sub(1))
         }
 
@@ -104,7 +104,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 .collect();
 
             for _ in 0..32 {
-                let pick = rng.gen_range(0..subs.len());
+                let pick = rng.random_range(0..subs.len());
                 let candidate = generate_value(&subs[pick], rng, depth.saturating_sub(1));
 
                 let mut ok = 0;
@@ -136,19 +136,19 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
 
             let len_min = min_length.unwrap_or(0);
             let len_max = max_length.unwrap_or(len_min + 5).max(len_min);
             let length = if len_min <= len_max {
-                rng.gen_range(len_min..=len_max.min(len_min + 10))
+                rng.random_range(len_min..=len_max.min(len_min + 10))
             } else {
                 len_min
             };
             let s: std::string::String = (0..length)
-                .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
+                .map(|_| rng.sample(rand::distr::Alphanumeric) as char)
                 .collect();
             Value::String(s)
         }
@@ -163,7 +163,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
             if multiple_of.is_some() {
@@ -176,7 +176,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             let low = minimum.unwrap_or(0.0).max(-1_000_000.0);
             let high = maximum.unwrap_or(1_000_000.0).min(1_000_000.0);
-            let mut val = rng.gen_range(low..=high);
+            let mut val = rng.random_range(low..=high);
 
             if let Some(mo) = multiple_of
                 && *mo > 0.0
@@ -202,7 +202,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
             if multiple_of.is_some() {
@@ -215,7 +215,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
             let low = minimum.unwrap_or(-1000).max(-1_000_000);
             let high = maximum.unwrap_or(1000).min(1_000_000);
-            let mut val = rng.gen_range(low..=high);
+            let mut val = rng.random_range(low..=high);
 
             if let Some(mo_f) = multiple_of
                 && *mo_f > 0.0
@@ -239,17 +239,17 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
-            Value::Bool(rng.gen_bool(0.5))
+            Value::Bool(rng.random_bool(0.5))
         }
 
         Null { enumeration } => {
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
             Value::Null
@@ -269,7 +269,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
 
@@ -285,7 +285,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 let include = if must_include {
                     true
                 } else {
-                    !matches!(&*prop_schema.borrow(), BoolSchema(true) | Any) && rng.gen_bool(0.7)
+                    !matches!(&*prop_schema.borrow(), BoolSchema(true) | Any)
+                        && rng.random_bool(0.7)
                 };
                 if include {
                     let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
@@ -316,9 +317,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     map.insert(key, val);
                 }
 
-                if rng.gen_bool(0.3) {
+                if rng.random_bool(0.3) {
                     let mut attempts = 0;
-                    while rng.gen_bool(0.5) && (map.len() < max_p) && attempts < 5 {
+                    while rng.random_bool(0.5) && (map.len() < max_p) && attempts < 5 {
                         let Some(key) = generate_property_key(
                             property_names,
                             property_name_validator.as_ref(),
@@ -379,7 +380,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
-                let idx = rng.gen_range(0..e.len());
+                let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
             let base_min = if contains.is_some() {
@@ -389,7 +390,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             };
 
             let max_i = max_items.unwrap_or(base_min + 5).max(base_min);
-            let length = rng.gen_range(base_min..=max_i.min(base_min + 5));
+            let length = rng.random_range(base_min..=max_i.min(base_min + 5));
 
             let mut arr = Vec::new();
             if let Some(c_schema) = contains {
@@ -411,7 +412,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             then_schema,
             else_schema,
         } => {
-            if rng.gen_bool(0.5)
+            if rng.random_bool(0.5)
                 && let Some(t) = then_schema
             {
                 return generate_value(t, rng, depth.saturating_sub(1));
@@ -451,17 +452,17 @@ pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
     if depth == 0 {
         return Value::Bool(true);
     }
-    match rng.gen_range(0..=4) {
+    match rng.random_range(0..=4) {
         // Primitive types --------------------------------------------------
         0 => {
             // strings with optional minLength / maxLength
             let mut obj = Map::new();
             obj.insert("type".into(), Value::String("string".into()));
-            if rng.gen_bool(0.5) {
-                obj.insert("minLength".into(), rng.gen_range(0..5u64).into());
+            if rng.random_bool(0.5) {
+                obj.insert("minLength".into(), rng.random_range(0..5u64).into());
             }
-            if rng.gen_bool(0.5) {
-                obj.insert("maxLength".into(), rng.gen_range(5..10u64).into());
+            if rng.random_bool(0.5) {
+                obj.insert("maxLength".into(), rng.random_range(5..10u64).into());
             }
             Value::Object(obj)
         }
@@ -469,8 +470,8 @@ pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
             // integer range
             let mut obj = Map::new();
             obj.insert("type".into(), Value::String("integer".into()));
-            let min = rng.gen_range(-20..20);
-            let max = min + rng.gen_range(0..20);
+            let min = rng.random_range(-20..20);
+            let max = min + rng.random_range(0..20);
             obj.insert("minimum".into(), min.into());
             obj.insert("maximum".into(), max.into());
             Value::Object(obj)
@@ -490,7 +491,7 @@ pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
             let mut obj = Map::new();
             obj.insert("type".into(), Value::String("object".into()));
             obj.insert("properties".into(), Value::Object(props));
-            if rng.gen_bool(0.5) {
+            if rng.random_bool(0.5) {
                 obj.insert(
                     "required".into(),
                     Value::Array(vec![Value::String("a".into())]),
@@ -564,9 +565,9 @@ fn random_key(rng: &mut impl Rng) -> String {
 }
 
 fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> String {
-    let len = rng.gen_range(len_range);
+    let len = rng.random_range(len_range);
     (0..len)
-        .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
+        .map(|_| rng.sample(rand::distr::Alphanumeric) as char)
         .collect()
 }
 

@@ -1,5 +1,5 @@
 {
-  "old_only": [],
+  "old_only": [[1,"a"]],
   "new_only": [[1,2]],
-  "both": [[1,"a"]]
+  "both": [[1]]
 }

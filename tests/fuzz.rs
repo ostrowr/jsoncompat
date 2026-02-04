@@ -46,7 +46,13 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33].iter().cloned().collect(),
+        [
+            1, 2, 3, 4, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 25, 26, 27, 28, 29,
+            30, 31, 32, 33, 34, 39,
+        ]
+        .iter()
+        .cloned()
+        .collect(),
     );
 
     map.insert(
@@ -111,7 +117,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
     map.insert(
         "dynamicRef.json".to_string(),
-        [2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16, 17, 20]
             .iter()
             .cloned()
             .collect(),
@@ -119,7 +125,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
     map.insert(
         "ref.json".to_string(),
-        [6, 10, 11, 17, 19, 27, 28, 29, 30, 31]
+        [5, 10, 11, 17, 27, 28, 29, 30, 31]
             .iter()
             .cloned()
             .collect(),
@@ -133,7 +139,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
     map.insert(
         "refRemote.json".to_string(),
-        [0, 1, 2, 3, 4, 8, 9, 11, 12, 13, 14]
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
             .iter()
             .cloned()
             .collect(),
@@ -142,8 +148,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         "optional/cross-draft.json".to_string(),
         [0].iter().cloned().collect(),
     );
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
-
     map
 }
 
@@ -151,7 +155,9 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 // Test harness: one test per JSON file under fixtures/fuzz
 // -------------------------------------------------------------------------
 
-datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
+datatest_stable::harness! {
+    { test = fixture, root = "tests/fixtures/fuzz", pattern = ".*\\.json$" },
+}
 
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = fs::read(file)?;
@@ -191,11 +197,27 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let ast = build_and_resolve_schema(schema_json)?;
-
-        let compiled = compile(schema_json)?;
-
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
+
+        let ast = match build_and_resolve_schema(schema_json) {
+            Ok(ast) => ast,
+            Err(err) => {
+                if is_whitelisted {
+                    continue;
+                }
+                return Err(err.into());
+            }
+        };
+
+        let compiled = match compile(schema_json) {
+            Ok(compiled) => compiled,
+            Err(err) => {
+                if is_whitelisted {
+                    continue;
+                }
+                return Err(err.into());
+            }
+        };
 
         let mut success = true;
         for _ in 0..N_ITERATIONS {

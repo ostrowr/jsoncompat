@@ -10,10 +10,10 @@ name = "jsoncompat"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.25.1", features = ["extension-module", "generate-import-lib"] }
+pyo3 = { version = "0.28.0", features = ["extension-module", "generate-import-lib"] }
 serde_json = "1.0"
 anyhow = "1.0"
-rand = "0.8"
+rand = "0.9"
 
 # Internal crates
 jsoncompat = { path = ".." }

@@ -184,7 +184,7 @@ fn main() -> Result<()> {
 
 fn cmd_generate(args: GenerateArgs) -> Result<()> {
     let schema = SchemaDoc::load(&args.schema)?;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for _ in 0..args.count {
         let v = schema.gen_value(&mut rng, args.depth);
@@ -207,7 +207,7 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
 
     // 2. Optional fuzzing (only if requested or static failed).
     let offender = if args.fuzz > 0 && !ok_static {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         sample_incompat(&old, &new, role, args.fuzz as usize, args.depth, &mut rng)
     } else {
         None
@@ -305,7 +305,7 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                     if !ok {
                         let old_validator = compile(&old.schema).unwrap();
                         let new_validator = compile(&new.schema).unwrap();
-                        let mut rng = rand::thread_rng();
+                        let mut rng = rand::rng();
                         let example = sample_incompat(
                             &SchemaDoc {
                                 ast: old_schema,

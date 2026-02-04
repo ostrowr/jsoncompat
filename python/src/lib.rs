@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use ::jsoncompat::{Role, build_and_resolve_schema, check_compat};
 use json_schema_fuzz::generate_value;
 
-use rand::thread_rng;
+use rand::rng;
 use serde_json::Value as JsonValue;
 
 /// Parse a JSON string into a serde_json::Value, converting any error into a Python ValueError.
@@ -75,7 +75,7 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let schema_ast = build_and_resolve_schema(&raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let value = generate_value(&schema_ast, &mut rng, depth);
 
     serde_json::to_string(&value).map_err(|e| {
