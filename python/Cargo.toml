@@ -10,7 +10,7 @@ name = "jsoncompat"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.25.1", features = ["extension-module"] }
+pyo3 = { version = "0.25.1", features = ["extension-module", "generate-import-lib"] }
 serde_json = "1.0"
 anyhow = "1.0"
 rand = "0.8"
