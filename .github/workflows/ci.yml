@@ -220,6 +220,7 @@ jobs:
           for target in bundler nodejs web; do
             mkdir -p "dist/js/$target"
             cp -r "wasm/pkg-$target"/* "dist/js/$target/"
+            cp wasm/README.md "dist/js/$target/README.md"
           done
 
       - name: Upload wasm artifacts

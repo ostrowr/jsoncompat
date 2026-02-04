@@ -53,7 +53,7 @@ We assume that the serializer will not write additional properties that are not 
 
 More formally, consider a deserializer schema $S_A$ which is changed to $S_B$. This change should be considered breaking if there exists some JSON value that is valid against $S_A$ but invalid against $S_B$.
 
-As a concrete example, imagine that you've been writing code that saves JSON data to a databse with the following schema:
+As a concrete example, imagine that you've been writing code that saves JSON data to a database with the following schema:
 
 ```json
 {
