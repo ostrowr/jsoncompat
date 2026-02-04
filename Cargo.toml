@@ -1,6 +1,6 @@
 [package]
 name = "jsoncompat"
-version = "0.2.2"
+version = "0.2.4"
 edition = "2021"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
@@ -26,8 +26,8 @@ serde = { version = "1.0.217", features = ["derive"] }
 # Small, zero‑dep colour library for pleasant CLI output.
 owo-colors = "3.5"
 # Our own strict Draft‑2020 implementation crate
-json_schema_ast = { path = "schema", version = "0.2.2" }
-json_schema_fuzz = { path = "fuzz", version = "0.2.2" }
+json_schema_ast = { path = "schema", version = "0.2.4" }
+json_schema_fuzz = { path = "fuzz", version = "0.2.4" }
 console = "0.16.0"
 
 [dev-dependencies]

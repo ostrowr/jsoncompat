@@ -1,6 +1,6 @@
 [package]
 name = "jsoncompat_py"
-version = "0.2.2"
+version = "0.2.4"
 readme = "README.md"
 edition = "2021"
 publish = false # This crate is not published to crates.io; only PyPI.
