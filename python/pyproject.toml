@@ -5,6 +5,8 @@ build-backend = "maturin"
 [project]
 name    = "jsoncompat"        # wheel / PyPI name
 dynamic = ["version"]         # "version" pulled from Cargo.toml
+description = "JSON Schema compatibility checker for evolving schemas"
+readme = "README.md"
 
 [tool.maturin]
 module-name = "jsoncompat"

@@ -37,8 +37,13 @@ print(example)
 
 ## Examples
 
-See the [basic demo](../examples/python/basic/demo.py) for a complete end-to-end script.
+See the basic demo:
+
+- https://github.com/ostrowr/jsoncompat/blob/main/examples/python/basic/demo.py
+- https://jsoncompat.com
 
 ## License
 
-MIT License. See [LICENSE](../LICENSE).
+MIT License. See:
+
+- https://github.com/ostrowr/jsoncompat/blob/main/LICENSE
