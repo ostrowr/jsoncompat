@@ -12,7 +12,8 @@
     "format": "biome format",
     "lint": "biome lint",
     "check": "biome check",
-    "ci": "biome ci"
+    "ci": "biome ci",
+    "migrate": "biome migrate --write"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
