@@ -113,21 +113,26 @@ const pushField = (
   fields: FlattenedField[],
   path: string,
   required: boolean,
+  requiredWhenObjectPath: string | null,
   schema: JsonSchemaNode,
 ): void => {
   const descriptor = descriptorFromSchema(schema, path);
-  fields.push({
+  const flattened: FlattenedField = {
     path,
     required,
     descriptor,
     displayType: displayTypeForDescriptor(descriptor),
-  });
+  };
+  if (requiredWhenObjectPath !== null) {
+    flattened.requiredWhenObjectPath = requiredWhenObjectPath;
+  }
+  fields.push(flattened);
 };
 
 const walkObject = (
   schema: JsonSchemaNode,
   prefix: string,
-  ancestorRequired: boolean,
+  conditionalAncestorPath: string | null,
   fields: FlattenedField[],
 ): void => {
   const normalized = normalizeType(schema, prefix || "<root>");
@@ -143,21 +148,26 @@ const walkObject = (
   const required = new Set(schema.required ?? []);
   for (const [name, propertySchema] of Object.entries(properties)) {
     const path = prefix.length > 0 ? `${prefix}.${name}` : name;
-    const fieldRequired = ancestorRequired && required.has(name);
+    const fieldRequired = required.has(name);
+    const fieldRequiredWhenObjectPath = fieldRequired ? conditionalAncestorPath : null;
     const propType = normalizeType(propertySchema, path);
 
     if (propType.primary === "object" && propertySchema.properties !== undefined) {
-      walkObject(propertySchema, path, fieldRequired, fields);
+      let childConditionalAncestorPath = conditionalAncestorPath;
+      if (childConditionalAncestorPath === null && (!fieldRequired || propType.nullable)) {
+        childConditionalAncestorPath = path;
+      }
+      walkObject(propertySchema, path, childConditionalAncestorPath, fields);
       continue;
     }
 
-    pushField(fields, path, fieldRequired, propertySchema);
+    pushField(fields, path, fieldRequired, fieldRequiredWhenObjectPath, propertySchema);
   }
 };
 
 export const flattenJsonSchema = (schema: JsonSchemaDocument): readonly FlattenedField[] => {
   const fields: FlattenedField[] = [];
-  walkObject(schema, "", true, fields);
+  walkObject(schema, "", null, fields);
   return fields;
 };
 

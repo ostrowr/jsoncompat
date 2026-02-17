@@ -136,6 +136,9 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   const uiLayer = new Container();
   rootLayer.addChild(wireLayer, panelLayer, packetLayer, fxLayer, uiLayer);
   app.stage.addChild(rootLayer);
+  // Keep packet typography/layout mode stable across all story states to avoid
+  // abrupt visual jumps when a transition crosses a field-count threshold.
+  packetLayer.setDenseMode(lanePaths.length >= 4);
 
   const wireGraphics = new Graphics();
   wireLayer.addChild(wireGraphics);
@@ -357,7 +360,6 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       versionLabel: version.id,
       fields: version.fields,
     })), lanePaths);
-    packetLayer.setDenseMode(activePaths.size >= 4);
     redrawStateChip(leftVersion.id, rightVersions.map((version) => version.id).join(" | "));
     refreshLaneCenters();
   };

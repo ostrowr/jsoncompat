@@ -57,4 +57,49 @@ describe("validatePayload", () => {
     const outcome = validatePayload(payload, schema);
     expect(outcome.result.ok).toBe(true);
   });
+
+  it("requires nested required fields when optional parent object is present", () => {
+    const schema: JsonSchemaDocument = {
+      type: "object",
+      properties: {
+        profile: {
+          type: ["object", "null"],
+          properties: {
+            city: { type: "string" },
+          },
+          required: ["city"],
+        },
+      },
+      required: [],
+    };
+
+    const absentParent = validatePayload({}, schema);
+    expect(absentParent.result.ok).toBe(true);
+
+    const nullableParent = validatePayload({ profile: null }, schema);
+    expect(nullableParent.result.ok).toBe(true);
+
+    const presentParentMissingChild = validatePayload({ profile: {} }, schema);
+    expect(presentParentMissingChild.result.ok).toBe(false);
+    expect(presentParentMissingChild.result.failingPath).toBe("profile.city");
+    expect(presentParentMissingChild.result.reason).toBe("missing_required");
+  });
+
+  it("accepts explicit null scalar fields", () => {
+    const schema: JsonSchemaDocument = {
+      type: "object",
+      properties: {
+        deleted_at: { type: "null" },
+      },
+      required: ["deleted_at"],
+    };
+
+    const valid = validatePayload({ deleted_at: null }, schema);
+    expect(valid.result.ok).toBe(true);
+
+    const invalid = validatePayload({ deleted_at: "never" }, schema);
+    expect(invalid.result.ok).toBe(false);
+    expect(invalid.result.failingPath).toBe("deleted_at");
+    expect(invalid.result.reason).toBe("type_mismatch");
+  });
 });

@@ -16,6 +16,10 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 };
 
 const matchesScalar = (value: unknown, scalar: ValueDescriptor & { kind: "scalar" }): boolean => {
+  if (scalar.scalar === "null") {
+    return value === null;
+  }
+
   if (value === null) {
     return scalar.nullable;
   }
@@ -29,8 +33,6 @@ const matchesScalar = (value: unknown, scalar: ValueDescriptor & { kind: "scalar
       return typeof value === "number";
     case "boolean":
       return typeof value === "boolean";
-    case "null":
-      return value === null;
     default:
       return false;
   }
@@ -81,6 +83,19 @@ const validateField = (
 
   if (!lookup.found) {
     if (field.required) {
+      if (field.requiredWhenObjectPath !== undefined) {
+        const requiredWhenLookup = getValueAtPath(payload, field.requiredWhenObjectPath);
+        if (!requiredWhenLookup.found || requiredWhenLookup.value === null) {
+          return null;
+        }
+        if (!isPlainObject(requiredWhenLookup.value)) {
+          return {
+            ok: false,
+            failingPath: field.requiredWhenObjectPath,
+            reason: "type_mismatch",
+          };
+        }
+      }
       return {
         ok: false,
         failingPath: field.path,

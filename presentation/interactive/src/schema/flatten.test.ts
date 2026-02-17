@@ -46,4 +46,27 @@ describe("flattenJsonSchema", () => {
 
     expect(() => flattenJsonSchema(schema)).toThrow(/unsupported type union/);
   });
+
+  it("preserves conditional required fields under optional and nullable parent objects", () => {
+    const schema: JsonSchemaDocument = {
+      type: "object",
+      properties: {
+        profile: {
+          type: ["object", "null"],
+          properties: {
+            city: { type: "string" },
+          },
+          required: ["city"],
+        },
+      },
+      required: [],
+    };
+
+    const fields = flattenJsonSchema(schema);
+    const cityField = fields.find((field) => field.path === "profile.city");
+
+    expect(cityField).toBeDefined();
+    expect(cityField?.required).toBe(true);
+    expect(cityField?.requiredWhenObjectPath).toBe("profile");
+  });
 });

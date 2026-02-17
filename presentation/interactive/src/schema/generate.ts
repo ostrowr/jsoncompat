@@ -192,14 +192,48 @@ const shouldIncludeOptional = (field: FlattenedField, seed: string): boolean => 
   return checksum % 100 < 65;
 };
 
+const isObjectPresentAtPath = (payload: Record<string, unknown>, path: string): boolean => {
+  const parts = path.split(".");
+  let cursor: unknown = payload;
+
+  for (const part of parts) {
+    if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor)) {
+      return false;
+    }
+    if (!(part in cursor)) {
+      return false;
+    }
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+
+  return typeof cursor === "object" && cursor !== null && !Array.isArray(cursor);
+};
+
 export const generatePayloadFromFields = (
   fields: readonly FlattenedField[],
   seed: string,
 ): Record<string, unknown> => {
   const output: Record<string, unknown> = {};
+  const deferredConditionalRequired: FlattenedField[] = [];
 
   for (const field of fields) {
+    if (field.required && field.requiredWhenObjectPath !== undefined) {
+      deferredConditionalRequired.push(field);
+      continue;
+    }
     if (!shouldIncludeOptional(field, seed)) {
+      continue;
+    }
+    const value = valueForDescriptor(field.descriptor, field.path, seed);
+    setAtPath(output, field.path, value);
+  }
+
+  for (const field of deferredConditionalRequired) {
+    const requiredWhenObjectPath = field.requiredWhenObjectPath;
+    if (requiredWhenObjectPath === undefined) {
+      continue;
+    }
+    if (!isObjectPresentAtPath(output, requiredWhenObjectPath)) {
       continue;
     }
     const value = valueForDescriptor(field.descriptor, field.path, seed);

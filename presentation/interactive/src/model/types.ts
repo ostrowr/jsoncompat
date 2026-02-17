@@ -36,6 +36,7 @@ export type ValueDescriptor =
 export interface FlattenedField {
   path: string;
   required: boolean;
+  requiredWhenObjectPath?: string;
   descriptor: ValueDescriptor;
   displayType: string;
 }
