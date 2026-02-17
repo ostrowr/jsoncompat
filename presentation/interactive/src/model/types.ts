@@ -127,6 +127,7 @@ export interface PacketViewModel {
   y: number;
   rows: readonly PacketRenderRow[];
   color: number;
+  alpha: number;
   versionLabel?: string;
 }
 

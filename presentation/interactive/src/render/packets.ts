@@ -106,6 +106,7 @@ export class PacketLayer extends Container {
 
       sprite.lastTouchedFrame = this.frameCounter;
       sprite.root.position.set(vm.x, 0);
+      sprite.root.alpha = vm.alpha;
 
       const signature = signatureForRows(vm.rows);
       const versionLabel = vm.versionLabel ?? "";

@@ -9,10 +9,11 @@ import { generatePayload } from "../schema/generate";
 import { validatePayloadAgainstFields } from "../schema/validate";
 import { getStateById } from "./transitions";
 
+const DECODE_TRAIL_PX = 56;
+
 export interface EngineConfig {
   emitIntervalSec: number;
   packetSpeedPxPerSec: number;
-  maxInFlightPackets: number;
   spawnX: number;
   decodeX: number;
   despawnX: number;
@@ -119,10 +120,6 @@ export class WireEngine {
     this.processDecodes();
     this.emitAccumulatorSec += deltaSec;
     while (this.emitAccumulatorSec >= this.config.emitIntervalSec) {
-      if (this.packets.length >= this.config.maxInFlightPackets) {
-        this.emitAccumulatorSec = this.config.emitIntervalSec;
-        break;
-      }
       this.emitAccumulatorSec -= this.config.emitIntervalSec;
       this.emitPacket(this.currentLeftVersion().id, this.config.spawnX);
     }
@@ -159,7 +156,6 @@ export class WireEngine {
   }
 
   private processDecodes(): void {
-    const decodeTrailPx = 56;
     const rightVersion = this.currentRightVersion();
     const remainingPackets: Packet[] = [];
     for (const packet of this.packets) {
@@ -178,7 +174,7 @@ export class WireEngine {
         this.decodedPacketIds.add(packet.id);
       }
 
-      if (packet.x < this.config.decodeX + decodeTrailPx) {
+      if (packet.x < this.config.decodeX + DECODE_TRAIL_PX) {
         remainingPackets.push(packet);
       } else {
         this.decodedPacketIds.delete(packet.id);

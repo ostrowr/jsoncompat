@@ -42,7 +42,6 @@ const buildStory = (): StoryDefinition => ({
 const config: EngineConfig = {
   emitIntervalSec: 0.5,
   packetSpeedPxPerSec: 10,
-  maxInFlightPackets: 8,
   spawnX: 0,
   decodeX: 10_000,
   despawnX: 20_000,
@@ -76,7 +75,6 @@ describe("WireEngine transitions", () => {
       ...config,
       decodeX: 5,
       despawnX: 500,
-      maxInFlightPackets: 1,
       initialPacketCount: 1,
       initialPacketSpacing: 20,
       emitIntervalSec: 999,

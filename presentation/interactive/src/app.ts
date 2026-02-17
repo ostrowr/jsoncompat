@@ -47,13 +47,25 @@ const GATE_FLASH_SEC = 0.5;
 const SLOT_FLASH_DELAY_SEC = 0.12;
 const SLOT_FLASH_SUCCESS_SEC = 0.42;
 const SLOT_FLASH_FAILURE_SEC = 0.58;
+const PACKET_SPAWN_OFFSET_PX = 72;
+const PACKET_FADE_IN_DISTANCE_PX = 46;
+const PACKET_FADE_OUT_LEAD_PX = 8;
+const PACKET_FADE_OUT_DISTANCE_PX = 56;
+
+const clamp01 = (value: number): number => {
+  return Math.max(0, Math.min(1, value));
+};
+
+const smoothStep01 = (value: number): number => {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
+};
 
 const baseEngineConfig = (layout: LayoutMetrics): EngineConfig => {
   return {
     emitIntervalSec: 1.6,
     packetSpeedPxPerSec: 148,
-    maxInFlightPackets: 6,
-    spawnX: layout.wireStartX + 116,
+    spawnX: layout.wireStartX + PACKET_SPAWN_OFFSET_PX,
     decodeX: layout.decodeX,
     despawnX: layout.wireEndX + 120,
     packetY: layout.packetY,
@@ -76,19 +88,19 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   emissionControl.style.position = "absolute";
   emissionControl.style.left = "18px";
   emissionControl.style.top = "16px";
-  emissionControl.style.padding = "10px 12px";
-  emissionControl.style.border = "2px solid #587198";
+  emissionControl.style.padding = "9px 11px";
+  emissionControl.style.border = "1.5px solid #4f6790";
   emissionControl.style.borderRadius = "10px";
-  emissionControl.style.background = "rgba(17, 27, 43, 0.95)";
+  emissionControl.style.background = "rgba(17, 27, 43, 0.9)";
   emissionControl.style.color = "#e8edf7";
   emissionControl.style.fontFamily = "Menlo, monospace";
-  emissionControl.style.fontSize = "14px";
+  emissionControl.style.fontSize = "13px";
   emissionControl.style.zIndex = "5";
 
   const emissionTitle = document.createElement("div");
   emissionTitle.textContent = "Emission Rate";
   emissionTitle.style.fontWeight = "700";
-  emissionTitle.style.marginBottom = "6px";
+  emissionTitle.style.marginBottom = "5px";
 
   const emissionSlider = document.createElement("input");
   emissionSlider.type = "range";
@@ -98,7 +110,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   emissionSlider.style.width = "190px";
 
   const emissionValue = document.createElement("div");
-  emissionValue.style.marginTop = "6px";
+  emissionValue.style.marginTop = "5px";
   emissionValue.style.color = "#9fb5cd";
 
   emissionControl.append(emissionTitle, emissionSlider, emissionValue);
@@ -276,18 +288,25 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     }
 
     const gateTop = layout.panelY - layout.panelHeight / 2 + 8;
-    const gateHeight = Math.max(32, layout.panelHeight - 16);
-    wireGraphics.lineStyle(1, 0x627694, 0.45);
-    wireGraphics.beginFill(0x182739, 0.28);
-    wireGraphics.drawRoundedRect(layout.decodeX - 2, gateTop, 4, gateHeight, 3);
-    wireGraphics.endFill();
+    const gateBottom = gateTop + Math.max(32, layout.panelHeight - 16);
+    const gateX = layout.decodeX;
+
+    // Clean decode gate: a single vertical divider with a soft halo.
+    wireGraphics.lineStyle(5, 0x24344d, 0.28);
+    wireGraphics.moveTo(gateX, gateTop);
+    wireGraphics.lineTo(gateX, gateBottom);
+    wireGraphics.lineStyle(1.6, 0x6f86aa, 0.72);
+    wireGraphics.moveTo(gateX, gateTop);
+    wireGraphics.lineTo(gateX, gateBottom);
 
     if (gateFlashTtlSec > 0) {
       const alpha = Math.max(0.1, gateFlashTtlSec / GATE_FLASH_SEC) * 0.5;
-      wireGraphics.lineStyle(1.8, gateFlashColor, alpha);
-      wireGraphics.beginFill(gateFlashColor, alpha * 0.08);
-      wireGraphics.drawRoundedRect(layout.decodeX - 4, gateTop - 1, 8, gateHeight + 2, 4);
-      wireGraphics.endFill();
+      wireGraphics.lineStyle(7, gateFlashColor, alpha * 0.22);
+      wireGraphics.moveTo(gateX, gateTop);
+      wireGraphics.lineTo(gateX, gateBottom);
+      wireGraphics.lineStyle(2.6, gateFlashColor, alpha * 0.95);
+      wireGraphics.moveTo(gateX, gateTop);
+      wireGraphics.lineTo(gateX, gateBottom);
     }
   };
 
@@ -364,7 +383,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     layout = computeLayout(app.renderer.width, app.renderer.height);
     rebuildPanelsIfNeeded();
     engine.updateGeometry({
-      spawnX: layout.wireStartX + 116,
+      spawnX: layout.wireStartX + PACKET_SPAWN_OFFSET_PX,
       decodeX: layout.decodeX,
       despawnX: layout.wireEndX + 120,
       packetY: layout.packetY,
@@ -498,8 +517,17 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     y: number;
     rows: readonly { path: string; keyText: string; valueText: string; displayType: string }[];
     color: number;
+    alpha: number;
     versionLabel: string;
   }[] => {
+    const packetAlphaAtX = (x: number): number => {
+      const spawnX = layout.wireStartX + PACKET_SPAWN_OFFSET_PX;
+      const fadeIn = smoothStep01((x - spawnX) / PACKET_FADE_IN_DISTANCE_PX);
+      const fadeOutStart = layout.decodeX - PACKET_FADE_OUT_LEAD_PX;
+      const fadeOut = 1 - smoothStep01((x - fadeOutStart) / PACKET_FADE_OUT_DISTANCE_PX);
+      return clamp01(Math.min(fadeIn, fadeOut));
+    };
+
     return engine.activePackets().map((packet) => {
       const version = story.versions.get(packet.schemaVersionId);
       if (version === undefined) {
@@ -511,6 +539,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
         y: packet.y,
         rows: packetRows(packet, version),
         color: 0,
+        alpha: packetAlphaAtX(packet.x),
         versionLabel: version.id,
       };
     });

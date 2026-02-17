@@ -147,11 +147,11 @@ export class SchemaPanel extends Container {
 
   private drawPanel(): void {
     this.panelGraphics.clear();
-    this.panelGraphics.lineStyle(2.2, this.accent, 0.95);
+    this.panelGraphics.lineStyle(2, this.accent, 0.82);
     this.panelGraphics.beginFill(PANEL_BG, 0.97);
     this.panelGraphics.drawRoundedRect(0, 0, this.widthPx, this.heightPx, 16);
     this.panelGraphics.endFill();
-    this.panelGraphics.lineStyle(1.2, 0x1d2a3e, 0.9);
+    this.panelGraphics.lineStyle(1, 0x1d2a3e, 0.72);
     this.panelGraphics.drawRoundedRect(6, 6, this.widthPx - 12, this.heightPx - 12, 13);
 
     this.layoutHeader();
