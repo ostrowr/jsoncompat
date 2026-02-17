@@ -30,11 +30,13 @@ const buildStory = (): StoryDefinition => ({
     },
   ],
   states: [
-    { id: "s1", leftVersionId: "v1", rightVersionId: "v1" },
-    { id: "s2", leftVersionId: "v2", rightVersionId: "v2" },
+    { id: "s1", leftVersionId: "v1", rightVersionIds: ["v1"] },
+    { id: "s2", leftVersionId: "v2", rightVersionIds: ["v2"] },
+    { id: "s3", leftVersionId: "v2", rightVersionIds: ["v1", "v2"] },
   ],
   transitions: [
     { id: "t1", fromStateId: "s1", toStateId: "s2", seedWireFrom: "left_before" },
+    { id: "t2", fromStateId: "s2", toStateId: "s3", seedWireFrom: "left_before" },
   ],
   initialStateId: "s1",
 });
@@ -90,5 +92,27 @@ describe("WireEngine transitions", () => {
 
     engine.step(6);
     expect(engine.activePackets().length).toBe(0);
+  });
+
+  it("uses reader union variants and records matched reader version", () => {
+    const story = materializeStory(buildStory());
+    const decodingConfig: EngineConfig = {
+      ...config,
+      decodeX: 5,
+      despawnX: 500,
+      initialPacketCount: 1,
+      initialPacketSpacing: 20,
+      emitIntervalSec: 999,
+      packetSpeedPxPerSec: 10,
+    };
+
+    const engine = new WireEngine(story, decodingConfig);
+    engine.transitionTo("s3");
+    engine.step(0.5);
+
+    const decode = engine.drainDecodeEvents();
+    expect(decode.length).toBe(1);
+    expect(decode[0]?.result.ok).toBe(true);
+    expect(decode[0]?.matchedReaderVersionId).toBe("v1");
   });
 });

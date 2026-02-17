@@ -118,10 +118,35 @@ const parseVersion = (value: unknown, index: number): SchemaVersionDefinition =>
 
 const parseState = (value: unknown, index: number): StoryStateDefinition => {
   const obj = assertObject(value, `states[${index}]`);
+  const hasRightVersionId = obj.rightVersionId !== undefined;
+  const hasRightVersionIds = obj.rightVersionIds !== undefined;
+  if (hasRightVersionId && hasRightVersionIds) {
+    throw new Error(`states[${index}] must specify only one of rightVersionId or rightVersionIds`);
+  }
+
+  let rightVersionIds: string[];
+  if (hasRightVersionIds) {
+    if (!Array.isArray(obj.rightVersionIds) || obj.rightVersionIds.length === 0) {
+      throw new Error(`states[${index}].rightVersionIds must be a non-empty string[]`);
+    }
+    rightVersionIds = obj.rightVersionIds.map((entry, rightIndex) =>
+      assertString(entry, `states[${index}].rightVersionIds[${rightIndex}]`));
+  } else {
+    rightVersionIds = [assertString(obj.rightVersionId, `states[${index}].rightVersionId`)];
+  }
+
+  const seenRightVersionIds = new Set<string>();
+  for (const rightVersionId of rightVersionIds) {
+    if (seenRightVersionIds.has(rightVersionId)) {
+      throw new Error(`states[${index}] contains duplicate right version '${rightVersionId}'`);
+    }
+    seenRightVersionIds.add(rightVersionId);
+  }
+
   return {
     id: assertString(obj.id, `states[${index}].id`),
     leftVersionId: assertString(obj.leftVersionId, `states[${index}].leftVersionId`),
-    rightVersionId: assertString(obj.rightVersionId, `states[${index}].rightVersionId`),
+    rightVersionIds,
   };
 };
 
@@ -184,8 +209,10 @@ export const materializeStory = (definition: StoryDefinition): RuntimeStory => {
     if (!versions.has(stateDef.leftVersionId)) {
       throw new Error(`state '${stateDef.id}' references missing left version '${stateDef.leftVersionId}'`);
     }
-    if (!versions.has(stateDef.rightVersionId)) {
-      throw new Error(`state '${stateDef.id}' references missing right version '${stateDef.rightVersionId}'`);
+    for (const rightVersionId of stateDef.rightVersionIds) {
+      if (!versions.has(rightVersionId)) {
+        throw new Error(`state '${stateDef.id}' references missing right version '${rightVersionId}'`);
+      }
     }
     if (states.has(stateDef.id)) {
       throw new Error(`duplicate state id: '${stateDef.id}'`);
@@ -193,7 +220,7 @@ export const materializeStory = (definition: StoryDefinition): RuntimeStory => {
     states.set(stateDef.id, {
       id: stateDef.id,
       leftVersionId: stateDef.leftVersionId,
-      rightVersionId: stateDef.rightVersionId,
+      rightVersionIds: [...stateDef.rightVersionIds],
     });
   }
 

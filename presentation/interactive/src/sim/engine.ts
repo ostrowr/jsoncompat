@@ -156,7 +156,10 @@ export class WireEngine {
   }
 
   private processDecodes(): void {
-    const rightVersion = this.currentRightVersion();
+    const rightVersions = this.currentRightVersions();
+    if (rightVersions.length === 0) {
+      throw new Error(`state '${this.currentStateId}' has no reader versions`);
+    }
     const remainingPackets: Packet[] = [];
     for (const packet of this.packets) {
       if (packet.x < this.config.decodeX) {
@@ -165,11 +168,12 @@ export class WireEngine {
       }
 
       if (!this.decodedPacketIds.has(packet.id)) {
-        const validation = validatePayloadAgainstFields(packet.payload, rightVersion.fields);
+        const validation = this.validateAgainstReaderVersions(packet, rightVersions);
         this.decodeEvents.push({
           packetId: packet.id,
           result: validation.result,
           matchedPaths: validation.matchedPaths,
+          matchedReaderVersionId: validation.readerVersionId,
         });
         this.decodedPacketIds.add(packet.id);
       }
@@ -181,6 +185,41 @@ export class WireEngine {
       }
     }
     this.packets = remainingPackets;
+  }
+
+  private validateAgainstReaderVersions(
+    packet: Packet,
+    rightVersions: readonly SchemaVersion[],
+  ): { readerVersionId: string; result: DecodeEvent["result"]; matchedPaths: readonly string[] } {
+    let bestFailure: { readerVersionId: string; result: DecodeEvent["result"]; matchedPaths: readonly string[] } | null = null;
+
+    for (const rightVersion of rightVersions) {
+      const validation = validatePayloadAgainstFields(packet.payload, rightVersion.fields);
+      if (validation.result.ok) {
+        return {
+          readerVersionId: rightVersion.id,
+          result: validation.result,
+          matchedPaths: validation.matchedPaths,
+        };
+      }
+
+      if (
+        bestFailure === null
+        || validation.matchedPaths.length > bestFailure.matchedPaths.length
+      ) {
+        bestFailure = {
+          readerVersionId: rightVersion.id,
+          result: validation.result,
+          matchedPaths: validation.matchedPaths,
+        };
+      }
+    }
+
+    if (bestFailure !== null) {
+      return bestFailure;
+    }
+
+    throw new Error(`state '${this.currentStateId}' has no reader versions`);
   }
 
   private version(versionId: string): SchemaVersion {
@@ -195,7 +234,7 @@ export class WireEngine {
     return this.version(this.state().leftVersionId);
   }
 
-  public currentRightVersion(): SchemaVersion {
-    return this.version(this.state().rightVersionId);
+  public currentRightVersions(): readonly SchemaVersion[] {
+    return this.state().rightVersionIds.map((rightVersionId) => this.version(rightVersionId));
   }
 }

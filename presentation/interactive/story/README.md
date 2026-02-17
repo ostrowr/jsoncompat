@@ -7,7 +7,7 @@
 ```json
 {
   "versions": [{ "id": "v1", "schema": { "type": "object", "properties": {}, "required": [] } }],
-  "states": [{ "id": "s1", "leftVersionId": "v1", "rightVersionId": "v1" }],
+  "states": [{ "id": "s1", "leftVersionId": "v1", "rightVersionIds": ["v1"] }],
   "transitions": [{ "id": "t1", "fromStateId": "s1", "toStateId": "s2", "seedWireFrom": "left_before" }],
   "initialStateId": "s1"
 }
@@ -21,4 +21,6 @@
   - arrays with `items`
   - nullable unions via `type: ["<type>", "null"]`
 - `seedWireFrom` is validated and reserved for future transition seeding policies.
+- `states[].rightVersionIds` supports one or more reader versions. Multiple entries represent a reader union (`vA | vB`) where decode accepts any listed variant.
+- Legacy `states[].rightVersionId` is still accepted and normalized to a one-element `rightVersionIds` array.
 - Exactly one outgoing transition per state is currently supported in runtime validation.

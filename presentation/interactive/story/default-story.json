@@ -60,22 +60,45 @@
         },
         "required": ["name", "age", "city", "eye_color", "interests"]
       }
+    },
+    {
+      "id": "v5",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "age": { "type": "integer" },
+          "city": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "eye_color": { "type": "string" },
+          "interests": { "type": "integer" }
+        },
+        "required": ["name", "age", "city", "eye_color", "interests"]
+      }
     }
   ],
   "states": [
-    { "id": "s1", "leftVersionId": "v1", "rightVersionId": "v1" },
-    { "id": "s2", "leftVersionId": "v1", "rightVersionId": "v2" },
-    { "id": "s3", "leftVersionId": "v2", "rightVersionId": "v2" },
-    { "id": "s4", "leftVersionId": "v3", "rightVersionId": "v2" },
-    { "id": "s5", "leftVersionId": "v3", "rightVersionId": "v3" },
-    { "id": "s6", "leftVersionId": "v4", "rightVersionId": "v4" }
+    { "id": "s1", "leftVersionId": "v1", "rightVersionIds": ["v1"] },
+    { "id": "s2", "leftVersionId": "v1", "rightVersionIds": ["v2"] },
+    { "id": "s3", "leftVersionId": "v2", "rightVersionIds": ["v2"] },
+    { "id": "s4", "leftVersionId": "v3", "rightVersionIds": ["v2"] },
+    { "id": "s5", "leftVersionId": "v3", "rightVersionIds": ["v3"] },
+    { "id": "s6", "leftVersionId": "v4", "rightVersionIds": ["v4"] },
+    { "id": "s7", "leftVersionId": "v4", "rightVersionIds": ["v4", "v5"] },
+    { "id": "s8", "leftVersionId": "v5", "rightVersionIds": ["v4", "v5"] },
+    { "id": "s9", "leftVersionId": "v5", "rightVersionIds": ["v5"] }
   ],
   "transitions": [
     { "id": "t1", "fromStateId": "s1", "toStateId": "s2", "seedWireFrom": "left_before" },
     { "id": "t2", "fromStateId": "s2", "toStateId": "s3", "seedWireFrom": "left_before" },
     { "id": "t3", "fromStateId": "s3", "toStateId": "s4", "seedWireFrom": "left_before" },
     { "id": "t4", "fromStateId": "s4", "toStateId": "s5", "seedWireFrom": "left_before" },
-    { "id": "t5", "fromStateId": "s5", "toStateId": "s6", "seedWireFrom": "left_before" }
+    { "id": "t5", "fromStateId": "s5", "toStateId": "s6", "seedWireFrom": "left_before" },
+    { "id": "t6", "fromStateId": "s6", "toStateId": "s7", "seedWireFrom": "left_before" },
+    { "id": "t7", "fromStateId": "s7", "toStateId": "s8", "seedWireFrom": "left_before" },
+    { "id": "t8", "fromStateId": "s8", "toStateId": "s9", "seedWireFrom": "left_before" }
   ],
   "initialStateId": "s1"
 }

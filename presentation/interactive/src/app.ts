@@ -18,6 +18,7 @@ import { getNextStateId, getPreviousStateId } from "./sim/transitions";
 
 interface SlotHighlight {
   path: string;
+  versionLabel: string | undefined;
   color: number;
   ttlSec: number;
   delaySec: number;
@@ -220,8 +221,8 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     pauseButton.position.set(layout.width - width - 18, 16);
   };
 
-  const redrawStateChip = (leftVersionId: string, rightVersionId: string): void => {
-    stateChipText.text = `Writer ${leftVersionId} -> Reader ${rightVersionId}`;
+  const redrawStateChip = (leftVersionId: string, rightVersionLabel: string): void => {
+    stateChipText.text = `Writer ${leftVersionId} -> Reader ${rightVersionLabel}`;
     const width = stateChipText.width + 28;
     const height = 34;
     stateChipBg.clear();
@@ -332,20 +333,32 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     }
 
     const leftVersion = story.versions.get(state.leftVersionId);
-    const rightVersion = story.versions.get(state.rightVersionId);
-    if (leftVersion === undefined || rightVersion === undefined) {
+    if (leftVersion === undefined) {
       throw new Error(`state '${state.id}' references unknown schema version`);
+    }
+    const rightVersions = state.rightVersionIds.map((rightVersionId) => {
+      const rightVersion = story.versions.get(rightVersionId);
+      if (rightVersion === undefined) {
+        throw new Error(`state '${state.id}' references unknown right schema version '${rightVersionId}'`);
+      }
+      return rightVersion;
+    });
+    if (rightVersions.length === 0) {
+      throw new Error(`state '${state.id}' has no right schema versions`);
     }
 
     activePaths = new Set([
       ...leftVersion.fields.map((field) => field.path),
-      ...rightVersion.fields.map((field) => field.path),
+      ...rightVersions.flatMap((version) => version.fields.map((field) => field.path)),
     ]);
 
     leftPanel.setSchema(leftVersion.id, leftVersion.fields, lanePaths);
-    rightPanel.setSchema(rightVersion.id, rightVersion.fields, lanePaths);
+    rightPanel.setSchemaUnion(rightVersions.map((version) => ({
+      versionLabel: version.id,
+      fields: version.fields,
+    })), lanePaths);
     packetLayer.setDenseMode(activePaths.size >= 4);
-    redrawStateChip(leftVersion.id, rightVersion.id);
+    redrawStateChip(leftVersion.id, rightVersions.map((version) => version.id).join(" | "));
     refreshLaneCenters();
   };
 
@@ -397,6 +410,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   const seedHighlights = (
     matchedPaths: readonly string[],
     failingPath: string | undefined,
+    matchedReaderVersionId?: string,
   ): void => {
     if (failingPath !== undefined) {
       gateFlashColor = FAILURE_ACCENT;
@@ -409,6 +423,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     for (const path of matchedPaths) {
       slotHighlights.push({
         path,
+        versionLabel: matchedReaderVersionId,
         color: SUCCESS_ACCENT,
         ttlSec: SLOT_FLASH_SUCCESS_SEC,
         delaySec: SLOT_FLASH_DELAY_SEC,
@@ -418,6 +433,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     if (failingPath !== undefined) {
       slotHighlights.push({
         path: failingPath,
+        versionLabel: matchedReaderVersionId,
         color: FAILURE_ACCENT,
         ttlSec: SLOT_FLASH_FAILURE_SEC,
         delaySec: SLOT_FLASH_DELAY_SEC,
@@ -427,7 +443,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
 
   const refreshHighlights = (deltaSec: number): void => {
     const next: SlotHighlight[] = [];
-    const byPath = new Map<string, number>();
+    const bySlot = new Map<string, SlotHighlight>();
 
     for (const highlight of slotHighlights) {
       const delaySec = Math.max(0, highlight.delaySec - deltaSec);
@@ -440,16 +456,22 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       if (delaySec > 0) {
         continue;
       }
-      const previous = byPath.get(updated.path);
+      const slotKey = `${updated.versionLabel ?? "*"}::${updated.path}`;
+      const previous = bySlot.get(slotKey);
       if (previous === undefined || updated.color === FAILURE_ACCENT) {
-        byPath.set(updated.path, updated.color);
+        bySlot.set(slotKey, updated);
       }
     }
 
     slotHighlights = next;
     rightPanel.clearHighlights();
-    for (const [path, color] of byPath.entries()) {
-      rightPanel.highlightSlot(path, color, color === FAILURE_ACCENT ? 3.1 : 2.6);
+    for (const highlight of bySlot.values()) {
+      rightPanel.highlightSlot(
+        highlight.path,
+        highlight.color,
+        highlight.color === FAILURE_ACCENT ? 3.1 : 2.6,
+        highlight.versionLabel,
+      );
     }
   };
 
@@ -465,7 +487,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     }
 
     debugText.visible = true;
-    debugText.text = `state=${state.id} left=${state.leftVersionId} right=${state.rightVersionId} paused=${engine.isPaused()}`;
+    debugText.text = `state=${state.id} left=${state.leftVersionId} right=${state.rightVersionIds.join("|")} paused=${engine.isPaused()}`;
   };
 
   const transitionTo = (stateId: string): void => {
@@ -563,6 +585,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       seedHighlights(
         decodeEvent.matchedPaths,
         decodeEvent.result.failingPath,
+        decodeEvent.matchedReaderVersionId,
       );
     }
 

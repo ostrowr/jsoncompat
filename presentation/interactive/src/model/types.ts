@@ -48,7 +48,7 @@ export interface SchemaVersionDefinition {
 export interface StoryStateDefinition {
   id: string;
   leftVersionId: string;
-  rightVersionId: string;
+  rightVersionIds: readonly string[];
 }
 
 export type SeedWireFrom = "left_before" | "left_after" | "right_before" | "right_after";
@@ -76,7 +76,7 @@ export interface SchemaVersion {
 export interface StoryState {
   id: string;
   leftVersionId: string;
-  rightVersionId: string;
+  rightVersionIds: readonly string[];
 }
 
 export interface StoryTransition {
@@ -112,6 +112,7 @@ export interface DecodeEvent {
   packetId: number;
   result: DecodeResult;
   matchedPaths: readonly string[];
+  matchedReaderVersionId: string;
 }
 
 export interface PacketRenderRow {
