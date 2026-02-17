@@ -6,14 +6,12 @@ import { DecodeFxLayer } from "./render/decode-fx";
 import {
   BACKGROUND_COLOR,
   FAILURE_ACCENT,
-  LEFT_ACCENT,
   SUCCESS_ACCENT,
   WIRE_ACCENT,
   computeLayout,
 } from "./render/layout";
 import { PacketLayer } from "./render/packets";
 import { SchemaPanel } from "./render/panels";
-import { colorForDisplayType } from "./render/type-colors";
 import { packetRows } from "./sim/packet";
 import { WireEngine, type EngineConfig } from "./sim/engine";
 import { getNextStateId, getPreviousStateId } from "./sim/transitions";
@@ -22,6 +20,7 @@ interface SlotHighlight {
   path: string;
   color: number;
   ttlSec: number;
+  delaySec: number;
 }
 
 const debugStyle = new TextStyle({
@@ -33,38 +32,77 @@ const debugStyle = new TextStyle({
 const pauseButtonStyle = new TextStyle({
   fill: 0xe8edf7,
   fontFamily: "Menlo, monospace",
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: "700",
 });
 
-const FAILURE_FOCUS_SEC = 0.3;
-const FOCUS_DIM_ALPHA = 0.4;
+const stateChipStyle = new TextStyle({
+  fill: 0xe8edf7,
+  fontFamily: "Menlo, monospace",
+  fontSize: 18,
+  fontWeight: "700",
+});
+
+const GATE_FLASH_SEC = 0.5;
+const SLOT_FLASH_DELAY_SEC = 0.12;
+const SLOT_FLASH_SUCCESS_SEC = 0.42;
+const SLOT_FLASH_FAILURE_SEC = 0.58;
 
 const baseEngineConfig = (layout: LayoutMetrics): EngineConfig => {
   return {
-    emitIntervalSec: 1.22,
-    packetSpeedPxPerSec: 180,
+    emitIntervalSec: 1.6,
+    packetSpeedPxPerSec: 148,
+    maxInFlightPackets: 6,
     spawnX: layout.wireStartX + 116,
     decodeX: layout.decodeX,
     despawnX: layout.wireEndX + 120,
     packetY: layout.packetY,
-    initialPacketCount: 3,
-    initialPacketSpacing: 220,
+    initialPacketCount: 2,
+    initialPacketSpacing: 264,
   };
 };
 
-const leafPath = (path: string): string => {
-  const parts = path.split(".");
-  return parts[parts.length - 1] ?? path;
-};
-
 export const startInteractiveApp = async (host: HTMLElement): Promise<() => void> => {
+  host.style.position = "relative";
+
   const app = new Application({
     backgroundColor: BACKGROUND_COLOR,
     antialias: true,
     resizeTo: window,
   });
   host.appendChild(app.view as HTMLCanvasElement);
+
+  const emissionControl = document.createElement("div");
+  emissionControl.style.position = "absolute";
+  emissionControl.style.left = "18px";
+  emissionControl.style.top = "16px";
+  emissionControl.style.padding = "10px 12px";
+  emissionControl.style.border = "2px solid #587198";
+  emissionControl.style.borderRadius = "10px";
+  emissionControl.style.background = "rgba(17, 27, 43, 0.95)";
+  emissionControl.style.color = "#e8edf7";
+  emissionControl.style.fontFamily = "Menlo, monospace";
+  emissionControl.style.fontSize = "14px";
+  emissionControl.style.zIndex = "5";
+
+  const emissionTitle = document.createElement("div");
+  emissionTitle.textContent = "Emission Rate";
+  emissionTitle.style.fontWeight = "700";
+  emissionTitle.style.marginBottom = "6px";
+
+  const emissionSlider = document.createElement("input");
+  emissionSlider.type = "range";
+  emissionSlider.min = "0.4";
+  emissionSlider.max = "2.4";
+  emissionSlider.step = "0.05";
+  emissionSlider.style.width = "190px";
+
+  const emissionValue = document.createElement("div");
+  emissionValue.style.marginTop = "6px";
+  emissionValue.style.color = "#9fb5cd";
+
+  emissionControl.append(emissionTitle, emissionSlider, emissionValue);
+  host.appendChild(emissionControl);
 
   const story = createDefaultRuntimeStory();
   const lanePaths: string[] = [];
@@ -77,11 +115,6 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       }
     }
   }
-  let pathColorByPath = new Map<string, number>();
-  const colorForPath = (path: string): number => {
-    return pathColorByPath.get(path) ?? WIRE_ACCENT;
-  };
-
   const rootLayer = new Container();
   const wireLayer = new Container();
   const panelLayer = new Container();
@@ -106,34 +139,54 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   pauseButton.cursor = "pointer";
   uiLayer.addChild(pauseButton);
 
+  const stateChip = new Container();
+  const stateChipBg = new Graphics();
+  const stateChipText = new Text("", stateChipStyle);
+  stateChip.addChild(stateChipBg, stateChipText);
+  uiLayer.addChild(stateChip);
+
   let layout = computeLayout(app.renderer.width, app.renderer.height);
   let leftPanel = new SchemaPanel(
     "Writer",
     layout.panelWidth,
     layout.panelHeight,
-    LEFT_ACCENT,
-    false,
+    WIRE_ACCENT,
   );
   let rightPanel = new SchemaPanel(
     "Reader",
     layout.panelWidth,
     layout.panelHeight,
-    0x8b5cf6,
-    true,
+    WIRE_ACCENT,
   );
   panelLayer.addChild(leftPanel, rightPanel);
 
   const engine = new WireEngine(story, baseEngineConfig(layout));
+
+  const formatEmitRate = (ratePerSec: number): string => `${ratePerSec.toFixed(2)} msg/s`;
+  const applyEmissionSlider = (): void => {
+    const rate = Math.max(0.2, Number(emissionSlider.value));
+    engine.setEmitIntervalSec(1 / rate);
+    emissionValue.textContent = formatEmitRate(rate);
+  };
+  const onEmissionInput = (): void => {
+    applyEmissionSlider();
+  };
+  const defaultRate = 1 / engine.emitIntervalSec();
+  emissionSlider.value = defaultRate.toFixed(2);
+  emissionValue.textContent = formatEmitRate(defaultRate);
+  emissionSlider.addEventListener("input", onEmissionInput);
+
   let currentStateId = engine.stateId();
   let slotHighlights: SlotHighlight[] = [];
   let laneCentersByPath = new Map<string, number>();
   let activePaths = new Set<string>();
-  let failureFocusPath: string | null = null;
-  let failureFocusTtlSec = 0;
   let wireTopY = layout.wireY - layout.wireHeight / 2;
   let wireBottomY = layout.wireY + layout.wireHeight / 2;
   let wireCenterY = layout.wireY;
   let debugVisible = false;
+  let gateFlashColor = SUCCESS_ACCENT;
+  let gateFlashTtlSec = 0;
+  let schemaChipTransitionSec = 0;
 
   const placePanels = (): void => {
     leftPanel.position.set(layout.leftPanelX - layout.panelWidth / 2, layout.panelY - layout.panelHeight / 2);
@@ -141,17 +194,50 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   };
 
   const redrawPauseButton = (): void => {
-    const width = 118;
-    const height = 38;
+    const width = 126;
+    const height = 42;
     pauseButtonBg.clear();
-    pauseButtonBg.lineStyle(1.8, 0x4b607f, 0.95);
+    pauseButtonBg.lineStyle(2, 0x587198, 0.96);
     pauseButtonBg.beginFill(0x111b2b, 0.95);
-    pauseButtonBg.drawRoundedRect(0, 0, width, height, 9);
+    pauseButtonBg.drawRoundedRect(0, 0, width, height, 10);
     pauseButtonBg.endFill();
 
     pauseButtonText.text = engine.isPaused() ? "Resume" : "Pause";
     pauseButtonText.x = (width - pauseButtonText.width) / 2;
     pauseButtonText.y = (height - pauseButtonText.height) / 2;
+    pauseButton.position.set(layout.width - width - 18, 16);
+  };
+
+  const redrawStateChip = (leftVersionId: string, rightVersionId: string): void => {
+    stateChipText.text = `Writer ${leftVersionId} -> Reader ${rightVersionId}`;
+    const width = stateChipText.width + 28;
+    const height = 34;
+    stateChipBg.clear();
+    stateChipBg.lineStyle(1.8, WIRE_ACCENT, 0.94);
+    stateChipBg.beginFill(0x111b2b, 0.94);
+    stateChipBg.drawRoundedRect(0, 0, width, height, 11);
+    stateChipBg.endFill();
+    stateChipText.x = 14;
+    stateChipText.y = (height - stateChipText.height) / 2;
+    stateChip.position.set((layout.width - width) / 2, 18);
+    schemaChipTransitionSec = 0.52;
+  };
+
+  const tickStateChip = (deltaSec: number): void => {
+    if (schemaChipTransitionSec <= 0) {
+      stateChip.alpha = 1;
+      stateChip.scale.set(1);
+      return;
+    }
+    const durationSec = 0.52;
+    schemaChipTransitionSec = Math.max(0, schemaChipTransitionSec - deltaSec);
+    const t = 1 - schemaChipTransitionSec / durationSec;
+    const eased = 1 - Math.pow(1 - t, 3);
+    stateChip.alpha = 0.74 + eased * 0.26;
+    const scale = 0.97 + eased * 0.03;
+    stateChip.scale.set(scale);
+    const width = stateChipBg.width;
+    stateChip.x = (layout.width - width * scale) / 2;
   };
 
   const drawWire = (): void => {
@@ -183,15 +269,24 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       if (laneY < y + 10 || laneY > y + wireHeight - 10) {
         continue;
       }
-      const color = colorForPath(path);
-      const laneAlpha = failureFocusPath !== null && path !== failureFocusPath ? FOCUS_DIM_ALPHA : 1;
-      wireGraphics.lineStyle(2.0, color, 0.42 * laneAlpha);
+      const color = 0x60728d;
+      wireGraphics.lineStyle(2.8, color, 0.42);
       wireGraphics.moveTo(layout.wireStartX + 10, laneY);
       wireGraphics.lineTo(layout.wireEndX - 10, laneY);
+    }
 
-      wireGraphics.beginFill(color, 0.6 * laneAlpha);
-      wireGraphics.drawCircle(layout.wireStartX + 8, laneY, 2.5);
-      wireGraphics.drawCircle(layout.wireEndX - 8, laneY, 2.5);
+    const gateTop = layout.panelY - layout.panelHeight / 2 + 8;
+    const gateHeight = Math.max(32, layout.panelHeight - 16);
+    wireGraphics.lineStyle(1, 0x627694, 0.45);
+    wireGraphics.beginFill(0x182739, 0.28);
+    wireGraphics.drawRoundedRect(layout.decodeX - 2, gateTop, 4, gateHeight, 3);
+    wireGraphics.endFill();
+
+    if (gateFlashTtlSec > 0) {
+      const alpha = Math.max(0.1, gateFlashTtlSec / GATE_FLASH_SEC) * 0.5;
+      wireGraphics.lineStyle(1.8, gateFlashColor, alpha);
+      wireGraphics.beginFill(gateFlashColor, alpha * 0.08);
+      wireGraphics.drawRoundedRect(layout.decodeX - 4, gateTop - 1, 8, gateHeight + 2, 4);
       wireGraphics.endFill();
     }
   };
@@ -228,20 +323,10 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       ...rightVersion.fields.map((field) => field.path),
     ]);
 
-    const nextColors = new Map<string, number>();
-    const addColors = (fields: readonly { path: string; displayType: string }[]): void => {
-      for (const field of fields) {
-        if (!nextColors.has(field.path)) {
-          nextColors.set(field.path, colorForDisplayType(field.displayType));
-        }
-      }
-    };
-    addColors(leftVersion.fields);
-    addColors(rightVersion.fields);
-    pathColorByPath = nextColors;
-
     leftPanel.setSchema(leftVersion.id, leftVersion.fields, lanePaths);
     rightPanel.setSchema(rightVersion.id, rightVersion.fields, lanePaths);
+    packetLayer.setDenseMode(activePaths.size >= 4);
+    redrawStateChip(leftVersion.id, rightVersion.id);
     refreshLaneCenters();
   };
 
@@ -263,15 +348,13 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       "Writer",
       layout.panelWidth,
       layout.panelHeight,
-      LEFT_ACCENT,
-      false,
+      WIRE_ACCENT,
     );
     rightPanel = new SchemaPanel(
       "Reader",
       layout.panelWidth,
       layout.panelHeight,
-      0x8b5cf6,
-      true,
+      WIRE_ACCENT,
     );
     panelLayer.addChild(leftPanel, rightPanel);
     placePanels();
@@ -288,56 +371,38 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     });
     debugText.x = layout.width - 315;
     debugText.y = 14;
+    redrawPauseButton();
     renderSchemas();
   };
 
-  const laneCenterYForPath = (path: string): number => {
-    return laneCentersByPath.get(path) ?? wireCenterY;
-  };
-
   const seedHighlights = (
-    eventPacketId: number,
     matchedPaths: readonly string[],
     failingPath: string | undefined,
   ): void => {
+    if (failingPath !== undefined) {
+      gateFlashColor = FAILURE_ACCENT;
+      gateFlashTtlSec = GATE_FLASH_SEC;
+    } else {
+      gateFlashColor = SUCCESS_ACCENT;
+      gateFlashTtlSec = GATE_FLASH_SEC;
+    }
+
     for (const path of matchedPaths) {
-      const to = rightPanel.slotGlobalEntry(path) ?? rightPanel.slotGlobalCenter(path);
-      if (to !== null) {
-        const from = packetLayer.rowGlobalAnchor(eventPacketId, path) ?? new Point(layout.decodeX - 18, to.y);
-        fxLayer.addTransferChip({
-          from,
-          to,
-          label: leafPath(path),
-          color: SUCCESS_ACCENT,
-          ttlSec: 0.42,
-        });
-      }
-      slotHighlights.push({ path, color: SUCCESS_ACCENT, ttlSec: 0.4 });
+      slotHighlights.push({
+        path,
+        color: SUCCESS_ACCENT,
+        ttlSec: SLOT_FLASH_SUCCESS_SEC,
+        delaySec: SLOT_FLASH_DELAY_SEC,
+      });
     }
 
     if (failingPath !== undefined) {
-      const failTo = rightPanel.slotGlobalEntry(failingPath) ?? rightPanel.slotGlobalCenter(failingPath);
-      if (failTo !== null) {
-        const failFrom = packetLayer.rowGlobalAnchor(eventPacketId, failingPath)
-          ?? new Point(layout.decodeX - 18, laneCenterYForPath(failingPath));
-        fxLayer.addTransferChip({
-          from: failFrom,
-          to: failTo,
-          label: leafPath(failingPath),
-          color: FAILURE_ACCENT,
-          ttlSec: 0.48,
-        });
-      }
-      const failCenter = rightPanel.slotGlobalCenter(failingPath);
-      if (failCenter !== null) {
-        fxLayer.addFailMark(failCenter, 0.52);
-      }
-      slotHighlights.push({ path: failingPath, color: FAILURE_ACCENT, ttlSec: 0.55 });
-    }
-
-    if (failingPath === undefined && matchedPaths.length === 0) {
-      const fallback = new Point(layout.decodeX, layout.wireY);
-      fxLayer.addFailMark(fallback, 0.4);
+      slotHighlights.push({
+        path: failingPath,
+        color: FAILURE_ACCENT,
+        ttlSec: SLOT_FLASH_FAILURE_SEC,
+        delaySec: SLOT_FLASH_DELAY_SEC,
+      });
     }
   };
 
@@ -346,12 +411,16 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     const byPath = new Map<string, number>();
 
     for (const highlight of slotHighlights) {
+      const delaySec = Math.max(0, highlight.delaySec - deltaSec);
       const ttl = highlight.ttlSec - deltaSec;
       if (ttl <= 0) {
         continue;
       }
-      const updated: SlotHighlight = { ...highlight, ttlSec: ttl };
+      const updated: SlotHighlight = { ...highlight, ttlSec: ttl, delaySec };
       next.push(updated);
+      if (delaySec > 0) {
+        continue;
+      }
       const previous = byPath.get(updated.path);
       if (previous === undefined || updated.color === FAILURE_ACCENT) {
         byPath.set(updated.path, updated.color);
@@ -401,6 +470,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       }
       case "pause": {
         engine.togglePaused();
+        redrawPauseButton();
         break;
       }
       case "reset": {
@@ -409,6 +479,8 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
         currentStateId = engine.stateId();
         fxLayer.clearAll();
         slotHighlights = [];
+        gateFlashTtlSec = 0;
+        redrawPauseButton();
         break;
       }
       case "toggle_debug": {
@@ -445,6 +517,10 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   };
 
   const keyController = new KeyController(handleAction);
+  pauseButton.on("pointertap", () => {
+    engine.togglePaused();
+    redrawPauseButton();
+  });
 
   window.addEventListener("resize", applyLayout);
   applyLayout();
@@ -455,13 +531,28 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
 
     const decodeEvents = engine.drainDecodeEvents();
     for (const decodeEvent of decodeEvents) {
-      seedHighlights(decodeEvent.packetId, decodeEvent.matchedPaths, decodeEvent.result.failingPath);
+      seedHighlights(
+        decodeEvent.matchedPaths,
+        decodeEvent.result.failingPath,
+      );
     }
+
+    if (gateFlashTtlSec > 0) {
+      gateFlashTtlSec = Math.max(0, gateFlashTtlSec - deltaSec);
+    }
+
+    leftPanel.setDimFocus(null, 1);
+    rightPanel.setDimFocus(null, 1);
+    packetLayer.setDimFocus(null, 1);
 
     packetLayer.syncPackets(toPacketViews());
 
     refreshHighlights(deltaSec);
     fxLayer.tick(deltaSec);
+    leftPanel.tick(deltaSec);
+    rightPanel.tick(deltaSec);
+    tickStateChip(deltaSec);
+    drawWire();
 
     if (currentStateId !== engine.stateId()) {
       currentStateId = engine.stateId();
@@ -474,6 +565,10 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   return () => {
     keyController.dispose();
     window.removeEventListener("resize", applyLayout);
+    emissionSlider.removeEventListener("input", onEmissionInput);
+    if (emissionControl.parentElement === host) {
+      host.removeChild(emissionControl);
+    }
     app.destroy(true);
   };
 };

@@ -10,18 +10,18 @@ export const WIRE_ACCENT = 0x475569;
 export const PACKET_ACCENT = 0x38bdf8;
 
 export const computeLayout = (width: number, height: number): LayoutMetrics => {
-  const panelWidth = Math.min(380, Math.max(300, width * 0.27));
-  const panelHeight = Math.min(580, Math.max(460, height * 0.76));
-  const leftPanelX = panelWidth / 2 + 36;
-  const rightPanelX = width - panelWidth / 2 - 36;
+  const panelWidth = Math.min(420, Math.max(340, width * 0.29));
+  const panelHeight = Math.min(660, Math.max(520, height * 0.82));
+  const leftPanelX = panelWidth / 2 + 20;
+  const rightPanelX = width - panelWidth / 2 - 20;
   const panelY = height / 2;
 
-  const wireStartX = leftPanelX + panelWidth / 2 + 26;
-  const wireEndX = rightPanelX - panelWidth / 2 - 26;
+  const wireStartX = leftPanelX + panelWidth / 2 + 16;
+  const wireEndX = rightPanelX - panelWidth / 2 - 16;
   const wireWidth = Math.max(360, wireEndX - wireStartX);
   const wireX = (wireStartX + wireEndX) / 2;
-  const wireHeight = Math.min(240, Math.max(180, panelHeight * 0.34));
-  const wireY = panelY - 40;
+  const wireHeight = Math.min(320, Math.max(240, panelHeight * 0.44));
+  const wireY = panelY - 24;
 
   return {
     width,

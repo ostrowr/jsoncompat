@@ -42,6 +42,7 @@ const buildStory = (): StoryDefinition => ({
 const config: EngineConfig = {
   emitIntervalSec: 0.5,
   packetSpeedPxPerSec: 10,
+  maxInFlightPackets: 8,
   spawnX: 0,
   decodeX: 10_000,
   despawnX: 20_000,
@@ -69,12 +70,13 @@ describe("WireEngine transitions", () => {
     expect(afterEmit.includes("v2")).toBe(true);
   });
 
-  it("removes packets immediately after decode", () => {
+  it("emits one decode event and removes packet after a short decode trail", () => {
     const story = materializeStory(buildStory());
     const decodingConfig: EngineConfig = {
       ...config,
       decodeX: 5,
       despawnX: 500,
+      maxInFlightPackets: 1,
       initialPacketCount: 1,
       initialPacketSpacing: 20,
       emitIntervalSec: 999,
@@ -86,6 +88,9 @@ describe("WireEngine transitions", () => {
 
     engine.step(0.5);
     expect(engine.drainDecodeEvents().length).toBe(1);
+    expect(engine.activePackets().length).toBe(1);
+
+    engine.step(6);
     expect(engine.activePackets().length).toBe(0);
   });
 });

@@ -1,11 +1,8 @@
 const TYPE_COLOR = {
   str: 0x60a5fa,
-  int: 0x8b5cf6,
-  bool: 0xf59e0b,
-  list: 0xeab308,
-  number: 0x7c83fd,
-  object: 0x64748b,
-  null: 0x94a3b8,
+  int: 0xa78bfa,
+  list: 0xfacc15,
+  neutral: 0xc8d4e8,
   fallback: 0x60a5fa,
 } as const;
 
@@ -14,23 +11,23 @@ const normalized = (displayType: string): string => {
   if (lowered.startsWith("list[")) {
     return "list";
   }
-  if (lowered.includes("bool")) {
-    return "bool";
-  }
   if (lowered.includes("int")) {
     return "int";
   }
   if (lowered.includes("number")) {
-    return "number";
+    return "int";
+  }
+  if (lowered.includes("bool")) {
+    return "int";
   }
   if (lowered.includes("str")) {
     return "str";
   }
   if (lowered.includes("object")) {
-    return "object";
+    return "neutral";
   }
   if (lowered.includes("null")) {
-    return "null";
+    return "neutral";
   }
   return "fallback";
 };

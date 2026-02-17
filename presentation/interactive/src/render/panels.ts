@@ -1,6 +1,5 @@
 import { Container, Graphics, Point, Text, TextStyle } from "pixi.js";
 import type { FlattenedField } from "../model/types";
-import { LEFT_ACCENT } from "./layout";
 import { colorForDisplayType } from "./type-colors";
 
 interface SlotView {
@@ -19,29 +18,40 @@ const titleStyle = new TextStyle({
   fontFamily: "Georgia, serif",
   fontSize: 34,
   fontWeight: "500",
+  dropShadow: true,
+  dropShadowAlpha: 0.35,
+  dropShadowBlur: 2,
+  dropShadowDistance: 1,
+  dropShadowColor: 0x000000,
 });
 
 const versionStyle = new TextStyle({
   fill: 0x9fb5cd,
   fontFamily: "Menlo, monospace",
-  fontSize: 16,
+  fontSize: 20,
+  fontWeight: "500",
 });
 
 const chipStyle = new TextStyle({
   fill: 0xe8edf7,
   fontFamily: "Menlo, monospace",
-  fontSize: 17,
+  fontSize: 22,
+  fontWeight: "500",
+  dropShadow: true,
+  dropShadowAlpha: 0.25,
+  dropShadowBlur: 1,
+  dropShadowDistance: 1,
+  dropShadowColor: 0x000000,
 });
 
 const PANEL_BG = 0x0f1726;
 const CHIP_BG = 0x111b2b;
-const CHIP_BORDER = 0x4b607f;
+const CHIP_BORDER = 0x5a7196;
 
 export class SchemaPanel extends Container {
   private readonly widthPx: number;
   private readonly heightPx: number;
   private readonly accent: number;
-  private readonly isTarget: boolean;
   private readonly panelGraphics: Graphics;
   private readonly titleText: Text;
   private readonly versionText: Text;
@@ -50,19 +60,18 @@ export class SchemaPanel extends Container {
   private laneCentersByPath: Map<string, number> = new Map();
   private focusPath: string | null = null;
   private dimAlpha = 0.4;
+  private schemaTransitionProgress = 1;
 
   public constructor(
     title: string,
     widthPx: number,
     heightPx: number,
     accent: number,
-    isTarget: boolean,
   ) {
     super();
     this.widthPx = widthPx;
     this.heightPx = heightPx;
     this.accent = accent;
-    this.isTarget = isTarget;
 
     this.panelGraphics = new Graphics();
     this.titleText = new Text(title, titleStyle);
@@ -77,6 +86,16 @@ export class SchemaPanel extends Container {
     this.versionText.text = versionLabel;
     this.layoutHeader();
     this.renderSlots(fields, laneOrder);
+    this.schemaTransitionProgress = 0;
+    this.applySchemaTransition();
+  }
+
+  public tick(deltaSec: number): void {
+    if (this.schemaTransitionProgress >= 1) {
+      return;
+    }
+    this.schemaTransitionProgress = Math.min(1, this.schemaTransitionProgress + deltaSec / 0.52);
+    this.applySchemaTransition();
   }
 
   public clearHighlights(): void {
@@ -128,7 +147,7 @@ export class SchemaPanel extends Container {
 
   private drawPanel(): void {
     this.panelGraphics.clear();
-    this.panelGraphics.lineStyle(2, this.accent, 0.95);
+    this.panelGraphics.lineStyle(2.2, this.accent, 0.95);
     this.panelGraphics.beginFill(PANEL_BG, 0.97);
     this.panelGraphics.drawRoundedRect(0, 0, this.widthPx, this.heightPx, 16);
     this.panelGraphics.endFill();
@@ -140,9 +159,9 @@ export class SchemaPanel extends Container {
 
   private layoutHeader(): void {
     this.titleText.x = (this.widthPx - this.titleText.width) / 2;
-    this.titleText.y = 20;
+    this.titleText.y = 18;
     this.versionText.x = (this.widthPx - this.versionText.width) / 2;
-    this.versionText.y = 62;
+    this.versionText.y = 66;
   }
 
   private renderSlots(fields: readonly FlattenedField[], laneOrder?: readonly string[]): void {
@@ -150,15 +169,15 @@ export class SchemaPanel extends Container {
     this.slotsByPath = new Map();
     this.laneCentersByPath = new Map();
 
-    const chipWidth = this.widthPx - 52;
-    const startY = 116;
-    const bottomPadding = 30;
+    const chipWidth = this.widthPx - 58;
+    const startY = 134;
+    const bottomPadding = 34;
     const lanes = (laneOrder !== undefined && laneOrder.length > 0) ? laneOrder : fields.map((field) => field.path);
     const laneCount = Math.max(1, lanes.length);
     const availableHeight = Math.max(72, this.heightPx - startY - bottomPadding);
     const lanePitch = availableHeight / laneCount;
-    const laneGap = laneCount >= 4 ? 12 : 8;
-    const chipHeight = Math.max(22, Math.min(38, lanePitch - laneGap));
+    const laneGap = laneCount >= 4 ? 13 : 9;
+    const chipHeight = Math.max(30, Math.min(48, lanePitch - laneGap));
     const laneIndexByPath = new Map<string, number>();
 
     lanes.forEach((path, index) => {
@@ -173,22 +192,28 @@ export class SchemaPanel extends Container {
       const y = centerY - chipHeight / 2;
       const slotContent = new Container();
       const graphics = new Graphics();
-      graphics.x = 26;
+      graphics.x = 29;
 
       const baseColor = CHIP_BORDER;
 
       const keyText = new Text(`${field.path}: `, chipStyle);
       const typeStyle = new TextStyle({
         fontFamily: "Menlo, monospace",
-        fontSize: 17,
+        fontSize: 22,
+        fontWeight: "600",
         fill: colorForDisplayType(field.displayType),
+        dropShadow: true,
+        dropShadowAlpha: 0.25,
+        dropShadowBlur: 1,
+        dropShadowDistance: 1,
+        dropShadowColor: 0x000000,
       });
       const typeText = new Text(field.displayType, typeStyle);
       const optionalText = field.required ? null : new Text(" (optional)", chipStyle);
 
       const optionalWidth = optionalText?.width ?? 0;
       const totalWidth = keyText.width + typeText.width + optionalWidth;
-      const startX = 26 + (chipWidth - totalWidth) / 2;
+      const startX = 29 + (chipWidth - totalWidth) / 2;
       keyText.x = startX;
       keyText.y = centerY - keyText.height / 2;
       typeText.x = keyText.x + keyText.width;
@@ -223,8 +248,8 @@ export class SchemaPanel extends Container {
 
   private drawSlot(slot: SlotView, strokeColor: number, strokeWidth: number): void {
     slot.graphics.clear();
-    slot.graphics.lineStyle(strokeWidth, strokeColor, 0.95);
-    slot.graphics.beginFill(CHIP_BG, 0.95);
+    slot.graphics.lineStyle(strokeWidth, strokeColor, 0.98);
+    slot.graphics.beginFill(CHIP_BG, 0.97);
     slot.graphics.drawRoundedRect(0, slot.y, slot.width, slot.height, 7);
     slot.graphics.endFill();
   }
@@ -237,5 +262,15 @@ export class SchemaPanel extends Container {
         slot.content.alpha = this.dimAlpha;
       }
     }
+  }
+
+  private applySchemaTransition(): void {
+    const t = this.schemaTransitionProgress;
+    const eased = 1 - Math.pow(1 - t, 3);
+    this.versionText.alpha = 0.52 + eased * 0.48;
+    this.versionText.scale.set(0.94 + eased * 0.06);
+    this.versionText.x = (this.widthPx - this.versionText.width) / 2;
+    this.versionText.y = 66 - (1 - eased) * 4;
+    this.slotsLayer.alpha = 0.72 + eased * 0.28;
   }
 }

@@ -16,7 +16,12 @@ interface FadeEffect extends BaseEffect {
   kind: "fade";
 }
 
-type EffectInstance = TransferEffect | FadeEffect;
+interface FailureTagEffect extends BaseEffect {
+  kind: "failure_tag";
+  start: Point;
+}
+
+type EffectInstance = TransferEffect | FadeEffect | FailureTagEffect;
 
 const failStyle = new TextStyle({
   fill: 0xfb7185,
@@ -30,6 +35,13 @@ const transferStyle = new TextStyle({
   fontFamily: "Menlo, monospace",
   fontSize: 12,
   fontWeight: "600",
+});
+
+const failureTagStyle = new TextStyle({
+  fill: 0xfb7185,
+  fontFamily: "Menlo, monospace",
+  fontSize: 12,
+  fontWeight: "700",
 });
 
 const lerp = (start: number, end: number, t: number): number => start + (end - start) * t;
@@ -81,6 +93,33 @@ export class DecodeFxLayer extends Container {
     this.effects.push({ kind: "fade", root, ttlSec, maxTtlSec: ttlSec });
   }
 
+  public addFailureReasonTag(input: { position: Point; label: string; ttlSec: number }): void {
+    const root = new Container();
+    const shell = new Graphics();
+    const text = new Text(input.label, failureTagStyle);
+    const width = Math.max(110, text.width + 16);
+    const height = 24;
+
+    shell.lineStyle(1.8, 0xfb7185, 0.95);
+    shell.beginFill(0x1f1118, 0.95);
+    shell.drawRoundedRect(-width / 2, -height / 2, width, height, 8);
+    shell.endFill();
+
+    text.x = -width / 2 + (width - text.width) / 2;
+    text.y = -text.height / 2;
+
+    root.position.set(input.position.x, input.position.y);
+    root.addChild(shell, text);
+    this.addChild(root);
+    this.effects.push({
+      kind: "failure_tag",
+      root,
+      ttlSec: input.ttlSec,
+      maxTtlSec: input.ttlSec,
+      start: new Point(input.position.x, input.position.y),
+    });
+  }
+
   public tick(deltaSec: number): void {
     for (let i = this.effects.length - 1; i >= 0; i -= 1) {
       const effect = this.effects[i];
@@ -102,6 +141,10 @@ export class DecodeFxLayer extends Container {
           lerp(effect.from.y, effect.to.y, eased),
         );
         effect.root.alpha = Math.max(0.18, 1 - progress * 0.72);
+      } else if (effect.kind === "failure_tag") {
+        const eased = easeOutCubic(progress);
+        effect.root.position.set(effect.start.x, effect.start.y - eased * 14);
+        effect.root.alpha = Math.max(0.15, 1 - progress * 0.8);
       } else {
         effect.root.alpha = Math.max(0.15, effect.ttlSec / effect.maxTtlSec);
       }

@@ -5,12 +5,13 @@ import { colorForDisplayType } from "./type-colors";
 interface RowChipSprite {
   path: string;
   textValue: string;
-  shell: Graphics;
+  rowBg: Graphics;
   keyLabel: Text;
   valueLabel: Text;
-  width: number;
-  height: number;
+  rowWidth: number;
+  rowHeight: number;
   centerY: number;
+  anchorX: number;
 }
 
 interface PacketSprite {
@@ -23,25 +24,28 @@ interface PacketSprite {
   lastTouchedFrame: number;
 }
 
-const rowStyle = new TextStyle({
-  fill: 0xe8edf7,
-  fontFamily: "Menlo, monospace",
-  fontSize: 14,
-  fontWeight: "500",
-});
-
 const versionTagStyle = new TextStyle({
   fill: 0xc8d4e8,
   fontFamily: "Menlo, monospace",
-  fontSize: 11,
+  fontSize: 13,
   fontWeight: "700",
+  dropShadow: true,
+  dropShadowAlpha: 0.25,
+  dropShadowBlur: 1,
+  dropShadowDistance: 1,
+  dropShadowColor: 0x000000,
 });
 
-const PACKET_BG = 0x152338;
-const ROW_STROKE = 0x4b607f;
-const ENVELOPE_STROKE = 0x4b607f;
+const ENVELOPE_STROKE = 0x5c7293;
 const ENVELOPE_FILL = 0x0f1a2d;
-const MAX_ROW_WIDTH = 180;
+const MIN_ENVELOPE_WIDTH = 166;
+const MAX_ENVELOPE_WIDTH = 286;
+const ENVELOPE_X_PADDING = 12;
+const ENVELOPE_Y_PADDING = 10;
+const ROW_HEIGHT = 34;
+const VALUE_CHAR_LIMIT = 21;
+const DENSE_VALUE_CHAR_LIMIT = 18;
+const ROW_BG_FILL = 0x17263d;
 
 const clampText = (text: string, maxChars: number): string => {
   if (text.length <= maxChars) {
@@ -66,11 +70,17 @@ export class PacketLayer extends Container {
 
   public setLaneCenters(laneCenterByPath: ReadonlyMap<string, number>): void {
     this.laneCenterByPath = laneCenterByPath;
+    for (const sprite of this.sprites.values()) {
+      this.layoutRows(sprite);
+    }
   }
 
   public setDimFocus(path: string | null, dimAlpha: number): void {
     this.focusPath = path;
     this.focusDimAlpha = dimAlpha;
+    for (const sprite of this.sprites.values()) {
+      this.layoutRows(sprite);
+    }
   }
 
   public setDenseMode(enabled: boolean): void {
@@ -126,7 +136,7 @@ export class PacketLayer extends Container {
       return null;
     }
 
-    const global = sprite.root.toGlobal(new Point(row.width / 2 + 8, row.centerY));
+    const global = sprite.root.toGlobal(new Point(row.anchorX, row.centerY));
     return new Point(global.x, global.y);
   }
 
@@ -169,44 +179,49 @@ export class PacketLayer extends Container {
     sprite.versionTag.text = sprite.versionLabel;
 
     rows.forEach((row) => {
-      const rowFontSize = this.denseMode ? 13 : 14;
+      const rowFontSize = this.denseMode ? 16 : 18;
       const keyStyle = new TextStyle({
         fill: 0xe8edf7,
         fontFamily: "Menlo, monospace",
         fontSize: rowFontSize,
-        fontWeight: "500",
+        fontWeight: "600",
+        dropShadow: true,
+        dropShadowAlpha: 0.2,
+        dropShadowBlur: 1,
+        dropShadowDistance: 1,
+        dropShadowColor: 0x000000,
       });
       const keyLabel = new Text(row.keyText, keyStyle);
-      const maxValueChars = Math.max(5, Math.floor((MAX_ROW_WIDTH - 20 - keyLabel.width) / 7.6));
+      const maxValueChars = this.denseMode ? DENSE_VALUE_CHAR_LIMIT : VALUE_CHAR_LIMIT;
       const clippedValue = clampText(row.valueText, maxValueChars);
       const valueStyle = new TextStyle({
         fontFamily: "Menlo, monospace",
         fontSize: rowFontSize,
-        fontWeight: "500",
+        fontWeight: "600",
         fill: colorForDisplayType(row.displayType),
+        dropShadow: true,
+        dropShadowAlpha: 0.2,
+        dropShadowBlur: 1,
+        dropShadowDistance: 1,
+        dropShadowColor: 0x000000,
       });
       const valueLabel = new Text(clippedValue, valueStyle);
-      const width = Math.min(MAX_ROW_WIDTH, Math.max(132, keyLabel.width + valueLabel.width + 20));
-      const height = 34;
-      const shell = new Graphics();
-
-      shell.lineStyle(2.2, ROW_STROKE, 0.95);
-      shell.beginFill(PACKET_BG, 0.98);
-      shell.drawRoundedRect(-width / 2, -height / 2, width, height, 8);
-      shell.endFill();
+      const rowBg = new Graphics();
+      const rowWidth = keyLabel.width + valueLabel.width;
 
       const chip: RowChipSprite = {
         path: row.path,
         textValue: `${row.keyText}${clippedValue}`,
-        shell,
+        rowBg,
         keyLabel,
         valueLabel,
-        width,
-        height,
+        rowWidth,
+        rowHeight: ROW_HEIGHT,
         centerY: 0,
+        anchorX: 0,
       };
       sprite.rowsByPath.set(row.path, chip);
-      sprite.root.addChild(shell, keyLabel, valueLabel);
+      sprite.root.addChild(rowBg, keyLabel, valueLabel);
     });
   }
 
@@ -224,24 +239,18 @@ export class PacketLayer extends Container {
       fallbackIndex += 1;
       row.centerY = centerY;
 
-      row.shell.position.set(0, centerY);
-      row.keyLabel.x = -row.width / 2 + 10;
-      row.keyLabel.y = centerY - row.keyLabel.height / 2;
-      row.valueLabel.x = row.keyLabel.x + row.keyLabel.width;
-      row.valueLabel.y = centerY - row.valueLabel.height / 2;
-
       const shouldDim = this.focusPath !== null && row.path !== this.focusPath;
       const alpha = shouldDim ? this.focusDimAlpha : 1;
-      row.shell.alpha = alpha;
       row.keyLabel.alpha = alpha;
       row.valueLabel.alpha = alpha;
+      row.rowBg.alpha = alpha;
       if (this.focusPath !== null && row.path === this.focusPath) {
         packetHasFocusPath = true;
       }
 
-      minTop = Math.min(minTop, centerY - row.height / 2);
-      maxBottom = Math.max(maxBottom, centerY + row.height / 2);
-      maxWidth = Math.max(maxWidth, row.width);
+      minTop = Math.min(minTop, centerY - row.rowHeight / 2);
+      maxBottom = Math.max(maxBottom, centerY + row.rowHeight / 2);
+      maxWidth = Math.max(maxWidth, row.rowWidth);
     }
 
     if (sprite.rowsByPath.size === 0) {
@@ -250,16 +259,37 @@ export class PacketLayer extends Container {
       return;
     }
 
-    const padX = 10;
-    const padY = 10;
-    const envelopeX = -maxWidth / 2 - padX;
-    const envelopeY = minTop - padY;
-    const envelopeWidth = maxWidth + padX * 2;
-    const envelopeHeight = Math.max(42, maxBottom - minTop + padY * 2);
+    const envelopeWidth = Math.max(
+      MIN_ENVELOPE_WIDTH,
+      Math.min(MAX_ENVELOPE_WIDTH, maxWidth + ENVELOPE_X_PADDING * 2),
+    );
+    const envelopeX = -envelopeWidth / 2;
+    const envelopeY = minTop - ENVELOPE_Y_PADDING;
+    const envelopeHeight = Math.max(44, maxBottom - minTop + ENVELOPE_Y_PADDING * 2);
+    const rowStartX = envelopeX + 12;
+
+    for (const row of sprite.rowsByPath.values()) {
+      row.keyLabel.x = rowStartX;
+      row.keyLabel.y = row.centerY - row.keyLabel.height / 2;
+      row.valueLabel.x = row.keyLabel.x + row.keyLabel.width;
+      row.valueLabel.y = row.centerY - row.valueLabel.height / 2;
+      row.anchorX = Math.min(envelopeX + envelopeWidth - 6, rowStartX + row.rowWidth + 8);
+      const bgWidth = Math.min(envelopeWidth - 16, row.rowWidth + 14);
+      row.rowBg.clear();
+      row.rowBg.beginFill(ROW_BG_FILL, 0.88);
+      row.rowBg.drawRoundedRect(
+        rowStartX - 7,
+        row.centerY - row.rowHeight / 2 + 2,
+        bgWidth,
+        row.rowHeight - 4,
+        6,
+      );
+      row.rowBg.endFill();
+    }
 
     sprite.envelope.clear();
-    sprite.envelope.lineStyle(1.6, ENVELOPE_STROKE, 0.72);
-    sprite.envelope.beginFill(ENVELOPE_FILL, 0.22);
+    sprite.envelope.lineStyle(1.9, ENVELOPE_STROKE, 0.8);
+    sprite.envelope.beginFill(ENVELOPE_FILL, 0.72);
     sprite.envelope.drawRoundedRect(envelopeX, envelopeY, envelopeWidth, envelopeHeight, 10);
     sprite.envelope.endFill();
 

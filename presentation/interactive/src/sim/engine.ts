@@ -12,6 +12,7 @@ import { getStateById } from "./transitions";
 export interface EngineConfig {
   emitIntervalSec: number;
   packetSpeedPxPerSec: number;
+  maxInFlightPackets: number;
   spawnX: number;
   decodeX: number;
   despawnX: number;
@@ -25,6 +26,7 @@ export class WireEngine {
   private config: EngineConfig;
   private packets: Packet[] = [];
   private decodeEvents: DecodeEvent[] = [];
+  private decodedPacketIds = new Set<number>();
   private nextPacketId = 1;
   private emitAccumulatorSec = 0;
   private currentStateId: string;
@@ -47,9 +49,10 @@ export class WireEngine {
 
   public reset(): void {
     this.currentStateId = this.story.initialStateId;
-    this.emitAccumulatorSec = 0;
     this.nextPacketId = 1;
+    this.emitAccumulatorSec = 0;
     this.decodeEvents = [];
+    this.decodedPacketIds = new Set<number>();
     this.packets = [];
     this.seedInitialPackets();
   }
@@ -91,6 +94,19 @@ export class WireEngine {
     this.currentStateId = stateId;
   }
 
+  public emitIntervalSec(): number {
+    return this.config.emitIntervalSec;
+  }
+
+  public setEmitIntervalSec(intervalSec: number): void {
+    const clamped = Math.max(0.2, intervalSec);
+    this.config = {
+      ...this.config,
+      emitIntervalSec: clamped,
+    };
+    this.emitAccumulatorSec = Math.min(this.emitAccumulatorSec, clamped);
+  }
+
   public step(deltaSec: number): void {
     if (this.paused) {
       return;
@@ -102,13 +118,24 @@ export class WireEngine {
 
     this.processDecodes();
     this.emitAccumulatorSec += deltaSec;
-
     while (this.emitAccumulatorSec >= this.config.emitIntervalSec) {
+      if (this.packets.length >= this.config.maxInFlightPackets) {
+        this.emitAccumulatorSec = this.config.emitIntervalSec;
+        break;
+      }
       this.emitAccumulatorSec -= this.config.emitIntervalSec;
       this.emitPacket(this.currentLeftVersion().id, this.config.spawnX);
     }
 
-    this.packets = this.packets.filter((packet) => packet.x < this.config.despawnX);
+    const remaining: Packet[] = [];
+    for (const packet of this.packets) {
+      if (packet.x < this.config.despawnX) {
+        remaining.push(packet);
+      } else {
+        this.decodedPacketIds.delete(packet.id);
+      }
+    }
+    this.packets = remaining;
   }
 
   private seedInitialPackets(): void {
@@ -132,6 +159,7 @@ export class WireEngine {
   }
 
   private processDecodes(): void {
+    const decodeTrailPx = 56;
     const rightVersion = this.currentRightVersion();
     const remainingPackets: Packet[] = [];
     for (const packet of this.packets) {
@@ -140,12 +168,21 @@ export class WireEngine {
         continue;
       }
 
-      const validation = validatePayloadAgainstFields(packet.payload, rightVersion.fields);
-      this.decodeEvents.push({
-        packetId: packet.id,
-        result: validation.result,
-        matchedPaths: validation.matchedPaths,
-      });
+      if (!this.decodedPacketIds.has(packet.id)) {
+        const validation = validatePayloadAgainstFields(packet.payload, rightVersion.fields);
+        this.decodeEvents.push({
+          packetId: packet.id,
+          result: validation.result,
+          matchedPaths: validation.matchedPaths,
+        });
+        this.decodedPacketIds.add(packet.id);
+      }
+
+      if (packet.x < this.config.decodeX + decodeTrailPx) {
+        remainingPackets.push(packet);
+      } else {
+        this.decodedPacketIds.delete(packet.id);
+      }
     }
     this.packets = remainingPackets;
   }
