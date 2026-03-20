@@ -16,7 +16,7 @@ members = [
 ]
 
 [dependencies]
-rand = "0.8.5"
+rand = "0.10"
 anyhow = "1.0.95"
 thiserror = "2.0.11"
 url = "2.5.4"
