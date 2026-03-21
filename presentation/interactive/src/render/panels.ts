@@ -48,8 +48,20 @@ const columnVersionStyle = new TextStyle({
 const PANEL_BG = 0x0f1726;
 const CHIP_BORDER = 0x5a7196;
 
+const formatPanelDisplayType = (displayType: string): string => {
+  const listMatch = /^list\[(.+)\]( \| null)?$/.exec(displayType);
+  if (listMatch === null) {
+    return displayType;
+  }
+
+  const itemDisplay = listMatch[1] ?? "";
+  const nullableSuffix = listMatch[2] ?? "";
+  return `${itemDisplay}[]${nullableSuffix}`;
+};
+
 const fitPathLabel = (path: string, style: TextStyle, maxWidth: number): string => {
   const baseSuffix = ": ";
+  const ellipsis = "..";
   const measure = new Text("", style);
   const fullLabel = `${path}${baseSuffix}`;
   measure.text = fullLabel;
@@ -58,16 +70,16 @@ const fitPathLabel = (path: string, style: TextStyle, maxWidth: number): string 
     return fullLabel;
   }
 
-  const minLabel = `...${baseSuffix}`;
+  const minLabel = `${ellipsis}${baseSuffix}`;
   measure.text = minLabel;
   if (measure.width > maxWidth) {
     measure.destroy();
-    return baseSuffix;
+    return minLabel;
   }
 
   let prefix = path;
   while (prefix.length > 0) {
-    const candidate = `${prefix}...${baseSuffix}`;
+    const candidate = `${prefix}${ellipsis}${baseSuffix}`;
     measure.text = candidate;
     if (measure.width <= maxWidth) {
       measure.destroy();
@@ -262,7 +274,7 @@ export class SchemaPanel extends Container {
     const columnGap = columnCount > 1 ? 14 : 0;
     const columnWidth = (slotAreaWidth - columnGap * (columnCount - 1)) / columnCount;
     const compactMode = columnCount > 1;
-    const rowFontSize = compactMode ? 16 : 20;
+    const rowFontSize = compactMode ? 14 : 17;
 
     for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
       const column = columns[columnIndex];
@@ -329,13 +341,12 @@ export class SchemaPanel extends Container {
           dropShadowColor: 0x000000,
         });
 
-        const typeText = new Text(field.displayType, typeStyle);
+        const typeText = new Text(formatPanelDisplayType(field.displayType), typeStyle);
         const optionalText = field.required ? null : new Text(" (optional)", optionalStyle);
         const optionalWidth = optionalText?.width ?? 0;
-        const maxKeyWidth = Math.max(18, columnWidth - 6 - typeText.width - optionalWidth);
+        const maxKeyWidth = Math.max(18, columnWidth - 2 - typeText.width - optionalWidth);
         const keyText = new Text(fitPathLabel(field.path, keyStyle, maxKeyWidth), keyStyle);
 
-        const totalWidth = keyText.width + typeText.width + optionalWidth;
         const startX = columnX + 3;
         keyText.x = startX;
         keyText.y = centerY - keyText.height / 2;

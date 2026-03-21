@@ -89,8 +89,7 @@ const stateChipStyle = new TextStyle({
 
 const GATE_FLASH_SEC = 0.5;
 const SLOT_FLASH_DELAY_SEC = 0.12;
-const SLOT_FLASH_SUCCESS_SEC = 0.42;
-const SLOT_FLASH_FAILURE_SEC = 0.58;
+const SLOT_FLASH_SEC = 0.5;
 const PACKET_SPAWN_OFFSET_PX = 72;
 const PACKET_FADE_IN_DISTANCE_PX = 46;
 const PACKET_FADE_OUT_LEAD_PX = 8;
@@ -104,6 +103,20 @@ const clamp01 = (value: number): number => {
 const smoothStep01 = (value: number): number => {
   const t = clamp01(value);
   return t * t * (3 - 2 * t);
+};
+
+const rendererLayoutSize = (resizeTarget: Window | HTMLElement): { width: number; height: number } => {
+  if (resizeTarget instanceof HTMLElement) {
+    return {
+      width: Math.max(1, resizeTarget.clientWidth),
+      height: Math.max(1, resizeTarget.clientHeight),
+    };
+  }
+
+  return {
+    width: Math.max(1, resizeTarget.innerWidth),
+    height: Math.max(1, resizeTarget.innerHeight),
+  };
 };
 
 const baseEngineConfig = (
@@ -148,11 +161,16 @@ export const startInteractiveApp = async (
     effectsAlpha: options.scene?.effectsAlpha ?? 1,
     layoutScale: options.scene?.layoutScale ?? 1,
   } satisfies Required<InteractiveSceneOptions>;
+  // Slidev scales the 960x540 slide canvas up for full-screen presentation.
+  // Render the Pixi scene at 2x minimum so text stays crisp after that scale-up.
+  const renderResolution = Math.max(2, window.devicePixelRatio || 1);
 
   const app = new Application({
     backgroundColor: BACKGROUND_COLOR,
     backgroundAlpha: scene.backgroundAlpha,
     antialias: true,
+    autoDensity: true,
+    resolution: renderResolution,
     resizeTo: resizeTarget,
   });
   host.appendChild(app.view as HTMLCanvasElement);
@@ -238,7 +256,8 @@ export const startInteractiveApp = async (
   uiLayer.addChild(stateChip);
   stateChip.visible = chrome.showStateChip;
 
-  let layout = computeLayout(app.renderer.width, app.renderer.height, scene.layoutScale);
+  const initialLayoutSize = rendererLayoutSize(resizeTarget);
+  let layout = computeLayout(initialLayoutSize.width, initialLayoutSize.height, scene.layoutScale);
   let leftPanel = new SchemaPanel(
     "Writer",
     layout.panelWidth,
@@ -376,11 +395,6 @@ export const startInteractiveApp = async (
       wireGraphics.lineTo(layout.wireEndX - 10, laneY);
     }
 
-    wireGraphics.lineStyle(0, BACKGROUND_COLOR, 0);
-    wireGraphics.beginFill(BACKGROUND_COLOR, 1);
-    wireGraphics.drawRect(layout.decodeX - 5, y, 10, wireHeight);
-    wireGraphics.endFill();
-
   };
 
   const refreshLaneCenters = (): void => {
@@ -464,7 +478,8 @@ export const startInteractiveApp = async (
   };
 
   const applyLayout = (): void => {
-    layout = computeLayout(app.renderer.width, app.renderer.height, scene.layoutScale);
+    const layoutSize = rendererLayoutSize(resizeTarget);
+    layout = computeLayout(layoutSize.width, layoutSize.height, scene.layoutScale);
     rebuildPanelsIfNeeded();
     engine.updateGeometry({
       spawnX: layout.wireStartX + PACKET_SPAWN_OFFSET_PX,
@@ -496,7 +511,7 @@ export const startInteractiveApp = async (
         path,
         versionLabel: matchedReaderVersionId,
         color: SUCCESS_ACCENT,
-        ttlSec: SLOT_FLASH_SUCCESS_SEC,
+        ttlSec: SLOT_FLASH_SEC,
         delaySec: SLOT_FLASH_DELAY_SEC,
       });
     }
@@ -506,7 +521,7 @@ export const startInteractiveApp = async (
         path: failingPath,
         versionLabel: matchedReaderVersionId,
         color: FAILURE_ACCENT,
-        ttlSec: SLOT_FLASH_FAILURE_SEC,
+        ttlSec: SLOT_FLASH_SEC,
         delaySec: SLOT_FLASH_DELAY_SEC,
       });
     }

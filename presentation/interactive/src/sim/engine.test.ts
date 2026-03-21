@@ -50,6 +50,7 @@ const config: EngineConfig = {
   packetY: 0,
   initialPacketCount: 2,
   initialPacketSpacing: 30,
+  minPacketGapPx: 1,
 };
 
 describe("WireEngine transitions", () => {
@@ -114,5 +115,42 @@ describe("WireEngine transitions", () => {
     expect(decode.length).toBe(1);
     expect(decode[0]?.result.ok).toBe(true);
     expect(decode[0]?.matchedReaderVersionId).toBe("v1");
+  });
+
+  it("does not emit a new packet until the spawn gap invariant is satisfied", () => {
+    const story = materializeStory(buildStory());
+    const gapConfig: EngineConfig = {
+      ...config,
+      emitIntervalSec: 0.1,
+      initialPacketCount: 1,
+      initialPacketSpacing: 40,
+      minPacketGapPx: 140,
+      packetSpeedPxPerSec: 10,
+    };
+
+    const engine = new WireEngine(story, gapConfig);
+    expect(engine.activePackets().length).toBe(1);
+
+    engine.step(0.1);
+    expect(engine.activePackets().length).toBe(1);
+
+    engine.step(0.1);
+    expect(engine.activePackets().length).toBe(1);
+
+    engine.step(13.9);
+    expect(engine.activePackets().length).toBe(2);
+  });
+
+  it("seeds the initial packet train starting at spawn so the wire can be populated densely", () => {
+    const story = materializeStory(buildStory());
+    const engine = new WireEngine(story, {
+      ...config,
+      spawnX: 100,
+      initialPacketCount: 3,
+      initialPacketSpacing: 40,
+      minPacketGapPx: 40,
+    });
+
+    expect(engine.activePackets().map((packet) => packet.x)).toEqual([100, 140, 180]);
   });
 });

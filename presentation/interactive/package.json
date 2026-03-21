@@ -11,7 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "pixi.js": "^7.4.3"
+    "pixi.js-legacy": "^7.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.13.5",

@@ -20,6 +20,7 @@ export interface EngineConfig {
   packetY: number;
   initialPacketCount: number;
   initialPacketSpacing: number;
+  minPacketGapPx: number;
 }
 
 export class WireEngine {
@@ -46,6 +47,10 @@ export class WireEngine {
 
   public togglePaused(): void {
     this.paused = !this.paused;
+  }
+
+  public setPaused(paused: boolean): void {
+    this.paused = paused;
   }
 
   public reset(): void {
@@ -120,6 +125,10 @@ export class WireEngine {
     this.processDecodes();
     this.emitAccumulatorSec += deltaSec;
     while (this.emitAccumulatorSec >= this.config.emitIntervalSec) {
+      if (!this.canEmitAt(this.config.spawnX)) {
+        this.emitAccumulatorSec = this.config.emitIntervalSec;
+        break;
+      }
       this.emitAccumulatorSec -= this.config.emitIntervalSec;
       this.emitPacket(this.currentLeftVersion().id, this.config.spawnX);
     }
@@ -137,10 +146,25 @@ export class WireEngine {
 
   private seedInitialPackets(): void {
     const leftVersionId = this.currentLeftVersion().id;
+    const packetSpacing = Math.max(this.config.initialPacketSpacing, this.config.minPacketGapPx);
+    const initialStartX = this.config.spawnX;
     for (let i = 0; i < this.config.initialPacketCount; i += 1) {
-      const x = this.config.spawnX + i * this.config.initialPacketSpacing;
+      const x = initialStartX + i * packetSpacing;
       this.emitPacket(leftVersionId, x);
     }
+  }
+
+  private canEmitAt(spawnX: number): boolean {
+    let nearestPacketX = Number.POSITIVE_INFINITY;
+    for (const packet of this.packets) {
+      if (packet.x < nearestPacketX) {
+        nearestPacketX = packet.x;
+      }
+    }
+    if (!Number.isFinite(nearestPacketX)) {
+      return true;
+    }
+    return nearestPacketX - spawnX >= this.config.minPacketGapPx;
   }
 
   private emitPacket(schemaVersionId: string, x: number): void {

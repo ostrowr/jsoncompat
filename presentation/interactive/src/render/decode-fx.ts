@@ -1,4 +1,4 @@
-import { Container, Graphics, Point, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Point, Text, TextStyle } from "pixi.js-legacy";
 
 interface BaseEffect {
   root: Container;
