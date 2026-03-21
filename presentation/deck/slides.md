@@ -1,10 +1,11 @@
 ---
 theme: seriph
+layout: default
 title: Escaping Version Skew
 info: |
   ## Escaping Version Skew
 
-  Compatibility, version skew, and why strict invariants make rollouts less stupid.
+  Compatibility, version skew, and what to do about it when rollouts are never instant.
 class: demo-full-bleed
 colorSchema: light
 routerMode: hash
@@ -19,153 +20,83 @@ drawings:
   persist: false
 ---
 
-<SimulatorDeck
-  mode="steady"
-  start-state-id="s1"
-  :emit-rate-per-sec="1.15"
-  :packet-speed-px-per-sec="78"
-  :initial-packet-count="2"
-  :initial-packet-spacing-px="220"
-  :minimum-packet-gap-px="220"
-  height="72vh"
-  :layout-scale="0.5"
-  :bare="true"
-  :show-state-chip="false"
-/>
+<NetworkHero />
 
 <!--
-Pre-talk slide.
-Leave this up before you start.
+Pre-talk slide and first beat.
+Let it run while people settle. Then start by saying this is the fantasy:
+a big distributed system, data moving around, destinations lighting up green,
+everything looks legible from far away.
 -->
 
 ---
+class: demo-full-bleed
+---
 
-<div class="deck-kicker">SRECon Americas 2026 • Robbie Ostrow • OpenAI</div>
-
-# Escaping Version Skew
-
-<p class="deck-lead max-w-3xl">
-Your schema changes in one commit. Production changes in installments.
-</p>
-
-<div class="deck-grid-2 mt-10">
-  <div class="quote-card">
-    <h3>The problem</h3>
-    <p>Partial rollouts turn “is this a safe change?” into a distributed-systems question.</p>
-  </div>
-  <div class="quote-card">
-    <h3>The thesis</h3>
-    <p>If your invariants are precise enough, compatibility stops being an interpretive art.</p>
-  </div>
-</div>
+<NetworkHero :red-receive-every="10" :title-layout="true" :hidden-node-ids="['router', 'db']">
+  <h1>Escaping Version Skew: Formalizing Compatibility in a World of Partial Rollouts</h1>
+  <p>Robbie Ostrow, Member of Technical Staff, OpenAI</p>
+  <p>SRECon Americas 2026</p>
+</NetworkHero>
 
 <!--
-Open cleanly.
-No throat clearing.
+Same system, but now the comforting green "arrived" signal is not what we get.
+Use the title here, next to the failing nodes, after the cold open has already
+established the motion.
 -->
 
 ---
+class: demo-full-bleed
+---
 
-<div class="deck-kicker">Operational reality</div>
-
-# Production is full of old packets
-
-<div class="deck-grid-2 mt-8">
-  <div class="fact-card">
-    <h3>Requests are still in flight</h3>
-    <p>The old writer can still be talking while the new reader is already live.</p>
-  </div>
-  <div class="fact-card">
-    <h3>Queues preserve history</h3>
-    <p>Backlog is version skew with a product manager.</p>
-  </div>
-  <div class="fact-card">
-    <h3>Caches outlive deploys</h3>
-    <p>Yesterday’s payload can still be today’s incident.</p>
-  </div>
-  <div class="fact-card">
-    <h3>Stored JSON never resigned</h3>
-    <p>The database is how your old schema remains a voting member.</p>
-  </div>
+<div class="zoom-bridge-shell">
+  <SimulatorDeck
+    mode="steady"
+    start-state-id="s1"
+    :emit-rate-per-sec="1.15"
+    :packet-speed-px-per-sec="78"
+    :initial-packet-count="2"
+    :initial-packet-spacing-px="220"
+    :minimum-packet-gap-px="220"
+    height="72vh"
+    :layout-scale="0.5"
+    :bare="true"
+    :show-state-chip="false"
+  />
 </div>
 
 <!--
-This is the setup for why directionality matters.
+Zoom in to one subsystem.
+This is the current first slide, now reframed as steady-state operation and
+the animated-ish zoomed-in version:
+everything in its place, everything working as intended.
 -->
 
 ---
+layout: center
+---
 
-<div class="deck-kicker">Compatibility law</div>
-
-# Breaking for whom?
-
-<div class="deck-grid-2 mt-10">
-  <div class="law-card success">
-    <h3>Writer-compat</h3>
-    <p>The new writer must stay inside the old reader’s idea of valid data.</p>
-    <p class="deck-micro mt-4"><code>new ⊆ old</code></p>
-  </div>
-  <div class="law-card failure">
-    <h3>Reader-compat</h3>
-    <p>The new reader must still accept everything the old world already emitted.</p>
-    <p class="deck-micro mt-4"><code>old ⊆ new</code></p>
-  </div>
-</div>
+<h1 class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</h1>
 
 <!--
-Do not linger on terminology.
-Say writer and reader more than serializer and deserializer.
+Set up the joke like you are about to give the wrong kind of operational advice.
+The reality underneath it: systems are changing all the time, and we cannot roll
+new changes in an instant.
 -->
 
 ---
+layout: center
+---
 
-<div class="deck-kicker">Tiny diff</div>
-
-# One diff, two press releases
-
-<div class="deck-grid-2 mt-8">
-  <div class="deck-schema-box">
-
-```json
-// old
-{
-  "type": "object",
-  "properties": {
-    "id": { "type": "integer" }
-  }
-}
-```
-
-  </div>
-  <div class="deck-schema-box">
-
-```json
-// new
-{
-  "type": "object",
-  "properties": {
-    "id": { "type": "integer" }
-  },
-  "required": ["id"]
-}
-```
-
-  </div>
-</div>
-
-<div class="deck-grid-2 mt-8">
-  <div class="law-card success">
-    <h3>The writer says: stricter</h3>
-    <p>The new writer emits fewer nonsense objects. Great.</p>
-  </div>
-  <div class="law-card failure">
-    <h3>The reader says: absolutely not</h3>
-    <p>The new reader just criminalized old data that omitted <code>id</code>.</p>
-  </div>
+<div class="rollout-joke-stack">
+  <h1 class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</h1>
+  <h2 class="rollout-joke-punchline">give up</h2>
 </div>
 
 <!--
-This is the first real "wat" moment.
+Land the punchline plainly.
+Not give up on correctness; give up on pretending perfect choreography across
+mixed versions is a strategy.
 -->
 
 ---
@@ -189,164 +120,198 @@ class: demo-full-bleed
 />
 
 <!--
-State map:
-- s1 writer v1 reader v1
-- s2 writer v1 reader v2
-- s3 writer v2 reader v2
+Use this as the minimum mechanics demo, not the whole talk.
+Old packets are still in flight while new code is already live.
+One tiny diff becomes two different compatibility questions depending on direction.
 -->
 
 ---
 
-<div class="deck-kicker">Translation</div>
+<div class="deck-kicker">Counterargument</div>
 
-# A deploy is not a rewrite pass over reality
+# “Just use protos”
 
-<div class="deck-grid-3 mt-8">
-  <div class="beat-card">
-    <h3>The wire keeps receipts</h3>
-    <p>Anything already emitted keeps the old shape.</p>
+<div class="deck-grid-2 mt-10">
+  <div class="law-card success">
+    <h3>Great for the wire</h3>
+    <p>Less constraining rules preserve compatibility across versions.</p>
   </div>
-  <div class="beat-card">
-    <h3>Readers inherit history</h3>
-    <p>Your new code has to coexist with packets it did not negotiate.</p>
-  </div>
-  <div class="beat-card accent">
-    <h3>This is a contract problem</h3>
-    <p>Not a “please coordinate the deploy” problem.</p>
-  </div>
-</div>
-
----
-class: demo-full-bleed
----
-
-<SimulatorDeck
-  mode="transition"
-  start-state-id="s3"
-  :sequence="['s4', 's5']"
-  :step-delay-ms="1750"
-  :autoplay="false"
-  :emit-rate-per-sec="1.3"
-  :packet-speed-px-per-sec="78"
-  :initial-packet-count="4"
-  :initial-packet-spacing-px="220"
-  :minimum-packet-gap-px="220"
-  height="72vh"
-  :layout-scale="0.5"
-  :bare="true"
-/>
-
----
-
-<div class="deck-kicker">Common mistake</div>
-
-# “Just make it optional” is how types become vibes
-
-<div class="deck-grid-2 mt-8">
   <div class="law-card failure">
-    <h3>Short-term benefit</h3>
-    <p>Fewer immediate decoder explosions.</p>
-  </div>
-  <div class="law-card accent">
-    <h3>Long-term bill</h3>
-    <p>You stop being able to say, with a straight face, what your data means.</p>
+    <h3>Terrible for logic</h3>
+    <p>The point of types is to constrain the states your system can be in.</p>
   </div>
 </div>
 
 <div class="deck-callout mt-10">
-  <p class="deck-quote">
-    Loose schemas are very flexible. They can represent almost anything, including your next outage.
-  </p>
+  <p class="deck-quote">A schema that can represent almost anything will eventually represent your next outage.</p>
 </div>
+
+<!--
+Protos are not expressive enough for the job I care about here.
+If your contract is weaker than your business logic, you moved the risk, you did not remove it.
+-->
 
 ---
 
-<div class="deck-kicker">The contrarian bit</div>
+<div class="deck-kicker">What to do instead</div>
 
-# Strictness is what makes automation possible
-
-<div class="deck-grid-3 mt-8">
-  <div class="law-card success">
-    <h3>Say what must be true</h3>
-    <p>If a field is required, require it. If it is one of three values, say so.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Ban nonsense early</h3>
-    <p>The smaller the valid state space, the less garbage you reason about during rollout.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Let the tool be rude</h3>
-    <p>Humans are terrible at mixed-version reasoning, especially when the diff looks small.</p>
-  </div>
-</div>
-
----
-
-<div class="deck-kicker">Case study</div>
-
-# `jsoncompat` is a hall monitor for schema changes
+# Define the boundary as strictly as possible
 
 <div class="deck-grid-2 mt-8">
   <div class="deck-schema-box">
 
-```rust
-pub fn check_compat(old: &SchemaNode, new: &SchemaNode, role: Role) -> bool {
-    match role {
-        Role::Serializer => is_subschema_of(new, old),
-        Role::Deserializer => is_subschema_of(old, new),
-        Role::Both => is_subschema_of(new, old) && is_subschema_of(old, new),
+```json
+{
+  "type": "object",
+  "properties": {
+    "retries": {
+      "type": "integer",
+      "minimum": 0,
+      "exclusiveMaximum": 5
+    },
+    "mode": {
+      "enum": ["fast", "safe"]
     }
+  },
+  "required": ["retries", "mode"]
 }
 ```
 
   </div>
-  <div class="fact-card">
-    <h3>Why this matters</h3>
-    <p>The decision stops living in code review folklore and starts living in a tool with an actual standard.</p>
-    <p class="mt-4">Once “safe” has a definition, the computer can ruin your day consistently.</p>
+  <div class="fact-card boundary-card">
+    <h3>Say the primitive type</h3>
+    <p>Integer, not “number-like thing we hope is fine.”</p>
+
+    <h3 class="mt-6">Say the invariant</h3>
+    <p>If the rule is <code>integer &lt; 5</code>, put it in the contract.</p>
+
+    <h3 class="mt-6">Make nonsense unrepresentable</h3>
+    <p>Every forbidden state you encode is one less rollout edge case to reason about by hand.</p>
   </div>
 </div>
 
----
-class: demo-full-bleed
+<!--
+This is the constructive turn.
+Explicitly define boundaries. Constrain both primitive type and semantic shape.
+The stricter the contract, the smaller the mixed-version state space.
+-->
+
 ---
 
-<SimulatorDeck
-  mode="transition"
-  start-state-id="s6"
-  :sequence="['s7', 's8', 's9']"
-  :step-delay-ms="1450"
-  :autoplay="false"
-  :emit-rate-per-sec="1.4"
-  :packet-speed-px-per-sec="108"
-  :initial-packet-count="4"
-  :initial-packet-spacing-px="280"
-  :minimum-packet-gap-px="280"
-  height="74vh"
-  :layout-scale="0.54"
-  :bare="true"
-/>
+<div class="deck-kicker">Process</div>
+
+# Evolve with tooling, not vibes
+
+<div class="deck-grid-3 mt-10">
+  <div class="law-card accent">
+    <h3>Not staged rollouts</h3>
+    <p>Rollouts expose problems. They do not define safety.</p>
+  </div>
+  <div class="law-card accent">
+    <h3>Not code review folklore</h3>
+    <p>I work with a lot of smart people. No one is careful enough to catch every breaking change by inspection.</p>
+  </div>
+  <div class="law-card accent">
+    <h3>Use a standard</h3>
+    <p>Write down what “compatible” means and let a tool be rude consistently.</p>
+  </div>
+</div>
+
+<!--
+This is the practical advice slide.
+The failure mode is not intelligence, it is that humans are bad at mixed-version reasoning.
+-->
+
+---
+
+<div class="deck-kicker">Product</div>
+
+# `jsoncompat`
+
+<div class="deck-grid-2 mt-10">
+  <div class="law-card success product-card">
+    <h3>Static analysis</h3>
+    <p>Schema comparison for the 99% of cases where the rules are tractable.</p>
+  </div>
+  <div class="law-card success product-card">
+    <h3>Fuzzing</h3>
+    <p>Generate counterexamples where the static argument runs out of road.</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-10">
+  <p class="deck-quote">Move “is this safe?” out of human intuition and into machinery.</p>
+</div>
+
+<!--
+Introduce the tool in one sentence.
+Static analysis first because it is fast and precise when it works.
+Fuzzing is the escape hatch for the hard edge cases.
+-->
+
+---
+layout: center
+---
+
+<FuzzingDemo />
+
+<!--
+Fuzzing demo beat.
+The point is one obvious counterexample that a reviewer can miss:
+old world emitted 5, new reader rejects 5 after tightening the bound.
+-->
+
+---
+
+<div class="deck-kicker">Final implication</div>
+
+# Do not share runtime types between frontend and backend
+
+<div class="deck-grid-2 mt-10">
+  <div class="law-card failure">
+    <h3>Shared types feel great</h3>
+    <p>One definition, instant reuse, less typing. Very convenient.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Independent evolution is better</h3>
+    <p>Generate local types from one contract so each side can move on its own schedule.</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-10">
+  <p class="deck-quote">People love sharing types. So give them codegen good enough that they stop needing to.</p>
+</div>
+
+<!--
+This is the bigger architectural consequence.
+Define once at the boundary, generate per side, evolve independently.
+-->
 
 ---
 
 <div class="deck-kicker">Close</div>
 
-# Three rules I actually use
+# What I want you to do
 
 <div class="deck-three-laws mt-8">
   <div class="law-card accent">
-    <h3>Name the direction</h3>
-    <p>Ask who changed, who still emits data, and who still has to read it.</p>
+    <h3>Give up on perfect rollout choreography</h3>
+    <p>Assume mixed versions, old packets, old queues, old caches, and old rows.</p>
   </div>
   <div class="law-card accent">
-    <h3>Assume mixed versions</h3>
-    <p>Packets, queues, caches, and databases all outlive the tidy line on your rollout chart.</p>
+    <h3>Make the contract strict</h3>
+    <p>Define primitive types, constraints, and invariants at the boundary.</p>
   </div>
   <div class="law-card accent">
-    <h3>Be strict on purpose</h3>
-    <p>Make impossible states unrepresentable, then automate the argument about change.</p>
+    <h3>Automate the compatibility argument</h3>
+    <p>Use static analysis where possible, fuzzing where needed, and codegen to decouple evolution.</p>
   </div>
 </div>
+
+<!--
+End on advice, not mechanics.
+This is the compact version of the whole talk.
+-->
 
 ---
 layout: center
