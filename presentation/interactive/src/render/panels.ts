@@ -1,4 +1,4 @@
-import { Container, Graphics, Point, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Point, Text, TextStyle } from "pixi.js-legacy";
 import type { FlattenedField } from "../model/types";
 import { colorForDisplayType } from "./type-colors";
 
@@ -46,7 +46,6 @@ const columnVersionStyle = new TextStyle({
 });
 
 const PANEL_BG = 0x0f1726;
-const CHIP_BG = 0x111b2b;
 const CHIP_BORDER = 0x5a7196;
 
 const fitPathLabel = (path: string, style: TextStyle, maxWidth: number): string => {
@@ -243,12 +242,12 @@ export class SchemaPanel extends Container {
       : Array.from(unionFieldPaths.values());
     const laneCount = Math.max(1, lanes.length);
 
-    const startY = 134;
-    const bottomPadding = 34;
+    const startY = Math.min(126, Math.max(84, this.heightPx * 0.3));
+    const bottomPadding = Math.max(16, this.heightPx * 0.06);
     const availableHeight = Math.max(72, this.heightPx - startY - bottomPadding);
     const lanePitch = availableHeight / laneCount;
-    const laneGap = laneCount >= 4 ? 13 : 9;
-    const chipHeight = Math.max(30, Math.min(48, lanePitch - laneGap));
+    const laneGap = laneCount >= 4 ? 11 : 8;
+    const chipHeight = Math.max(36, Math.min(48, lanePitch - laneGap));
 
     const laneIndexByPath = new Map<string, number>();
     lanes.forEach((path, index) => {
@@ -258,12 +257,12 @@ export class SchemaPanel extends Container {
     });
 
     const columnCount = columns.length;
-    const slotAreaX = 29;
-    const slotAreaWidth = this.widthPx - 58;
+    const slotAreaX = 14;
+    const slotAreaWidth = this.widthPx - 28;
     const columnGap = columnCount > 1 ? 14 : 0;
     const columnWidth = (slotAreaWidth - columnGap * (columnCount - 1)) / columnCount;
     const compactMode = columnCount > 1;
-    const rowFontSize = compactMode ? 16 : 22;
+    const rowFontSize = compactMode ? 16 : 20;
 
     for (let columnIndex = 0; columnIndex < columns.length; columnIndex += 1) {
       const column = columns[columnIndex];
@@ -333,11 +332,11 @@ export class SchemaPanel extends Container {
         const typeText = new Text(field.displayType, typeStyle);
         const optionalText = field.required ? null : new Text(" (optional)", optionalStyle);
         const optionalWidth = optionalText?.width ?? 0;
-        const maxKeyWidth = Math.max(18, columnWidth - 14 - typeText.width - optionalWidth);
+        const maxKeyWidth = Math.max(18, columnWidth - 6 - typeText.width - optionalWidth);
         const keyText = new Text(fitPathLabel(field.path, keyStyle, maxKeyWidth), keyStyle);
 
         const totalWidth = keyText.width + typeText.width + optionalWidth;
-        const startX = columnX + (columnWidth - totalWidth) / 2;
+        const startX = columnX + 3;
         keyText.x = startX;
         keyText.y = centerY - keyText.height / 2;
         typeText.x = keyText.x + keyText.width;
@@ -383,8 +382,12 @@ export class SchemaPanel extends Container {
 
   private drawSlot(slot: SlotView, strokeColor: number, strokeWidth: number): void {
     slot.graphics.clear();
+    if (strokeColor === slot.baseColor) {
+      return;
+    }
+
     slot.graphics.lineStyle(strokeWidth, strokeColor, 0.98);
-    slot.graphics.beginFill(CHIP_BG, 0.97);
+    slot.graphics.beginFill(0x111b2b, 0.5);
     slot.graphics.drawRoundedRect(0, slot.y, slot.width, slot.height, 7);
     slot.graphics.endFill();
   }
