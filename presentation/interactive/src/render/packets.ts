@@ -1,4 +1,4 @@
-import { Container, Graphics, Point, Text, TextStyle } from "pixi.js";
+import { Container, Graphics, Point, Text, TextStyle } from "pixi.js-legacy";
 import type { PacketViewModel } from "../model/types";
 import { colorForDisplayType } from "./type-colors";
 
@@ -38,13 +38,12 @@ const versionTagStyle = new TextStyle({
 
 const ENVELOPE_STROKE = 0x5c7293;
 const ENVELOPE_FILL = 0x0f1a2d;
-const MIN_ENVELOPE_WIDTH = 166;
-const MAX_ENVELOPE_WIDTH = 286;
+const MIN_ENVELOPE_WIDTH = 144;
+const MAX_ENVELOPE_WIDTH = 280;
 const ENVELOPE_X_PADDING = 12;
 const ENVELOPE_Y_PADDING = 10;
 const ROW_HEIGHT = 34;
-const VALUE_CHAR_LIMIT = 21;
-const DENSE_VALUE_CHAR_LIMIT = 18;
+const VALUE_CHAR_LIMIT = 18;
 const ROW_BG_FILL = 0x17263d;
 
 const clampText = (text: string, maxChars: number): string => {
@@ -66,7 +65,6 @@ export class PacketLayer extends Container {
   private laneCenterByPath: ReadonlyMap<string, number> = new Map();
   private focusPath: string | null = null;
   private focusDimAlpha = 0.4;
-  private denseMode = false;
 
   public setLaneCenters(laneCenterByPath: ReadonlyMap<string, number>): void {
     this.laneCenterByPath = laneCenterByPath;
@@ -80,16 +78,6 @@ export class PacketLayer extends Container {
     this.focusDimAlpha = dimAlpha;
     for (const sprite of this.sprites.values()) {
       this.layoutRows(sprite);
-    }
-  }
-
-  public setDenseMode(enabled: boolean): void {
-    if (this.denseMode === enabled) {
-      return;
-    }
-    this.denseMode = enabled;
-    for (const sprite of this.sprites.values()) {
-      sprite.rowSignature = "";
     }
   }
 
@@ -180,7 +168,7 @@ export class PacketLayer extends Container {
     sprite.versionTag.text = sprite.versionLabel;
 
     rows.forEach((row) => {
-      const rowFontSize = this.denseMode ? 16 : 18;
+      const rowFontSize = 16;
       const keyStyle = new TextStyle({
         fill: 0xe8edf7,
         fontFamily: "Menlo, monospace",
@@ -193,8 +181,7 @@ export class PacketLayer extends Container {
         dropShadowColor: 0x000000,
       });
       const keyLabel = new Text(row.keyText, keyStyle);
-      const maxValueChars = this.denseMode ? DENSE_VALUE_CHAR_LIMIT : VALUE_CHAR_LIMIT;
-      const clippedValue = clampText(row.valueText, maxValueChars);
+      const clippedValue = clampText(row.valueText, VALUE_CHAR_LIMIT);
       const valueStyle = new TextStyle({
         fontFamily: "Menlo, monospace",
         fontSize: rowFontSize,

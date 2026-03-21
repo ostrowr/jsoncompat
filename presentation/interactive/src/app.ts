@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Point, Text, TextStyle } from "pixi.js";
+import { Application, Container, Graphics, Point, Text, TextStyle } from "pixi.js-legacy";
 import { KeyController, type ControlAction } from "./input/keys";
 import { createDefaultRuntimeStory } from "./model/story";
 import type { LayoutMetrics } from "./model/types";
@@ -22,6 +22,49 @@ interface SlotHighlight {
   color: number;
   ttlSec: number;
   delaySec: number;
+}
+
+export interface InteractiveChromeOptions {
+  showEmissionControl?: boolean;
+  showPauseButton?: boolean;
+  showStateChip?: boolean;
+}
+
+export interface InteractiveSceneOptions {
+  backgroundAlpha?: number;
+  panelAlpha?: number;
+  wireAlpha?: number;
+  packetAlpha?: number;
+  effectsAlpha?: number;
+  layoutScale?: number;
+}
+
+export interface InteractiveAppOptions {
+  initialStateId?: string;
+  startPaused?: boolean;
+  enableKeyboard?: boolean;
+  initialEmitRatePerSec?: number;
+  packetSpeedPxPerSec?: number;
+  initialPacketCount?: number;
+  initialPacketSpacingPx?: number;
+  minimumPacketGapPx?: number;
+  resizeTarget?: Window | HTMLElement;
+  chrome?: InteractiveChromeOptions;
+  scene?: InteractiveSceneOptions;
+}
+
+export interface InteractiveAppHandle {
+  dispose(): void;
+  stateId(): string;
+  reset(): void;
+  transitionTo(stateId: string): void;
+  nextState(): void;
+  previousState(): void;
+  setPaused(paused: boolean): void;
+  togglePaused(): void;
+  setDebugVisible(visible: boolean): void;
+  setEmitRatePerSec(ratePerSec: number): void;
+  refreshLayout(): void;
 }
 
 const debugStyle = new TextStyle({
@@ -52,6 +95,7 @@ const PACKET_SPAWN_OFFSET_PX = 72;
 const PACKET_FADE_IN_DISTANCE_PX = 46;
 const PACKET_FADE_OUT_LEAD_PX = 8;
 const PACKET_FADE_OUT_DISTANCE_PX = 56;
+const DEFAULT_EMIT_RATE_PER_SEC = 1 / 1.6;
 
 const clamp01 = (value: number): number => {
   return Math.max(0, Math.min(1, value));
@@ -62,26 +106,54 @@ const smoothStep01 = (value: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-const baseEngineConfig = (layout: LayoutMetrics): EngineConfig => {
+const baseEngineConfig = (
+  layout: LayoutMetrics,
+  options: Pick<
+    InteractiveAppOptions,
+    "packetSpeedPxPerSec" | "initialPacketCount" | "initialPacketSpacingPx" | "minimumPacketGapPx"
+  >,
+): EngineConfig => {
+  const initialPacketSpacing = options.initialPacketSpacingPx ?? 264;
   return {
     emitIntervalSec: 1.6,
-    packetSpeedPxPerSec: 148,
+    packetSpeedPxPerSec: options.packetSpeedPxPerSec ?? 148,
     spawnX: layout.wireStartX + PACKET_SPAWN_OFFSET_PX,
     decodeX: layout.decodeX,
     despawnX: layout.wireEndX + 120,
     packetY: layout.packetY,
-    initialPacketCount: 2,
-    initialPacketSpacing: 264,
+    initialPacketCount: options.initialPacketCount ?? 2,
+    initialPacketSpacing,
+    minPacketGapPx: options.minimumPacketGapPx ?? Math.max(280, initialPacketSpacing),
   };
 };
 
-export const startInteractiveApp = async (host: HTMLElement): Promise<() => void> => {
+export const startInteractiveApp = async (
+  host: HTMLElement,
+  options: InteractiveAppOptions = {},
+): Promise<InteractiveAppHandle> => {
   host.style.position = "relative";
+  const resizeTarget = options.resizeTarget ?? window;
+
+  const chrome = {
+    showEmissionControl: options.chrome?.showEmissionControl ?? true,
+    showPauseButton: options.chrome?.showPauseButton ?? true,
+    showStateChip: options.chrome?.showStateChip ?? true,
+  } satisfies Required<InteractiveChromeOptions>;
+
+  const scene = {
+    backgroundAlpha: options.scene?.backgroundAlpha ?? 1,
+    panelAlpha: options.scene?.panelAlpha ?? 1,
+    wireAlpha: options.scene?.wireAlpha ?? 1,
+    packetAlpha: options.scene?.packetAlpha ?? 1,
+    effectsAlpha: options.scene?.effectsAlpha ?? 1,
+    layoutScale: options.scene?.layoutScale ?? 1,
+  } satisfies Required<InteractiveSceneOptions>;
 
   const app = new Application({
     backgroundColor: BACKGROUND_COLOR,
+    backgroundAlpha: scene.backgroundAlpha,
     antialias: true,
-    resizeTo: window,
+    resizeTo: resizeTarget,
   });
   host.appendChild(app.view as HTMLCanvasElement);
 
@@ -115,7 +187,9 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   emissionValue.style.color = "#9fb5cd";
 
   emissionControl.append(emissionTitle, emissionSlider, emissionValue);
-  host.appendChild(emissionControl);
+  if (chrome.showEmissionControl) {
+    host.appendChild(emissionControl);
+  }
 
   const story = createDefaultRuntimeStory();
   const lanePaths: string[] = [];
@@ -135,10 +209,11 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   const fxLayer = new DecodeFxLayer();
   const uiLayer = new Container();
   rootLayer.addChild(wireLayer, panelLayer, packetLayer, fxLayer, uiLayer);
+  wireLayer.alpha = scene.wireAlpha;
+  panelLayer.alpha = scene.panelAlpha;
+  packetLayer.alpha = scene.packetAlpha;
+  fxLayer.alpha = scene.effectsAlpha;
   app.stage.addChild(rootLayer);
-  // Keep packet typography/layout mode stable across all story states to avoid
-  // abrupt visual jumps when a transition crosses a field-count threshold.
-  packetLayer.setDenseMode(lanePaths.length >= 4);
 
   const wireGraphics = new Graphics();
   wireLayer.addChild(wireGraphics);
@@ -154,14 +229,16 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   pauseButton.eventMode = "static";
   pauseButton.cursor = "pointer";
   uiLayer.addChild(pauseButton);
+  pauseButton.visible = chrome.showPauseButton;
 
   const stateChip = new Container();
   const stateChipBg = new Graphics();
   const stateChipText = new Text("", stateChipStyle);
   stateChip.addChild(stateChipBg, stateChipText);
   uiLayer.addChild(stateChip);
+  stateChip.visible = chrome.showStateChip;
 
-  let layout = computeLayout(app.renderer.width, app.renderer.height);
+  let layout = computeLayout(app.renderer.width, app.renderer.height, scene.layoutScale);
   let leftPanel = new SchemaPanel(
     "Writer",
     layout.panelWidth,
@@ -176,7 +253,10 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   );
   panelLayer.addChild(leftPanel, rightPanel);
 
-  const engine = new WireEngine(story, baseEngineConfig(layout));
+  const engine = new WireEngine(story, baseEngineConfig(layout, options));
+
+  const configuredInitialStateId = options.initialStateId ?? story.initialStateId;
+  const configuredStartPaused = options.startPaused ?? false;
 
   const formatEmitRate = (ratePerSec: number): string => `${ratePerSec.toFixed(2)} msg/s`;
   const applyEmissionSlider = (): void => {
@@ -187,10 +267,15 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   const onEmissionInput = (): void => {
     applyEmissionSlider();
   };
-  const defaultRate = 1 / engine.emitIntervalSec();
-  emissionSlider.value = defaultRate.toFixed(2);
-  emissionValue.textContent = formatEmitRate(defaultRate);
-  emissionSlider.addEventListener("input", onEmissionInput);
+  const setEmitRatePerSec = (ratePerSec: number): void => {
+    const clampedRate = Math.max(0.2, ratePerSec);
+    emissionSlider.value = clampedRate.toFixed(2);
+    applyEmissionSlider();
+  };
+  setEmitRatePerSec(options.initialEmitRatePerSec ?? DEFAULT_EMIT_RATE_PER_SEC);
+  if (chrome.showEmissionControl) {
+    emissionSlider.addEventListener("input", onEmissionInput);
+  }
 
   let currentStateId = engine.stateId();
   let slotHighlights: SlotHighlight[] = [];
@@ -291,27 +376,11 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
       wireGraphics.lineTo(layout.wireEndX - 10, laneY);
     }
 
-    const gateTop = layout.panelY - layout.panelHeight / 2 + 8;
-    const gateBottom = gateTop + Math.max(32, layout.panelHeight - 16);
-    const gateX = layout.decodeX;
+    wireGraphics.lineStyle(0, BACKGROUND_COLOR, 0);
+    wireGraphics.beginFill(BACKGROUND_COLOR, 1);
+    wireGraphics.drawRect(layout.decodeX - 5, y, 10, wireHeight);
+    wireGraphics.endFill();
 
-    // Clean decode gate: a single vertical divider with a soft halo.
-    wireGraphics.lineStyle(5, 0x24344d, 0.28);
-    wireGraphics.moveTo(gateX, gateTop);
-    wireGraphics.lineTo(gateX, gateBottom);
-    wireGraphics.lineStyle(1.6, 0x6f86aa, 0.72);
-    wireGraphics.moveTo(gateX, gateTop);
-    wireGraphics.lineTo(gateX, gateBottom);
-
-    if (gateFlashTtlSec > 0) {
-      const alpha = Math.max(0.1, gateFlashTtlSec / GATE_FLASH_SEC) * 0.5;
-      wireGraphics.lineStyle(7, gateFlashColor, alpha * 0.22);
-      wireGraphics.moveTo(gateX, gateTop);
-      wireGraphics.lineTo(gateX, gateBottom);
-      wireGraphics.lineStyle(2.6, gateFlashColor, alpha * 0.95);
-      wireGraphics.moveTo(gateX, gateTop);
-      wireGraphics.lineTo(gateX, gateBottom);
-    }
   };
 
   const refreshLaneCenters = (): void => {
@@ -395,7 +464,7 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
   };
 
   const applyLayout = (): void => {
-    layout = computeLayout(app.renderer.width, app.renderer.height);
+    layout = computeLayout(app.renderer.width, app.renderer.height, scene.layoutScale);
     rebuildPanelsIfNeeded();
     engine.updateGeometry({
       spawnX: layout.wireStartX + PACKET_SPAWN_OFFSET_PX,
@@ -501,6 +570,25 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     currentStateId = stateId;
   };
 
+  const resetView = (): void => {
+    engine.reset();
+    if (configuredInitialStateId !== story.initialStateId) {
+      engine.transitionTo(configuredInitialStateId);
+    }
+    engine.setPaused(configuredStartPaused);
+    renderSchemas();
+    currentStateId = engine.stateId();
+    fxLayer.clearAll();
+    slotHighlights = [];
+    gateFlashTtlSec = 0;
+    redrawPauseButton();
+  };
+
+  const setPaused = (paused: boolean): void => {
+    engine.setPaused(paused);
+    redrawPauseButton();
+  };
+
   const handleAction = (action: ControlAction): void => {
     switch (action) {
       case "next": {
@@ -512,18 +600,11 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
         break;
       }
       case "pause": {
-        engine.togglePaused();
-        redrawPauseButton();
+        setPaused(!engine.isPaused());
         break;
       }
       case "reset": {
-        engine.reset();
-        renderSchemas();
-        currentStateId = engine.stateId();
-        fxLayer.clearAll();
-        slotHighlights = [];
-        gateFlashTtlSec = 0;
-        redrawPauseButton();
+        resetView();
         break;
       }
       case "toggle_debug": {
@@ -569,13 +650,24 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     });
   };
 
-  const keyController = new KeyController(handleAction);
+  const keyController = options.enableKeyboard === false ? null : new KeyController(handleAction);
   pauseButton.on("pointertap", () => {
-    engine.togglePaused();
-    redrawPauseButton();
+    setPaused(!engine.isPaused());
   });
 
-  window.addEventListener("resize", applyLayout);
+  let resizeObserver: ResizeObserver | null = null;
+  if (resizeTarget instanceof HTMLElement) {
+    resizeObserver = new ResizeObserver(() => {
+      applyLayout();
+    });
+    resizeObserver.observe(resizeTarget);
+  } else {
+    window.addEventListener("resize", applyLayout);
+  }
+  if (configuredInitialStateId !== story.initialStateId) {
+    engine.transitionTo(configuredInitialStateId);
+  }
+  engine.setPaused(configuredStartPaused);
   applyLayout();
 
   app.ticker.add(() => {
@@ -616,13 +708,35 @@ export const startInteractiveApp = async (host: HTMLElement): Promise<() => void
     updateDebug();
   });
 
-  return () => {
-    keyController.dispose();
-    window.removeEventListener("resize", applyLayout);
-    emissionSlider.removeEventListener("input", onEmissionInput);
+  const dispose = (): void => {
+    keyController?.dispose();
+    resizeObserver?.disconnect();
+    if (resizeObserver === null) {
+      window.removeEventListener("resize", applyLayout);
+    }
+    if (chrome.showEmissionControl) {
+      emissionSlider.removeEventListener("input", onEmissionInput);
+    }
     if (emissionControl.parentElement === host) {
       host.removeChild(emissionControl);
     }
     app.destroy(true);
+  };
+
+  return {
+    dispose,
+    stateId: () => engine.stateId(),
+    reset: resetView,
+    transitionTo,
+    nextState: () => transitionTo(getNextStateId(story, engine.stateId())),
+    previousState: () => transitionTo(getPreviousStateId(story, engine.stateId())),
+    setPaused,
+    togglePaused: () => setPaused(!engine.isPaused()),
+    setDebugVisible: (visible: boolean) => {
+      debugVisible = visible;
+      updateDebug();
+    },
+    setEmitRatePerSec,
+    refreshLayout: applyLayout,
   };
 };
