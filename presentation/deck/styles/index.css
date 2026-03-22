@@ -392,6 +392,66 @@
   line-height: 1.15;
 }
 
+.tooling-pipeline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.9rem;
+}
+
+.tooling-step {
+  min-height: 12.5rem;
+}
+
+.tooling-step-label {
+  margin-bottom: 0.75rem;
+  color: var(--deck-muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tooling-arrow {
+  align-self: center;
+  color: rgba(91, 76, 62, 0.5);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.tooling-union-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.tooling-union-chip {
+  padding: 0.42rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 122, 76, 0.18);
+  background: rgba(247, 251, 248, 0.96);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tooling-union-new {
+  border-color: rgba(173, 46, 36, 0.24);
+  background: rgba(255, 245, 241, 0.96);
+  color: var(--deck-accent);
+  box-shadow: 0 0 0 4px rgba(173, 46, 36, 0.07);
+}
+
+.tooling-union-plus {
+  color: var(--deck-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
 .demo-setup-line {
   max-width: 58rem;
   margin: 0;
@@ -432,6 +492,56 @@
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.04em;
+}
+
+.thesis-refrain {
+  max-width: 18em;
+  color: var(--deck-muted);
+  font-family: "IBM Plex Sans Variable", "IBM Plex Sans", sans-serif;
+  font-size: 1.35rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.emphasis-slide {
+  display: grid;
+  place-items: center;
+  min-height: 72vh;
+  text-align: center;
+}
+
+.emphasis-word,
+.emphasis-phrase {
+  max-width: 12ch;
+  margin: 0 auto;
+  font-family: "Source Serif 4", serif;
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+.emphasis-word {
+  color: var(--deck-accent);
+  font-size: 7.6rem;
+}
+
+.emphasis-phrase {
+  font-size: 4.6rem;
+}
+
+.close-thesis-stack {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 16em;
+  margin-top: 0.2rem;
+  font-family: "Source Serif 4", serif;
+  font-size: 2.85rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
 
 .thanks-slide {
@@ -489,7 +599,8 @@
   .deck-grid-2,
   .deck-grid-3,
   .deck-three-laws,
-  .compat-matrix {
+  .compat-matrix,
+  .tooling-pipeline {
     grid-template-columns: 1fr;
   }
 
@@ -498,8 +609,24 @@
     display: none;
   }
 
+  .tooling-arrow {
+    display: none;
+  }
+
   .slidev-layout h1 {
     font-size: 2.4rem;
+  }
+
+  .emphasis-slide {
+    min-height: 64vh;
+  }
+
+  .emphasis-word {
+    font-size: 4.6rem;
+  }
+
+  .emphasis-phrase {
+    font-size: 2.9rem;
   }
 
   .rollout-joke-setup {

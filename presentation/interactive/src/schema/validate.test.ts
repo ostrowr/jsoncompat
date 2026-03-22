@@ -85,6 +85,33 @@ describe("validatePayload", () => {
     expect(presentParentMissingChild.result.reason).toBe("missing_required");
   });
 
+  it("validates object-valued fields themselves, not only descendant leaves", () => {
+    const schema: JsonSchemaDocument = {
+      type: "object",
+      properties: {
+        profile: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
+      required: ["profile"],
+    };
+
+    const missingParent = validatePayload({}, schema);
+    expect(missingParent.result.ok).toBe(false);
+    expect(missingParent.result.failingPath).toBe("profile");
+    expect(missingParent.result.reason).toBe("missing_required");
+
+    const wrongParentType = validatePayload(
+      { profile: [] } as unknown as Record<string, unknown>,
+      schema,
+    );
+    expect(wrongParentType.result.ok).toBe(false);
+    expect(wrongParentType.result.failingPath).toBe("profile");
+    expect(wrongParentType.result.reason).toBe("type_mismatch");
+  });
+
   it("accepts explicit null scalar fields", () => {
     const schema: JsonSchemaDocument = {
       type: "object",

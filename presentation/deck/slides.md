@@ -20,19 +20,6 @@ drawings:
   persist: false
 ---
 
-<NetworkHero />
-
-<!--
-Pre-talk slide and first beat.
-Let it run while people settle. Then start by saying this is the fantasy:
-a big distributed system, data moving around, destinations lighting up green,
-everything looks legible from far away.
--->
-
----
-class: demo-full-bleed
----
-
 <NetworkHero :red-receive-every="10" :title-layout="true" :hidden-node-ids="['router', 'db']">
   <div class="hero-title-copy">
     <div class="hero-talk-title">Escaping Version Skew: Formalizing Compatibility in a World of Partial Rollouts</div>
@@ -42,89 +29,8 @@ class: demo-full-bleed
 </NetworkHero>
 
 <!--
-Same system, but now the comforting green "arrived" signal is not what we get.
-Use the title here, next to the failing nodes, after the cold open has already
-established the motion.
--->
-
----
-class: demo-full-bleed
----
-
-<div class="zoom-bridge-shell">
-  <SimulatorDeck
-    mode="steady"
-    start-state-id="s1"
-    :emit-rate-per-sec="1.15"
-    :packet-speed-px-per-sec="78"
-    :initial-packet-count="2"
-    :initial-packet-spacing-px="220"
-    :minimum-packet-gap-px="220"
-    height="72vh"
-    :layout-scale="0.5"
-    :bare="true"
-    :show-state-chip="false"
-  />
-</div>
-
-<!--
-Zoom in to one subsystem.
-This is the current first slide, now reframed as steady-state operation and
-the animated-ish zoomed-in version:
-everything in its place, everything working as intended.
--->
-
----
-layout: center
----
-
-<div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
-
-<!--
-Set up the joke like you are about to give the wrong kind of operational advice.
-The reality underneath it: systems are changing all the time, and we cannot roll
-new changes in an instant.
--->
-
----
-layout: center
----
-
-<div class="rollout-joke-stack">
-  <div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
-  <div class="rollout-joke-punchline">give up</div>
-</div>
-
-<!--
-Land the punchline plainly.
-Not give up on correctness; give up on pretending perfect choreography across
-mixed versions is a strategy.
--->
-
----
-class: demo-full-bleed
----
-
-<SimulatorDeck
-  mode="transition"
-  start-state-id="s1"
-  :sequence="['s2', 's3']"
-  :step-delay-ms="1600"
-  :autoplay="false"
-  :emit-rate-per-sec="1.3"
-  :packet-speed-px-per-sec="78"
-  :initial-packet-count="4"
-  :initial-packet-spacing-px="220"
-  :minimum-packet-gap-px="220"
-  height="72vh"
-  :layout-scale="0.5"
-  :bare="true"
-/>
-
-<!--
-Use this as the minimum mechanics demo, not the whole talk.
-Old packets are still in flight while new code is already live.
-One tiny diff becomes two different compatibility questions depending on direction.
+Open on the fantasy and the break at once: a system diagram that looks legible
+from far away, except some arrivals are already red.
 -->
 
 ---
@@ -176,28 +82,100 @@ interaction among code versions, shared state, cache TTL, and timing.
 -->
 
 ---
+layout: center
+---
 
-<div class="deck-kicker">Counterargument</div>
+<div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
 
-# Protos solve transport, not state space
+<!--
+Setup beat for the punchline.
+-->
 
-<div class="one-figure-slide mt-10">
-  <p class="deck-quote">Wire compatibility can still admit states your logic cannot handle.</p>
-  <div class="deck-grid-2 mt-10">
-    <div class="law-card failure">
-      <h3>On the wire</h3>
-      <p>Weak contracts are flexible.</p>
-    </div>
-    <div class="law-card failure">
-      <h3>In the app</h3>
-      <p>Weak contracts leak invalid states.</p>
-    </div>
-  </div>
+---
+layout: center
+---
+
+<div class="emphasis-slide">
+  <div class="emphasis-word">give up</div>
 </div>
 
 <!--
-Protos are not expressive enough for the job I care about here.
-If your contract is weaker than your business logic, you moved the risk, you did not remove it.
+Punchline: not give up on correctness; give up on pretending perfect choreography
+across mixed versions is a strategy.
+-->
+
+---
+layout: center
+---
+
+<div class="emphasis-slide">
+  <div class="emphasis-phrase">Don't rely on rollout order.</div>
+</div>
+
+<!--
+Give the first refrain its own slide so it lands as the thesis, not a subtitle.
+-->
+
+---
+class: demo-full-bleed
+---
+
+<div class="zoom-bridge-shell">
+  <SimulatorDeck
+    mode="steady"
+    start-state-id="s1"
+    :emit-rate-per-sec="1.15"
+    :packet-speed-px-per-sec="78"
+    :initial-packet-count="2"
+    :initial-packet-spacing-px="220"
+    :minimum-packet-gap-px="220"
+    height="72vh"
+    :layout-scale="0.5"
+    :bare="true"
+    :show-state-chip="false"
+  />
+</div>
+
+<!--
+Baseline figure: the simplified steady-state model people usually reason from.
+-->
+
+---
+class: demo-full-bleed
+---
+
+<SimulatorDeck
+  mode="transition"
+  start-state-id="s1"
+  :sequence="['s2', 's3']"
+  :step-delay-ms="1600"
+  :autoplay="false"
+  :emit-rate-per-sec="1.3"
+  :packet-speed-px-per-sec="78"
+  :initial-packet-count="4"
+  :initial-packet-spacing-px="220"
+  :minimum-packet-gap-px="220"
+  height="72vh"
+  :layout-scale="0.5"
+  :bare="true"
+/>
+
+<!--
+Use this as the minimum mechanics demo, not the whole talk.
+Old packets are still in flight while new code is already live.
+One tiny diff becomes two different compatibility questions depending on direction.
+-->
+
+---
+layout: center
+---
+
+<div class="emphasis-slide">
+  <div class="emphasis-phrase">Parseable is not enough.</div>
+</div>
+
+<!--
+Punctuation slide before the boundary argument.
 -->
 
 ---
@@ -207,7 +185,7 @@ If your contract is weaker than your business logic, you moved the risk, you did
 # Parseable is not enough
 
 <div class="one-figure-slide mt-10">
-  <p class="deck-quote">Grammar defines shape. Validation defines state.</p>
+  <p class="deck-quote">Transport compatibility can still admit states your logic cannot handle.</p>
   <div class="deck-grid-2 mt-10">
     <div class="law-card">
       <h3>Grammar</h3>
@@ -225,6 +203,9 @@ If your contract is weaker than your business logic, you moved the risk, you did
 </div>
 
 <!--
+This merges the "just use protos" counterargument into the boundary point:
+parseable is weaker than valid state.
+
 If the room is schema-nerdy, this is where to mention grammar-based versus
 rule-based schemas. Otherwise keep it in plain language.
 
@@ -239,6 +220,18 @@ Protovalidate is a good example of a validation layer on top of protobuf:
 As far as I know, Protovalidate does not give you a backward/forward rollout
 semantics story for evolving the validation rules themselves, so the same
 lessons from this talk apply there too.
+-->
+
+---
+layout: center
+---
+
+<div class="emphasis-slide">
+  <div class="emphasis-phrase">A schema change changes a set of states.</div>
+</div>
+
+<!--
+Punctuation slide for the one mental model to remember.
 -->
 
 ---
@@ -293,14 +286,26 @@ Prior art to mention:
 - That is useful when upgrade order is a real control surface. In my world,
   partial rollouts, retries, caches, queues, and rollback mean order is often
   not guaranteed, so I need stronger constraints and tooling than pairwise
-  backward/forward labels.
+backward/forward labels.
+-->
+
+---
+layout: center
+---
+
+<div class="emphasis-slide">
+  <div class="emphasis-phrase">Only the contract is guaranteed.</div>
+</div>
+
+<!--
+Second refrain as a standalone beat before the constructive slide.
 -->
 
 ---
 
 <div class="deck-kicker">What to do instead</div>
 
-# Write the boundary as strictly as the logic
+# Only the contract is guaranteed
 
 <div class="deck-grid-2 mt-8">
   <div class="deck-schema-box">
@@ -339,6 +344,10 @@ Prior art to mention:
   </div>
 </div>
 
+<div class="deck-callout mt-8">
+  <p class="deck-quote">In a world of AI agents, strict contracts matter more: they turn hidden assumptions into machine-checkable boundaries.</p>
+</div>
+
 <!--
 This is the constructive turn.
 Explicitly define boundaries. Constrain both primitive type and semantic shape.
@@ -346,6 +355,23 @@ The stricter the contract, the smaller the mixed-version state space.
 Systems cannot assume anything not represented in the schema. Push as much as
 possible into that layer so invalid input gets rejected gracefully at the
 boundary, before application logic has to handle it at all.
+
+Call out the agent angle explicitly:
+- Agents are worse than humans at recovering hidden assumptions across abstraction
+  boundaries.
+- Tight contracts give them a smaller legal state space and a sharper test oracle.
+-->
+
+---
+layout: center
+---
+
+<div class="emphasis-slide">
+  <div class="emphasis-phrase">Widen the reader first.</div>
+</div>
+
+<!--
+Standalone setup for the positive rollout pattern.
 -->
 
 ---
@@ -378,29 +404,15 @@ This is the answer to "what do I do instead of letting things break?"
 -->
 
 ---
+layout: center
+---
 
-<div class="deck-kicker">Process</div>
-
-# Check compatibility with tools, not memory
-
-<div class="deck-grid-2 mt-10">
-  <div class="law-card success product-card">
-    <h3>Static analysis</h3>
-    <p>Prove the common cases before deploy.</p>
-  </div>
-  <div class="law-card success product-card">
-    <h3>Fuzzing</h3>
-    <p>Search for counterexamples where proofs run out.</p>
-  </div>
-</div>
-
-<div class="deck-callout mt-10">
-  <p class="deck-quote">Do not ask reviewers to simulate a distributed system in their head.</p>
+<div class="emphasis-slide">
+  <div class="emphasis-phrase">Check it mechanically.</div>
 </div>
 
 <!--
-This is the practical advice slide.
-The failure mode is not intelligence, it is that humans are bad at mixed-version reasoning.
+Third refrain as a standalone beat before the fuzzer/tooling section.
 -->
 
 ---
@@ -427,46 +439,42 @@ rejects 5 after tightening the bound.
 -->
 
 ---
-layout: center
----
-
-<div class="pairing-takeaway">
-  <div class="deck-kicker">Tooling</div>
-  <p class="deck-quote mt-8">Static analysis for the common case.</p>
-  <p class="deck-quote mt-2">Fuzzing for the rest.</p>
-</div>
-
-<!--
-Introduce the tool in one sentence.
-Static analysis first because it is fast and precise when it works.
-Fuzzing is the escape hatch for the hard edge cases.
-TODO: mention that we mark wire types with a decorator so compatibility checking
-is attached to the boundary type itself.
--->
-
----
 
 <div class="deck-kicker">Tooling</div>
 
 # Writers only emit what readers can parse
 
-<div class="deck-grid-3 mt-10">
-  <div class="law-card success">
-    <h3>Writer code</h3>
-    <p>Only writes the generated <code>Reader</code> type.</p>
+<div class="tooling-pipeline mt-8">
+  <div class="tooling-step law-card success">
+    <div class="tooling-step-label">1. Detect</div>
+    <h3>Breaking change?</h3>
+    <p>Static analysis first, fuzzing for counterexamples.</p>
   </div>
-  <div class="law-card accent">
-    <h3>Breaking change</h3>
-    <p>Codegen expands the writer type to an explicit union.</p>
+
+  <div class="tooling-arrow" aria-hidden="true">-></div>
+
+  <div class="tooling-step law-card accent">
+    <div class="tooling-step-label">2. Generate</div>
+    <h3>Reader and Writer types</h3>
+    <p>One schema, two local types. Writer code only emits <code>Reader</code>.</p>
   </div>
-  <div class="law-card success">
-    <h3>CI</h3>
-    <p>Rejects any write shape that deployed readers cannot parse.</p>
+
+  <div class="tooling-arrow" aria-hidden="true">-></div>
+
+  <div class="tooling-step law-card success">
+    <div class="tooling-step-label">3. Stamp</div>
+    <h3>On writer break, add a tagged branch</h3>
+    <div class="tooling-union-stack" aria-label="Reader union stamped with a new version">
+      <div class="tooling-union-chip">Reader =</div>
+      <div class="tooling-union-chip">v4</div>
+      <div class="tooling-union-plus">|</div>
+      <div class="tooling-union-chip tooling-union-new">v5</div>
+    </div>
   </div>
 </div>
 
 <div class="deck-callout mt-10">
-  <p class="deck-quote">If old readers cannot parse it, the writer change is forbidden.</p>
+  <p class="deck-quote">If old readers cannot parse it, the writer change is forbidden. Do not ask reviewers to simulate a distributed system in their head.</p>
 </div>
 
 <!--
@@ -474,12 +482,17 @@ This is the enforcement model:
 - Application writers should only write values in the generated reader contract,
   not an ad hoc local type.
 - If a schema change would break partial rollout safety, codegen should force an
-  explicit union into the generated writer-side type.
+  explicit new branch into the generated reader union, and the writer-side type
+  should follow that contract.
 - CI should make that impossible to ignore by rejecting writes that are not
   accepted by the reader population you need to support.
 - This does not mean every change becomes legal. Changes that introduce writer
   states unreadable by still-deployed readers are impermissible and should be
   blocked outright.
+- One reason I like this workflow for agents too: current models often try to
+  preserve backward compatibility in ugly, over-broad ways if you leave the
+  boundary underspecified. It is useful to be able to say "never worry about
+  backward compatibility except when the tests are yelling at you."
 -->
 
 ---
@@ -524,7 +537,11 @@ Points to hit:
 
 <div class="deck-kicker">Close</div>
 
-# Assume skew. Constrain boundaries. Automate checks.
+<div class="close-thesis-stack">
+  <div>Don't rely on rollout order.</div>
+  <div>Only the contract is guaranteed.</div>
+  <div>Check it mechanically.</div>
+</div>
 
 <div class="deck-three-laws mt-8">
   <div class="law-card accent">

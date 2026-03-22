@@ -153,6 +153,8 @@ const walkObject = (
     const propType = normalizeType(propertySchema, path);
 
     if (propType.primary === "object" && propertySchema.properties !== undefined) {
+      pushField(fields, path, fieldRequired, fieldRequiredWhenObjectPath, propertySchema);
+
       let childConditionalAncestorPath = conditionalAncestorPath;
       if (childConditionalAncestorPath === null && (!fieldRequired || propType.nullable)) {
         childConditionalAncestorPath = path;
