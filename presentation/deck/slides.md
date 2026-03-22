@@ -34,9 +34,11 @@ class: demo-full-bleed
 ---
 
 <NetworkHero :red-receive-every="10" :title-layout="true" :hidden-node-ids="['router', 'db']">
-  <h1>Escaping Version Skew: Formalizing Compatibility in a World of Partial Rollouts</h1>
-  <p>Robbie Ostrow, Member of Technical Staff, OpenAI</p>
-  <p>SRECon Americas 2026</p>
+  <div class="hero-title-copy">
+    <div class="hero-talk-title">Escaping Version Skew: Formalizing Compatibility in a World of Partial Rollouts</div>
+    <div class="hero-talk-meta">Robbie Ostrow, Member of Technical Staff, OpenAI</div>
+    <div class="hero-talk-event">SRECon Americas 2026</div>
+  </div>
 </NetworkHero>
 
 <!--
@@ -76,7 +78,7 @@ everything in its place, everything working as intended.
 layout: center
 ---
 
-<h1 class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</h1>
+<div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
 
 <!--
 Set up the joke like you are about to give the wrong kind of operational advice.
@@ -89,8 +91,8 @@ layout: center
 ---
 
 <div class="rollout-joke-stack">
-  <h1 class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</h1>
-  <h2 class="rollout-joke-punchline">give up</h2>
+  <div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
+  <div class="rollout-joke-punchline">give up</div>
 </div>
 
 <!--
@@ -132,18 +134,18 @@ One tiny diff becomes two different compatibility questions depending on directi
 # “Just use protos”
 
 <div class="deck-grid-2 mt-10">
-  <div class="law-card success">
-    <h3>Great for the wire</h3>
-    <p>Less constraining rules preserve compatibility across versions.</p>
+  <div class="law-card failure">
+    <h3>On the wire</h3>
+    <p>Compatibility likes weak contracts.</p>
   </div>
   <div class="law-card failure">
-    <h3>Terrible for logic</h3>
-    <p>The point of types is to constrain the states your system can be in.</p>
+    <h3>In the app</h3>
+    <p>Correctness needs strong ones.</p>
   </div>
 </div>
 
 <div class="deck-callout mt-10">
-  <p class="deck-quote">A schema that can represent almost anything will eventually represent your next outage.</p>
+  <p class="deck-quote">A type that permits everything protects nothing.</p>
 </div>
 
 <!--
@@ -155,7 +157,7 @@ If your contract is weaker than your business logic, you moved the risk, you did
 
 <div class="deck-kicker">What to do instead</div>
 
-# Define the boundary as strictly as possible
+# Write the boundary like law
 
 <div class="deck-grid-2 mt-8">
   <div class="deck-schema-box">
@@ -179,14 +181,18 @@ If your contract is weaker than your business logic, you moved the risk, you did
 
   </div>
   <div class="fact-card boundary-card">
-    <h3>Say the primitive type</h3>
-    <p>Integer, not “number-like thing we hope is fine.”</p>
-
-    <h3 class="mt-6">Say the invariant</h3>
-    <p>If the rule is <code>integer &lt; 5</code>, put it in the contract.</p>
-
-    <h3 class="mt-6">Make nonsense unrepresentable</h3>
-    <p>Every forbidden state you encode is one less rollout edge case to reason about by hand.</p>
+    <div class="boundary-point">
+      <div class="boundary-point-title">Primitive</div>
+      <div class="boundary-point-body"><code>integer</code>, not “number-ish”.</div>
+    </div>
+    <div class="boundary-point">
+      <div class="boundary-point-title">Invariant</div>
+      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>.</div>
+    </div>
+    <div class="boundary-point">
+      <div class="boundary-point-title">State space</div>
+      <div class="boundary-point-body">Every forbidden state you encode is one less mixed-version edge case.</div>
+    </div>
   </div>
 </div>
 
@@ -204,16 +210,16 @@ The stricter the contract, the smaller the mixed-version state space.
 
 <div class="deck-grid-3 mt-10">
   <div class="law-card accent">
-    <h3>Not staged rollouts</h3>
-    <p>Rollouts expose problems. They do not define safety.</p>
+    <h3>Rollouts find bugs</h3>
+    <p>They do not define safety.</p>
   </div>
   <div class="law-card accent">
-    <h3>Not code review folklore</h3>
-    <p>I work with a lot of smart people. No one is careful enough to catch every breaking change by inspection.</p>
+    <h3>Review misses edges</h3>
+    <p>Smart people still lose to mixed-version reasoning.</p>
   </div>
   <div class="law-card accent">
-    <h3>Use a standard</h3>
-    <p>Write down what “compatible” means and let a tool be rude consistently.</p>
+    <h3>Tools do not get tired</h3>
+    <p>Let them be rude consistently.</p>
   </div>
 </div>
 
@@ -231,16 +237,16 @@ The failure mode is not intelligence, it is that humans are bad at mixed-version
 <div class="deck-grid-2 mt-10">
   <div class="law-card success product-card">
     <h3>Static analysis</h3>
-    <p>Schema comparison for the 99% of cases where the rules are tractable.</p>
+    <p>Prove the easy 99%.</p>
   </div>
   <div class="law-card success product-card">
     <h3>Fuzzing</h3>
-    <p>Generate counterexamples where the static argument runs out of road.</p>
+    <p>Hunt counterexamples in the rest.</p>
   </div>
 </div>
 
 <div class="deck-callout mt-10">
-  <p class="deck-quote">Move “is this safe?” out of human intuition and into machinery.</p>
+  <p class="deck-quote">Do not ask reviewers to simulate a distributed system in their head.</p>
 </div>
 
 <!--
@@ -266,25 +272,25 @@ rejects 5 after tightening the bound.
 
 <div class="deck-kicker">Final implication</div>
 
-# Do not share runtime types between serializer and deserializer
+# Shared runtime types erase direction
 
 <div class="deck-grid-3 mt-10">
   <div class="law-card failure">
-    <h3>Opposite compatibility jobs</h3>
-    <p>Writers need to emit a subset old readers accept. Readers need to accept a superset old writers already emitted.</p>
+    <h3>Serializer</h3>
+    <p>Emit less.</p>
   </div>
   <div class="law-card failure">
-    <h3>One shared type turns to mush</h3>
-    <p>Temporary rollout accommodations leak into product logic as optional fields, nulls, and dead states.</p>
+    <h3>Deserializer</h3>
+    <p>Accept more.</p>
   </div>
   <div class="law-card success">
-    <h3>Generate per side instead</h3>
-    <p>Define one boundary contract, then generate local types so each side can evolve independently.</p>
+    <h3>Shared type</h3>
+    <p>Becomes optional soup.</p>
   </div>
 </div>
 
 <div class="deck-callout mt-10">
-  <p class="deck-quote">People love sharing types. So give them codegen good enough that they stop needing to.</p>
+  <p class="deck-quote">One contract. Two generated local types.</p>
 </div>
 
 <!--
@@ -305,16 +311,16 @@ Points to hit:
 
 <div class="deck-three-laws mt-8">
   <div class="law-card accent">
-    <h3>Give up on perfect rollout choreography</h3>
-    <p>Assume mixed versions, old packets, old queues, old caches, and old rows.</p>
+    <h3>Assume skew</h3>
+    <p>Old packets, old queues, old caches, old rows.</p>
   </div>
   <div class="law-card accent">
-    <h3>Make the contract strict</h3>
-    <p>Define primitive types, constraints, and invariants at the boundary.</p>
+    <h3>Constrain the boundary</h3>
+    <p>Primitive types, constraints, invariants.</p>
   </div>
   <div class="law-card accent">
-    <h3>Automate the compatibility argument</h3>
-    <p>Use static analysis where possible, fuzzing where needed, and codegen to decouple evolution.</p>
+    <h3>Automate the proof</h3>
+    <p>Static analysis, fuzzing, codegen.</p>
   </div>
 </div>
 
@@ -331,17 +337,16 @@ layout: center
   <div class="deck-kicker">Closing line</div>
   <p class="deck-quote mt-6">
     Compatibility is not the art of being vague.
-    <br>
-    It is what strictness buys you.
   </p>
+  <p class="deck-quote mt-2">It is what strictness buys you.</p>
 </div>
 
 ---
 layout: center
 ---
 
-<div class="text-center">
+<div class="thanks-slide">
   <div class="deck-kicker">Questions</div>
-  <h1 class="mt-6">Thank you</h1>
-  <p class="deck-lead mt-4">I will now take questions from the compatibility tribunal.</p>
+  <div class="thanks-title">Thank you</div>
+  <p class="deck-lead mt-4">Questions for the compatibility tribunal.</p>
 </div>

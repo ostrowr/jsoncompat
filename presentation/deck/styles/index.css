@@ -199,8 +199,49 @@
   transform-origin: center;
 }
 
-.boundary-card h3 {
+.hero-title-copy {
+  max-width: 29rem;
+}
+
+.hero-talk-title {
+  color: #f8fafc;
+  font-family: "Source Serif 4", serif;
+  font-size: 2.55rem;
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+}
+
+.hero-talk-meta {
+  margin-top: 1.4rem;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.hero-talk-event {
+  margin-top: 0.5rem;
+  color: rgba(241, 245, 249, 0.9);
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.boundary-card {
+  display: grid;
+  align-content: start;
+  gap: 1.25rem;
+}
+
+.boundary-point-title {
   margin-bottom: 0.3rem;
+  font-family: "Source Serif 4", serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.boundary-point-body {
+  line-height: 1.45;
 }
 
 .product-card {
@@ -210,8 +251,13 @@
 .rollout-joke-setup {
   max-width: none;
   margin: 0;
+  color: var(--deck-ink);
+  font-family: "Source Serif 4", serif;
   text-align: center;
   font-size: 2.25rem !important;
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
   white-space: nowrap;
 }
 
@@ -229,6 +275,20 @@
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.04em;
+}
+
+.thanks-slide {
+  text-align: center;
+}
+
+.thanks-title {
+  margin-top: 1.5rem;
+  color: var(--deck-ink);
+  font-family: "Source Serif 4", serif;
+  font-size: 3.35rem;
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
 }
 
 .deck-slide-number {
@@ -285,5 +345,13 @@
 
   .rollout-joke-punchline {
     font-size: 3rem !important;
+  }
+
+  .hero-talk-title {
+    font-size: 2rem;
+  }
+
+  .thanks-title {
+    font-size: 2.7rem;
   }
 }
