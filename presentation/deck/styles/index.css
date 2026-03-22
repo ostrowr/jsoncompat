@@ -248,6 +248,38 @@
   min-height: 10rem;
 }
 
+.incident-twist-slide,
+.pairing-takeaway {
+  max-width: 52rem;
+  text-align: center;
+}
+
+.incident-twist-slide .deck-kicker,
+.pairing-takeaway .deck-kicker {
+  margin-bottom: 1.4rem;
+}
+
+.pairing-takeaway .deck-quote {
+  font-size: 2.85rem;
+  line-height: 1.08;
+}
+
+.one-figure-slide {
+  max-width: 52rem;
+}
+
+.demo-setup-line {
+  max-width: 58rem;
+  margin: 0;
+  color: var(--deck-ink);
+  font-family: "Source Serif 4", serif;
+  font-size: 3.1rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  text-align: center;
+}
+
 .rollout-joke-setup {
   max-width: none;
   margin: 0;
@@ -353,5 +385,9 @@
 
   .thanks-title {
     font-size: 2.7rem;
+  }
+
+  .demo-setup-line {
+    font-size: 2.35rem;
   }
 }

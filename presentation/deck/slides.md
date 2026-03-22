@@ -129,23 +129,70 @@ One tiny diff becomes two different compatibility questions depending on directi
 
 ---
 
-<div class="deck-kicker">Counterargument</div>
+<div class="deck-kicker">Incident</div>
 
-# “Just use protos”
+# A mixed fleet shared one cache
 
-<div class="deck-grid-2 mt-10">
-  <div class="law-card failure">
-    <h3>On the wire</h3>
-    <p>Compatibility likes weak contracts.</p>
-  </div>
-  <div class="law-card failure">
-    <h3>In the app</h3>
-    <p>Correctness needs strong ones.</p>
-  </div>
+<IncidentSketch />
+
+<!--
+Tell the concrete auth-cache incident, but keep it anonymized on the slide:
+- Requests started failing because cache reads raised a parse error.
+- The write path changed the cache format from a raw service response body to a
+  wrapped object with metadata and payload.
+- During deployment, newer pods wrote the new format while older pods still read
+  from the same cache and failed to parse it.
+
+Then say:
+"It's kind of shocking to me that we, as an industry, haven't solved this problem yet."
+
+That line sets up the natural audience response: "just use protos."
+-->
+
+---
+layout: center
+---
+
+<div class="incident-twist-slide">
+  <div class="deck-kicker">Same incident</div>
+  <h1>Rollback increased errors</h1>
+  <p class="deck-quote mt-8">Old readers came back while bad cached data was still alive.</p>
+  <p class="deck-lead deck-muted mt-8">Waiting for the rollout to finish would have caused fewer errors than rolling back.</p>
 </div>
 
-<div class="deck-callout mt-10">
-  <p class="deck-quote">A type that permits everything protects nothing.</p>
+<!--
+This is the part that makes the system interaction feel genuinely hard:
+- As deployment progressed, errors rose because old pods were still present and
+  more new-format entries were being written.
+- Then errors fell as old pods disappeared.
+- Rolling back increased errors again by reintroducing old readers to the cache.
+- Eventually the failures stopped only after the bad cache entries expired.
+- The Datadog "Errors by Version" chart made this visible after the fact.
+
+The lesson is not "never roll back". It is that rollout safety depends on the
+interaction among code versions, shared state, cache TTL, and timing.
+- The moment you have persistence, canaries get much weaker as a protection:
+  data written by a canary can infect everywhere else.
+-->
+
+---
+
+<div class="deck-kicker">Counterargument</div>
+
+# Protos solve transport, not state space
+
+<div class="one-figure-slide mt-10">
+  <p class="deck-quote">Wire compatibility can still admit states your logic cannot handle.</p>
+  <div class="deck-grid-2 mt-10">
+    <div class="law-card failure">
+      <h3>On the wire</h3>
+      <p>Weak contracts are flexible.</p>
+    </div>
+    <div class="law-card failure">
+      <h3>In the app</h3>
+      <p>Weak contracts leak invalid states.</p>
+    </div>
+  </div>
 </div>
 
 <!--
@@ -157,7 +204,7 @@ If your contract is weaker than your business logic, you moved the risk, you did
 
 <div class="deck-kicker">What to do instead</div>
 
-# Write the boundary like law
+# Write the boundary as strictly as the logic
 
 <div class="deck-grid-2 mt-8">
   <div class="deck-schema-box">
@@ -206,42 +253,16 @@ The stricter the contract, the smaller the mixed-version state space.
 
 <div class="deck-kicker">Process</div>
 
-# Evolve with tooling, not vibes
-
-<div class="deck-grid-3 mt-10">
-  <div class="law-card accent">
-    <h3>Rollouts find bugs</h3>
-    <p>They do not define safety.</p>
-  </div>
-  <div class="law-card accent">
-    <h3>Review misses edges</h3>
-    <p>Smart people still lose to mixed-version reasoning.</p>
-  </div>
-  <div class="law-card accent">
-    <h3>Tools do not get tired</h3>
-    <p>Let them be rude consistently.</p>
-  </div>
-</div>
-
-<!--
-This is the practical advice slide.
-The failure mode is not intelligence, it is that humans are bad at mixed-version reasoning.
--->
-
----
-
-<div class="deck-kicker">Product</div>
-
-# `jsoncompat`
+# Check compatibility with tools, not memory
 
 <div class="deck-grid-2 mt-10">
   <div class="law-card success product-card">
     <h3>Static analysis</h3>
-    <p>Prove the easy 99%.</p>
+    <p>Prove the common cases before deploy.</p>
   </div>
   <div class="law-card success product-card">
     <h3>Fuzzing</h3>
-    <p>Hunt counterexamples in the rest.</p>
+    <p>Search for counterexamples where proofs run out.</p>
   </div>
 </div>
 
@@ -250,9 +271,18 @@ The failure mode is not intelligence, it is that humans are bad at mixed-version
 </div>
 
 <!--
-Introduce the tool in one sentence.
-Static analysis first because it is fast and precise when it works.
-Fuzzing is the escape hatch for the hard edge cases.
+This is the practical advice slide.
+The failure mode is not intelligence, it is that humans are bad at mixed-version reasoning.
+-->
+
+---
+layout: center
+---
+
+<div class="demo-setup-line">Here’s the kind of break code review misses.</div>
+
+<!--
+Set up the live demo as proof, not product marketing.
 -->
 
 ---
@@ -269,28 +299,42 @@ rejects 5 after tightening the bound.
 -->
 
 ---
+layout: center
+---
+
+<div class="pairing-takeaway">
+  <div class="deck-kicker">Tooling</div>
+  <p class="deck-quote mt-8">Static analysis for the common case.</p>
+  <p class="deck-quote mt-2">Fuzzing for the rest.</p>
+</div>
+
+<!--
+Introduce the tool in one sentence.
+Static analysis first because it is fast and precise when it works.
+Fuzzing is the escape hatch for the hard edge cases.
+TODO: mention that we mark wire types with a decorator so compatibility checking
+is attached to the boundary type itself.
+-->
+
+---
 
 <div class="deck-kicker">Final implication</div>
 
-# Shared runtime types erase direction
+# One contract. Two generated local types.
 
 <div class="deck-grid-3 mt-10">
-  <div class="law-card failure">
+  <div class="law-card success">
     <h3>Serializer</h3>
     <p>Emit less.</p>
   </div>
-  <div class="law-card failure">
+  <div class="law-card success">
     <h3>Deserializer</h3>
     <p>Accept more.</p>
   </div>
-  <div class="law-card success">
-    <h3>Shared type</h3>
+  <div class="law-card failure">
+    <h3>One shared runtime type</h3>
     <p>Becomes optional soup.</p>
   </div>
-</div>
-
-<div class="deck-callout mt-10">
-  <p class="deck-quote">One contract. Two generated local types.</p>
 </div>
 
 <!--
@@ -307,7 +351,7 @@ Points to hit:
 
 <div class="deck-kicker">Close</div>
 
-# What I want you to do
+# Assume skew. Constrain boundaries. Automate checks.
 
 <div class="deck-three-laws mt-8">
   <div class="law-card accent">
@@ -333,20 +377,6 @@ This is the compact version of the whole talk.
 layout: center
 ---
 
-<div class="deck-panel px-10 py-12 max-w-4xl mx-auto">
-  <div class="deck-kicker">Closing line</div>
-  <p class="deck-quote mt-6">
-    Compatibility is not the art of being vague.
-  </p>
-  <p class="deck-quote mt-2">It is what strictness buys you.</p>
-</div>
-
----
-layout: center
----
-
 <div class="thanks-slide">
-  <div class="deck-kicker">Questions</div>
   <div class="thanks-title">Thank you</div>
-  <p class="deck-lead mt-4">Questions for the compatibility tribunal.</p>
 </div>
