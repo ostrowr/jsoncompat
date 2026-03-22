@@ -202,6 +202,102 @@ If your contract is weaker than your business logic, you moved the risk, you did
 
 ---
 
+<div class="deck-kicker">Boundary</div>
+
+# Parseable is not enough
+
+<div class="one-figure-slide mt-10">
+  <p class="deck-quote">Grammar defines shape. Validation defines state.</p>
+  <div class="deck-grid-2 mt-10">
+    <div class="law-card">
+      <h3>Grammar</h3>
+      <p>What can be decoded.</p>
+    </div>
+    <div class="law-card success">
+      <h3>Validation</h3>
+      <p>What your system is willing to accept.</p>
+    </div>
+  </div>
+</div>
+
+<div class="deck-callout mt-10">
+  <p class="deck-quote">If the logic depends on the rule, the rule belongs at the boundary.</p>
+</div>
+
+<!--
+If the room is schema-nerdy, this is where to mention grammar-based versus
+rule-based schemas. Otherwise keep it in plain language.
+
+Protovalidate is a good example of a validation layer on top of protobuf:
+- It gives you a place to express stronger semantic rules than the grammar.
+- That is good, and I would still want it.
+- But changing those rules is still a compatibility change under skew.
+- A tighter validator is reader narrows. A looser one is reader widens.
+- If writers start emitting values that old validators reject, the same rollout
+  problem appears again.
+
+As far as I know, Protovalidate does not give you a backward/forward rollout
+semantics story for evolving the validation rules themselves, so the same
+lessons from this talk apply there too.
+-->
+
+---
+
+<div class="deck-kicker">Mental model</div>
+
+# Compatibility is about sets of states
+
+<div class="compat-matrix mt-8">
+  <div class="compat-axis compat-axis-top">Reader</div>
+  <div class="compat-axis compat-axis-left">Writer</div>
+
+  <div class="compat-cell success">
+    <div class="compat-cell-title">Narrows</div>
+    <div class="compat-cell-body">Usually safe.</div>
+  </div>
+  <div class="compat-cell danger">
+    <div class="compat-cell-title">Widens</div>
+    <div class="compat-cell-body">Old readers may reject new values.</div>
+  </div>
+  <div class="compat-cell success">
+    <div class="compat-cell-title">Widens</div>
+    <div class="compat-cell-body">Usually safe.</div>
+  </div>
+  <div class="compat-cell danger">
+    <div class="compat-cell-title">Narrows</div>
+    <div class="compat-cell-body">Old data may be rejected.</div>
+  </div>
+</div>
+
+<div class="deck-callout compat-takeaway mt-8">
+  <p class="deck-quote">Backward and forward describe parse direction. Rollout safety also depends on emission, overlap, and time.</p>
+</div>
+
+<!--
+This is the compact mental model I want people to leave with:
+- A schema change changes a set of values.
+- Writer narrows: usually safe, because it emits fewer states.
+- Writer widens: dangerous under skew, because old readers may see values they
+  cannot parse.
+- Reader widens: usually safe, because it accepts more historical states.
+- Reader narrows: dangerous under skew, because old data or old writers may
+  still exist.
+
+Prior art to mention:
+- Avro explicitly separates the writer's schema from the reader's schema and
+  defines schema resolution between them.
+- Confluent Schema Registry ties compatibility modes to upgrade order:
+  BACKWARD means upgrade consumers before producing new events; FORWARD means
+  upgrade producers first and drain old data before upgrading consumers; FULL
+  allows independent upgrades.
+- That is useful when upgrade order is a real control surface. In my world,
+  partial rollouts, retries, caches, queues, and rollback mean order is often
+  not guaranteed, so I need stronger constraints and tooling than pairwise
+  backward/forward labels.
+-->
+
+---
+
 <div class="deck-kicker">What to do instead</div>
 
 # Write the boundary as strictly as the logic
@@ -237,8 +333,8 @@ If your contract is weaker than your business logic, you moved the risk, you did
       <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>.</div>
     </div>
     <div class="boundary-point">
-      <div class="boundary-point-title">State space</div>
-      <div class="boundary-point-body">Every forbidden state you encode is one less mixed-version edge case.</div>
+      <div class="boundary-point-title">Guarantee</div>
+      <div class="boundary-point-body">Only schema invariants are guaranteed. Reject bad input at the boundary.</div>
     </div>
   </div>
 </div>
@@ -247,6 +343,38 @@ If your contract is weaker than your business logic, you moved the risk, you did
 This is the constructive turn.
 Explicitly define boundaries. Constrain both primitive type and semantic shape.
 The stricter the contract, the smaller the mixed-version state space.
+Systems cannot assume anything not represented in the schema. Push as much as
+possible into that layer so invalid input gets rejected gracefully at the
+boundary, before application logic has to handle it at all.
+-->
+
+---
+class: demo-full-bleed
+---
+
+<SimulatorDeck
+  mode="transition"
+  start-state-id="s6"
+  :sequence="['s7', 's8', 's9']"
+  :step-delay-ms="1600"
+  :autoplay="false"
+  :pause-at-end="true"
+  :emit-rate-per-sec="1.1"
+  :packet-speed-px-per-sec="78"
+  :initial-packet-count="3"
+  :initial-packet-spacing-px="220"
+  :minimum-packet-gap-px="220"
+  height="72vh"
+  :layout-scale="0.5"
+  :bare="true"
+/>
+
+<!--
+This is the constructive rollout pattern:
+- First deploy a reader union that can parse both v4 and v5.
+- Then deploy the writer change to start emitting v5.
+- Finally remove v4 support once the old data tail is gone.
+This is the answer to "what do I do instead of letting things break?"
 -->
 
 ---
@@ -318,6 +446,44 @@ is attached to the boundary type itself.
 
 ---
 
+<div class="deck-kicker">Tooling</div>
+
+# Writers only emit what readers can parse
+
+<div class="deck-grid-3 mt-10">
+  <div class="law-card success">
+    <h3>Writer code</h3>
+    <p>Only writes the generated <code>Reader</code> type.</p>
+  </div>
+  <div class="law-card accent">
+    <h3>Breaking change</h3>
+    <p>Codegen expands the writer type to an explicit union.</p>
+  </div>
+  <div class="law-card success">
+    <h3>CI</h3>
+    <p>Rejects any write shape that deployed readers cannot parse.</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-10">
+  <p class="deck-quote">If old readers cannot parse it, the writer change is forbidden.</p>
+</div>
+
+<!--
+This is the enforcement model:
+- Application writers should only write values in the generated reader contract,
+  not an ad hoc local type.
+- If a schema change would break partial rollout safety, codegen should force an
+  explicit union into the generated writer-side type.
+- CI should make that impossible to ignore by rejecting writes that are not
+  accepted by the reader population you need to support.
+- This does not mean every change becomes legal. Changes that introduce writer
+  states unreadable by still-deployed readers are impermissible and should be
+  blocked outright.
+-->
+
+---
+
 <div class="deck-kicker">Final implication</div>
 
 # One contract. Two generated local types.
@@ -337,6 +503,10 @@ is attached to the boundary type itself.
   </div>
 </div>
 
+<div class="deck-callout mt-10">
+  <p class="deck-quote">If old readers never go away, keep a discriminated union of past types. Do not weaken one type until it means everything.</p>
+</div>
+
 <!--
 Points to hit:
 - Serializer and deserializer compatibility are asymmetric during a partial rollout.
@@ -345,6 +515,9 @@ Points to hit:
 - That weakens invariants exactly where you wanted types to protect you.
 - Queues, caches, and stored rows keep the old serialized shape alive after deploy, so reader compatibility is a long tail.
 - Define one strict boundary contract, then generate separate local types for each side.
+- Even if you can never fully retire an old reader shape, an explicit
+  discriminated union of historical variants is still better than one weak type
+  that tries to express every era at once.
 -->
 
 ---
