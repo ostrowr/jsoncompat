@@ -250,31 +250,36 @@ Fuzzing is the escape hatch for the hard edge cases.
 -->
 
 ---
-layout: center
+class: demo-full-bleed
 ---
 
-<FuzzingDemo />
+<FuzzerEmbed />
 
 <!--
 Fuzzing demo beat.
-The point is one obvious counterexample that a reviewer can miss:
-old world emitted 5, new reader rejects 5 after tightening the bound.
+Use the real jsoncompat.com fuzzer instead of a mock. The point is one obvious
+counterexample that a reviewer can miss: old world emitted 5, new reader
+rejects 5 after tightening the bound.
 -->
 
 ---
 
 <div class="deck-kicker">Final implication</div>
 
-# Do not share runtime types between frontend and backend
+# Do not share runtime types between serializer and deserializer
 
-<div class="deck-grid-2 mt-10">
+<div class="deck-grid-3 mt-10">
   <div class="law-card failure">
-    <h3>Shared types feel great</h3>
-    <p>One definition, instant reuse, less typing. Very convenient.</p>
+    <h3>Opposite compatibility jobs</h3>
+    <p>Writers need to emit a subset old readers accept. Readers need to accept a superset old writers already emitted.</p>
+  </div>
+  <div class="law-card failure">
+    <h3>One shared type turns to mush</h3>
+    <p>Temporary rollout accommodations leak into product logic as optional fields, nulls, and dead states.</p>
   </div>
   <div class="law-card success">
-    <h3>Independent evolution is better</h3>
-    <p>Generate local types from one contract so each side can move on its own schedule.</p>
+    <h3>Generate per side instead</h3>
+    <p>Define one boundary contract, then generate local types so each side can evolve independently.</p>
   </div>
 </div>
 
@@ -283,8 +288,13 @@ old world emitted 5, new reader rejects 5 after tightening the bound.
 </div>
 
 <!--
-This is the bigger architectural consequence.
-Define once at the boundary, generate per side, evolve independently.
+Points to hit:
+- Serializer and deserializer compatibility are asymmetric during a partial rollout.
+- A serializer wants a narrower output set; a deserializer wants a wider accepted input set.
+- If one runtime type serves both, you usually end up with the union of rollout-era compromises, not the real domain model.
+- That weakens invariants exactly where you wanted types to protect you.
+- Queues, caches, and stored rows keep the old serialized shape alive after deploy, so reader compatibility is a long tail.
+- Define one strict boundary contract, then generate separate local types for each side.
 -->
 
 ---
