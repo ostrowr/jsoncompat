@@ -1,20 +1,20 @@
 <script setup lang="ts">
-const fuzzerUrl = "https://jsoncompat.com/fuzzer" as const;
+const checkerUrl = "https://jsoncompat.com/checker" as const;
 </script>
 
 <template>
-  <div class="fuzzer-embed-shell">
-    <div class="fuzzer-embed-chrome" aria-hidden="true">
-      <span class="fuzzer-embed-dot fuzzer-embed-dot-red" />
-      <span class="fuzzer-embed-dot fuzzer-embed-dot-yellow" />
-      <span class="fuzzer-embed-dot fuzzer-embed-dot-green" />
-      <span class="fuzzer-embed-url">{{ fuzzerUrl }}</span>
+  <div class="checker-embed-shell">
+    <div class="checker-embed-chrome" aria-hidden="true">
+      <span class="checker-embed-dot checker-embed-dot-red" />
+      <span class="checker-embed-dot checker-embed-dot-yellow" />
+      <span class="checker-embed-dot checker-embed-dot-green" />
+      <span class="checker-embed-url">{{ checkerUrl }}</span>
     </div>
 
     <iframe
-      class="fuzzer-embed-frame"
-      :src="fuzzerUrl"
-      title="jsoncompat.com fuzzer"
+      class="checker-embed-frame"
+      :src="checkerUrl"
+      title="jsoncompat.com checker"
       loading="eager"
       referrerpolicy="no-referrer"
     />
@@ -22,7 +22,7 @@ const fuzzerUrl = "https://jsoncompat.com/fuzzer" as const;
 </template>
 
 <style scoped>
-.fuzzer-embed-shell {
+.checker-embed-shell {
   position: absolute;
   inset: 1rem;
   display: grid;
@@ -32,7 +32,7 @@ const fuzzerUrl = "https://jsoncompat.com/fuzzer" as const;
   overflow: visible;
 }
 
-.fuzzer-embed-chrome {
+.checker-embed-chrome {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -44,31 +44,31 @@ const fuzzerUrl = "https://jsoncompat.com/fuzzer" as const;
   box-shadow: 0 22px 56px rgba(63, 40, 16, 0.14);
 }
 
-.fuzzer-embed-dot {
+.checker-embed-dot {
   width: 0.75rem;
   height: 0.75rem;
   border-radius: 999px;
 }
 
-.fuzzer-embed-dot-red {
+.checker-embed-dot-red {
   background: #f87171;
 }
 
-.fuzzer-embed-dot-yellow {
+.checker-embed-dot-yellow {
   background: #fbbf24;
 }
 
-.fuzzer-embed-dot-green {
+.checker-embed-dot-green {
   background: #4ade80;
 }
 
-.fuzzer-embed-url {
+.checker-embed-url {
   margin-left: 0.5rem;
   color: var(--deck-muted);
   font: 500 0.9rem "IBM Plex Mono", monospace;
 }
 
-.fuzzer-embed-frame {
+.checker-embed-frame {
   width: 100%;
   height: 100%;
   min-height: 0;

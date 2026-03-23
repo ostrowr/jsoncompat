@@ -22,7 +22,11 @@ drawings:
 
 <NetworkHero :red-receive-every="10" :title-layout="true" :hidden-node-ids="['router', 'db']">
   <div class="hero-title-copy">
-    <div class="hero-talk-title">Escaping Version Skew: Formalizing Compatibility in a World of Partial Rollouts</div>
+    <div class="hero-talk-title">
+      <span class="hero-title-line">Escaping Version Skew:</span>
+      <span class="hero-title-line hero-title-line-nowrap">Formalizing Compatibility</span>
+      <span class="hero-title-line">in a World of Partial Rollouts</span>
+    </div>
     <div class="hero-talk-meta">Robbie Ostrow, Member of Technical Staff, OpenAI</div>
     <div class="hero-talk-event">SRECon Americas 2026</div>
   </div>
@@ -63,7 +67,7 @@ layout: center
   <div class="deck-kicker">Same incident</div>
   <h1>Rollback increased errors</h1>
   <p class="deck-quote mt-8">Old readers came back while bad cached data was still alive.</p>
-  <p class="deck-lead deck-muted mt-8">Waiting for the rollout to finish would have caused fewer errors than rolling back.</p>
+  <p class="deck-lead deck-muted mt-8">Waiting for the rollout to finish would have caused fewer errors than rolling back. This failed because one live version wrote a state that another still-live version could not accept.</p>
 </div>
 
 <!--
@@ -79,6 +83,8 @@ The lesson is not "never roll back". It is that rollout safety depends on the
 interaction among code versions, shared state, cache TTL, and timing.
 - The moment you have persistence, canaries get much weaker as a protection:
   data written by a canary can infect everywhere else.
+- Speaker note, not slide text: keep using `4` as the tiny recurring edge-value
+  villain in the story.
 -->
 
 ---
@@ -120,13 +126,16 @@ Give the first refrain its own slide so it lands as the thesis, not a subtitle.
 class: demo-full-bleed
 ---
 
-<div class="zoom-bridge-shell">
+<div class="simulator-slide-shell">
   <SimulatorDeck
-    mode="steady"
+    mode="transition"
     start-state-id="s1"
-    :emit-rate-per-sec="1.15"
+    :sequence="['s2', 's3']"
+    :step-delay-ms="1600"
+    :autoplay="false"
+    :emit-rate-per-sec="1.3"
     :packet-speed-px-per-sec="78"
-    :initial-packet-count="2"
+    :initial-packet-count="4"
     :initial-packet-spacing-px="220"
     :minimum-packet-gap-px="220"
     height="72vh"
@@ -137,45 +146,11 @@ class: demo-full-bleed
 </div>
 
 <!--
-Baseline figure: the simplified steady-state model people usually reason from.
--->
-
----
-class: demo-full-bleed
----
-
-<SimulatorDeck
-  mode="transition"
-  start-state-id="s1"
-  :sequence="['s2', 's3']"
-  :step-delay-ms="1600"
-  :autoplay="false"
-  :emit-rate-per-sec="1.3"
-  :packet-speed-px-per-sec="78"
-  :initial-packet-count="4"
-  :initial-packet-spacing-px="220"
-  :minimum-packet-gap-px="220"
-  height="72vh"
-  :layout-scale="0.5"
-  :bare="true"
-/>
-
-<!--
 Use this as the minimum mechanics demo, not the whole talk.
+It starts in the simplified steady-state model people usually reason from, then
+advances into broken overlap on keypress.
 Old packets are still in flight while new code is already live.
 One tiny diff becomes two different compatibility questions depending on direction.
--->
-
----
-layout: center
----
-
-<div class="emphasis-slide">
-  <div class="emphasis-phrase">Parseable is not enough.</div>
-</div>
-
-<!--
-Punctuation slide before the boundary argument.
 -->
 
 ---
@@ -184,9 +159,9 @@ Punctuation slide before the boundary argument.
 
 # Parseable is not enough
 
-<div class="one-figure-slide mt-10">
+<div class="one-figure-slide mt-8">
   <p class="deck-quote">Transport compatibility can still admit states your logic cannot handle.</p>
-  <div class="deck-grid-2 mt-10">
+  <div class="deck-grid-2 mt-8">
     <div class="law-card">
       <h3>Grammar</h3>
       <p>What can be decoded.</p>
@@ -198,7 +173,7 @@ Punctuation slide before the boundary argument.
   </div>
 </div>
 
-<div class="deck-callout mt-10">
+<div class="deck-callout mt-8">
   <p class="deck-quote">If the logic depends on the rule, the rule belongs at the boundary.</p>
 </div>
 
@@ -223,24 +198,14 @@ lessons from this talk apply there too.
 -->
 
 ---
-layout: center
----
-
-<div class="emphasis-slide">
-  <div class="emphasis-phrase">A schema change changes a set of states.</div>
-</div>
-
-<!--
-Punctuation slide for the one mental model to remember.
--->
-
----
 
 <div class="deck-kicker">Mental model</div>
 
 # Compatibility is about sets of states
 
-<div class="compat-matrix mt-8">
+<p class="mental-model-subhead">A schema change changes a set of states.</p>
+
+<div class="compat-matrix mt-6">
   <div class="compat-axis compat-axis-top">Reader</div>
   <div class="compat-axis compat-axis-left">Writer</div>
 
@@ -260,10 +225,6 @@ Punctuation slide for the one mental model to remember.
     <div class="compat-cell-title">Narrows</div>
     <div class="compat-cell-body">Old data may be rejected.</div>
   </div>
-</div>
-
-<div class="deck-callout compat-takeaway mt-8">
-  <p class="deck-quote">Backward and forward describe parse direction. Rollout safety also depends on emission, overlap, and time.</p>
 </div>
 
 <!--
@@ -335,17 +296,13 @@ Second refrain as a standalone beat before the constructive slide.
     </div>
     <div class="boundary-point">
       <div class="boundary-point-title">Invariant</div>
-      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>.</div>
+      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>. The edge value <code>4</code> is the one that keeps coming back.</div>
     </div>
     <div class="boundary-point">
       <div class="boundary-point-title">Guarantee</div>
       <div class="boundary-point-body">Only schema invariants are guaranteed. Reject bad input at the boundary.</div>
     </div>
   </div>
-</div>
-
-<div class="deck-callout mt-8">
-  <p class="deck-quote">In a world of AI agents, strict contracts matter more: they turn hidden assumptions into machine-checkable boundaries.</p>
 </div>
 
 <!--
@@ -363,37 +320,61 @@ Call out the agent angle explicitly:
 -->
 
 ---
-layout: center
----
 
-<div class="emphasis-slide">
-  <div class="emphasis-phrase">Widen the reader first.</div>
+<div class="deck-kicker">AI agents</div>
+
+# Strict contracts are better for agents
+
+<div class="deck-grid-3 mt-8 agent-contract-grid">
+  <div class="law-card success">
+    <h3>Smaller legal state space</h3>
+    <p>Fewer ambiguous shapes for an agent to invent, infer, or accidentally depend on.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Hidden assumptions become explicit</h3>
+    <p>Put the rule at the boundary so the agent does not have to recover it from prose, examples, or tribal context.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Crisper test oracle</h3>
+    <p>A strict contract turns "looks plausible" into pass/fail examples that CI and code review can both enforce.</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-8">
+  <p class="deck-quote">Agentic workflows get safer when the boundary is narrow enough to make bad states impossible, not just unlikely.</p>
 </div>
 
 <!--
-Standalone setup for the positive rollout pattern.
+Make the agent point concrete and engineering-focused:
+- Large model callers are especially bad at reconstructing implicit invariants
+  from surrounding context.
+- Tight contracts reduce the amount of hidden reasoning the agent has to do.
+- They also give you a sharper oracle for automated checks and review.
 -->
 
 ---
 class: demo-full-bleed
 ---
 
-<SimulatorDeck
-  mode="transition"
-  start-state-id="s6"
-  :sequence="['s7', 's8', 's9']"
-  :step-delay-ms="1600"
-  :autoplay="false"
-  :pause-at-end="true"
-  :emit-rate-per-sec="1.1"
-  :packet-speed-px-per-sec="78"
-  :initial-packet-count="3"
-  :initial-packet-spacing-px="220"
-  :minimum-packet-gap-px="220"
-  height="72vh"
-  :layout-scale="0.5"
-  :bare="true"
-/>
+<div class="simulator-slide-shell">
+  <SimulatorDeck
+    mode="transition"
+    start-state-id="s6"
+    :sequence="['s7', 's8', 's9']"
+    :step-delay-ms="1600"
+    :autoplay="false"
+    :pause-at-end="true"
+    :emit-rate-per-sec="1.1"
+    :packet-speed-px-per-sec="78"
+    :initial-packet-count="3"
+    :initial-packet-spacing-px="220"
+    :minimum-packet-gap-px="220"
+    height="72vh"
+    :layout-scale="0.5"
+    :bare="true"
+    :show-state-chip="false"
+  />
+</div>
 
 <!--
 This is the constructive rollout pattern:
@@ -412,30 +393,22 @@ layout: center
 </div>
 
 <!--
-Third refrain as a standalone beat before the fuzzer/tooling section.
--->
-
----
-layout: center
----
-
-<div class="demo-setup-line">Here’s the kind of break code review misses.</div>
-
-<!--
-Set up the live demo as proof, not product marketing.
+Third refrain as a standalone beat before the checker/tooling section.
 -->
 
 ---
 class: demo-full-bleed
 ---
 
-<FuzzerEmbed />
+<CheckerEmbed />
 
 <!--
-Fuzzing demo beat.
-Use the real jsoncompat.com fuzzer instead of a mock. The point is one obvious
-counterexample that a reviewer can miss: old world emitted 5, new reader
-rejects 5 after tightening the bound.
+Static compat-check demo beat.
+Use the real jsoncompat.com checker instead of the fuzzer. The point is that
+this break does not require example search: for the `exclusiveMaximum: 5` to `4`
+change, incompatibility is derivable from the old and new contracts directly.
+`4` is the witness that explains the failure: old writers can still emit it, and
+new readers reject it.
 -->
 
 ---
@@ -444,11 +417,11 @@ rejects 5 after tightening the bound.
 
 # Writers only emit what readers can parse
 
-<div class="tooling-pipeline mt-8">
+<div class="tooling-pipeline mt-6">
   <div class="tooling-step law-card success">
     <div class="tooling-step-label">1. Detect</div>
     <h3>Breaking change?</h3>
-    <p>Static analysis first, fuzzing for counterexamples.</p>
+    <p>Prove what you can statically. Search for counterexamples when needed.</p>
   </div>
 
   <div class="tooling-arrow" aria-hidden="true">-></div>
@@ -473,8 +446,8 @@ rejects 5 after tightening the bound.
   </div>
 </div>
 
-<div class="deck-callout mt-10">
-  <p class="deck-quote">If old readers cannot parse it, the writer change is forbidden. Do not ask reviewers to simulate a distributed system in their head.</p>
+<div class="deck-callout mt-8">
+  <p class="deck-quote">If old readers cannot parse it, the writer change is forbidden.</p>
 </div>
 
 <!--
@@ -486,6 +459,8 @@ This is the enforcement model:
   should follow that contract.
 - CI should make that impossible to ignore by rejecting writes that are not
   accepted by the reader population you need to support.
+- Prove what you can statically, then use fuzzing as a fallback when the checker
+  cannot fully decide or when you want concrete examples.
 - This does not mean every change becomes legal. Changes that introduce writer
   states unreadable by still-deployed readers are impermissible and should be
   blocked outright.
@@ -499,9 +474,9 @@ This is the enforcement model:
 
 <div class="deck-kicker">Final implication</div>
 
-# One contract. Two generated local types.
+# One contract. Two local types.
 
-<div class="deck-grid-3 mt-10">
+<div class="deck-grid-3 mt-8 optional-soup-layout">
   <div class="law-card success">
     <h3>Serializer</h3>
     <p>Emit less.</p>
@@ -512,12 +487,17 @@ This is the enforcement model:
   </div>
   <div class="law-card failure">
     <h3>One shared runtime type</h3>
-    <p>Becomes optional soup.</p>
+    <pre class="optional-soup-code"><code>type User = {
+  name?: string | null
+  city?: string | string[] | null
+  eye_color?: string | null
+  legacy_metadata?: unknown
+}</code></pre>
   </div>
 </div>
 
-<div class="deck-callout mt-10">
-  <p class="deck-quote">If old readers never go away, keep a discriminated union of past types. Do not weaken one type until it means everything.</p>
+<div class="deck-callout optional-soup-callout mt-6">
+  <p class="deck-quote">If old readers never go away, use a discriminated union of past types. Do not weaken one type until it means everything.</p>
 </div>
 
 <!--
@@ -535,32 +515,31 @@ Points to hit:
 
 ---
 
-<div class="deck-kicker">Close</div>
+<div class="deck-kicker">SRE playbook</div>
 
-<div class="close-thesis-stack">
-  <div>Don't rely on rollout order.</div>
-  <div>Only the contract is guaranteed.</div>
-  <div>Check it mechanically.</div>
-</div>
+# Constrain. Split. Gate. Observe.
 
-<div class="deck-three-laws mt-8">
-  <div class="law-card accent">
-    <h3>Assume skew</h3>
-    <p>Old packets, old queues, old caches, old rows.</p>
+<div class="deck-grid-2 mt-8 sre-playbook-grid">
+  <div class="law-card good">
+    <h3>Constrain</h3>
+    <p>Make strict schemas a cultural default: hidden assumptions should become contract rules, not tribal knowledge.</p>
   </div>
-  <div class="law-card accent">
-    <h3>Constrain the boundary</h3>
-    <p>Primitive types, constraints, invariants.</p>
+  <div class="law-card good">
+    <h3>Split</h3>
+    <p>Ship tooling that splits reader and writer types by default, and makes historical unions cheap to maintain.</p>
   </div>
-  <div class="law-card accent">
-    <h3>Automate the proof</h3>
-    <p>Static analysis, fuzzing, codegen.</p>
+  <div class="law-card good">
+    <h3>Gate</h3>
+    <p>Generate reader and writer contracts, check compatibility mechanically, and fail unsafe changes before merge.</p>
+  </div>
+  <div class="law-card good">
+    <h3>Observe</h3>
+    <p>Measure deserializations by payload version so you can see old tails, rollback risk, and when a branch is really gone.</p>
   </div>
 </div>
 
 <!--
-End on advice, not mechanics.
-This is the compact version of the whole talk.
+End on durable company-level controls, not a one-off preflight for a single change.
 -->
 
 ---

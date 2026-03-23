@@ -3,16 +3,17 @@
 @import "@fontsource/source-serif-4";
 
 :root {
-  --deck-bg: #f6efe3;
-  --deck-ink: #17171a;
-  --deck-accent: #b63a24;
-  --deck-accent-soft: #f3d0c6;
-  --deck-panel: rgba(255, 250, 241, 0.9);
-  --deck-border: rgba(41, 27, 12, 0.14);
-  --deck-muted: #5c5147;
-  --deck-gold: #af7c22;
-  --deck-success: #1f7d5a;
-  --deck-failure: #b0372e;
+  --deck-bg: #07111d;
+  --deck-ink: #f4f7fb;
+  --deck-accent: #ff5d3d;
+  --deck-accent-soft: rgba(255, 93, 61, 0.18);
+  --deck-panel: rgba(10, 20, 34, 0.78);
+  --deck-border: rgba(148, 163, 184, 0.22);
+  --deck-muted: #9aa8b8;
+  --deck-gold: #f5c56b;
+  --deck-success: #52d6a4;
+  --deck-failure: #ff6b66;
+  --deck-good: #6ea8ff;
 }
 
 .slidev-layout,
@@ -20,15 +21,18 @@
 .slidev-layout.center {
   position: relative;
   background:
-    radial-gradient(circle at 14% 16%, rgba(182, 58, 36, 0.13), transparent 26%),
-    radial-gradient(circle at 88% 20%, rgba(175, 124, 34, 0.14), transparent 22%),
-    radial-gradient(circle at 78% 88%, rgba(31, 125, 90, 0.08), transparent 20%),
+    radial-gradient(circle at 12% 10%, rgba(255, 93, 61, 0.2), transparent 24%),
+    radial-gradient(circle at 92% 18%, rgba(245, 197, 107, 0.12), transparent 20%),
+    radial-gradient(circle at 75% 88%, rgba(82, 214, 164, 0.1), transparent 18%),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(
       160deg,
-      rgba(250, 244, 233, 0.98) 0%,
-      rgba(246, 238, 224, 0.96) 48%,
-      rgba(241, 230, 211, 0.98) 100%
+      #08111d 0%,
+      #0b1624 48%,
+      #101a2a 100%
     ) !important;
+  background-size: auto, auto, auto, 42px 42px, 42px 42px, auto !important;
   color: var(--deck-ink);
   font-family: "IBM Plex Sans Variable", "IBM Plex Sans", sans-serif;
   isolation: isolate;
@@ -54,7 +58,7 @@
 }
 
 .slidev-layout h1 {
-  font-size: 3rem;
+  font-size: 3.35rem;
   line-height: 1.02;
   text-wrap: balance;
 }
@@ -77,20 +81,46 @@
   font-family: "IBM Plex Mono", monospace;
 }
 
+.slidev-layout :not(pre) > code {
+  padding: 0.12em 0.38em;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.35rem;
+  background: rgba(3, 8, 14, 0.92);
+  color: #f8fafc;
+}
+
+.slidev-layout pre {
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 0.75rem;
+  background: rgba(3, 8, 14, 0.97) !important;
+  color: #f8fafc !important;
+}
+
+.slidev-layout pre code {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.slidev-layout .shiki,
+.slidev-layout .shiki span {
+  color: #f8fafc;
+}
+
 .deck-kicker {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
   padding: 0.42rem 0.84rem;
   border-radius: 999px;
-  border: 1px solid rgba(173, 46, 36, 0.24);
-  background: linear-gradient(180deg, rgba(255, 250, 243, 0.96), rgba(252, 235, 227, 0.95));
+  border: 1px solid rgba(255, 93, 61, 0.3);
+  background: linear-gradient(180deg, rgba(255, 93, 61, 0.16), rgba(255, 93, 61, 0.08));
   color: var(--deck-accent);
   font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  box-shadow: 0 8px 18px rgba(182, 58, 36, 0.08);
+  box-shadow: none;
 }
 
 .deck-kicker::before {
@@ -99,7 +129,7 @@
   height: 0.42rem;
   border-radius: 999px;
   background: currentcolor;
-  box-shadow: 0 0 0 4px rgba(173, 46, 36, 0.08);
+  box-shadow: 0 0 0 4px rgba(255, 93, 61, 0.1);
 }
 
 .deck-panel {
@@ -117,7 +147,7 @@
 }
 
 .deck-muted {
-  color: var(--deck-muted);
+  color: #bcc7d4;
 }
 
 .deck-grid-2 {
@@ -137,10 +167,10 @@
 .beat-card,
 .quote-card {
   padding: 1.2rem 1.25rem;
-  border-radius: 1.35rem 1.15rem 1.3rem 1.1rem;
+  border-radius: 0.5rem;
   border: 1px solid var(--deck-border);
-  background: linear-gradient(180deg, rgba(255, 251, 244, 0.94), rgba(255, 245, 233, 0.9));
-  box-shadow: 0 16px 34px rgba(63, 40, 16, 0.09);
+  background: linear-gradient(180deg, rgba(13, 25, 41, 0.96), rgba(11, 20, 33, 0.88));
+  box-shadow: none;
   color: var(--deck-ink);
   position: relative;
 }
@@ -154,7 +184,7 @@
   inset: 0.7rem auto 0.7rem 0.7rem;
   width: 3px;
   border-radius: 999px;
-  background: rgba(187, 139, 46, 0.35);
+  background: rgba(245, 197, 107, 0.45);
 }
 
 .law-card h3,
@@ -174,7 +204,7 @@
 }
 
 .law-card.accent {
-  background: linear-gradient(180deg, rgba(250, 225, 217, 0.98), rgba(255, 247, 239, 0.96));
+  background: linear-gradient(180deg, rgba(62, 24, 20, 0.95), rgba(18, 24, 36, 0.96));
 }
 
 .law-card.accent::before {
@@ -189,6 +219,10 @@
   background: rgba(31, 122, 76, 0.5);
 }
 
+.law-card.good::before {
+  background: rgba(37, 99, 235, 0.6);
+}
+
 .law-card.failure {
   border-color: rgba(167, 38, 38, 0.24);
 }
@@ -199,15 +233,15 @@
 
 .deck-quote {
   font-family: "Source Serif 4", serif;
-  font-size: 2.4rem;
-  line-height: 1.16;
+  font-size: 2.2rem;
+  line-height: 1.14;
 }
 
 .deck-callout {
-  padding: 0.9rem 1.05rem 0.9rem 1.1rem;
+  padding: 0.8rem 1rem 0.8rem 1.05rem;
   border-left: 5px solid var(--deck-accent);
   border-radius: 0 1rem 1rem 0;
-  background: rgba(255, 248, 242, 0.72);
+  background: rgba(255, 93, 61, 0.08);
 }
 
 .deck-micro {
@@ -219,12 +253,27 @@
   padding: 1rem 1.1rem;
   border-radius: 1rem;
   background:
-    linear-gradient(180deg, rgba(173, 46, 36, 0.18), transparent 1.8rem),
-    rgba(29, 29, 31, 0.97);
+    linear-gradient(180deg, rgba(255, 93, 61, 0.2), transparent 1.8rem),
+    rgba(3, 8, 14, 0.97);
   color: #f1f5f9;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.06),
     0 20px 50px rgba(29, 29, 31, 0.18);
+}
+
+.deck-schema-box pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.deck-schema-box code,
+.deck-schema-box .shiki,
+.deck-schema-box .shiki span {
+  color: #f8fafc !important;
 }
 
 .deck-three-laws {
@@ -255,21 +304,31 @@
 }
 
 .hero-title-copy {
-  max-width: 29rem;
+  max-width: 37rem;
+  animation: hero-copy-in 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .hero-talk-title {
+  display: grid;
   color: #f8fafc;
   font-family: "Source Serif 4", serif;
-  font-size: 2.55rem;
+  font-size: 2.45rem;
   font-weight: 700;
-  line-height: 1.04;
+  line-height: 1.02;
   letter-spacing: -0.03em;
+}
+
+.hero-title-line {
+  display: block;
+}
+
+.hero-title-line-nowrap {
+  white-space: nowrap;
 }
 
 .hero-talk-meta {
   margin-top: 1.4rem;
-  color: rgba(226, 232, 240, 0.72);
+  color: rgba(226, 232, 240, 0.76);
   font-size: 1.05rem;
   line-height: 1.35;
 }
@@ -323,6 +382,17 @@
   max-width: 52rem;
 }
 
+.mental-model-subhead {
+  margin-top: 0.55rem;
+  margin-bottom: 0;
+  color: var(--deck-accent);
+  font-family: "Source Serif 4", serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
 .compat-matrix {
   display: grid;
   grid-template-columns: 6.5rem repeat(2, minmax(0, 1fr));
@@ -355,10 +425,10 @@
 .compat-cell {
   min-height: 7.2rem;
   padding: 1.15rem 1.2rem;
-  border-radius: 1.2rem;
+  border-radius: 0.5rem;
   border: 1px solid var(--deck-border);
-  background: linear-gradient(180deg, rgba(255, 251, 244, 0.95), rgba(255, 245, 233, 0.9));
-  box-shadow: 0 14px 30px rgba(63, 40, 16, 0.08);
+  background: linear-gradient(180deg, rgba(13, 25, 41, 0.96), rgba(11, 20, 33, 0.88));
+  box-shadow: none;
 }
 
 .compat-cell.success {
@@ -388,7 +458,7 @@
 }
 
 .compat-takeaway .deck-quote {
-  font-size: 1.95rem;
+  font-size: 1.8rem;
   line-height: 1.15;
 }
 
@@ -400,7 +470,7 @@
 }
 
 .tooling-step {
-  min-height: 12.5rem;
+  min-height: 11.2rem;
 }
 
 .tooling-step-label {
@@ -414,7 +484,7 @@
 
 .tooling-arrow {
   align-self: center;
-  color: rgba(91, 76, 62, 0.5);
+  color: rgba(154, 168, 184, 0.55);
   font-family: "IBM Plex Mono", monospace;
   font-size: 2rem;
   font-weight: 700;
@@ -431,18 +501,18 @@
 .tooling-union-chip {
   padding: 0.42rem 0.72rem;
   border-radius: 999px;
-  border: 1px solid rgba(31, 122, 76, 0.18);
-  background: rgba(247, 251, 248, 0.96);
+  border: 1px solid rgba(82, 214, 164, 0.24);
+  background: rgba(10, 30, 26, 0.9);
   font-family: "IBM Plex Mono", monospace;
   font-size: 1rem;
   font-weight: 700;
 }
 
 .tooling-union-new {
-  border-color: rgba(173, 46, 36, 0.24);
-  background: rgba(255, 245, 241, 0.96);
+  border-color: rgba(255, 93, 61, 0.35);
+  background: rgba(46, 17, 14, 0.9);
   color: var(--deck-accent);
-  box-shadow: 0 0 0 4px rgba(173, 46, 36, 0.07);
+  box-shadow: 0 0 0 4px rgba(255, 93, 61, 0.1);
 }
 
 .tooling-union-plus {
@@ -476,6 +546,7 @@
   letter-spacing: -0.03em;
   text-wrap: balance;
   white-space: normal;
+  animation: hero-copy-in 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .rollout-joke-stack {
@@ -509,6 +580,7 @@
   place-items: center;
   min-height: 72vh;
   text-align: center;
+  animation: hero-copy-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .emphasis-word,
@@ -559,7 +631,7 @@
 }
 
 .deck-slide-number {
-  color: rgba(28, 26, 22, 0.4);
+  color: rgba(188, 199, 212, 0.7);
 }
 
 .slidev-layout.demo-full-bleed {
@@ -578,6 +650,66 @@
   margin-right: 0;
 }
 
+.simulator-slide-shell {
+  position: relative;
+  width: 100%;
+  animation: zoom-bridge-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center;
+}
+
+.agent-contract-grid .law-card {
+  min-height: 12rem;
+}
+
+.optional-soup-layout .failure {
+  padding-bottom: 0.85rem;
+}
+
+.optional-soup-code {
+  margin: 0.55rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 107, 102, 0.24);
+  background: rgba(69, 18, 18, 0.4);
+  color: #ffc9c6;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: pre-wrap;
+}
+
+.optional-soup-code code {
+  color: inherit;
+  font-size: inherit;
+}
+
+.optional-soup-callout {
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.optional-soup-callout .deck-quote {
+  font-size: 1.3rem;
+  line-height: 1.16;
+}
+
+.checklist-grid .law-card {
+  min-height: 13rem;
+}
+
+.checklist-grid .law-card h3 {
+  font-size: 1.5rem;
+  line-height: 1.18;
+}
+
+.sre-playbook-grid .law-card {
+  min-height: 10.2rem;
+}
+
+.sre-playbook-grid .law-card h3 {
+  font-size: 1.45rem;
+  line-height: 1.18;
+}
+
 @keyframes zoom-bridge-in {
   from {
     opacity: 0;
@@ -588,6 +720,17 @@
     opacity: 1;
     transform: scale(1);
     filter: blur(0);
+  }
+}
+
+@keyframes hero-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -638,7 +781,7 @@
   }
 
   .hero-talk-title {
-    font-size: 2rem;
+    font-size: 1.95rem;
   }
 
   .thanks-title {

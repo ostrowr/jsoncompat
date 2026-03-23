@@ -5,16 +5,19 @@ Target length: 35 minutes total.
 Pacing assumption:
 - 24-27 minutes of spoken material
 - 5-7 minutes across the two simulator beats
-- 3-5 minutes for the fuzzer demo, including one reset/retry if needed
+- 3-5 minutes for the checker demo, including one reset/retry if needed
 
-The simple emphasis slides are there to create room. Do not rush them. Land the sentence, pause, advance.
+The standalone emphasis slides are there to create room. Do not rush them. Land the sentence, pause, advance.
 
 ## Demo Runbook
 
-Use this exact sequence on [SLIDE 19] Fuzzer.
+Use this sequence on [SLIDE 15] Checker.
 
-1. Click into the `Schema` textarea.
-2. Select all and paste this schema:
+Before the talk:
+- Have both the old and new schemas pre-staged in the iframe or in a local note so you are not typing a long object live.
+- The point of the demo is one static incompatibility result, not a product tour.
+
+Old schema to use:
 
 ```json
 {
@@ -73,21 +76,22 @@ Use this exact sequence on [SLIDE 19] Fuzzer.
 }
 ```
 
-3. Set `Depth` to `5`.
-4. Set `Examples` to `8`.
-5. Click `Generate`.
+New schema to use:
+- Use the same schema, but change `"exclusiveMaximum": 5` to `4`.
 
-What to say while it runs:
-- "I want a schema that is complex enough to hide edge cases from a human reviewer: nested object, array field, enum, a nullable field, and a bounded integer."
-- "The interesting part is not one hand-picked example. It is that the tool can cheaply explore the legal state space and show me values near the edges."
-- "If I tighten `priority` from `< 5` to `< 4`, then `4` is the kind of value that used to be valid and now is not. That is exactly the sort of break that looks harmless in review if you do not force yourself to think in sets of states."
+Live sequence:
+1. If needed, paste the old schema and the new schema into the checker.
+2. Run the compatibility check for the rollout direction that matters here: old writer, new reader.
+3. Say: "This is the kind of break that looks tiny in review and obvious to a checker."
+4. Say: "We don't need to hope a reviewer mentally simulates the overlap."
+5. Point to `4` as the witness: old valid state, new invalid state.
 
-Optional second beat if you have time:
-1. Change `"exclusiveMaximum": 5` to `4`.
-2. Click `Generate` again.
-3. Say: "This is what I mean by mechanical checking. I do not want to rely on someone remembering that old writers may still emit the top end of the old range while new readers are live."
+What to say on the result:
+- "For this change, incompatibility is not empirical. It's derivable from the contracts."
+- "Old writers may still emit `4` while new readers are live."
+- "`4` is the witness: old writers can still emit it, new readers reject it."
 
-If the iframe is already preloaded and you do not want to type live, keep the schema in a local note and paste it from there.
+If the iframe is not cooperating, skip any live editing and show the pre-staged old/new pair. The static incompatibility result is the whole point.
 
 ## Script
 
@@ -103,21 +107,15 @@ So the question for this talk is not only whether a system is correct in steady 
 
 And coexistence is where a lot of compatibility bugs actually live."
 
-"I want to be precise about the scope of the talk. This is not about whether serialization libraries are good or bad. It is about a narrower operational question: when multiple versions of a system overlap in production, what states can move between them, and which of those states are actually safe?"
-
 [SLIDE 2] Incident: "A mixed fleet shared one cache"
 
 "Let me make this concrete immediately.
 
 We had a mixed fleet sharing one cache. During a deploy, newer pods started writing a new cache format. Older pods were still around, reading from that same cache, and some of them failed to parse what the newer pods had written."
 
-"The drawn chart is anonymized, but the shape is real.
+"The bug was not just in the new code. The bug was in the interaction between versions, through shared state. A locally reasonable change met a very ordinary deployment reality."
 
-The bug was not just in the new code. The bug was in the interaction between versions, through shared state. That is what made it dangerous. A locally reasonable change met a very ordinary deployment reality."
-
-"If you only reviewed the new code in isolation, wrapping a payload with some metadata would not obviously look catastrophic. The production problem came from the fact that old and new were both alive at once, and the cache connected them."
-
-"That last clause is the whole story. The cache connected them. Shared state turns version skew from a local code concern into a system concern, because one version can write a value that another version will only discover later, on a different request."
+"The cache connected them. Shared state turns version skew from a local code concern into a system concern, because one version can write a value that another version will only discover later, on a different request."
 
 [SLIDE 3] Same incident: "Rollback increased errors"
 
@@ -125,23 +123,21 @@ The bug was not just in the new code. The bug was in the interaction between ver
 
 Old readers came back while bad cached data was still alive."
 
-"As the deploy progressed, more new pods were writing the new format, so old pods failed more often. Then as old pods disappeared, errors fell. During rollback, we reintroduced the old readers, and they started hitting the incompatible cached data again.
+"As the deploy progressed, more new pods were writing the new format, so old pods failed more often. Then as old pods disappeared, errors fell. During rollback, we reintroduced the old readers, and they started hitting the incompatible cached data again."
 
-So in this case, waiting for the rollout to finish would have caused fewer errors than rolling back."
+"This failed because one live version wrote a state that another still-live version could not accept.
 
-"That does not mean never roll back. It means rollback is not a free undo once state has already been written.
+That sentence is the bridge to the rest of the talk. I want to stop treating this as a one-off incident and start treating it as a schema evolution problem over a mixed-version state space."
 
-The moment you have persistence, canaries get much weaker as a protection, because data written by a canary can infect everywhere else."
+"And I am going to keep using one tiny value as the villain in this story: `4`.
 
-"This is one reason these incidents feel so disorienting in the moment. You are not debugging one version of the code. You are debugging an interaction among versions, deployment progress, and the lifetime of already-written data."
+It is valid under the old rule, invalid under the new one, durable enough to sit in a cache, and exactly the kind of edge value that reappears during rollback."
 
 [SLIDE 4] Joke setup: "the secret to coordinating ordered rollouts at scale"
 
 "So here is the setup.
 
 You want the secret to coordinating ordered rollouts at scale."
-
-"I am choosing those words deliberately, because a lot of operational folk wisdom sounds like that. We talk about sequencing and staging and careful deploy plans as if there is some perfect ritual that makes the problem go away."
 
 [SLIDE 5] Emphasis: "give up"
 
@@ -159,7 +155,7 @@ At large scale, with retries and caches and rollback and long-lived data, that i
 
 If your safety argument depends on every part of a distributed system changing in exactly the order you imagined, you do not have a very good safety argument."
 
-[SLIDE 7] Steady-state simulator baseline
+[SLIDE 7] Minimal mechanics demo
 
 "This is the simplified subsystem picture most of us reason from.
 
@@ -169,13 +165,7 @@ One sender version. One receiver version. One message shape. Everything in place
 
 The hard part is the period where the system is neither old nor new. It is both."
 
-"And that period is not an edge case. It is the normal case during deploys, retries, queue drain, cache TTLs, and rollbacks. If our correctness argument only applies after the world has converged, then it skips the part where production spends a lot of its time."
-
-[SLIDE 8] Minimal mechanics demo
-
-"Here is the smallest version of the problem.
-
-We start in steady state."
+"This is one animation, not two slides. It starts in steady state, and then I can step it into broken overlap."
 
 [press s]
 
@@ -191,15 +181,9 @@ One tiny schema diff turns into two different compatibility questions depending 
 
 "Those are not the same question. During rollout, both can matter at once.
 
-A lot of compatibility discussion flattens this into one label. Backward compatible. Forward compatible. Operationally, direction matters because writers create new states and readers decide which states are survivable."
+So whenever someone says a change is compatible, I want to ask a follow-up: compatible for whom, in which direction, during what overlap?"
 
-"So whenever someone says a change is compatible, I want to ask a follow-up: compatible for whom, in which direction, during what overlap? The point is that one vague label is hiding several different failure modes."
-
-[SLIDE 9] Emphasis: "Parseable is not enough."
-
-"Parseable is not enough."
-
-[SLIDE 10] Boundary: parseability versus valid state
+[SLIDE 8] Boundary: "Parseable is not enough"
 
 "A disciplined wire format solves a real problem. I am not arguing against that.
 
@@ -213,17 +197,15 @@ A grammar-based schema tells you what can be decoded. A rule layer tells you wha
 
 Tightening a validator is a reader narrow. Loosening one is a reader widen. If writers start emitting values old validators reject, you are back in the same rollout problem."
 
-"So a validation layer is necessary, but not sufficient. It gives you a place to put the real invariant. It does not, by itself, tell you how to evolve that invariant safely while old and new versions coexist."
+[SLIDE 9] Mental model: "Compatibility is about sets of states"
 
-[SLIDE 11] Emphasis: "A schema change changes a set of states."
+"Here is the mental model I want people to leave with, and I want to spend real time on it.
 
-"A schema change changes a set of states."
+A schema change changes a set of states."
 
-[SLIDE 12] Mental model: "Compatibility is about sets of states"
+"In this talk, `4` is the concrete edge of that set. If old writers can still emit it and new readers no longer accept it, that is the bug."
 
-"Here is the mental model I want people to leave with.
-
-If a writer narrows, that is usually safe, because it emits fewer states.
+"If a writer narrows, that is usually safe, because it emits fewer states.
 If a writer widens, that is dangerous under skew, because old readers may reject the new values."
 
 "If a reader widens, that is usually safe, because it accepts more historical states.
@@ -231,15 +213,13 @@ If a reader narrows, that is dangerous under skew, because old data or old write
 
 "Backward and forward are useful words, but they are incomplete for this talk. They describe parse direction. Rollout safety also depends on emission, overlap, and time.
 
-Once you see it this way, the question gets sharper. Not just 'is this backward compatible?' but compatible in which direction, during what overlap, and for how long?"
+This is the callback to the incident: the cache bug was not mysterious. It was a writer widening into a world where old readers were still present."
 
-"There is good prior art here. Avro separates writer schema from reader schema. Confluent ties compatibility modes to upgrade order. That is coherent when upgrade order is a control surface you really have. My claim is that in many production systems, with partial rollouts and rollback and persistent state, you do not have it reliably enough to make it the center of your safety story."
-
-[SLIDE 13] Emphasis: "Only the contract is guaranteed."
+[SLIDE 10] Emphasis: "Only the contract is guaranteed."
 
 "Only the contract is guaranteed."
 
-[SLIDE 14] What to do instead: strict boundary contracts
+[SLIDE 11] What to do instead: strict boundary contracts
 
 "So what do we do instead?
 
@@ -249,23 +229,27 @@ Write the boundary as strictly as the logic. Do not say number-ish if you mean i
 
 That is the constructive version of this talk: make the mixed-version state space smaller by making impossible states unrepresentable at the boundary."
 
-"And this is only getting more important in a world of AI agents.
+"And when I say write the real rule, I mean write the rule that makes `4` visibly important. If the contract says `< 5`, then `4` is not trivia. It is the top edge of the legal state space."
 
-Agents are bad at recovering hidden assumptions across abstraction boundaries. Strict contracts turn those hidden assumptions into machine-checkable boundaries, a smaller legal state space, and a sharper test oracle."
+[SLIDE 12] AI agents: "Strict contracts are better for agents"
 
-"That helps humans too. But it matters even more when the caller is an agent, because an agent will happily walk through any ambiguity you leave lying around."
+"I want to linger here, because this is not just a human readability argument.
 
-"A strict boundary is one of the best gifts you can give an agentic workflow. It reduces hidden context the agent has to infer, and it makes failures crisp enough to turn into tests."
+It matters even more for agentic workflows."
 
-[SLIDE 15] Emphasis: "Widen the reader first."
+"Agents are bad at recovering hidden assumptions across abstraction boundaries. If the rule only exists in prose, in examples, or in someone's head, an agent will eventually walk through the gap.
 
-"Widen the reader first."
+A strict contract gives the agent a smaller legal state space, fewer ambiguous shapes to invent, and a much sharper test oracle."
 
-[SLIDE 16] Fullscreen union rollout simulator
+"That is why I do not think the agent point is a side note. It is the same argument as the rest of the talk, just with less slack for ambiguity.
+
+The boundary should be narrow enough that bad states are impossible, not merely unlikely."
+
+[SLIDE 13] Fullscreen union rollout simulator: "Widen the reader first"
 
 "If we cannot rely on perfect rollout ordering, what is the positive pattern?
 
-It is this: widen the reader first."
+Same stage, but now the safe version: widen the reader first."
 
 [press s]
 
@@ -285,45 +269,31 @@ The system is still safe, because the deployed reader population already knows h
 
 And if the old tail never really goes away, I would rather keep a discriminated union of past types than collapse everything into one weak type that tries to express every era at once."
 
-"That may look less elegant on paper. In practice, I think it is more honest. It preserves the fact that there were distinct historical shapes, instead of erasing that distinction into one giant maybe-everything type."
-
-[SLIDE 17] Emphasis: "Check it mechanically."
+[SLIDE 14] Emphasis: "Check it mechanically."
 
 "Check it mechanically."
 
-[SLIDE 18] Demo setup
+[SLIDE 15] Checker
 
 "Here is the kind of break code review misses.
 
 Not because reviewers are careless. Because the thing we ask them to do is simulate a distributed, partially upgraded system in their head. That is not a reasonable review burden."
 
-[SLIDE 19] Fuzzer
-
-"This is the fuzzer. I am going to use it in the simplest possible way: paste a schema, generate examples, and look at the edge of the state space."
+"This is the checker. I am going to use it in the simplest possible way: compare old and new contracts, and let the checker tell us this is unsafe under skew."
 
 Demo steps:
-1. Paste the complex schema from the runbook into `Schema`.
-2. Set `Depth` to `5`.
-3. Set `Examples` to `8`.
-4. Click `Generate`.
-
-While examples render:
-"I chose a schema with enough structure to hide bugs from a human: nested object, array, enum, nullable field, and a bounded integer. The point is not that any one example is surprising. The point is that the machine can cheaply explore legal values I might not think to write by hand."
-
-Then, if time:
-1. Change `"exclusiveMaximum": 5` to `4`.
-2. Click `Generate` again.
+1. Load the old schema and the new schema.
+2. Run the check for old writer to new reader.
+3. Show the static incompatibility result.
 
 Say:
-"This is the kind of change that can look tiny in review. But old writers may still emit `4` while new readers are live. If you do not force yourself to think in sets of states over time, it is easy to miss."
+"This is the kind of break that looks tiny in review and obvious to a checker. We don't need to hope a reviewer mentally simulates the overlap. For this change, incompatibility is not empirical. It's derivable from the contracts. `4` is the witness: old writers can still emit it, new readers reject it."
 
-"What I am trying to avoid is a process where the reviewer has to be both a domain expert and a model checker. A good demo here is one where the audience can feel how easy it is to miss the top of a range, a nullable corner, or a nested optional field if you are only reading a diff."
-
-[SLIDE 20] Tooling: "Writers only emit what readers can parse"
+[SLIDE 16] Tooling: "Writers only emit what readers can parse"
 
 "This is the workflow I want.
 
-First, detect breaking changes mechanically. Static analysis for the common case, fuzzing for counterexamples where proofs run out."
+First, detect breaking changes mechanically. Prove what you can statically. Use fuzzing as a fallback when the checker cannot fully decide, or when you want concrete counterexamples."
 
 "Second, generate separate local types from one contract. The writer should only emit what the reader side promises to accept.
 
@@ -333,9 +303,7 @@ Third, if a writer change would break skew safety, make the branch explicit in t
 
 And more generally: do not ask reviewers to simulate a distributed system in their head. Humans should review intent and design. Tools should check the cross-version consequences."
 
-"That division of labor matters. People are good at deciding whether a change is a good idea. Machines are much better at exhaustively asking, 'What old values still exist? What new values can now be emitted? Which combinations overlap during deploy?'"
-
-[SLIDE 21] Final implication: "One contract. Two generated local types."
+[SLIDE 17] Final implication: "One contract. Two local types."
 
 "There is one more implication.
 
@@ -343,22 +311,30 @@ Serializer and deserializer compatibility are asymmetric during a partial rollou
 
 "If one runtime type serves both, you usually end up with optional soup: the union of rollout-era compromises, not the real domain model.
 
+That ugly type is what I mean by optional soup.
+
 If old readers never go away, I would rather keep a discriminated union of past types than weaken one type until it means everything. That is less aesthetically tidy. It is more honest."
 
-"This is the same design instinct as the rest of the talk. Do not smear historical complexity across the whole codebase. Contain it at the boundary, represent it explicitly, and keep the internal model as strong as you can."
+[SLIDE 18] SRE playbook
 
-[SLIDE 22] Close
+"So I do not want to end with a preflight checklist for one schema change.
 
-"So the compact version is:
+I want to end with what SREs can build so that all subsequent schema changes at their company are safer by default."
 
-Don't rely on rollout order.
-Only the contract is guaranteed.
-Check it mechanically."
+"Constrain. Split. Gate. Observe.
 
-"Assume skew.
-Constrain the boundary.
-Automate the proof."
+Constrain first. Move as much validation as you can to the schema boundary, so hidden assumptions become contract rules instead of tribal knowledge.
 
-[SLIDE 23] Thank you
+Split the local types. Give people tooling that splits reader and writer types by default, and makes historical unions cheap to maintain.
+
+Gate schema diffs in CI. Generate reader and writer contracts, check compatibility mechanically, and fail unsafe changes before merge.
+
+Observe version skew in production. Measure deserializations by payload version so you can see old tails, rollback risk, and when a branch is really gone."
+
+"The goal is not just to catch one bad rollout.
+
+The goal is to make unsafe evolution hard to ship, and safe evolution easy to do."
+
+[SLIDE 19] Thank you
 
 "Thank you."
