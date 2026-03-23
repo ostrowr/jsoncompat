@@ -11,7 +11,7 @@ The standalone emphasis slides are there to create room. Do not rush them. Land 
 
 ## Demo Runbook
 
-Use this sequence on [SLIDE 15] Checker.
+Use this sequence on [SLIDE 16] Checker.
 
 Before the talk:
 - Have both the old and new schemas pre-staged in the iframe or in a local note so you are not typing a long object live.
@@ -107,7 +107,13 @@ So the question for this talk is not only whether a system is correct in steady 
 
 And coexistence is where a lot of compatibility bugs actually live."
 
-[SLIDE 2] Incident: "A mixed fleet shared one cache"
+[SLIDE 2] Audience question: "Errors are climbing during a deploy"
+
+"Before I tell you what we did, I want to ask the room the operational question first.
+
+You are in the middle of a deploy. The new version is taking more traffic. Errors are climbing. What do you do?"
+
+[SLIDE 3] Incident: "A mixed fleet shared one cache"
 
 "Let me make this concrete immediately.
 
@@ -117,7 +123,7 @@ We had a mixed fleet sharing one cache. During a deploy, newer pods started writ
 
 "The cache connected them. Shared state turns version skew from a local code concern into a system concern, because one version can write a value that another version will only discover later, on a different request."
 
-[SLIDE 3] Same incident: "Rollback increased errors"
+[SLIDE 4] Same incident: "Rollback increased errors"
 
 "The worst part was this: rollback increased errors.
 
@@ -133,13 +139,13 @@ That sentence is the bridge to the rest of the talk. I want to stop treating thi
 
 It is valid under the old rule, invalid under the new one, durable enough to sit in a cache, and exactly the kind of edge value that reappears during rollback."
 
-[SLIDE 4] Joke setup: "the secret to coordinating ordered rollouts at scale"
+[SLIDE 5] Joke setup: "the secret to coordinating ordered rollouts at scale"
 
 "So here is the setup.
 
 You want the secret to coordinating ordered rollouts at scale."
 
-[SLIDE 5] Emphasis: "give up"
+[SLIDE 6] Emphasis: "give up"
 
 "Give up.
 
@@ -149,13 +155,13 @@ Not on correctness. Not on safety. On perfect choreography."
 
 At large scale, with retries and caches and rollback and long-lived data, that is not a strategy. That is a wish."
 
-[SLIDE 6] Emphasis: "Don't rely on rollout order."
+[SLIDE 7] Emphasis: "Don't rely on rollout order."
 
 "That is the first refrain: don't rely on rollout order.
 
 If your safety argument depends on every part of a distributed system changing in exactly the order you imagined, you do not have a very good safety argument."
 
-[SLIDE 7] Minimal mechanics demo
+[SLIDE 8] Minimal mechanics demo
 
 "This is the simplified subsystem picture most of us reason from.
 
@@ -183,7 +189,7 @@ One tiny schema diff turns into two different compatibility questions depending 
 
 So whenever someone says a change is compatible, I want to ask a follow-up: compatible for whom, in which direction, during what overlap?"
 
-[SLIDE 8] Boundary: "Parseable is not enough"
+[SLIDE 9] Boundary: "Parseable is not enough"
 
 "A disciplined wire format solves a real problem. I am not arguing against that.
 
@@ -197,7 +203,7 @@ A grammar-based schema tells you what can be decoded. A rule layer tells you wha
 
 Tightening a validator is a reader narrow. Loosening one is a reader widen. If writers start emitting values old validators reject, you are back in the same rollout problem."
 
-[SLIDE 9] Mental model: "Compatibility is about sets of states"
+[SLIDE 10] Mental model: "Compatibility is about sets of states"
 
 "Here is the mental model I want people to leave with, and I want to spend real time on it.
 
@@ -215,11 +221,11 @@ If a reader narrows, that is dangerous under skew, because old data or old write
 
 This is the callback to the incident: the cache bug was not mysterious. It was a writer widening into a world where old readers were still present."
 
-[SLIDE 10] Emphasis: "Only the contract is guaranteed."
+[SLIDE 11] Emphasis: "Only the contract is guaranteed."
 
 "Only the contract is guaranteed."
 
-[SLIDE 11] What to do instead: strict boundary contracts
+[SLIDE 12] What to do instead: strict boundary contracts
 
 "So what do we do instead?
 
@@ -231,7 +237,7 @@ That is the constructive version of this talk: make the mixed-version state spac
 
 "And when I say write the real rule, I mean write the rule that makes `4` visibly important. If the contract says `< 5`, then `4` is not trivia. It is the top edge of the legal state space."
 
-[SLIDE 12] AI agents: "Strict contracts are better for agents"
+[SLIDE 13] AI agents: "Strict contracts are better for agents"
 
 "I want to linger here, because this is not just a human readability argument.
 
@@ -245,7 +251,7 @@ A strict contract gives the agent a smaller legal state space, fewer ambiguous s
 
 The boundary should be narrow enough that bad states are impossible, not merely unlikely."
 
-[SLIDE 13] Fullscreen union rollout simulator: "Widen the reader first"
+[SLIDE 14] Fullscreen union rollout simulator: "Widen the reader first"
 
 "If we cannot rely on perfect rollout ordering, what is the positive pattern?
 
@@ -269,11 +275,11 @@ The system is still safe, because the deployed reader population already knows h
 
 And if the old tail never really goes away, I would rather keep a discriminated union of past types than collapse everything into one weak type that tries to express every era at once."
 
-[SLIDE 14] Emphasis: "Check it mechanically."
+[SLIDE 15] Emphasis: "Check it mechanically."
 
 "Check it mechanically."
 
-[SLIDE 15] Checker
+[SLIDE 16] Checker
 
 "Here is the kind of break code review misses.
 
@@ -289,7 +295,7 @@ Demo steps:
 Say:
 "This is the kind of break that looks tiny in review and obvious to a checker. We don't need to hope a reviewer mentally simulates the overlap. For this change, incompatibility is not empirical. It's derivable from the contracts. `4` is the witness: old writers can still emit it, new readers reject it."
 
-[SLIDE 16] Tooling: "Writers only emit what readers can parse"
+[SLIDE 17] Tooling: "Writers only emit what readers can parse"
 
 "This is the workflow I want.
 
@@ -303,7 +309,7 @@ Third, if a writer change would break skew safety, make the branch explicit in t
 
 And more generally: do not ask reviewers to simulate a distributed system in their head. Humans should review intent and design. Tools should check the cross-version consequences."
 
-[SLIDE 17] Final implication: "One contract. Two local types."
+[SLIDE 18] Final implication: "One contract. Two local types."
 
 "There is one more implication.
 
@@ -315,7 +321,7 @@ That ugly type is what I mean by optional soup.
 
 If old readers never go away, I would rather keep a discriminated union of past types than weaken one type until it means everything. That is less aesthetically tidy. It is more honest."
 
-[SLIDE 18] SRE playbook
+[SLIDE 19] SRE playbook
 
 "So I do not want to end with a preflight checklist for one schema change.
 
@@ -335,6 +341,6 @@ Observe version skew in production. Measure deserializations by payload version 
 
 The goal is to make unsafe evolution hard to ship, and safe evolution easy to do."
 
-[SLIDE 19] Thank you
+[SLIDE 20] Thank you
 
 "Thank you."

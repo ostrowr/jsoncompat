@@ -10,10 +10,10 @@
   --deck-panel: rgba(10, 20, 34, 0.78);
   --deck-border: rgba(148, 163, 184, 0.22);
   --deck-muted: #9aa8b8;
-  --deck-gold: #f5c56b;
-  --deck-success: #52d6a4;
+  --deck-gold: #8ea0b5;
+  --deck-success: #9fb0c4;
   --deck-failure: #ff6b66;
-  --deck-good: #6ea8ff;
+  --deck-good: #9fb0c4;
 }
 
 .slidev-layout,
@@ -21,22 +21,20 @@
 .slidev-layout.center {
   position: relative;
   background:
-    radial-gradient(circle at 12% 10%, rgba(255, 93, 61, 0.2), transparent 24%),
-    radial-gradient(circle at 92% 18%, rgba(245, 197, 107, 0.12), transparent 20%),
-    radial-gradient(circle at 75% 88%, rgba(82, 214, 164, 0.1), transparent 18%),
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px),
     linear-gradient(
       160deg,
       #08111d 0%,
       #0b1624 48%,
       #101a2a 100%
     ) !important;
-  background-size: auto, auto, auto, 42px 42px, 42px 42px, auto !important;
+  background-size: 48px 48px, 48px 48px, auto !important;
   color: var(--deck-ink);
   font-family: "IBM Plex Sans Variable", "IBM Plex Sans", sans-serif;
   isolation: isolate;
 }
+
 
 .slidev-layout.cover h1,
 .slidev-layout.cover h2,
@@ -112,7 +110,7 @@
   align-items: center;
   gap: 0.55rem;
   padding: 0.42rem 0.84rem;
-  border-radius: 999px;
+  border-radius: 0.25rem;
   border: 1px solid rgba(255, 93, 61, 0.3);
   background: linear-gradient(180deg, rgba(255, 93, 61, 0.16), rgba(255, 93, 61, 0.08));
   color: var(--deck-accent);
@@ -124,7 +122,7 @@
 }
 
 .deck-kicker::before {
-  content: "";
+  content: none;
   width: 0.42rem;
   height: 0.42rem;
   border-radius: 999px;
@@ -135,8 +133,8 @@
 .deck-panel {
   background: var(--deck-panel);
   border: 1px solid var(--deck-border);
-  border-radius: 1.25rem;
-  box-shadow: 0 22px 60px rgba(63, 40, 16, 0.11);
+  border-radius: 0.4rem;
+  box-shadow: none;
   backdrop-filter: blur(10px);
 }
 
@@ -167,7 +165,7 @@
 .beat-card,
 .quote-card {
   padding: 1.2rem 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: 0.35rem;
   border: 1px solid var(--deck-border);
   background: linear-gradient(180deg, rgba(13, 25, 41, 0.96), rgba(11, 20, 33, 0.88));
   box-shadow: none;
@@ -179,7 +177,7 @@
 .fact-card::before,
 .beat-card::before,
 .quote-card::before {
-  content: "";
+  content: none;
   position: absolute;
   inset: 0.7rem auto 0.7rem 0.7rem;
   width: 3px;
@@ -208,15 +206,15 @@
 }
 
 .law-card.accent::before {
-  background: rgba(173, 46, 36, 0.5);
+  background: rgba(255, 93, 61, 0.5);
 }
 
 .law-card.success {
-  border-color: rgba(31, 122, 76, 0.24);
+  border-color: rgba(159, 176, 196, 0.28);
 }
 
 .law-card.success::before {
-  background: rgba(31, 122, 76, 0.5);
+  background: rgba(159, 176, 196, 0.5);
 }
 
 .law-card.good::before {
@@ -240,7 +238,7 @@
 .deck-callout {
   padding: 0.8rem 1rem 0.8rem 1.05rem;
   border-left: 5px solid var(--deck-accent);
-  border-radius: 0 1rem 1rem 0;
+  border-radius: 0;
   background: rgba(255, 93, 61, 0.08);
 }
 
@@ -280,17 +278,6 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
-}
-
-.deck-grid-2 .law-card:nth-child(2),
-.deck-grid-3 .law-card:nth-child(2),
-.deck-three-laws .law-card:nth-child(2) {
-  transform: translateY(0.25rem);
-}
-
-.deck-grid-3 .law-card:nth-child(3),
-.deck-three-laws .law-card:nth-child(3) {
-  transform: translateY(-0.1rem);
 }
 
 .deck-three-laws .law-card {
@@ -640,6 +627,7 @@
   align-items: center;
   justify-content: center;
 }
+
 
 .slidev-layout.demo-full-bleed > * {
   width: 100%;

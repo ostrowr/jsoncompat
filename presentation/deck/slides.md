@@ -39,7 +39,16 @@ from far away, except some arrivals are already red.
 
 ---
 
-<div class="deck-kicker">Incident</div>
+<AudienceRolloutQuestion />
+
+<!--
+Open the incident with a question, not the answer:
+- Show a normal-looking rollout where errors climb as new version share rises.
+- Ask the room what they would do here.
+- Do not mention the rollback twist yet.
+-->
+
+---
 
 # A mixed fleet shared one cache
 
@@ -64,7 +73,6 @@ layout: center
 ---
 
 <div class="incident-twist-slide">
-  <div class="deck-kicker">Same incident</div>
   <h1>Rollback increased errors</h1>
   <p class="deck-quote mt-8">Old readers came back while bad cached data was still alive.</p>
   <p class="deck-lead deck-muted mt-8">Waiting for the rollout to finish would have caused fewer errors than rolling back. This failed because one live version wrote a state that another still-live version could not accept.</p>
@@ -155,8 +163,6 @@ One tiny diff becomes two different compatibility questions depending on directi
 
 ---
 
-<div class="deck-kicker">Boundary</div>
-
 # Parseable is not enough
 
 <div class="one-figure-slide mt-8">
@@ -198,8 +204,6 @@ lessons from this talk apply there too.
 -->
 
 ---
-
-<div class="deck-kicker">Mental model</div>
 
 # Compatibility is about sets of states
 
@@ -264,8 +268,6 @@ Second refrain as a standalone beat before the constructive slide.
 
 ---
 
-<div class="deck-kicker">What to do instead</div>
-
 # Only the contract is guaranteed
 
 <div class="deck-grid-2 mt-8">
@@ -320,8 +322,6 @@ Call out the agent angle explicitly:
 -->
 
 ---
-
-<div class="deck-kicker">AI agents</div>
 
 # Strict contracts are better for agents
 
@@ -413,8 +413,6 @@ new readers reject it.
 
 ---
 
-<div class="deck-kicker">Tooling</div>
-
 # Writers only emit what readers can parse
 
 <div class="tooling-pipeline mt-6">
@@ -472,8 +470,6 @@ This is the enforcement model:
 
 ---
 
-<div class="deck-kicker">Final implication</div>
-
 # One contract. Two local types.
 
 <div class="deck-grid-3 mt-8 optional-soup-layout">
@@ -514,8 +510,6 @@ Points to hit:
 -->
 
 ---
-
-<div class="deck-kicker">SRE playbook</div>
 
 # Constrain. Split. Gate. Observe.
 

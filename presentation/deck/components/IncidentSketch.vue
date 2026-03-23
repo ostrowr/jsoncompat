@@ -15,15 +15,18 @@ const requestBars = Array.from({ length: 38 }, (_, index): StackedBar => {
   };
 });
 
-const errorBars = Array.from({ length: 38 }, (_, index): number => {
+const errorBars = Array.from({ length: 38 }, (_, index): StackedBar => {
   const early = 10 * Math.exp(-((index - 7) ** 2) / 12);
   const peak = 38 * Math.exp(-((index - 19) ** 2) / 32);
   const tail = 3 * Math.exp(-((index - 29) ** 2) / 18);
-  return Math.max(0.2, early + peak + tail);
+  return {
+    old: Math.max(0.2, early + peak + tail),
+    next: 0,
+  };
 });
 
 const maxRequest = Math.max(...requestBars.map((bar) => bar.old + bar.next));
-const maxError = Math.max(...errorBars);
+const maxError = Math.max(...errorBars.map((bar) => bar.old + bar.next));
 const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
 </script>
 
@@ -60,12 +63,22 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
           <div
             v-for="(bar, index) in errorBars"
             :key="`error-${index}`"
-            class="sketch-bar sketch-bar-error"
-            :style="{ height: `${(bar / maxError) * 100}%` }"
-          />
+            class="sketch-bar-stack"
+          >
+            <div
+              class="sketch-bar sketch-bar-error-old"
+              :style="{ height: `${(bar.old / maxError) * 100}%` }"
+            />
+            <div
+              class="sketch-bar sketch-bar-error-next"
+              :style="{ height: bar.next === 0 ? '2px' : `${(bar.next / maxError) * 100}%` }"
+              :aria-label="bar.next === 0 ? 'new version zero errors baseline' : undefined"
+            />
+          </div>
         </div>
         <div class="sketch-legend">
-          <span class="legend-item legend-error">parse failures</span>
+          <span class="legend-item legend-old">old version</span>
+          <span class="legend-item legend-next">new version (0)</span>
         </div>
       </section>
     </div>
@@ -113,6 +126,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
   background: rgba(255, 251, 245, 0.9);
   box-shadow: 0 10px 24px rgba(63, 40, 16, 0.06);
   transform: rotate(-0.2deg);
+  color: #1f2937;
 }
 
 .sketch-panel:nth-child(2) {
@@ -121,7 +135,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
 
 .sketch-title {
   margin-bottom: 0.45rem;
-  color: var(--deck-muted);
+  color: #64748b;
   font: 700 0.82rem "IBM Plex Mono", monospace;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -175,24 +189,28 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
 }
 
 .sketch-bar-old {
-  background: rgba(96, 165, 250, 0.86);
+  background: linear-gradient(to top, rgba(234, 88, 12, 0.9), rgba(251, 146, 60, 0.84));
 }
 
 .sketch-bar-next {
-  background: rgba(147, 197, 253, 0.7);
+  background: rgba(120, 147, 183, 0.76);
 }
 
-.sketch-bar-error {
-  flex: 1;
+.sketch-bar-error-old {
   background: linear-gradient(to top, rgba(234, 88, 12, 0.92), rgba(251, 146, 60, 0.88));
   transform: rotate(var(--tilt, 0deg));
 }
 
-.sketch-plot-errors .sketch-bar-error:nth-child(3n) {
+.sketch-bar-error-next {
+  background: rgba(120, 147, 183, 0.55);
+  opacity: 0.75;
+}
+
+.sketch-plot-errors .sketch-bar-stack:nth-child(3n) .sketch-bar-error-old {
   --tilt: -0.4deg;
 }
 
-.sketch-plot-errors .sketch-bar-error:nth-child(4n) {
+.sketch-plot-errors .sketch-bar-stack:nth-child(4n) .sketch-bar-error-old {
   --tilt: 0.35deg;
 }
 
@@ -200,7 +218,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
   display: flex;
   gap: 0.9rem;
   margin-top: 0.45rem;
-  color: var(--deck-muted);
+  color: #64748b;
   font-size: 0.86rem;
 }
 
@@ -215,15 +233,11 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
 }
 
 .legend-old::before {
-  background: rgba(96, 165, 250, 0.86);
+  background: linear-gradient(to top, rgba(234, 88, 12, 0.9), rgba(251, 146, 60, 0.84));
 }
 
 .legend-next::before {
-  background: rgba(147, 197, 253, 0.7);
-}
-
-.legend-error::before {
-  background: rgba(234, 88, 12, 0.92);
+  background: rgba(120, 147, 183, 0.76);
 }
 
 .sketch-mechanism {
@@ -257,7 +271,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
 
 .pod-note {
   margin-left: 0.6rem;
-  color: var(--deck-muted);
+  color: #64748b;
   font-size: 0.98rem;
   font-style: italic;
 }
@@ -276,6 +290,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
   text-align: center;
   font-size: 0.95rem;
   line-height: 1.25;
+  color: #334155;
 }
 
 .flow-node-new {
@@ -294,7 +309,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
 }
 
 .flow-arrow {
-  color: var(--deck-muted);
+  color: #94a3b8;
   font: 700 1.2rem "IBM Plex Mono", monospace;
 }
 
