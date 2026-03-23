@@ -447,7 +447,7 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 4rem;
   top: 58%;
-  max-width: 29rem;
+  max-width: 32rem;
   transform: translateY(-50%);
   color: rgba(226, 232, 240, 0.92);
   text-align: left;
