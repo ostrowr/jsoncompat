@@ -34,7 +34,7 @@ drawings:
 <!--
 Structured data is flowing between your systems. Some request hits the edge, which hits some API service, which maybe makes a couple more hops within your infrastructure. In the steady state – if you have enough capacity – it just works. 
 
-I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that are too complex for me, or more importantly, gpt 5.4, to understand. The short version of this talk is the title: escaping version skew. The subtitle is the method. I want to talk about how we can define better boundaries between systems, detect and prevent breaking changes, maintain strict contracts at those boundaries, and do it automatically instead of relying on humans to catch subtle incompatibilities.
+I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that are too complex for me, or more importantly, gpt 5.4, to understand. This talk is called Escaping Version Skew. I want to talk to you today a bit about how we can better define boundaries between our systems. We should be able to detect and prevent breaking changes. We should be able to maintain strict contracts at these abstraction boundaries. And we should be able to do all of this automatically, without relying on humans to catch subtle breaking changes.
 -->
 
 ---
@@ -73,7 +73,7 @@ layout: center
 <!--
 So, in this particular case, we would have been better served by letting the rollout continue. Once all of the pods were on the new version, everyone could have read all the cache entries, and we wouldn't have seen the secondary error spike. Sadly, we didn't realize this until the rollback completed, and by that time the safest way to recovery was to let the bad cache entries expire on their own.
 
-Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleets.
+Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleets. Our systems tend to break when they change, and we need a better theory of change.
 -->
 
 ---
@@ -107,7 +107,7 @@ layout: center
 </div>
 
 <!--
-You shouldn't rely on humans to catch breaking changes and babysit a reasonable rollout order. It's too complicated to reason about, it makes rollbacks unsafe, there are sometimes circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production successfully.
+You shouldn't rely on humans - or agents, for that matter - to catch breaking changes in an unconstrained system and babysit a reasonable rollout order. It's too complicated to reason about, it makes rollbacks unsafe, there are sometimes circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production successfully, and we need better ways to constrain the behavior at abstraction boundaries to even make this tractable.
 -->
 
 ---
@@ -174,11 +174,11 @@ It's only now that the reader and the writer have been at the same version for a
 <!--
 OK, you're thinking. We solved this problem in like 2001 with protobufs. Why is robbie up there complaining about a solved problem? surely someone has told him about protos. 
 
-Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. Protos, what with their optional-only fields and no logic constraints -  make wire compatibility easy - but you're sacrificing constraints in your application's for ease of wire compat. If you want your systems to have these solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of code that you can never prune, and generally leaving your application developers in a situation where they have to handle all possible sets of states from all time. 
+Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. Protos, what with their optional-only fields and no logic constraints -  make wire compatibility easy - but you're sacrificing constraints in your application for ease of wire compat. If you want your systems to have these solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of logic that you can never prune, and generally abandoning service developers to a situation where they have to handle all possible sets of states from all time. 
 
 So when I talk about defining schemas, I'm not just talking about the wire format. I'm also talking about contracts that can encode powerful rules, like json schema or extensions to protos like protovalidate.
 
-Unfortunately, though, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
+Unfortunately, though, of course, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
 -->
 
 ---
@@ -224,14 +224,10 @@ message UserProfile {
 </div>
 
 <!--
-This is the maintenance smell I want to name: long-lived proto evolution often
-turns one shared type into a pile of optionals. Every migration, rollback path,
-and compatibility tail leaves residue in the schema. I want this slide to feel
-a little grotesque, because that's what it is: a type that is technically
-compatible but increasingly bad at expressing which states are actually valid
-now. This type doesn't make impossible states unrepresentable. It normalizes
-impossible states, and pushes the cleanup burden into business logic everywhere
-that reads it.
+I call this type of schema evolution optionalslop. Every migration, rollback path,
+and compatibility tail leaves some *residue* in the schema. The schema on the left here shows 
+a type that is technically compatible but increasingly bad at expressing which states are actually valid
+today. This type doesn't make impossible states unrepresentable, and pushes the cleanup burden into business logic everywhere that reads it. So, sure, you're never going to get wire incompatibilities when you're using protos, but instead you'll see weird errors much deeper in your application code. 
 
 I promised at the beginning that we can keep things safe while also reducing cognitive overhead and making impossible states impossible. We do this with tooling.
 -->
@@ -305,18 +301,20 @@ I just want to hammer this point home. Put as many constraints into your contrac
 </div>
 
 <!--
+This requires a change in the way we think about contracts. We need to stop sharing types between client and server. 
+
 So, this is the shape I actually want. Writers should be as strict as possible.
 They should emit today's contract, not some giant compromise type that has been
-weakened by every migration you've ever done.
+weakened by every migration you've ever done. If your business logic requires that age is required for all new users, make it impossible to ever serialize an ageless user again! Otherwise, I guarantee that some other developer will take advantage of the flexibility and you'll never burn down the debt. 
 
-Readers, on the other hand, are where the compatibility burden belongs. They
+Readers are where the compatibility burden belongs. They
 should accept the union of the last few writer versions, because that's where
-skew lands in practice.
+skew lands in practice. 
 
-And I know everyone wants to share types between client and server. Of course
+I know everyone loves to share types between client and server. Of course
 they do. It feels simpler, cheaper, cleaner. So if you want people not to do
 that, the tooling has to be really good. Separate writer and reader types can't
-feel like a tax. They have to feel like the easy path.
+feel like a tax. It has to feel like the easy path.
 -->
 
 ---
@@ -337,11 +335,16 @@ feel like a tax. They have to feel like the easy path.
 <!--
 So what does that mean mechanically?
 
-First, stamp the payloads. If the reader is going to carry a small historical
-union, it needs to know which branch it is looking at. So writers should emit
-an explicit payload version or schema ID at the boundary. Then readers can
-branch on that stamp instead of guessing from shape, and you can measure
-exactly which old versions are still showing up in production.
+1. The source of truth for your type should be a contract written in some DSL – proto + protovalidate, json schema, whatever. You can generate this from your programming language of choice if you really hate to write schemas directly. But models are pretty good at it, so I recommend that you maintain the schemas themselves.
+2. Whenever you change the schema, use static analysis where possible - and fuzzing otherwise, to see whether the change is possibly breaking, and in which direction. Note that if the change is breaking is not a property of the actual data flowing through your system; it's a property of the contract itself! You can't make any assumptions that aren't baked into the contract.
+3. If the change is breaking in either direction, that is, there is some value that the old schema accepts that isn't accepted by the new schema or vice versa, then CI should complain, and tell you to "stamp" a new type. All readers should use the stamped type, which is a union of all previous types. Writers only use the new type. Ban any changes where a rollout in either direction would break.
+4. Generate code for readers and writers! I strongly recommend generating code that doesn't even make it possible to serialize from reader types, or deserialize from writer types. 
+
+If you've done this correctly, you get a couple of awesome properties.
+
+1. Engineers stop having to thing about breaking changes. CI thinks about it for them.
+2. Updating a schema becomes mechanical, not something you really have to thing about. You still have to make multiple changes to make some types of schema changes, but it's much easier to reason about. 
+3. Your schemas actually represent points in time. Your readers look at the discriminated union, tagged by stamp ID, and can do different logic based on parts of the union! Then you can eventually delete the old branches as they are unused.
 -->
 
 ---
