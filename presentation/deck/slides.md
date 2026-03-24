@@ -169,7 +169,7 @@ It's only now that the reader and the writer have been at the same version for a
 
 # Parseable is not enough
 
-<div class="one-figure-slide mt-8">
+<div class="one-figure-slide pydantic-compat-example mt-8">
   <p class="deck-quote">Transport compatibility can still admit states your logic cannot handle.</p>
   <div class="deck-grid-2 mt-8">
     <div class="law-card">
@@ -315,7 +315,7 @@ Don't make your agents or your developers re-derive the contracts every time the
 
 # Writers strict. Readers wide.
 
-<div class="deck-grid-2 mt-10 writer-reader-principle">
+<div class="deck-grid-2 mt-10 writer-reader-principle subsumption-containment-grid">
   <div class="law-card success">
     <h3>Writers should be as strict as possible</h3>
     <p>Emit today's contract, not a mushy superset shaped by every historical rollout.</p>
@@ -467,8 +467,50 @@ class: demo-full-bleed
 <CheckerEmbed />
 
 <!--
-Until today, that is! I've been frustrated by this for years and finally took the time to sit down to try to write a generic JSON schema subsumption checker. We can statically analyze arbitrary JSON schemas and try to detect if they're breaking. 
+Until today, that is! I've been frustrated by this for years and finally took the time to sit down to try to write a generic JSON schema subsumption checker. We can statically analyze arbitrary JSON schemas and try to detect if they're breaking.
+-->
 
+---
+
+# A subsumption checker asks set containment
+
+<div class="deck-grid-2 mt-4 writer-reader-principle">
+  <div class="law-card success">
+    <h3>New writer safe for old reader</h3>
+    <p>L(new) ⊆ L(old)</p>
+  </div>
+  <div class="law-card success">
+    <h3>Old writer safe for new reader</h3>
+    <p>L(old) ⊆ L(new)</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-4">
+  <p class="deck-quote">A schema change is compatible in a direction exactly when every value accepted before is still accepted after, or vice versa.</p>
+</div>
+
+<!--
+Let me formalize what I mean by subsumption checker. The core question is just set containment.
+
+Think of a schema as denoting a language of valid JSON values, L(schema).
+
+Then a subsumption checker asks whether one language is a subset of the other.
+
+If L(new) is a subset of L(old), a new writer is safe for an old reader.
+If L(old) is a subset of L(new), an old writer is safe for a new reader.
+
+When either relation fails, if possible, the checker should produce a witness value in the difference.
+
+The important point here is that the only input to the language is the schema itself. If your business logic assumes some invariant that is not expressible in the schema, the subsumption checker cannot possibly catch it. So, you should try to avoid assuming such invariants, or, if you have to, extend the subsumption checker!
+-->
+
+---
+class: demo-full-bleed
+---
+
+<CheckerEmbed />
+
+<!--
 Let's take a look at this simple schema on the right. We've got an object type with two fields: `name` and `age`. They both have some additional constraints, like minLength for the string or minimum for the age. 
 
 First let's check compatibility between this schema and itself. 
@@ -497,6 +539,39 @@ gets too expressive for a complete proof. The nice thing about having the fuzzer
 [play with the fuzzer a bit]
 
 This is MIT-licensed and it's the first time I'm talking about it anywhere so I'm sure it has lots of bugs, but we're using it internally and it's been a huge boon for catching breaking changes at our storage boundaries.
+-->
+
+---
+
+# Make compatibility checks live next to the type
+
+<div class="one-figure-slide pydantic-compat-example mt-8">
+
+```python
+from pydantic import BaseModel, Field
+
+@check_compat(direction="both", stable_id="user-profile")
+class UserProfile(BaseModel):
+    name: str = Field(min_length=1)
+    age: int = Field(ge=0)
+```
+
+</div>
+
+<div class="deck-callout mt-8">
+  <p class="deck-quote">The stable ID ties this model to its historical schema snapshots, and CI checks both rollout directions on every change.</p>
+</div>
+
+<!--
+This is the ergonomics I want in application code.
+
+Put the compatibility policy right next to the type definition. The stable ID
+is the durable identity for this contract across renames and refactors, so CI
+can compare the current schema against the historical snapshots for that same
+logical payload.
+
+With `direction="both"`, a change has to be safe for old readers seeing new
+writes and for new readers seeing old writes.
 -->
 
 ---

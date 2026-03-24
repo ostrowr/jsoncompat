@@ -378,6 +378,11 @@
   max-width: 52rem;
 }
 
+.pydantic-compat-example pre code {
+  font-size: 1.08rem;
+  line-height: 1.55;
+}
+
 .mental-model-subhead {
   margin-top: 0.55rem;
   margin-bottom: 0;
@@ -701,6 +706,26 @@
 .writer-reader-principle .law-card p {
   font-size: 1.2rem;
   line-height: 1.4;
+}
+
+.subsumption-containment-grid .law-card {
+  height: 8.25rem;
+  min-height: 0;
+  padding-top: 1.2rem;
+  padding-bottom: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.subsumption-containment-grid .law-card h3 {
+  margin-bottom: 0.3rem;
+  font-size: 1.55rem;
+}
+
+.subsumption-containment-grid .law-card p {
+  font-size: 1.15rem;
+  line-height: 1.3;
 }
 
 .stamp-process-intro .law-card {
