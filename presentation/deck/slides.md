@@ -440,10 +440,16 @@ First, CI sees that you're trying to deploy a breaking change. It doesn't let yo
 
 Then, when metrics show that all readers are rolled out, CI finally lets you merge the new, strict, writer type:
 
-And only after the old data tail is gone do you remove the old
-branch. In some cases, you'll never be able to remove the old types, but that's ok! It's much cleaner to have different codepaths based on a union branch.
+(s)s
 
-[1:10]
+And only after the old data tail is gone do you remove the old
+branch. 
+
+In some cases, you'll never be able to remove the old types, but that's ok! It's much cleaner to have different codepaths based on a union branch.
+
+I don't really like talking about forward and backward compatibility since it always confuses me from whose perspective? For example, a system that takes input and returns output simultaneously acts as a deserializer (when it takes its input) and a serializer (when it returns its output.) So, instead, I prefer to talk about breaking changes from the perspective of the writer and reader, or serializer and deserializer.
+
+[1:25]
 -->
 
 ---
@@ -501,11 +507,13 @@ Then a subsumption checker asks whether one language is a subset of the other.
 If L(new) is a subset of L(old), that is, all values valid under the new schema are valid under the old schema, a new writer is safe for an old reader.
 If L(old) is a subset of L(new), that is, all values valid under the old schema are valid under the new schema, an old writer is safe for a new reader.
 
-When either relation fails, if possible, the checker should ne able to produce a witness value showing the difference.
+When either relation fails, if possible, the checker should able to produce a witness value showing the difference.
 
-I don't really like talking about forward and backward compatibility since it always confuses me from whose perspective? For example, a system that takes input and returns output simultaneously acts as a deserializer (when it takes its input) and a serializer (when it returns its output.) So, instead, I prefer to talk about breaking changes from the perspective of the writer and reader, or serializer and deserializer. 
+The reason this is hard is that it's impossible in most cases to enumerate the actual language, so you can't do an actual subset check. Instead, a subsumption checker like jsoncompat has to do special logic for each keyword that proves properties of new and old schemas. This gets really hard with recursive schemas, sum types, and other arbitrary constraints like regex format strings.
 
 The important point here is that the only input to the language is the schema itself. If your business logic assumes some invariant that is not expressible in the schema, the subsumption checker cannot possibly catch it. So, you should try to avoid assuming such invariants, or, if you have to, you must extend the schema DSL itself.
+
+[1:15]
 -->
 
 ---
@@ -544,7 +552,9 @@ gets too expressive for a complete proof. The nice thing about having the fuzzer
 
 [play with the fuzzer a bit]
 
-This is MIT-licensed and it's the first time I'm talking about it anywhere so I'm sure it has lots of bugs, but we're using it internally and it's been a huge boon for catching breaking changes at our storage boundaries.
+This is MIT-licensed and it's the first time I'm talking about it anywhere so I'm sure it has lots of bugs, but so far where we've used it, it's been a huge boon for catching breaking changes at our storage boundaries.
+
+[2:20]
 -->
 
 ---
@@ -556,7 +566,7 @@ This is MIT-licensed and it's the first time I'm talking about it anywhere so I'
 ```python
 from pydantic import BaseModel, Field
 
-@check_compat(direction="both", stable_id="user-profile")
+@jsoncompat_check(direction="both", stable_id="user-profile")
 class UserProfile(BaseModel):
     name: str = Field(min_length=1)
     age: int = Field(ge=0)
@@ -569,15 +579,18 @@ class UserProfile(BaseModel):
 </div>
 
 <!--
-This is the ergonomics I want in application code.
+Instead of telling you that you have to go back to your company and insist that everyone rewrites all of their storage logic separating all of our serializer and deserializer types, write some codegen, etc, I want to leave you with a suggestion as to how to slowly adopt tooling like this. 
 
-Put the compatibility policy right next to the type definition. The stable ID
+At openai, we have a lot of Pydantic schemas that define something we're storing somewhere; maybe in a database, maybe in redis, whatever. We don't have to go all the way off the bat and split the reader and writer type, even if I wish we did! Instead, we can decorate all these types with a jsoncompat decorator that writes the current schema to disk and checks breaking changes against previous commits, using the same static checks and fuzzing I just told you! While this isn't as powerful as schema-first design and generated code, it's already caught a ton of subtle cases where people didn't realize they were making breaking changes.
+
+Here, it's trivial to adopt. Put the compatibility policy right next to the type definition. If we're using it for both directions, we say "both." The stable ID
 is the durable identity for this contract across renames and refactors, so CI
-can compare the current schema against the historical snapshots for that same
-logical payload.
+can compare the current schema against the historical snapshots for that same logical payload.
 
 With `direction="both"`, a change has to be safe for old readers seeing new
-writes and for new readers seeing old writes.
+writes and for new readers seeing old writes. Eventually, I hope that we can split UserProfile here into a writer and reader type, and evolve them more independently, allowing us to have strict writers and union readers like I keep talking about.
+
+[1:15]
 -->
 
 ---
@@ -621,7 +634,9 @@ Observe: measure which old versions are still being read, so you can see the
 tail, understand rollback risk, and know when cleanup is actually safe.
 
 That's the durable version of this. Not a one-off preflight for one scary
-change, but a system that makes the safe path the normal path.
+change, not a system that requires engineers to think about subsumption every day, and think about which direction things are getting serialized and deserialized, but a system that makes the safe path the normal path.
+
+[1:00]
 -->
 
 ---
@@ -632,3 +647,9 @@ layout: center
   <div class="thanks-title">Questions?</div>
   <a class="thanks-link" href="https://jsoncompat.com">slides and tooling at jsoncompat.com</a>
 </div>
+
+<!--
+Thanks so much, I think I now have some time for questions. I haven't uploaded these slides to jsoncompat.com yet but I will once I send them to the conference organizers.
+
+[15]
+-->
