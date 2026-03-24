@@ -33,9 +33,9 @@ drawings:
 </NetworkHero>
 
 <!--
-Even if there's a ton of complexity behind any one of these nodes, you can rely on your trusty architecture diagram and the interfaces between your systems.
+Structured data is flowing between your systems. Some request hits the edge, which hits some API service, which maybe makes a couple more hops within your infrastructure. In the steady state – if you have enough capacity – it just works. 
 
-I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that even I, or more importantly, gpt 5.4 can't understand. I want to talk to you today a bit about how we can define better boundaries between our systems and detect when you're about to ship a change without breaking your systems as it rolls out.
+I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that are too complex for me, or more importantly, gpt 5.4, to understand. I want to talk to you today a bit about how we can better define boundaries between our systems. We should be able to detect and prevent breaking changes. We should be able to maintain strict contracts at these abstraction boundaries. And we should be able to do all of this automatically, without relying on humans to catch subtle breaking changes.
 -->
 
 ---
@@ -72,9 +72,9 @@ layout: center
 </div>
 
 <!--
-So, in this particular case, we would have been better served by letting the rollout continue. Once all of the pods were on the new version, everyone could have read all the cache entries, and we wouldn't have seen the secondary error spike. Sadly, we didn't realize this until the rollout completed, and by that time the safest way to recovery was to let the bad cache entries expire on their own.
+So, in this particular case, we would have been better served by letting the rollout continue. Once all of the pods were on the new version, everyone could have read all the cache entries, and we wouldn't have seen the secondary error spike. Sadly, we didn't realize this until the rollback completed, and by that time the safest way to recovery was to let the bad cache entries expire on their own.
 
-Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient, but it's a lie once your systems get above toy-sized, we have to think about them  not just as the set of things running on the current version, but also at all of the previous versions (and in some case future versions) that are running across our fleets. [TODO, add title slide zooming in]
+Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleets.
 -->
 
 ---
@@ -84,7 +84,7 @@ layout: center
 <div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
 
 <!--
-When we talk about breaking changes, we're usually talking about clients and servers. You've probably submitted many annoying changes of the flavor "let's expand what the server accepts first, then update the client to send the new thing, then hopefully remember to constrain the client to only accept the new thing. Usually we forget to do the third step. And you have to make sure that you remember to roll out the services in the right order. So, I'm going to begin this talk by telling you the secret to coordinating ordered rollouts in a system the size of OpenAI's:
+When we talk about breaking changes, we're usually talking about clients and servers. You've probably babysat many annoying changes of the flavor "let's expand what the server accepts first, then update the client to send the new thing, then hopefully remember to re-constrain the server to only accept the new thing. Usually we forget to do the third step. And you have to make sure that you remember to roll out the services in the right order. So, I'm going to begin this talk by telling you the secret to coordinating ordered rollouts in a system the size of OpenAI's:
 -->
 
 ---
@@ -135,7 +135,7 @@ class: demo-full-bleed
 </div>
 
 <!--
-Any time you have state, whether that's in a shared cache, a queue, a database, or even just an inflight RPC between services, you stop getting the luxury of imagining your system as the nice, static diagram you write in your docs. Instead, you have to add that additional time dimension to your thinking.
+Let's zoom in a bit. Any time you have state, whether that's in a shared cache, a queue, a database, or even just an inflight RPC between services, you lose the luxury of imagining your system as the nice, static diagram you write in your docs. Instead, you have to add that additional time dimension to your thinking.
 
 Let's imagine I want to add a new field to this schema, eye-color. 
 
@@ -147,7 +147,7 @@ Oops, it rolled out to the reader first! eye_color is required, so we're seeing 
 
 Look at this - even if all the readers and all the writers had flipped at exactly the same time, inflight requests would have failed. 
 
-Now we're back in that happy, static world. Until the next deploy.
+It's only now that the reader and the writer have been at the same version for a while (all the queues and RPC have drained) will we stop seeing errors.
 -->
 
 ---
@@ -173,78 +173,13 @@ Now we're back in that happy, static world. Until the next deploy.
 </div>
 
 <!--
-OK, you're thinking. We solved this problem in the 2001 with protobufs. Why is robbie up there complaining about a solved problem? surely someone has told him about protos. 
+OK, you're thinking. We solved this problem in like 2001 with protobufs. Why is robbie up there complaining about a solved problem? surely someone has told him about protos. 
 
-Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. There's no longer such thing as a required field in protos. That makes wire compatibility easy - but you're sacrificing application-level constraints for ease of wire compat. If you want your systems to have solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of code that you can never prune, and generally leaving your application developers in a situation where they have to handle all possible sets of states from all time. 
+Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. Protos, what with their optional-only fields and no logic constraints -  make wire compatibility easy - but you're sacrificing constraints in your application's for ease of wire compat. If you want your systems to have these solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of code that you can never prune, and generally leaving your application developers in a situation where they have to handle all possible sets of states from all time. 
 
-So when I talk about defining schemas, I'm talking about both grammar-based schemas like protos, but also schemas that can encode powerful rules, like json schema or extensions to protos like protovalidate.
+So when I talk about defining schemas, I'm not just talking about the wire format. I'm also talking about contracts that can encode powerful rules, like json schema or extensions to protos like protovalidate.
 
-Ultimately, if your business logic depends on some shape of data, you should reject bad data at the boundary at the edge. But unfortunately, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
--->
-
----
-
-# Compatibility is about sets of states
-
-<p class="mental-model-subhead">A schema change changes a set of states.</p>
-
-<div class="compat-matrix mt-6">
-  <div class="compat-axis compat-axis-top">Reader</div>
-  <div class="compat-axis compat-axis-left">Writer</div>
-
-  <div class="compat-cell success">
-    <div class="compat-cell-title">Narrows</div>
-    <div class="compat-cell-body">Usually safe.</div>
-  </div>
-  <div class="compat-cell danger">
-    <div class="compat-cell-title">Widens</div>
-    <div class="compat-cell-body">Old readers may reject new values.</div>
-  </div>
-  <div class="compat-cell success">
-    <div class="compat-cell-title">Widens</div>
-    <div class="compat-cell-body">Usually safe.</div>
-  </div>
-  <div class="compat-cell danger">
-    <div class="compat-cell-title">Narrows</div>
-    <div class="compat-cell-body">Old data may be rejected.</div>
-  </div>
-</div>
-
-<!--
-[TODO maybe remove this slide?] 
-
-This is the compact mental model I want people to leave with:
-- A schema change changes a set of values.
-- Writer narrows: usually safe, because it emits fewer states.
-- Writer widens: dangerous under skew, because old readers may see values they
-  cannot parse.
-- Reader widens: usually safe, because it accepts more historical states.
-- Reader narrows: dangerous under skew, because old data or old writers may
-  still exist.
-
-Prior art to mention:
-- Avro explicitly separates the writer's schema from the reader's schema and
-  defines schema resolution between them.
-- Confluent Schema Registry ties compatibility modes to upgrade order:
-  BACKWARD means upgrade consumers before producing new events; FORWARD means
-  upgrade producers first and drain old data before upgrading consumers; FULL
-  allows independent upgrades.
-- That is useful when upgrade order is a real control surface. In my world,
-  partial rollouts, retries, caches, queues, and rollback mean order is often
-  not guaranteed, so I need stronger constraints and tooling than pairwise
-backward/forward labels.
--->
-
----
-layout: center
----
-
-<div class="emphasis-slide">
-  <div class="emphasis-phrase">Only the contract is guaranteed.</div>
-</div>
-
-<!--
-Only the contract is guaranteed. Put as much into the contract as possible, but ensure that your business logic does not make any assumptions that are not encoded into the contract that you're publishing for your clients.
+Unfortunately, though, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
 -->
 
 ---
@@ -292,6 +227,111 @@ Only the contract is guaranteed. Put as much into the contract as possible, but 
 So, we're going to use JSON schema as the contract definition language in the rest of this talk. The same ideas apply to nearly any powerful schema definition language, but JSON is pretty ubiquitous at OpenAI and elsewhere. 
 
 I just want to hammer this point home. Put as many constraints into your contract as possible. Retries isn't just an integer, it's an integer between 0 and 4. Mode isn't a string, it's either fast or safe. All of the fields are required. Then, you can generate types for handlers that fulfill this contract, and you don't have to worry about handling the case where mode is missing or malformed. We check that at the edge.
+-->
+
+---
+
+# optionalslop
+
+<div class="deck-grid-2 mt-8">
+  <div class="deck-schema-box">
+
+```proto
+message UserProfile {
+  optional string display_name = 1;
+  optional string first_name = 2;
+  optional string last_name = 3;
+  optional string legacy_full_name = 4;
+  optional string avatar_url = 5;
+  optional string avatar_id = 6;
+  optional string locale = 7;
+  optional string timezone = 8;
+  optional bool email_verified = 9;
+  optional bool phone_verified = 10;
+  optional string phone_number = 11;
+  optional string backup_phone_number = 12;
+  optional string city = 13;
+  optional string region = 14;
+  optional string country = 15;
+  optional string legacy_metadata_json = 16;
+}
+```
+
+  </div>
+  <div class="fact-card boundary-card">
+    <div class="boundary-point">
+      <div class="boundary-point-title">One type gets weaker over time</div>
+      <div class="boundary-point-body">As old fields accumulate for compatibility, the shared proto stops expressing the real domain model and turns into "maybe this, maybe that".</div>
+    </div>
+  </div>
+</div>
+
+<!--
+This is the maintenance smell I want to name: long-lived proto evolution often
+turns one shared type into a pile of optionals. Every migration, rollback path,
+and compatibility tail leaves residue in the schema. The result is a type that
+is technically compatible but increasingly bad at expressing which states are
+actually valid now. This type doesn't make impossible states unrepresentable! Now, the business logic everywhere that reads this proto is responsible for checking which subsets of these fields must appear together, which don't make sense, etc.
+-->
+
+---
+
+# One contract. Two local types.
+
+<div class="contract-type-flow mt-8">
+  <div class="contract-flow-node contract-source">
+    <h3>Boundary contract</h3>
+    <p>One strict schema at the edge.</p>
+  </div>
+  <div class="contract-flow-arrow" aria-hidden="true">-></div>
+  <div class="contract-flow-node contract-writer">
+    <h3>Writer type</h3>
+    <p>Emit less.</p>
+  </div>
+  <div class="contract-flow-arrow" aria-hidden="true">-></div>
+  <div class="contract-flow-node contract-reader">
+    <h3>Reader type</h3>
+    <p>Accept current + recent historical variants.</p>
+  </div>
+</div>
+
+<div class="deck-grid-3 mt-8 optional-soup-layout">
+  <div class="law-card success">
+    <h3>Serializer</h3>
+    <p>Emit less.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Deserializer</h3>
+    <p>Accept more.</p>
+  </div>
+  <div class="law-card failure">
+    <h3>One shared runtime type</h3>
+    <pre class="optional-soup-code"><code>type User = {
+  name?: string | null
+  city?: string | string[] | null
+  eye_color?: string | null
+  legacy_metadata?: unknown
+}</code></pre>
+  </div>
+</div>
+
+<div class="deck-callout optional-soup-callout mt-6">
+  <p class="deck-quote">If old readers never go away, use a discriminated union of past types. Do not weaken one type until it means everything.</p>
+</div>
+
+<!--
+JSON schema -> writer type -> union of last few deserializer types.
+
+Points to hit:
+- Serializer and deserializer compatibility are asymmetric during a partial rollout.
+- A serializer wants a narrower output set; a deserializer wants a wider accepted input set.
+- If one runtime type serves both, you usually end up with the union of rollout-era compromises, not the real domain model.
+- That weakens invariants exactly where you wanted types to protect you.
+- Queues, caches, and stored rows keep the old serialized shape alive after deploy, so reader compatibility is a long tail.
+- Define one strict boundary contract, then generate separate local types for each side.
+- Even if you can never fully retire an old reader shape, an explicit
+  discriminated union of historical variants is still better than one weak type
+  that tries to express every era at once.
 -->
 
 ---
@@ -441,52 +481,6 @@ This is the enforcement model:
   preserve backward compatibility in ugly, over-broad ways if you leave the
   boundary underspecified. It is useful to be able to say "never worry about
   backward compatibility except when the tests are yelling at you."
--->
-
----
-
-# One contract. Two local types.
-
-<div class="deck-grid-3 mt-8 optional-soup-layout">
-  <div class="law-card success">
-    <h3>Serializer</h3>
-    <p>Emit less.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Deserializer</h3>
-    <p>Accept more.</p>
-  </div>
-  <div class="law-card failure">
-    <h3>One shared runtime type</h3>
-    <pre class="optional-soup-code"><code>type User = {
-  name?: string | null
-  city?: string | string[] | null
-  eye_color?: string | null
-  legacy_metadata?: unknown
-}</code></pre>
-  </div>
-</div>
-
-<div class="deck-callout optional-soup-callout mt-6">
-  <p class="deck-quote">If old readers never go away, use a discriminated union of past types. Do not weaken one type until it means everything.</p>
-</div>
-
-<!--
-[TODO] move this after the contract point, and add a diagram
-
-JSON schema -> writer type -> union of last few deserializer types
-
-
-Points to hit:
-- Serializer and deserializer compatibility are asymmetric during a partial rollout.
-- A serializer wants a narrower output set; a deserializer wants a wider accepted input set.
-- If one runtime type serves both, you usually end up with the union of rollout-era compromises, not the real domain model.
-- That weakens invariants exactly where you wanted types to protect you.
-- Queues, caches, and stored rows keep the old serialized shape alive after deploy, so reader compatibility is a long tail.
-- Define one strict boundary contract, then generate separate local types for each side.
-- Even if you can never fully retire an old reader shape, an explicit
-  discriminated union of historical variants is still better than one weak type
-  that tries to express every era at once.
 -->
 
 ---
