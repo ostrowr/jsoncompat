@@ -35,6 +35,8 @@ drawings:
 Structured data is flowing between your systems. Some request hits the edge, which hits some API service, which maybe makes a couple more hops within your infrastructure. In the steady state – if you have enough capacity – it just works. 
 
 I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that are too complex for me, or more importantly, gpt 5.4, to understand. This talk is called Escaping Version Skew. I want to talk to you today a bit about how we can better define boundaries between our systems. We should be able to detect and prevent breaking changes. We should be able to maintain strict contracts at these abstraction boundaries. And we should be able to do all of this automatically, without relying on humans to catch subtle breaking changes.
+
+[48s]
 -->
 
 ---
@@ -47,6 +49,8 @@ First, a question for you all - and don't worry, I promise this is the only inte
 <revert>
 
 Well, halt the deploy and roll back is exactly what we did. Let me show you what happened.
+
+[20s]
 -->
 
 ---
@@ -58,7 +62,9 @@ Well, halt the deploy and roll back is exactly what we did. Let me show you what
 <!--
 See, we had a load bearing auth cache in redis. Pods running the new version were writing a type that the old version couldn't understand - so anyone who hit a new pod to fill out the auth cache then later hit an old pod on a subsequent request would get an error parsing the data from the cache. 
 
-The new pods could read the new format and the old format, but the old pods could only read the old format. This ended up causing up to a 15% error rate for chatgpt for about 30 minutes, until everything in the cache expired. We were lucky that the TTL wasn't very long.
+The new pods could read the new format and the old format, but the old pods could only read the old format. This ended up causing up to a 15% error rate for chatgpt for about 30 minutes, until everything in the cache expired. We were lucky that the TTL wasn't very long, because otherwise we might have had to do a risky manual production operation.
+
+[35s]
 -->
 
 ---
@@ -73,7 +79,9 @@ layout: center
 <!--
 So, in this particular case, we would have been better served by letting the rollout continue. Once all of the pods were on the new version, everyone could have read all the cache entries, and we wouldn't have seen the secondary error spike. Sadly, we didn't realize this until the rollback completed, and by that time the safest way to recovery was to let the bad cache entries expire on their own.
 
-Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleets. Our systems tend to break when they change, and we need a better theory of change.
+Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Hell, I was confusing myself on the previous slide talking about new versions talking to old versions talking to new versions, and that was only one service talking to one storage layer. It only gets more complicated than that. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleet and potentially customer fleets or clients. Our systems tend to break when they change, and we need a better theory of change.
+
+[1:15]
 -->
 
 ---
@@ -84,6 +92,8 @@ layout: center
 
 <!--
 When we talk about breaking changes, we're usually talking about clients and servers. You've probably babysat many annoying changes of the flavor "let's expand what the server accepts first, then update the client to send the new thing, then hopefully remember to re-constrain the server to only accept the new thing. Usually we forget to do the third step. And you have to make sure that you remember to roll out the services in the right order. So, I'm going to begin this talk by telling you the secret to coordinating ordered rollouts in a system the size of OpenAI's:
+
+[30s]
 -->
 
 ---
@@ -96,6 +106,8 @@ layout: center
 
 <!--
 You should give up! Don't give up on correctness, mind you – but if you have a change in trunk that will only work if services are deployed in a certain order, you're going to have a bad time.
+
+[15s]
 -->
 
 ---
@@ -107,7 +119,9 @@ layout: center
 </div>
 
 <!--
-You shouldn't rely on humans - or agents, for that matter - to catch breaking changes in an unconstrained system and babysit a reasonable rollout order. It's too complicated to reason about, it makes rollbacks unsafe, there are sometimes circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production successfully, and we need better ways to constrain the behavior at abstraction boundaries to even make this tractable.
+You shouldn't rely on humans - or agents, for that matter - to catch breaking changes in an unconstrained system let alone babysit a reasonable rollout order. It's too complicated to reason about, it makes rollbacks unsafe, and there are sometimes even circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production without errors, and we need better ways to constrain the behavior at abstraction boundaries to even make this tractable in the first place.
+
+[27s]
 -->
 
 ---
@@ -136,7 +150,7 @@ class: demo-full-bleed
 <!--
 Let's zoom in a bit. Any time you have state, whether that's in a shared cache, a queue, a database, or even just an inflight RPC between services, you lose the luxury of imagining your system as the nice, static diagram you write in your docs. Instead, you have to add that additional time dimension to your thinking.
 
-Let's imagine I want to add a new field to this schema, eye-color. 
+Let's imagine I want to add a new field to this schema, eye-color. All future users are going to set this field, so we want to make it required. 
 
 (s)
 
@@ -147,6 +161,8 @@ Oops, it rolled out to the reader first! eye_color is required, so we're seeing 
 Look at this - even if all the readers and all the writers had flipped at exactly the same time, inflight requests would have failed. 
 
 It's only now that the reader and the writer have been at the same version for a while (all the queues and RPC have drained) will we stop seeing errors.
+
+[1m]
 -->
 
 ---
@@ -172,13 +188,15 @@ It's only now that the reader and the writer have been at the same version for a
 </div>
 
 <!--
-OK, you're thinking. We solved this problem in like 2001 with protobufs. Why is robbie up there complaining about a solved problem? surely someone has told him about protos. 
+OK, you're thinking. We solved this problem in like 2001 with protobufs. Why is robbie up there complaining about a solved problem? surely someone told him about protos before he got up here and embarrassed himself.
 
-Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. Protos, what with their optional-only fields and no logic constraints -  make wire compatibility easy - but you're sacrificing constraints in your application for ease of wire compat. If you want your systems to have these solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of logic that you can never prune, and generally abandoning service developers to a situation where they have to handle all possible sets of states from all time. 
+Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. Protos, what with their optional-only semantics and no logic constraints -  make wire compatibility easy - but you're sacrificing constraints in your application for ease of wire compat. If you want your systems to have these solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of logic that you can never prune, and generally abandoning service developers to a situation where they have to handle all possible sets of states from all time. 
 
 So when I talk about defining schemas, I'm not just talking about the wire format. I'm also talking about contracts that can encode powerful rules, like json schema or extensions to protos like protovalidate.
 
 Unfortunately, though, of course, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
+
+[1:10]
 -->
 
 ---
@@ -224,12 +242,22 @@ message UserProfile {
 </div>
 
 <!--
-I call this type of schema evolution optionalslop. Every migration, rollback path,
-and compatibility tail leaves some *residue* in the schema. The schema on the left here shows 
-a type that is technically compatible but increasingly bad at expressing which states are actually valid
-today. This type doesn't make impossible states unrepresentable, and pushes the cleanup burden into business logic everywhere that reads it. So, sure, you're never going to get wire incompatibilities when you're using protos, but instead you'll see weird errors much deeper in your application code. 
+Our industry's current tooling encourages what I call optionalslop. 
 
-I promised at the beginning that we can keep things safe while also reducing cognitive overhead and making impossible states impossible. We do this with tooling.
+Every migration, rollback path,
+and compatibility tail leaves some ugly *residue* in the schema. The schema on the left here shows 
+a type that is technically compatible but increasingly bad at expressing which states are actually valid
+today. This type doesn't make impossible states unrepresentable, and pushes the cleanup burden into business logic everywhere that reads it. So, sure, you're never going to get wire incompatibilities when you're using protos, but instead you'll see weird errors much deeper in your application code when you assume that legacy_full_name can't co-occur with phone_verified or something. If you don't encode as many rules as possible into your contract, I absolutely guarantee that a future developer will take advantage of the flexibility to send something that you don't expect.
+
+I don't want to give you the feeling that I'm anti-proto. Certainly not. It's
+just not enough. We need a wire format plus additional rules, because at the
+end of the day, only the abstraction boundary is guaranteed. And you'd better
+be writing that boundary in some schema definition language so you can generate
+code from it that doesn't sneak in any assumptions. 
+
+I promised at the beginning that we can keep things safe while also reducing cognitive overhead and making impossible states impossible. We do this with tooling, but first, i want to make one comment about how this is even more important for agents than it is for humans.
+
+[1:20]
 -->
 
 ---
@@ -256,27 +284,31 @@ I promised at the beginning that we can keep things safe while also reducing cog
 </div>
 
 <!--
-I don't want to give you the feeling that I'm anti-proto. Certainly not. It's
-just not enough. We need a wire format plus additional rules, because at the
-end of the day, only the abstraction boundary is guaranteed. And you'd better
-be writing that boundary in some schema definition language so you can generate
-code from it that doesn't sneak in any assumptions. 
+Look, I work at OpenAI. I'm pretty AGI-pilled, and I believe strongly that our models are already better than humans at reasoning through most of this stuff, and will be much MUCH better in the near future. But that doesn't obviate the need for strict contracts - in fact, it makes them even more important. 
 
-Put as many constraints into your contract as possible. If the business logic
+Today, and I think, forever, agents, like humans will be able to build systems that they themselves cannot fully understand. These systems will be bigger and more impressive than anything I can make, but still too complex to page into memory, so to speak. 
+
+As our models get stronger and stronger, these abstraction boundaries can get bigger and bigger – but so will the underlying systems they support! Until and unless agents stop being able to build systems that they themselves can't fully understand, they need help to verify correctness of each change. We will always need abstraction boundaries with good contracts that are at most the size of an agent's ability to fully understand.
+
+So what should these contracts actually look like? Put as many constraints into your contract as possible. If the business logic
 depends on the rule, the rule belongs at the boundary. Then you can generate
 types for handlers that fulfill this contract, and you don't have to handle
 missing or malformed states deep in application code.
 
-I famously can only hold only one thing in my head, which is why I like types
+I famously can only hold only one thing in my head, which is why I like types and hate side effects
 so much. They let me think about just one part of my system at a time without
-worrying that my understanding might bleed into other systems. This is good for
+worrying that my understanding (or lack thereof) might bleed into other systems. This is good for especially
 dumb humans like me, obviously. But I think it's even better for agents.
 
 Models are not great at reconstructing your implicit invariants from a pile of
 surrounding code and tribal knowledge. If the boundary is loose, they will
 invent plausible-looking states that are subtly wrong. If the contract is
 strict, the legal state space is smaller, hidden assumptions become explicit,
-and you get a much sharper oracle for CI review, and most importantly, agentic loops.
+and you get a much sharper oracle for CI, review, and most importantly, agentic loops. If an agent can fuzz its own boundary by generating all reasonable input that satisfies some contract, it's going to be much more effective at proving its own correctness and building a robust system.
+
+Don't make your agents or your developers re-derive the contracts every time they look at the codebase. In some cases, they can, but doing so is like writing a runbook when you could have written a script. The script is just going to work. The runbook is going to mostly work, get out of date, have subtle bugs, etc. Even if context length becomes free, this will continue to be true. In terms of minimizing cognitive overhead for humans or for agents, a 100% guarantee that is easily definable is worth so much.
+
+[2:30]
 -->
 
 ---
@@ -299,13 +331,15 @@ and you get a much sharper oracle for CI review, and most importantly, agentic l
 </div>
 
 <!--
-This requires a change in the way we think about contracts. We need to stop sharing types between client and server. 
+OK, I've been waxing philosophical about how important strict contracts are for like 11 slides. It's time to tell you what we can actually do about it without adding too much friction.
 
-So, this is the shape I actually want. Writers should be as strict as possible.
+Adding all this strictness requires a change in the way we think about contracts. We need to stop sharing types between client and server, between serializer and deserializer. Delete your common/types library and replace it with a DSL that can generate separate client and server types.
+
+This is the shape I actually want. Writers should be as strict as possible.
 They should emit today's contract, not some giant compromise type that has been
-weakened by every migration you've ever done. If your business logic requires that age is required for all new users, make it impossible to ever serialize an ageless user again! Otherwise, I guarantee that some other developer will take advantage of the flexibility and you'll never burn down the debt. 
+weakened by every migration you've ever done. If your business logic requires that age is required for all new users, make it impossible to ever serialize an ageless user again! 
 
-Readers are where the compatibility burden belongs. They
+Readers, or deserializers, are where the compatibility burden belongs. They
 should accept the union of the last few writer versions, because that's where
 skew lands in practice. 
 
@@ -313,6 +347,8 @@ I know everyone loves to share types between client and server. Of course
 they do. It feels simpler, cheaper, cleaner. So if you want people not to do
 that, the tooling has to be really good. Separate writer and reader types can't
 feel like a tax. It has to feel like the easy path.
+
+[1:10]
 -->
 
 ---
@@ -351,7 +387,22 @@ If you want to be really fancy, your generated code should make it impossible to
 
 If you've done this right, a few nice things happen. Engineers stop simulating cross-version breakage in their heads; CI does that part. 
 
-Schema updates become more mechanical. And schemas start to represent points in time, which means you can branch explicitly on the stamp and later delete old branches when the metrics say they're gone.
+Schema updates become more mechanical. And schemas start to represent points in time, which means you can branch explicitly on the stamp and later delete old branches when the metrics say they're gone. This is a superpower, because it allows us to delete old code that we can guarantee is no longer used. 
+
+Let's reiterate the 6 step process.
+
+1. Update the schema to express some new expectation in business logic. "All users have names."
+2. Detect breaking changes. CI should look at your schema vs the one on trunk, master, main, whatever you call it, and reject changes that it can statically, or via fuzzing, determine are unsafe.
+3. Generate serializer and deserializers in the languages of your choice. Keep the writer type, the serializer type, as strict as possible. If all users have names, don't let name be optional.
+4. Make reader, or deserializer types, a tagged union of the last few writer types. This allows us to explicitly branch at previous versions of your schema, basically quarantining and then eventually deleting old bits of unmaintained code.
+5. Measure how often old readers are still used. Since we're generating all these deserializers, why not generate them with some standard telemetry!
+6. Delete old branches when telemetry nears zero. 
+
+This requires a lot of tooling. You need a complicated breaking change detector. The logic is no longer nearly as simple as proto breaking changes. You need telemetry. You need code generation from your DSL into your programming language. You need to be able to fetch old schema versions CI, and you need a way to mark schemas as currently evolving so you don't block engineers who don't care if they're making breaking changes to a brand new type. But once you have all that, it feels magic. Your generated clients just work, and more importantly, your business logic gets so much simpler - you just match on each part of the union you still have to support, and implement simple, constrained logic per-branch rather than an optional soup.
+
+I promise I'll get to some of this tooling, but let's use the same animation as before to walk through a simple example. 
+
+[2:50]
 -->
 
 ---
