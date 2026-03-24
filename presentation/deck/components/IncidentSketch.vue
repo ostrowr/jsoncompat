@@ -97,7 +97,7 @@ const mixedFleet = ["old", "old", "new", "old", "new", "old"] as const;
       </div>
 
       <div class="cache-flow">
-        <div class="flow-node flow-node-new">new pod writes<br>wrapped entry</div>
+        <div class="flow-node flow-node-new">new pod writes<br>new version</div>
         <div class="flow-arrow">-></div>
         <div class="flow-node flow-node-cache">shared cache<br>persists across readers</div>
         <div class="flow-arrow">-></div>

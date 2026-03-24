@@ -33,8 +33,9 @@ drawings:
 </NetworkHero>
 
 <!--
-Open on the fantasy and the break at once: a system diagram that looks legible
-from far away, except some arrivals are already red.
+Even if there's a ton of complexity behind any one of these nodes, you can rely on your trusty architecture diagram and the interfaces between your systems.
+
+I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that even I, or more importantly, gpt 5.4 can't understand. I want to talk to you today a bit about how we can define better boundaries between our systems and detect when you're about to ship a change without breaking your systems as it rolls out.
 -->
 
 ---
@@ -42,10 +43,11 @@ from far away, except some arrivals are already red.
 <AudienceRolloutQuestion />
 
 <!--
-Open the incident with a question, not the answer:
-- Show a normal-looking rollout where errors climb as new version share rises.
-- Ask the room what they would do here.
-- Do not mention the rollback twist yet.
+First, a question for you all - and don't worry, I promise this is the only interactive portion of the talk. The date is early 2025. We're seeing errors rise with a deploy. What do you do? Just yell it out.
+
+<revert>
+
+Well, halt the deploy and roll back is exactly what we did. Let me show you what happened.
 -->
 
 ---
@@ -55,17 +57,9 @@ Open the incident with a question, not the answer:
 <IncidentSketch />
 
 <!--
-Tell the concrete auth-cache incident, but keep it anonymized on the slide:
-- Requests started failing because cache reads raised a parse error.
-- The write path changed the cache format from a raw service response body to a
-  wrapped object with metadata and payload.
-- During deployment, newer pods wrote the new format while older pods still read
-  from the same cache and failed to parse it.
+See, we had a load bearing auth cache in redis. Pods running the new version were writing a type that the old version couldn't understand - so anyone who hit a new pod to fill out the auth cache then later hit an old pod on a subsequent request would get an error parsing the data from the cache. 
 
-Then say:
-"It's kind of shocking to me that we, as an industry, haven't solved this problem yet."
-
-That line sets up the natural audience response: "just use protos."
+The new pods could read the new format and the old format, but the old pods could only read the old format. This ended up causing up to a 15% error rate for chatgpt for about 30 minutes, until everything in the cache expired. We were lucky that the TTL wasn't very long.
 -->
 
 ---
@@ -75,24 +69,12 @@ layout: center
 <div class="incident-twist-slide">
   <h1>Rollback increased errors</h1>
   <p class="deck-quote mt-8">Old readers came back while bad cached data was still alive.</p>
-  <p class="deck-lead deck-muted mt-8">Waiting for the rollout to finish would have caused fewer errors than rolling back. This failed because one live version wrote a state that another still-live version could not accept.</p>
 </div>
 
 <!--
-This is the part that makes the system interaction feel genuinely hard:
-- As deployment progressed, errors rose because old pods were still present and
-  more new-format entries were being written.
-- Then errors fell as old pods disappeared.
-- Rolling back increased errors again by reintroducing old readers to the cache.
-- Eventually the failures stopped only after the bad cache entries expired.
-- The Datadog "Errors by Version" chart made this visible after the fact.
+So, in this particular case, we would have been better served by letting the rollout continue. Once all of the pods were on the new version, everyone could have read all the cache entries, and we wouldn't have seen the secondary error spike. Sadly, we didn't realize this until the rollout completed, and by that time the safest way to recovery was to let the bad cache entries expire on their own.
 
-The lesson is not "never roll back". It is that rollout safety depends on the
-interaction among code versions, shared state, cache TTL, and timing.
-- The moment you have persistence, canaries get much weaker as a protection:
-  data written by a canary can infect everywhere else.
-- Speaker note, not slide text: keep using `4` as the tiny recurring edge-value
-  villain in the story.
+Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient, but it's a lie once your systems get above toy-sized, we have to think about them  not just as the set of things running on the current version, but also at all of the previous versions (and in some case future versions) that are running across our fleets. [TODO, add title slide zooming in]
 -->
 
 ---
@@ -102,7 +84,7 @@ layout: center
 <div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
 
 <!--
-Setup beat for the punchline.
+When we talk about breaking changes, we're usually talking about clients and servers. You've probably submitted many annoying changes of the flavor "let's expand what the server accepts first, then update the client to send the new thing, then hopefully remember to constrain the client to only accept the new thing. Usually we forget to do the third step. And you have to make sure that you remember to roll out the services in the right order. So, I'm going to begin this talk by telling you the secret to coordinating ordered rollouts in a system the size of OpenAI's:
 -->
 
 ---
@@ -114,8 +96,7 @@ layout: center
 </div>
 
 <!--
-Punchline: not give up on correctness; give up on pretending perfect choreography
-across mixed versions is a strategy.
+You should give up! Don't give up on correctness, mind you – but if you have a change in trunk that will only work if services are deployed in a certain order, you're going to have a bad time.
 -->
 
 ---
@@ -127,7 +108,7 @@ layout: center
 </div>
 
 <!--
-Give the first refrain its own slide so it lands as the thesis, not a subtitle.
+You shouldn't rely on rollout order. It's too complicated to reason about, it makes rollbacks unsafe, there are sometimes circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production successfully.
 -->
 
 ---
@@ -154,11 +135,19 @@ class: demo-full-bleed
 </div>
 
 <!--
-Use this as the minimum mechanics demo, not the whole talk.
-It starts in the simplified steady-state model people usually reason from, then
-advances into broken overlap on keypress.
-Old packets are still in flight while new code is already live.
-One tiny diff becomes two different compatibility questions depending on direction.
+Any time you have state, whether that's in a shared cache, a queue, a database, or even just an inflight RPC between services, you stop getting the luxury of imagining your system as the nice, static diagram you write in your docs. Instead, you have to add that additional time dimension to your thinking.
+
+Let's imagine I want to add a new field to this schema, eye-color. 
+
+(s)
+
+Oops, it rolled out to the reader first! eye_color is required, so we're seeing some errors. It's ok, let's roll out the writer too. 
+
+(s, p)
+
+Look at this - even if all the readers and all the writers had flipped at exactly the same time, inflight requests would have failed. 
+
+Now we're back in that happy, static world. Until the next deploy.
 -->
 
 ---
@@ -184,23 +173,13 @@ One tiny diff becomes two different compatibility questions depending on directi
 </div>
 
 <!--
-This merges the "just use protos" counterargument into the boundary point:
-parseable is weaker than valid state.
+OK, you're thinking. We solved this problem in the 2001 with protobufs. Why is robbie up there complaining about a solved problem? surely someone has told him about protos. 
 
-If the room is schema-nerdy, this is where to mention grammar-based versus
-rule-based schemas. Otherwise keep it in plain language.
+Well, yes. Protos do indeed solve the wire compatibility problem. But they do so by substantially weakening the set of states they can represent. There's no longer such thing as a required field in protos. That makes wire compatibility easy - but you're sacrificing application-level constraints for ease of wire compat. If you want your systems to have solid abstraction boundaries - which I very much do - your invariants belong at the boundaries of your systems. Your application code should not be in the business of dealing with old versions of stuff forever, leaving dead branches of code that you can never prune, and generally leaving your application developers in a situation where they have to handle all possible sets of states from all time. 
 
-Protovalidate is a good example of a validation layer on top of protobuf:
-- It gives you a place to express stronger semantic rules than the grammar.
-- That is good, and I would still want it.
-- But changing those rules is still a compatibility change under skew.
-- A tighter validator is reader narrows. A looser one is reader widens.
-- If writers start emitting values that old validators reject, the same rollout
-  problem appears again.
+So when I talk about defining schemas, I'm talking about both grammar-based schemas like protos, but also schemas that can encode powerful rules, like json schema or extensions to protos like protovalidate.
 
-As far as I know, Protovalidate does not give you a backward/forward rollout
-semantics story for evolving the validation rules themselves, so the same
-lessons from this talk apply there too.
+Ultimately, if your business logic depends on some shape of data, you should reject bad data at the boundary at the edge. But unfortunately, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
 -->
 
 ---
@@ -232,6 +211,8 @@ lessons from this talk apply there too.
 </div>
 
 <!--
+[TODO maybe remove this slide?] 
+
 This is the compact mental model I want people to leave with:
 - A schema change changes a set of values.
 - Writer narrows: usually safe, because it emits fewer states.
@@ -263,7 +244,7 @@ layout: center
 </div>
 
 <!--
-Second refrain as a standalone beat before the constructive slide.
+Only the contract is guaranteed. Put as much into the contract as possible, but ensure that your business logic does not make any assumptions that are not encoded into the contract that you're publishing for your clients.
 -->
 
 ---
@@ -298,7 +279,7 @@ Second refrain as a standalone beat before the constructive slide.
     </div>
     <div class="boundary-point">
       <div class="boundary-point-title">Invariant</div>
-      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>. The edge value <code>4</code> is the one that keeps coming back.</div>
+      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>.</div>
     </div>
     <div class="boundary-point">
       <div class="boundary-point-title">Guarantee</div>
@@ -308,17 +289,9 @@ Second refrain as a standalone beat before the constructive slide.
 </div>
 
 <!--
-This is the constructive turn.
-Explicitly define boundaries. Constrain both primitive type and semantic shape.
-The stricter the contract, the smaller the mixed-version state space.
-Systems cannot assume anything not represented in the schema. Push as much as
-possible into that layer so invalid input gets rejected gracefully at the
-boundary, before application logic has to handle it at all.
+So, we're going to use JSON schema as the contract definition language in the rest of this talk. The same ideas apply to nearly any powerful schema definition language, but JSON is pretty ubiquitous at OpenAI and elsewhere. 
 
-Call out the agent angle explicitly:
-- Agents are worse than humans at recovering hidden assumptions across abstraction
-  boundaries.
-- Tight contracts give them a smaller legal state space and a sharper test oracle.
+I just want to hammer this point home. Put as many constraints into your contract as possible. Retries isn't just an integer, it's an integer between 0 and 4. Mode isn't a string, it's either fast or safe. All of the fields are required. Then, you can generate types for handlers that fulfill this contract, and you don't have to worry about handling the case where mode is missing or malformed. We check that at the edge.
 -->
 
 ---
@@ -345,10 +318,12 @@ Call out the agent angle explicitly:
 </div>
 
 <!--
+This contract point is important for humans and for agents. I feel 
+
 Make the agent point concrete and engineering-focused:
 - Large model callers are especially bad at reconstructing implicit invariants
   from surrounding context.
-- Tight contracts reduce the amount of hidden reasoning the agent has to do.
+- Tight cotracts reduce the amount of hidden reasoning the agent has to do.
 - They also give you a sharper oracle for automated checks and review.
 -->
 
@@ -497,6 +472,11 @@ This is the enforcement model:
 </div>
 
 <!--
+[TODO] move this after the contract point, and add a diagram
+
+JSON schema -> writer type -> union of last few deserializer types
+
+
 Points to hit:
 - Serializer and deserializer compatibility are asymmetric during a partial rollout.
 - A serializer wants a narrower output set; a deserializer wants a wider accepted input set.
