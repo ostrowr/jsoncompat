@@ -60,7 +60,7 @@ Well, halt the deploy and roll back is exactly what we did. Let me show you what
 <IncidentSketch />
 
 <!--
-See, we had a load bearing auth cache in redis. Pods running the new version were writing a type that the old version couldn't understand - so anyone who hit a new pod to fill out the auth cache then later hit an old pod on a subsequent request would get an error parsing the data from the cache. 
+See, we had a load bearing auth cache in redis. Pods running the new version were writing a type that the old version couldn't understand - so anyone who hit a new pod (the blue graph here) to fill out the auth cache then later hit an old pod (the orange one) on a subsequent request would get an error parsing the data from the cache. 
 
 The new pods could read the new format and the old format, but the old pods could only read the old format. This ended up causing up to a 15% error rate for chatgpt for about 30 minutes, until everything in the cache expired. We were lucky that the TTL wasn't very long, because otherwise we might have had to do a risky manual production operation.
 
@@ -82,53 +82,6 @@ So, in this particular case, we would have been better served by letting the rol
 Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Hell, I was confusing myself on the previous slide talking about new versions talking to old versions talking to new versions, and that was only one service talking to one storage layer. It only gets more complicated than that. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleet and potentially customer fleets or clients. Our systems tend to break when they change, and we need a better theory of change.
 
 [1:15]
--->
-
----
-
-# What would have made this obvious?
-
-<div class="deck-grid-3 mt-8 agent-contract-grid">
-  <div class="law-card success">
-    <h3>Read-tail telemetry</h3>
-    <p>Count deserializations by payload version, not just request errors.</p>
-  </div>
-  <div class="law-card success">
-    <h3>CI on mixed-version safety</h3>
-    <p>Reject a writer change if the old reader cannot still parse it.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Rollback-aware dashboards</h3>
-    <p>Show whether old readers are returning while new-shaped data is still live.</p>
-  </div>
-</div>
-
-<div class="deck-callout mt-8">
-  <p class="deck-quote">The key question is not "is the new version healthy?" but "is the fleet safe while versions are mixed?"</p>
-</div>
-
-<!--
-[TODO: hate this slide] 
-If I could go back and hand past-us three things, it would be these.
-
-First, read-tail telemetry. Not just "are requests failing," but "which
-payload versions are we still successfully or unsuccessfully deserializing
-right now?" If we had that, we could have seen that old readers were still in
-the fleet while new-shaped cache entries were still live.
-
-Second, CI that checks mixed-version safety directly. Not "does the new code
-pass tests at head," but "can the old reader still parse what the new writer
-emits?" That is the actual rollout question, but's hard to test and formalize!
-
-Third, rollback-aware dashboards. Rollback is not a magic undo button if state
-outlives the binary that wrote it. I want the dashboard to make that painfully
-obvious before I make the incident worse.
-
-That framing is really the whole talk. The key question is not whether the new
-version is healthy in isolation. It's whether the fleet is safe during the
-period where versions are mixed.
-
-[1:00]
 -->
 
 ---

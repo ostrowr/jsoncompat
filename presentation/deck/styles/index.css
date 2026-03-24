@@ -201,6 +201,7 @@
 .beat-card p,
 .quote-card p {
   margin-bottom: 0;
+  color: rgba(203, 213, 225, 0.84);
 }
 
 .law-card.accent {
