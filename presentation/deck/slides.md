@@ -225,6 +225,8 @@ turns one shared type into a pile of optionals. Every migration, rollback path,
 and compatibility tail leaves residue in the schema. The result is a type that
 is technically compatible but increasingly bad at expressing which states are
 actually valid now. This type doesn't make impossible states unrepresentable! Now, the business logic everywhere that reads this proto is responsible for checking which subsets of these fields must appear together, which don't make sense, etc.
+
+I promised at the beginning that we can keep things safe while also reducing cognitive overhead and making impossible states impossible. We do this with tooling.
 -->
 
 ---
@@ -296,15 +298,18 @@ I just want to hammer this point home. Put as many constraints into your contrac
 </div>
 
 <!--
-This is the principle slide before the mechanical checklist:
-- Writer and reader types have different jobs under skew.
-- The writer should stay narrow and current.
-- The reader should explicitly model the short historical tail it must accept.
-- A single shared type couples both sides to the weakest compromise.
-- Everyone wants to share types between client and server because it feels
-  simpler and cheaper. So if you want teams not to do that, the generated
-  tooling has to be robust enough that separate writer/reader types are the
-  easy path, not a tax.
+So, this is the shape I actually want. Writers should be as strict as possible.
+They should emit today's contract, not some giant compromise type that has been
+weakened by every migration you've ever done.
+
+Readers, on the other hand, are where the compatibility burden belongs. They
+should accept the union of the last few writer versions, because that's where
+skew lands in practice.
+
+And I know everyone wants to share types between client and server. Of course
+they do. It feels simpler, cheaper, cleaner. So if you want people not to do
+that, the tooling has to be really good. Separate writer and reader types can't
+feel like a tax. They have to feel like the easy path.
 -->
 
 ---
@@ -321,13 +326,19 @@ This is the principle slide before the mechanical checklist:
 </div>
 
 <!--
-Make this prescriptive:
-- The schema is the source of truth.
-- Tooling should flag unsafe transitions mechanically, not by convention.
-- Writer types should stay narrow; reader types carry the rollout tail as an
-  explicit tagged union of recent historical writers.
-- If you can measure which old writer branches still appear in production, you
-  get a principled deletion signal instead of guessing when cleanup is safe.
+So what does that mean mechanically?
+
+You update the schema. The tooling checks whether that change is breaking under
+partial rollout. If it is, you don't make the writer sloppy. You keep the
+writer strict, and you widen the reader into a tagged union of the last few
+writer shapes you still need to handle.
+
+And then, if you can, you measure it. How often are we still deserializing the
+old branches? When that drops to zero, you don't have to guess. You have a real
+signal that it's time to delete the old branch.
+
+That's the workflow I want: strict current writers, explicit historical readers,
+and a cleanup loop that is driven by production evidence instead of vibes.
 -->
 
 ---
@@ -354,13 +365,19 @@ Make this prescriptive:
 </div>
 
 <!--
-This contract point is important for humans and for agents. I feel 
+This is good for humans, obviously. But I think it's even better for agents.
 
-Make the agent point concrete and engineering-focused:
-- Large model callers are especially bad at reconstructing implicit invariants
-  from surrounding context.
-- Tight cotracts reduce the amount of hidden reasoning the agent has to do.
-- They also give you a sharper oracle for automated checks and review.
+Models are not great at reconstructing your implicit invariants from a pile of
+surrounding code and tribal knowledge. If the boundary is loose, they will
+invent plausible-looking states that are subtly wrong.
+
+If the contract is strict, the legal state space is smaller. Hidden assumptions
+become explicit. And you get a much sharper oracle for CI and review than
+"looks reasonable to me."
+
+So the pitch here is not just "this is cleaner architecture." It's that strict
+contracts make agentic workflows safer, because they make more bad states
+impossible instead of merely unlikely.
 -->
 
 ---
@@ -388,11 +405,16 @@ class: demo-full-bleed
 </div>
 
 <!--
-This is the constructive rollout pattern:
-- First deploy a reader union that can parse both v4 and v5.
-- Then deploy the writer change to start emitting v5.
-- Finally remove v4 support once the old data tail is gone.
-This is the answer to "what do I do instead of letting things break?"
+This is the constructive version of the rollout.
+
+First you deploy the reader union, so the new code can still parse the old
+shape and the new shape. Then you deploy the writer change and start emitting
+the new version. And only after the old data tail is gone do you remove the old
+branch.
+
+That's the answer to "okay, if I don't rely on rollout order and I don't want
+to let things break, what do I do instead?" You make the mixed-version period a
+first-class thing in the types.
 -->
 
 ---
@@ -404,7 +426,8 @@ layout: center
 </div>
 
 <!--
-Third refrain as a standalone beat before the checker/tooling section.
+And because humans are bad at reasoning about this in their heads, we should
+check it mechanically.
 -->
 
 ---
@@ -414,12 +437,25 @@ class: demo-full-bleed
 <CheckerEmbed />
 
 <!--
-Static compat-check demo beat.
-Use the real jsoncompat.com checker instead of the fuzzer. The point is that
-this break does not require example search: for the `exclusiveMaximum: 5` to `4`
-change, incompatibility is derivable from the old and new contracts directly.
-`4` is the witness that explains the failure: old writers can still emit it, and
-new readers reject it.
+For the demo, I want to show the nice case first: some breaking changes are
+detectable statically.
+
+I'll take the schema with `exclusiveMaximum: 5` and tighten it to `4`. The
+checker can prove that's unsafe directly from the old and new contracts. It
+doesn't need to hunt for examples. It can tell us the witness is `4`: old
+writers can still emit it, and new readers will reject it. That's exactly the
+kind of thing you want CI to catch before merge.
+
+But for a sufficiently powerful constraint language, not every compatibility
+question is that easy. Once you have richer combinations of conditionals,
+cross-field constraints, and schema composition, there are changes where a
+complete static answer is much harder or not practical.
+
+So then we need fuzzing too. The workflow is: prove what we can statically, and
+when the checker can't fully decide, search for concrete counterexamples. I
+like that combination a lot, because the static checker gives you fast,
+deterministic guardrails, and fuzzing gives you real examples when the logic
+gets too expressive for a complete proof.
 -->
 
 ---
@@ -446,7 +482,23 @@ new readers reject it.
 </div>
 
 <!--
-End on durable company-level controls, not a one-off preflight for a single change.
+So if I were going to summarize this as an SRE-ish playbook, it would be these
+four things.
+
+Constrain: make strict schemas the default, so hidden assumptions become
+contract rules instead of tribal knowledge.
+
+Split: generate separate reader and writer types by default, and make the
+historical reader union cheap to maintain.
+
+Gate: check compatibility mechanically in CI, and fail unsafe changes before
+they merge.
+
+Observe: measure which old versions are still being read, so you can see the
+tail, understand rollback risk, and know when cleanup is actually safe.
+
+That's the durable version of this. Not a one-off preflight for one scary
+change, but a system that makes the safe path the normal path.
 -->
 
 ---
