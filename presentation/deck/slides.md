@@ -184,54 +184,7 @@ Unfortunately, though, the stricter your schemas are, the easier it is for you t
 
 ---
 
-# Only the contract is guaranteed
-
-<div class="deck-grid-2 mt-8">
-  <div class="deck-schema-box">
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "retries": {
-      "type": "integer",
-      "minimum": 0,
-      "exclusiveMaximum": 5
-    },
-    "mode": {
-      "enum": ["fast", "safe"]
-    }
-  },
-  "required": ["retries", "mode"]
-}
-```
-
-  </div>
-  <div class="fact-card boundary-card">
-    <div class="boundary-point">
-      <div class="boundary-point-title">Primitive</div>
-      <div class="boundary-point-body"><code>integer</code>, not “number-ish”.</div>
-    </div>
-    <div class="boundary-point">
-      <div class="boundary-point-title">Invariant</div>
-      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, write <code>&lt; 5</code>.</div>
-    </div>
-    <div class="boundary-point">
-      <div class="boundary-point-title">Guarantee</div>
-      <div class="boundary-point-body">Only schema invariants are guaranteed. Reject bad input at the boundary.</div>
-    </div>
-  </div>
-</div>
-
-<!--
-So, we're going to use JSON schema as the contract definition language in the rest of this talk. The same ideas apply to nearly any powerful schema definition language, but JSON is pretty ubiquitous at OpenAI and elsewhere. 
-
-I just want to hammer this point home. Put as many constraints into your contract as possible. Retries isn't just an integer, it's an integer between 0 and 4. Mode isn't a string, it's either fast or safe. All of the fields are required. Then, you can generate types for handlers that fulfill this contract, and you don't have to worry about handling the case where mode is missing or malformed. We check that at the edge.
--->
-
----
-
-# optionalslop
+# Avoid optionalslop
 
 <div class="deck-grid-2 mt-8">
   <div class="deck-schema-box">
@@ -272,6 +225,55 @@ turns one shared type into a pile of optionals. Every migration, rollback path,
 and compatibility tail leaves residue in the schema. The result is a type that
 is technically compatible but increasingly bad at expressing which states are
 actually valid now. This type doesn't make impossible states unrepresentable! Now, the business logic everywhere that reads this proto is responsible for checking which subsets of these fields must appear together, which don't make sense, etc.
+-->
+
+---
+
+# Only the contract is guaranteed
+
+<div class="deck-grid-2 mt-8">
+  <div class="deck-schema-box">
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "retries": {
+      "type": "integer",
+      "minimum": 0,
+      "exclusiveMaximum": 5
+    },
+    "mode": {
+      "enum": ["fast", "safe"]
+    }
+  },
+  "required": ["retries", "mode"]
+}
+```
+
+  </div>
+  <div class="fact-card boundary-card">
+    <div class="boundary-point">
+      <div class="boundary-point-title">Primitive</div>
+      <div class="boundary-point-body"><code>integer</code>, not “number-ish”.</div>
+    </div>
+    <div class="boundary-point">
+      <div class="boundary-point-title">Invariant</div>
+      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, encode <code>&lt; 5</code> in the contract!</div>
+    </div>
+    <div class="boundary-point">
+      <div class="boundary-point-title">Guarantee</div>
+      <div class="boundary-point-body">Only schema invariants are guaranteed. Reject bad input at the boundary.</div>
+    </div>
+  </div>
+</div>
+
+<!--
+I don't want to give you the feeling that I'm anti-proto. Certainly not. It's just not enough. We need a wire format PLUS additional rules, because at the end of the day, only the abstraction boundary is guaranteed. And you'd better be writing that boundary in some schema definition language so you can generate code from it. 
+
+We're going to use JSON schema as the contract definition language for the rest of this talk. The same ideas apply to nearly any powerful schema definition language, but JSON is pretty ubiquitous at OpenAI and elsewhere.
+
+I just want to hammer this point home. Put as many constraints into your contract as possible. Retries isn't just an integer, it's an integer between 0 and 4. Mode isn't a string, it's either fast or safe. All of the fields are required. Then, you can generate types for handlers that fulfill this contract, and you don't have to worry about handling the case where mode is missing or malformed. We check that at the edge, so our business logic can be simple and correct.
 -->
 
 ---
