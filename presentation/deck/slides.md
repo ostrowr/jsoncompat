@@ -430,18 +430,20 @@ class: demo-full-bleed
 </div>
 
 <!--
-Now, let's look at what a rollout might look like in this world. Most rollouts look exactly the same - if the change isn't breaking for readers, CI will just let you deploy.
+For most rollouts where the change isn't breaking, CI will just let the change through and you don't have to do anything fancy. But let's take the example of the most verboten type of change: changing the type of a field. 
 
-But let's consider a change that is breaking in both directions, like changing interests from a list to an int. You generally shouldn't do this, but it's sometimes necessary. 
+This change is obviously breaking in both directions - old readers can't understand new writers and vice versa, and I still don't recommend it. But it's doable. In this case, we're going to change `interests` from a list of strings to an int.
 
-CI sees that you're trying to deploy a breaking change. It doesn't let you update the writer type yet, since the reader type on master doesn't accept v5. Instead, you run `stamp` and now all the readers accept either the old version or the new version.
+First, CI sees that you're trying to deploy a breaking change. It doesn't let you update the writer type yet, since the reader type on master doesn't accept v5. Instead, you run `stamp` and now all the readers accept either the old version or the new version.
 
 (s)
 
-Then, when metrics show that you're ready, CI finally lets you deploy the new writer:
+Then, when metrics show that all readers are rolled out, CI finally lets you merge the new, strict, writer type:
 
 And only after the old data tail is gone do you remove the old
 branch. In some cases, you'll never be able to remove the old types, but that's ok! It's much cleaner to have different codepaths based on a union branch.
+
+[1:10]
 -->
 
 ---
@@ -449,12 +451,13 @@ layout: center
 ---
 
 <div class="emphasis-slide">
-  <div class="emphasis-phrase">Check it mechanically.</div>
+  <div class="emphasis-phrase">Tooling!</div>
 </div>
 
 <!--
-And because humans are bad at reasoning about this in their heads, we should
-check it mechanically.
+The first two thirds of this talk were kind of philosophical; like "in a perfect world, here's how I'd think about breaking changes. The thing that makes this hard is that it's very difficult to detect breaking changes in a sufficiently powerful contract language. The set of breaking changes rules for protos are really easy. The set of breaking changes rules for JSON schema are much much harder, precisely because they are more expressive. Harder enough that I'm not aware of any open source project that does this in any reasonable way, even though I think it would be useful industry-wide, for everyone who uses JSON!
+
+[30]
 -->
 
 ---
@@ -464,25 +467,36 @@ class: demo-full-bleed
 <CheckerEmbed />
 
 <!--
-For the demo, I want to show the nice case first: some breaking changes are
-detectable statically.
+Until today, that is! I've been frustrated by this for years and finally took the time to sit down to try to write a generic JSON schema subsumption checker. We can statically analyze arbitrary JSON schemas and try to detect if they're breaking. 
 
-I'll take the schema with `exclusiveMaximum: 5` and tighten it to `4`. The
-checker can prove that's unsafe directly from the old and new contracts. It
-doesn't need to hunt for examples. It can tell us the witness is `4`: old
-writers can still emit it, and new readers will reject it. That's exactly the
-kind of thing you want CI to catch before merge.
+Let's take a look at this simple schema on the right. We've got an object type with two fields: `name` and `age`. They both have some additional constraints, like minLength for the string or minimum for the age. 
 
-But for a sufficiently powerful constraint language, not every compatibility
-question is that easy. Once you have richer combinations of conditionals,
+First let's check compatibility between this schema and itself. 
+
+Great, we've done so, and we've generated some representative sample data at the bottom as well.
+
+Now, let's tighten the new schema. Let's make minLength 6. If you think about it for a second, all values representable by the new schema are representable by the old schema, but names with length 5 are only valid under the old schema but not the new schema. This is a breaking change for the `deserializer` role because there is old data that the serializer can emit that is no longer valid under the new schema!
+
+I think this is pretty cool, and you can run this against all schemas in your repo quite quickly. 
+
+This static checker works for almost all schemas, so fuzzing is rarely necessary. 
+
+However for a sufficiently powerful constraint language, not every compatibility
+question is that easy. The JSON schema "not" keyword comes to mind; it's really hard to detect statically whether something does not fulfull any instance of a schema, or a complicated format or whatever. Once you have richer combinations of conditionals,
 cross-field constraints, and schema composition, there are changes where a
 complete static answer is much harder or not practical.
+
+[Click on fuzzer]
 
 So then we need fuzzing too. The workflow is: prove what we can statically, and
 when the checker can't fully decide, search for concrete counterexamples. I
 like that combination a lot, because the static checker gives you fast,
 deterministic guardrails, and fuzzing gives you real examples when the logic
-gets too expressive for a complete proof.
+gets too expressive for a complete proof. The nice thing about having the fuzzer is it also lets me and my agents iterate a lot faster on the static side of the house. The test harness is basically the fuzzer.
+
+[play with the fuzzer a bit]
+
+This is MIT-licensed and it's the first time I'm talking about it anywhere so I'm sure it has lots of bugs, but we're using it internally and it's been a huge boon for catching breaking changes at our storage boundaries.
 -->
 
 ---
