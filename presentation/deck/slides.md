@@ -468,6 +468,8 @@ class: demo-full-bleed
 
 <!--
 Until today, that is! I've been frustrated by this for years and finally took the time to sit down to try to write a generic JSON schema subsumption checker. We can statically analyze arbitrary JSON schemas and try to detect if they're breaking.
+
+[15]
 -->
 
 ---
@@ -490,18 +492,20 @@ Until today, that is! I've been frustrated by this for years and finally took th
 </div>
 
 <!--
-Let me formalize what I mean by subsumption checker. The core question is just set containment.
+Let me formalize what I mean by subsumption checker really quick. The core question is just set containment.
 
 Think of a schema as denoting a language of valid JSON values, L(schema).
 
 Then a subsumption checker asks whether one language is a subset of the other.
 
-If L(new) is a subset of L(old), a new writer is safe for an old reader.
-If L(old) is a subset of L(new), an old writer is safe for a new reader.
+If L(new) is a subset of L(old), that is, all values valid under the new schema are valid under the old schema, a new writer is safe for an old reader.
+If L(old) is a subset of L(new), that is, all values valid under the old schema are valid under the new schema, an old writer is safe for a new reader.
 
-When either relation fails, if possible, the checker should produce a witness value in the difference.
+When either relation fails, if possible, the checker should ne able to produce a witness value showing the difference.
 
-The important point here is that the only input to the language is the schema itself. If your business logic assumes some invariant that is not expressible in the schema, the subsumption checker cannot possibly catch it. So, you should try to avoid assuming such invariants, or, if you have to, extend the subsumption checker!
+I don't really like talking about forward and backward compatibility since it always confuses me from whose perspective? For example, a system that takes input and returns output simultaneously acts as a deserializer (when it takes its input) and a serializer (when it returns its output.) So, instead, I prefer to talk about breaking changes from the perspective of the writer and reader, or serializer and deserializer. 
+
+The important point here is that the only input to the language is the schema itself. If your business logic assumes some invariant that is not expressible in the schema, the subsumption checker cannot possibly catch it. So, you should try to avoid assuming such invariants, or, if you have to, you must extend the schema DSL itself.
 -->
 
 ---
@@ -511,6 +515,8 @@ class: demo-full-bleed
 <CheckerEmbed />
 
 <!--
+Now, let's do a brief live demo. This is actually jsoncompat.com iframed into this presentation, we'll see if it works. The actual subsumption checker is written in rust but compiled to wasm for javascript usage. 
+
 Let's take a look at this simple schema on the right. We've got an object type with two fields: `name` and `age`. They both have some additional constraints, like minLength for the string or minimum for the age. 
 
 First let's check compatibility between this schema and itself. 
