@@ -398,7 +398,7 @@ Let's reiterate the 6 step process.
 5. Measure how often old readers are still used. Since we're generating all these deserializers, why not generate them with some standard telemetry!
 6. Delete old branches when telemetry nears zero. 
 
-This requires a lot of tooling. You need a complicated breaking change detector. The logic is no longer nearly as simple as proto breaking changes. You need telemetry. You need code generation from your DSL into your programming language. You need to be able to fetch old schema versions CI, and you need a way to mark schemas as currently evolving so you don't block engineers who don't care if they're making breaking changes to a brand new type. But once you have all that, it feels magic. Your generated clients just work, and more importantly, your business logic gets so much simpler - you just match on each part of the union you still have to support, and implement simple, constrained logic per-branch rather than an optional soup.
+This requires a lot of tooling. You need a complicated breaking change detector. The logic is no longer nearly as simple as proto breaking changes. You need telemetry. You need code generation from your DSL into your programming language. You need to be able to fetch old schema versions in CI, and you need a way to mark schemas as currently evolving so you don't block engineers who don't care if they're making breaking changes to a brand new type. But once you have all that, it feels magic. Your generated clients just work, and more importantly, your business logic gets so much simpler - you just match on each part of the union you still have to support, and implement simple, constrained logic per-branch rather than an optional soup.
 
 I promise I'll get to some of this tooling, but let's use the same animation as before to walk through a simple example. 
 
@@ -581,14 +581,14 @@ class UserProfile(BaseModel):
 <!--
 Instead of telling you that you have to go back to your company and insist that everyone rewrites all of their storage logic separating all of our serializer and deserializer types, write some codegen, etc, I want to leave you with a suggestion as to how to slowly adopt tooling like this. 
 
-At openai, we have a lot of Pydantic schemas that define something we're storing somewhere; maybe in a database, maybe in redis, whatever. We don't have to go all the way off the bat and split the reader and writer type, even if I wish we did! Instead, we can decorate all these types with a jsoncompat decorator that writes the current schema to disk and checks breaking changes against previous commits, using the same static checks and fuzzing I just told you! While this isn't as powerful as schema-first design and generated code, it's already caught a ton of subtle cases where people didn't realize they were making breaking changes.
+At openai, we have a lot of Pydantic schemas that define something we're storing somewhere; maybe in a database, maybe in redis, whatever. We don't have to go all the way off the bat and split the reader and writer type, even if I wish we did! Instead, we can decorate all these types with a jsoncompat decorator that writes the current schema to disk and checks breaking changes against previous commits, using the same static checks and fuzzing I just showed you! While this isn't as powerful as schema-first design and generated code, it's already caught a ton of subtle cases where people didn't realize they were making breaking changes.
 
 Here, it's trivial to adopt. Put the compatibility policy right next to the type definition. If we're using it for both directions, we say "both." The stable ID
 is the durable identity for this contract across renames and refactors, so CI
 can compare the current schema against the historical snapshots for that same logical payload.
 
 With `direction="both"`, a change has to be safe for old readers seeing new
-writes and for new readers seeing old writes. Eventually, I hope that we can split UserProfile here into a writer and reader type, and evolve them more independently, allowing us to have strict writers and union readers like I keep talking about.
+writes and for new readers seeing old writes. Eventually, I hope that we can split types like UserProfile here into a writer and reader type, and evolve them more independently, allowing us to have strict writers and union readers like I keep talking about.
 
 [1:15]
 -->
