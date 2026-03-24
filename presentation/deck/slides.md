@@ -380,15 +380,15 @@ and a cleanup loop that is driven by production evidence instead of vibes.
 <div class="deck-grid-3 mt-8 agent-contract-grid">
   <div class="law-card success">
     <h3>Smaller legal state space</h3>
-    <p>Fewer ambiguous shapes for an agent to invent, infer, or accidentally depend on.</p>
+    <p>Fewer ambiguous shapes for an agent depend on.</p>
   </div>
   <div class="law-card success">
     <h3>Hidden assumptions become explicit</h3>
-    <p>Put the rule at the boundary so the agent does not have to recover it from prose, examples, or tribal context.</p>
+    <p>Put the rule at the boundary so the agent does not have to recover it.</p>
   </div>
   <div class="law-card success">
     <h3>Crisper test oracle</h3>
-    <p>A strict contract turns "looks plausible" into pass/fail examples that CI and code review can both enforce.</p>
+    <p>A strict contract allows an agent loop to quickly iterate upon correctness.</p>
   </div>
 </div>
 
@@ -397,7 +397,7 @@ and a cleanup loop that is driven by production evidence instead of vibes.
 </div>
 
 <!--
-This is good for humans, obviously. But I think it's even better for agents.
+I famously can only hold only one thing in my head, which is why I like types so much. They let me think about just one part of my system at a time without worrying that my understanding might bleed into other systems. This is good for dumb humans like me, obviously. But I think it's even better for agents.
 
 Models are not great at reconstructing your implicit invariants from a pile of
 surrounding code and tribal knowledge. If the boundary is loose, they will
@@ -409,7 +409,7 @@ become explicit. And you get a much sharper oracle for CI and review than
 
 So the pitch here is not just "this is cleaner architecture." It's that strict
 contracts make agentic workflows safer, because they make more bad states
-impossible instead of merely unlikely.
+impossible instead of merely unlikely. As agents get smarter and smarter, maybe we can make these abstraction boundaries bigger and bigger! But at work day to day, I see myself defining system boundaries for my agents and letting them do anything they like behind those boundaries. As long as you can guarantee that the abstractions you depend on aren't leaky, a little slop behind the abstraction is OK.
 -->
 
 ---
