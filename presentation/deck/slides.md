@@ -265,21 +265,21 @@ I promised at the beginning that we can keep things safe while also reducing cog
 # Strict contracts are better for ~~humans~~ agents
 
 <div class="deck-grid-3 mt-8 agent-contract-grid">
-  <div class="law-card success">
+  <div v-click class="law-card success">
     <h3>Smaller legal state space</h3>
     <p>Fewer ambiguous shapes for an agent depend on.</p>
   </div>
-  <div class="law-card success">
+  <div v-click class="law-card success">
     <h3>Hidden assumptions become explicit</h3>
     <p>Put the rule at the boundary so the agent does not have to recover it.</p>
   </div>
-  <div class="law-card success">
+  <div v-click class="law-card success">
     <h3>Crisper test oracle</h3>
     <p>A strict contract allows an agent loop to quickly iterate upon correctness.</p>
   </div>
 </div>
 
-<div class="deck-callout mt-8">
+<div v-click class="deck-callout mt-8">
   <p class="deck-quote">Agentic workflows get safer when the boundary is narrow enough to make bad states impossible, not just unlikely.</p>
 </div>
 
@@ -303,10 +303,10 @@ dumb humans like me, obviously. But I think it's even better for agents.
 Models are not great at reconstructing your implicit invariants from a pile of
 surrounding code and tribal knowledge. If the boundary is loose, they will
 invent plausible-looking states that are subtly wrong. If the contract is
-strict, the legal state space is smaller, hidden assumptions become explicit,
-and you get a much sharper oracle for CI, review, and most importantly, agentic loops. If an agent can fuzz its own boundary by generating all reasonable input that satisfies some contract, it's going to be much more effective at proving its own correctness and building a robust system.
+strict, the legal state space is smaller, [advance] hidden assumptions become explicit,
+[advance] and you get a much sharper oracle for CI, review, and most importantly, agentic loops. If an agent can fuzz its own boundary by generating all reasonable input that satisfies some contract, it's going to be much more effective at proving its own correctness and building a robust system.
 
-Don't make your agents or your developers re-derive the contracts every time they look at the codebase. In some cases, they can, but doing so is like writing a runbook when you could have written a script. The script is just going to work. The runbook is going to mostly work, get out of date, have subtle bugs, etc. Even if context length becomes free, this will continue to be true. In terms of minimizing cognitive overhead for humans or for agents, a 100% guarantee that is easily definable is worth so much.
+[advance] Don't make your agents or your developers re-derive the contracts every time they look at the codebase. In some cases, they can, but doing so is like writing a runbook when you could have written a script. The script is just going to work. The runbook is going to mostly work, get out of date, have subtle bugs, etc. Even if context length becomes free, this will continue to be true. In terms of minimizing cognitive overhead for humans or for agents, a 100% guarantee that is easily definable is worth so much.
 
 [2:30]
 -->
@@ -421,12 +421,12 @@ Of course, no one will want to write this reader type. So we need to generate it
 </div>
 
 <div class="tooling-checklist tooling-checklist-compact stamp-process-checklist mt-6">
-  <div class="tooling-step"><strong>1</strong><span>Update the schema.</span></div>
-  <div class="tooling-step"><strong>2</strong><span>Detect breaking changes.</span></div>
-  <div class="tooling-step"><strong>3</strong><span>Keep the writer as strict as possible.</span></div>
-  <div class="tooling-step"><strong>4</strong><span>Make readers a tagged union of the last few writers.</span></div>
-  <div class="tooling-step"><strong>5</strong><span>Measure how often old writer branches still deserialize.</span></div>
-  <div class="tooling-step"><strong>6</strong><span>Delete old branches once those metrics hit zero.</span></div>
+  <div v-click class="tooling-step"><strong>1</strong><span>Update the schema.</span></div>
+  <div v-click class="tooling-step"><strong>2</strong><span>Detect breaking changes.</span></div>
+  <div v-click class="tooling-step"><strong>3</strong><span>Keep the writer as strict as possible.</span></div>
+  <div v-click class="tooling-step"><strong>4</strong><span>Make readers a tagged union of the last few writers.</span></div>
+  <div v-click class="tooling-step"><strong>5</strong><span>Measure how often old writer branches still deserialize.</span></div>
+  <div v-click class="tooling-step"><strong>6</strong><span>Delete old branches once those metrics hit zero.</span></div>
 </div>
 
 <!--
@@ -447,12 +447,9 @@ Schema updates become more mechanical. And schemas start to represent points in 
 
 Let's reiterate the 6 step process.
 
-1. Update the schema to express some new expectation in business logic. "All users have names."
-2. Detect breaking changes. CI should look at your schema vs the one on trunk, master, main, whatever you call it, and reject changes that it can statically, or via fuzzing, determine are unsafe.
-3. Generate serializer and deserializers in the languages of your choice. Keep the writer type, the serializer type, as strict as possible. If all users have names, don't let name be optional.
-4. Make reader, or deserializer types, a tagged union of the last few writer types. This allows us to explicitly branch at previous versions of your schema, basically quarantining and then eventually deleting old bits of unmaintained code.
-5. Measure how often old readers are still used. Since we're generating all these deserializers, why not generate them with some standard telemetry!
-6. Delete old branches when telemetry nears zero. 
+First, [advance] update the schema to express some new expectation in business logic. "All users have names." [advance] Detect breaking changes. CI should look at your schema vs the one on trunk, master, main, whatever you call it, and reject changes that it can statically, or via fuzzing, determine are unsafe. [advance] Generate serializer and deserializers in the languages of your choice. Keep the writer type, the serializer type, as strict as possible. If all users have names, don't let name be optional.
+
+Now, our stamp command allows us [advance] Make reader, or deserializer types, a tagged union of the last few writer types. This allows us to explicitly branch at previous versions of your schema, basically quarantining and then eventually deleting old bits of unmaintained code. [advance] Measure how often old readers are still used. Since we're generating all these deserializers, why not generate them with some standard telemetry! [advance] Delete old branches when telemetry nears zero. 
 
 This requires a lot of tooling. You need a complicated breaking change detector. The logic is no longer nearly as simple as proto breaking changes. You need telemetry. You need code generation from your DSL into your programming language. You need to be able to fetch old schema versions in CI, and you need a way to mark schemas as currently evolving so you don't block engineers who don't care if they're making breaking changes to a brand new type. But once you have all that, it feels magic. Your generated clients just work, and more importantly, your business logic gets so much simpler - you just match on each part of the union you still have to support, and implement simple, constrained logic per-branch rather than an optional soup.
 
@@ -513,7 +510,8 @@ layout: center
 ---
 
 <div class="emphasis-slide">
-  <div class="emphasis-phrase">Tooling!</div>
+  <div class="emphasis-phrase">Meet jsoncompat.</div>
+  <div class="hero-talk-subtitle mt-4">Prove when possible. Fuzz when not.</div>
 </div>
 
 <!--
