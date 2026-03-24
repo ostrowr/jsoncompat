@@ -8,7 +8,8 @@
     "export:pdf": "slidev export --output artifacts/deck.pdf",
     "export:png": "slidev export --format png --output artifacts/slide-images",
     "capture:assets": "node scripts/capture-simulator-assets.mjs",
-    "check": "npm run build"
+    "check": "npm run build",
+    "remote:dev": "slidev --port 3030 --remote"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",

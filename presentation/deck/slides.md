@@ -103,7 +103,7 @@ layout: center
 ---
 
 <div class="emphasis-slide">
-  <div class="emphasis-phrase emphasis-phrase-coral">Don't rely on humans</div>
+  <div class="emphasis-phrase emphasis-phrase-coral">don't rely on humans</div>
 </div>
 
 <!--
