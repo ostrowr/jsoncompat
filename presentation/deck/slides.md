@@ -103,11 +103,11 @@ layout: center
 ---
 
 <div class="emphasis-slide">
-  <div class="emphasis-phrase emphasis-phrase-coral">Don't rely on rollout order.</div>
+  <div class="emphasis-phrase emphasis-phrase-coral">Don't rely on humans</div>
 </div>
 
 <!--
-You shouldn't rely on rollout order. It's too complicated to reason about, it makes rollbacks unsafe, there are sometimes circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production successfully.
+You shouldn't rely on humans to catch breaking changes and babysit a reasonable rollout order. It's too complicated to reason about, it makes rollbacks unsafe, there are sometimes circular dependencies that make it entirely impossible. We need a better solution than a human manually gating rollouts to make sure their breaking change gets into production successfully.
 -->
 
 ---
