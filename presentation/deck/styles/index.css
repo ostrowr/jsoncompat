@@ -665,6 +665,13 @@
   text-decoration: underline;
 }
 
+.assumption-footnote {
+  color: rgba(148, 163, 184, 0.9);
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
 .deck-slide-number {
   color: rgba(188, 199, 212, 0.7);
 }

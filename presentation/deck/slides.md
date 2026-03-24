@@ -510,7 +510,7 @@ layout: center
 ---
 
 <div class="emphasis-slide">
-  <div class="emphasis-phrase">Meet jsoncompat.</div>
+  <div class="emphasis-phrase">Tooling!</div>
   <div class="hero-talk-subtitle mt-4">Prove when possible. Fuzz when not.</div>
 </div>
 
@@ -547,8 +547,12 @@ Until today, that is! I've been frustrated by this for years and finally took th
   </div>
 </div>
 
-<div class="deck-callout mt-4">
+<div class="deck-callout mt-2">
   <p class="deck-quote">A schema change is compatible in a direction exactly when every value accepted before is still accepted after, or vice versa.</p>
+</div>
+
+<div class="assumption-footnote mt-3">
+  Serializer assumption: no extra emitted fields beyond the declared schema.
 </div>
 
 <!--
@@ -562,6 +566,8 @@ If L(new) is a subset of L(old), that is, all values valid under the new schema 
 If L(old) is a subset of L(new), that is, all values valid under the old schema are valid under the new schema, an old writer is safe for a new reader.
 
 When either relation fails, if possible, the checker should able to produce a witness value showing the difference.
+
+One practical caveat: for serializer checks, jsoncompat assumes the writer only emits fields described by the schema, even if `additionalProperties` is true. Otherwise every optional-field addition looks unsafe.
 
 The reason this is hard is that it's impossible in most cases to enumerate the actual language, so you can't do an actual subset check. Instead, a subsumption checker like jsoncompat has to do special logic for each keyword that proves properties of new and old schemas. This gets really hard with recursive schemas, sum types, and other arbitrary constraints like regex format strings.
 
