@@ -703,6 +703,20 @@
   line-height: 1.4;
 }
 
+.stamp-process-intro .law-card {
+  min-height: 9.2rem;
+}
+
+.stamp-process-intro .law-card h3 {
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.stamp-process-intro .law-card p {
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
 .contract-type-flow {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 1fr) auto minmax(0, 1.35fr);
@@ -766,6 +780,11 @@
 .tooling-checklist-compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
+}
+
+.stamp-process-checklist .tooling-step {
+  min-height: 5.4rem;
+  font-size: 0.93rem;
 }
 
 .tooling-step {

@@ -234,51 +234,49 @@ I promised at the beginning that we can keep things safe while also reducing cog
 
 ---
 
-# Only the contract is guaranteed
+# Strict contracts are better for ~~humans~~ agents
 
-<div class="deck-grid-2 mt-8">
-  <div class="deck-schema-box">
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "retries": {
-      "type": "integer",
-      "minimum": 0,
-      "exclusiveMaximum": 5
-    },
-    "mode": {
-      "enum": ["fast", "safe"]
-    }
-  },
-  "required": ["retries", "mode"]
-}
-```
-
+<div class="deck-grid-3 mt-8 agent-contract-grid">
+  <div class="law-card success">
+    <h3>Smaller legal state space</h3>
+    <p>Fewer ambiguous shapes for an agent depend on.</p>
   </div>
-  <div class="fact-card boundary-card">
-    <div class="boundary-point">
-      <div class="boundary-point-title">Primitive</div>
-      <div class="boundary-point-body"><code>integer</code>, not “number-ish”.</div>
-    </div>
-    <div class="boundary-point">
-      <div class="boundary-point-title">Invariant</div>
-      <div class="boundary-point-body">If the rule is <code>&lt; 5</code>, encode <code>&lt; 5</code> in the contract!</div>
-    </div>
-    <div class="boundary-point">
-      <div class="boundary-point-title">Guarantee</div>
-      <div class="boundary-point-body">Only schema invariants are guaranteed. Reject bad input at the boundary.</div>
-    </div>
+  <div class="law-card success">
+    <h3>Hidden assumptions become explicit</h3>
+    <p>Put the rule at the boundary so the agent does not have to recover it.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Crisper test oracle</h3>
+    <p>A strict contract allows an agent loop to quickly iterate upon correctness.</p>
   </div>
 </div>
 
+<div class="deck-callout mt-8">
+  <p class="deck-quote">Agentic workflows get safer when the boundary is narrow enough to make bad states impossible, not just unlikely.</p>
+</div>
+
 <!--
-I don't want to give you the feeling that I'm anti-proto. Certainly not. It's just not enough. We need a wire format PLUS additional rules, because at the end of the day, only the abstraction boundary is guaranteed. And you'd better be writing that boundary in some schema definition language so you can generate code from it. 
+I don't want to give you the feeling that I'm anti-proto. Certainly not. It's
+just not enough. We need a wire format plus additional rules, because at the
+end of the day, only the abstraction boundary is guaranteed. And you'd better
+be writing that boundary in some schema definition language so you can generate
+code from it that doesn't sneak in any assumptions. 
 
-We're going to use JSON schema as the contract definition language for the rest of this talk. The same ideas apply to nearly any powerful schema definition language, but JSON is pretty ubiquitous at OpenAI and elsewhere.
+Put as many constraints into your contract as possible. If the business logic
+depends on the rule, the rule belongs at the boundary. Then you can generate
+types for handlers that fulfill this contract, and you don't have to handle
+missing or malformed states deep in application code.
 
-I just want to hammer this point home. Put as many constraints into your contract as possible. Retries isn't just an integer, it's an integer between 0 and 4. Mode isn't a string, it's either fast or safe. All of the fields are required. Then, you can generate types for handlers that fulfill this contract, and you don't have to worry about handling the case where mode is missing or malformed. We check that at the edge, so our business logic can be simple and correct.
+I famously can only hold only one thing in my head, which is why I like types
+so much. They let me think about just one part of my system at a time without
+worrying that my understanding might bleed into other systems. This is good for
+dumb humans like me, obviously. But I think it's even better for agents.
+
+Models are not great at reconstructing your implicit invariants from a pile of
+surrounding code and tribal knowledge. If the boundary is loose, they will
+invent plausible-looking states that are subtly wrong. If the contract is
+strict, the legal state space is smaller, hidden assumptions become explicit,
+and you get a much sharper oracle for CI review, and most importantly, agentic loops.
 -->
 
 ---
@@ -321,37 +319,16 @@ feel like a tax. It has to feel like the easy path.
 
 # Stamp every payload with a writer version.
 
-<div class="deck-grid-2 mt-10 writer-reader-principle">
+<div class="deck-grid-2 stamp-process-intro mt-6">
   <div class="law-card success">
     <h3>Writers stamp the shape they emitted</h3>
-    <p>Add an explicit payload version or schema ID at the boundary, so a reader knows which historical branch it is parsing.</p>
   </div>
   <div class="law-card success">
-    <h3>Readers branch on the stamp, not on vibes</h3>
-    <p>Make compatibility explicit and observable: parse by version, count by version, and delete by version when the tail is gone.</p>
+    <h3>Readers branch on the stamp, not on custom logic</h3>
   </div>
 </div>
 
-<!--
-So what does that mean mechanically?
-
-1. The source of truth for your type should be a contract written in some DSL – proto + protovalidate, json schema, whatever. You can generate this from your programming language of choice if you really hate to write schemas directly. But models are pretty good at it, so I recommend that you maintain the schemas themselves.
-2. Whenever you change the schema, use static analysis where possible - and fuzzing otherwise, to see whether the change is possibly breaking, and in which direction. Note that if the change is breaking is not a property of the actual data flowing through your system; it's a property of the contract itself! You can't make any assumptions that aren't baked into the contract.
-3. If the change is breaking in either direction, that is, there is some value that the old schema accepts that isn't accepted by the new schema or vice versa, then CI should complain, and tell you to "stamp" a new type. All readers should use the stamped type, which is a union of all previous types. Writers only use the new type. Ban any changes where a rollout in either direction would break.
-4. Generate code for readers and writers! I strongly recommend generating code that doesn't even make it possible to serialize from reader types, or deserialize from writer types. 
-
-If you've done this correctly, you get a couple of awesome properties.
-
-1. Engineers stop having to thing about breaking changes. CI thinks about it for them.
-2. Updating a schema becomes mechanical, not something you really have to thing about. You still have to make multiple changes to make some types of schema changes, but it's much easier to reason about. 
-3. Your schemas actually represent points in time. Your readers look at the discriminated union, tagged by stamp ID, and can do different logic based on parts of the union! Then you can eventually delete the old branches as they are unused.
--->
-
----
-
-# Today's contract for writers. A small union for readers.
-
-<div class="tooling-checklist tooling-checklist-compact mt-5">
+<div class="tooling-checklist tooling-checklist-compact stamp-process-checklist mt-6">
   <div class="tooling-step"><strong>1</strong><span>Update the schema.</span></div>
   <div class="tooling-step"><strong>2</strong><span>Detect breaking changes.</span></div>
   <div class="tooling-step"><strong>3</strong><span>Keep the writer as strict as possible.</span></div>
@@ -361,58 +338,28 @@ If you've done this correctly, you get a couple of awesome properties.
 </div>
 
 <!--
-Then the six-step process is straightforward.
+So what does that mean mechanically?
 
-You update the schema. The tooling checks whether that change is breaking under
-partial rollout. If it is, you don't make the writer sloppy. You keep the
-writer strict, and you widen the reader into a tagged union of the last few
-writer shapes you still need to handle.
+The source of truth should be a contract in a schema DSL: proto plus
+protovalidate, JSON Schema, whatever you use. You can generate that from code
+if you insist, but I think maintaining the schema directly is better.
 
-And then you measure it. How often are we still deserializing the old
-branches? When that drops to zero, you don't have to guess. You have a real
-signal that it's time to delete the old branch.
+Whenever the schema changes, use static analysis where possible and fuzzing
+otherwise to ask whether the change is breaking under partial rollout, and in
+which direction. That is a property of the contract, not of whatever data
+happens to be flowing today. You don't get to rely on assumptions that aren't
+encoded in the schema.
 
-That's the workflow I want: strict current writers, explicit historical readers,
-and a cleanup loop that is driven by production evidence instead of vibes.
--->
+If the change is breaking in either direction, CI should complain and tell you
+to stamp a new type. Writers use only the new type. Readers use the stamped
+union of the historical writer types they still need to accept. Generate code
+so it is hard to serialize from reader types or deserialize from writer types.
 
----
-
-# Strict contracts are better for ~~humans~~ agents
-
-<div class="deck-grid-3 mt-8 agent-contract-grid">
-  <div class="law-card success">
-    <h3>Smaller legal state space</h3>
-    <p>Fewer ambiguous shapes for an agent depend on.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Hidden assumptions become explicit</h3>
-    <p>Put the rule at the boundary so the agent does not have to recover it.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Crisper test oracle</h3>
-    <p>A strict contract allows an agent loop to quickly iterate upon correctness.</p>
-  </div>
-</div>
-
-<div class="deck-callout mt-8">
-  <p class="deck-quote">Agentic workflows get safer when the boundary is narrow enough to make bad states impossible, not just unlikely.</p>
-</div>
-
-<!--
-I famously can only hold only one thing in my head, which is why I like types so much. They let me think about just one part of my system at a time without worrying that my understanding might bleed into other systems. This is good for dumb humans like me, obviously. But I think it's even better for agents.
-
-Models are not great at reconstructing your implicit invariants from a pile of
-surrounding code and tribal knowledge. If the boundary is loose, they will
-invent plausible-looking states that are subtly wrong.
-
-If the contract is strict, the legal state space is smaller. Hidden assumptions
-become explicit. And you get a much sharper oracle for CI and review than
-"looks reasonable to me."
-
-So the pitch here is not just "this is cleaner architecture." It's that strict
-contracts make agentic workflows safer, because they make more bad states
-impossible instead of merely unlikely. As agents get smarter and smarter, maybe we can make these abstraction boundaries bigger and bigger! But at work day to day, I see myself defining system boundaries for my agents and letting them do anything they like behind those boundaries. As long as you can guarantee that the abstractions you depend on aren't leaky, a little slop behind the abstraction is OK.
+If you've done this right, a few nice things happen. Engineers stop simulating
+cross-version breakage in their heads; CI does that part. Schema updates become
+more mechanical. And schemas start to represent points in time, which means you
+can branch explicitly on the stamp and later delete old branches when the
+metrics say they're gone.
 -->
 
 ---
