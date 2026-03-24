@@ -341,25 +341,17 @@ feel like a tax. It has to feel like the easy path.
 So what does that mean mechanically?
 
 The source of truth should be a contract in a schema DSL: proto plus
-protovalidate, JSON Schema, whatever you use. You can generate that from code
-if you insist, but I think maintaining the schema directly is better.
+protovalidate, JSON Schema, whatever you use. You can generate that from code if you insist, but I think maintaining the schema directly is better.
 
-Whenever the schema changes, use static analysis where possible and fuzzing
-otherwise to ask whether the change is breaking under partial rollout, and in
-which direction. That is a property of the contract, not of whatever data
-happens to be flowing today. You don't get to rely on assumptions that aren't
-encoded in the schema.
+Whenever the schema changes, use static analysis where possible and fuzzing otherwise to ask whether the change is breaking under partial rollout, and in which direction. That is a property of the contract, not of whatever data happens to be flowing today. You don't get to rely on assumptions that aren't encoded in the schema.
 
-If the change is breaking in either direction, CI should complain and tell you
-to stamp a new type. Writers use only the new type. Readers use the stamped
-union of the historical writer types they still need to accept. Generate code
-so it is hard to serialize from reader types or deserialize from writer types.
+If the change is breaking in either direction, CI should complain and tell you to stamp a new type. Writers use only the new type. Readers use the stamped union of the historical writer types they still need to accept. 
 
-If you've done this right, a few nice things happen. Engineers stop simulating
-cross-version breakage in their heads; CI does that part. Schema updates become
-more mechanical. And schemas start to represent points in time, which means you
-can branch explicitly on the stamp and later delete old branches when the
-metrics say they're gone.
+If you want to be really fancy, your generated code should make it impossible to serialize from reader types or deserialize from writer types. Make impossible states impossible, right!
+
+If you've done this right, a few nice things happen. Engineers stop simulating cross-version breakage in their heads; CI does that part. 
+
+Schema updates become more mechanical. And schemas start to represent points in time, which means you can branch explicitly on the stamp and later delete old branches when the metrics say they're gone.
 -->
 
 ---
@@ -387,16 +379,18 @@ class: demo-full-bleed
 </div>
 
 <!--
-This is the constructive version of the rollout.
+Now, let's look at what a rollout might look like in this world. Most rollouts look exactly the same - if the change isn't breaking for readers, CI will just let you deploy.
 
-First you deploy the reader union, so the new code can still parse the old
-shape and the new shape. Then you deploy the writer change and start emitting
-the new version. And only after the old data tail is gone do you remove the old
-branch.
+But let's consider a change that is breaking in both directions, like changing interests from a list to an int. You generally shouldn't do this, but it's sometimes necessary. 
 
-That's the answer to "okay, if I don't rely on rollout order and I don't want
-to let things break, what do I do instead?" You make the mixed-version period a
-first-class thing in the types.
+CI sees that you're trying to deploy a breaking change. It doesn't let you update the writer type yet, since the reader type on master doesn't accept v5. Instead, you run `stamp` and now all the readers accept either the old version or the new version.
+
+(s)
+
+Then, when metrics show that you're ready, CI finally lets you deploy the new writer:
+
+And only after the old data tail is gone do you remove the old
+branch. In some cases, you'll never be able to remove the old types, but that's ok! It's much cleaner to have different codepaths based on a union branch.
 -->
 
 ---
@@ -451,11 +445,11 @@ gets too expressive for a complete proof.
   </div>
   <div class="law-card good">
     <h3>Split</h3>
-    <p>Ship tooling that splits reader and writer types by default, and makes historical unions cheap to maintain.</p>
+    <p>Generate reader and writer types in your language of choice from the schema, and make historical unions cheap to maintain.</p>
   </div>
   <div class="law-card good">
     <h3>Gate</h3>
-    <p>Generate reader and writer contracts, check compatibility mechanically, and fail unsafe changes before merge.</p>
+    <p>Run CI against the schema itself and against previous versions, detect breakages mechanically, and fail unsafe changes before merge.</p>
   </div>
   <div class="law-card good">
     <h3>Observe</h3>
@@ -470,11 +464,12 @@ four things.
 Constrain: make strict schemas the default, so hidden assumptions become
 contract rules instead of tribal knowledge.
 
-Split: generate separate reader and writer types by default, and make the
-historical reader union cheap to maintain.
+Split: generate separate reader and writer types in whatever language your
+service uses, from the schema, and make the historical reader union cheap to
+maintain.
 
-Gate: check compatibility mechanically in CI, and fail unsafe changes before
-they merge.
+Gate: run CI against the schema itself, and against previous versions of that
+schema, so you can detect breaking changes mechanically before they merge.
 
 Observe: measure which old versions are still being read, so you can see the
 tail, understand rollback risk, and know when cleanup is actually safe.
