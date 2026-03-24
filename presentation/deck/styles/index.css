@@ -617,6 +617,20 @@
   letter-spacing: -0.03em;
 }
 
+.thanks-link {
+  display: inline-block;
+  margin-top: 1.5rem;
+  color: #475569;
+  font-size: 1.35rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.thanks-link:hover {
+  color: var(--deck-ink);
+  text-decoration: underline;
+}
+
 .deck-slide-number {
   color: rgba(188, 199, 212, 0.7);
 }
@@ -647,6 +661,20 @@
 
 .agent-contract-grid .law-card {
   min-height: 12rem;
+}
+
+.writer-reader-principle .law-card {
+  min-height: 14rem;
+}
+
+.writer-reader-principle .law-card h3 {
+  font-size: 1.7rem;
+  line-height: 1.18;
+}
+
+.writer-reader-principle .law-card p {
+  font-size: 1.2rem;
+  line-height: 1.4;
 }
 
 .contract-type-flow {
@@ -702,6 +730,49 @@
   color: #64748b;
   font-size: 1.75rem;
   font-weight: 600;
+}
+
+.tooling-checklist {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.tooling-checklist-compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.tooling-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  column-gap: 0.7rem;
+  min-height: 6.2rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(79, 100, 129, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  color: #1f2937;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.tooling-step strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.1);
+  color: #0f766e;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.tooling-step span {
+  padding-top: 0.1rem;
 }
 
 .optional-soup-layout .failure {

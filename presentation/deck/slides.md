@@ -278,67 +278,61 @@ I just want to hammer this point home. Put as many constraints into your contrac
 
 ---
 
-# One contract. Two local types.
+# Writers strict. Readers wide.
 
-<div class="contract-type-flow mt-8">
-  <div class="contract-flow-node contract-source">
-    <h3>Boundary contract</h3>
-    <p>One strict schema at the edge.</p>
+<div class="deck-grid-2 mt-10 writer-reader-principle">
+  <div class="law-card success">
+    <h3>Writers should be as strict as possible</h3>
+    <p>Emit today's contract, not a mushy superset shaped by every historical rollout.</p>
   </div>
-  <div class="contract-flow-arrow" aria-hidden="true">-></div>
-  <div class="contract-flow-node contract-writer">
-    <h3>Writer type</h3>
-    <p>Emit less.</p>
-  </div>
-  <div class="contract-flow-arrow" aria-hidden="true">-></div>
-  <div class="contract-flow-node contract-reader">
-    <h3>Reader type</h3>
-    <p>Accept current + recent historical variants.</p>
+  <div class="law-card success">
+    <h3>Readers should accept the union of the last few writers</h3>
+    <p>Carry compatibility in the reader, where skew actually lands.</p>
   </div>
 </div>
 
-<div class="deck-grid-3 mt-8 optional-soup-layout">
-  <div class="law-card success">
-    <h3>Serializer</h3>
-    <p>Emit less.</p>
-  </div>
-  <div class="law-card success">
-    <h3>Deserializer</h3>
-    <p>Accept more.</p>
-  </div>
-  <div class="law-card failure">
-    <h3>One shared runtime type</h3>
-    <pre class="optional-soup-code"><code>type User = {
-  name?: string | null
-  city?: string | string[] | null
-  eye_color?: string | null
-  legacy_metadata?: unknown
-}</code></pre>
-  </div>
-</div>
-
-<div class="deck-callout optional-soup-callout mt-6">
-  <p class="deck-quote">If old readers never go away, use a discriminated union of past types. Do not weaken one type until it means everything.</p>
+<div class="deck-callout mt-10">
+  <p class="deck-quote">Stop sharing types between client and server.</p>
 </div>
 
 <!--
-JSON schema -> writer type -> union of last few deserializer types.
-
-Points to hit:
-- Serializer and deserializer compatibility are asymmetric during a partial rollout.
-- A serializer wants a narrower output set; a deserializer wants a wider accepted input set.
-- If one runtime type serves both, you usually end up with the union of rollout-era compromises, not the real domain model.
-- That weakens invariants exactly where you wanted types to protect you.
-- Queues, caches, and stored rows keep the old serialized shape alive after deploy, so reader compatibility is a long tail.
-- Define one strict boundary contract, then generate separate local types for each side.
-- Even if you can never fully retire an old reader shape, an explicit
-  discriminated union of historical variants is still better than one weak type
-  that tries to express every era at once.
+This is the principle slide before the mechanical checklist:
+- Writer and reader types have different jobs under skew.
+- The writer should stay narrow and current.
+- The reader should explicitly model the short historical tail it must accept.
+- A single shared type couples both sides to the weakest compromise.
+- Everyone wants to share types between client and server because it feels
+  simpler and cheaper. So if you want teams not to do that, the generated
+  tooling has to be robust enough that separate writer/reader types are the
+  easy path, not a tax.
 -->
 
 ---
 
-# Strict contracts are better for agents
+# Today's contract for writers. A small union for readers.
+
+<div class="tooling-checklist tooling-checklist-compact mt-5">
+  <div class="tooling-step"><strong>1</strong><span>Update the schema.</span></div>
+  <div class="tooling-step"><strong>2</strong><span>Detect breaking changes.</span></div>
+  <div class="tooling-step"><strong>3</strong><span>Keep the writer as strict as possible.</span></div>
+  <div class="tooling-step"><strong>4</strong><span>Make readers a tagged union of the last few writers.</span></div>
+  <div class="tooling-step"><strong>5</strong><span>Measure how often old writer branches still deserialize.</span></div>
+  <div class="tooling-step"><strong>6</strong><span>Delete old branches once those metrics hit zero.</span></div>
+</div>
+
+<!--
+Make this prescriptive:
+- The schema is the source of truth.
+- Tooling should flag unsafe transitions mechanically, not by convention.
+- Writer types should stay narrow; reader types carry the rollout tail as an
+  explicit tagged union of recent historical writers.
+- If you can measure which old writer branches still appear in production, you
+  get a principled deletion signal instead of guessing when cleanup is safe.
+-->
+
+---
+
+# Strict contracts are better for ~~humans~~ agents
 
 <div class="deck-grid-3 mt-8 agent-contract-grid">
   <div class="law-card success">
@@ -430,63 +424,6 @@ new readers reject it.
 
 ---
 
-# Writers only emit what readers can parse
-
-<div class="tooling-pipeline mt-6">
-  <div class="tooling-step law-card success">
-    <div class="tooling-step-label">1. Detect</div>
-    <h3>Breaking change?</h3>
-    <p>Prove what you can statically. Search for counterexamples when needed.</p>
-  </div>
-
-  <div class="tooling-arrow" aria-hidden="true">-></div>
-
-  <div class="tooling-step law-card accent">
-    <div class="tooling-step-label">2. Generate</div>
-    <h3>Reader and Writer types</h3>
-    <p>One schema, two local types. Writer code only emits <code>Reader</code>.</p>
-  </div>
-
-  <div class="tooling-arrow" aria-hidden="true">-></div>
-
-  <div class="tooling-step law-card success">
-    <div class="tooling-step-label">3. Stamp</div>
-    <h3>On writer break, add a tagged branch</h3>
-    <div class="tooling-union-stack" aria-label="Reader union stamped with a new version">
-      <div class="tooling-union-chip">Reader =</div>
-      <div class="tooling-union-chip">v4</div>
-      <div class="tooling-union-plus">|</div>
-      <div class="tooling-union-chip tooling-union-new">v5</div>
-    </div>
-  </div>
-</div>
-
-<div class="deck-callout mt-8">
-  <p class="deck-quote">If old readers cannot parse it, the writer change is forbidden.</p>
-</div>
-
-<!--
-This is the enforcement model:
-- Application writers should only write values in the generated reader contract,
-  not an ad hoc local type.
-- If a schema change would break partial rollout safety, codegen should force an
-  explicit new branch into the generated reader union, and the writer-side type
-  should follow that contract.
-- CI should make that impossible to ignore by rejecting writes that are not
-  accepted by the reader population you need to support.
-- Prove what you can statically, then use fuzzing as a fallback when the checker
-  cannot fully decide or when you want concrete examples.
-- This does not mean every change becomes legal. Changes that introduce writer
-  states unreadable by still-deployed readers are impermissible and should be
-  blocked outright.
-- One reason I like this workflow for agents too: current models often try to
-  preserve backward compatibility in ugly, over-broad ways if you leave the
-  boundary underspecified. It is useful to be able to say "never worry about
-  backward compatibility except when the tests are yelling at you."
--->
-
----
-
 # Constrain. Split. Gate. Observe.
 
 <div class="deck-grid-2 mt-8 sre-playbook-grid">
@@ -517,5 +454,6 @@ layout: center
 ---
 
 <div class="thanks-slide">
-  <div class="thanks-title">Thank you</div>
+  <div class="thanks-title">Questions?</div>
+  <a class="thanks-link" href="https://jsoncompat.com">slides and tooling at jsoncompat.com</a>
 </div>
