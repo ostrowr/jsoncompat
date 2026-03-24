@@ -299,7 +299,7 @@
   display: grid;
   color: #f8fafc;
   font-family: "Source Serif 4", serif;
-  font-size: 2.45rem;
+  font-size: 2.9rem;
   font-weight: 700;
   line-height: 1.02;
   letter-spacing: -0.03em;
@@ -313,17 +313,26 @@
   white-space: nowrap;
 }
 
+.hero-talk-subtitle {
+  margin-top: 0.9rem;
+  max-width: 29rem;
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 1.35rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
 .hero-talk-meta {
-  margin-top: 1.4rem;
+  margin-top: 1.5rem;
   color: rgba(226, 232, 240, 0.76);
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   line-height: 1.35;
 }
 
 .hero-talk-event {
   margin-top: 0.5rem;
   color: rgba(241, 245, 249, 0.9);
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   line-height: 1.35;
 }
 
@@ -590,6 +599,23 @@
   font-size: 4.6rem;
 }
 
+.emphasis-phrase-coral {
+  color: var(--deck-accent);
+}
+
+.workflow-beat-slide {
+  min-height: 44vh;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.workflow-beat-detail {
+  max-width: 34rem;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 1.3rem;
+  line-height: 1.35;
+}
+
 .close-thesis-stack {
   display: grid;
   gap: 0.55rem;
@@ -779,6 +805,62 @@
   padding-bottom: 0.85rem;
 }
 
+.optionalslop-grotesque {
+  position: relative;
+  transform: rotate(-0.8deg);
+  border: 1px solid rgba(255, 93, 61, 0.45);
+  background:
+    linear-gradient(180deg, rgba(255, 93, 61, 0.24), transparent 2.4rem),
+    radial-gradient(circle at top right, rgba(255, 93, 61, 0.16), transparent 35%),
+    rgba(15, 7, 10, 0.98);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 24px 60px rgba(255, 93, 61, 0.18);
+}
+
+.optionalslop-grotesque::before {
+  content: "LEGACY";
+  position: absolute;
+  top: 0.9rem;
+  right: 1rem;
+  z-index: 1;
+  color: rgba(255, 93, 61, 0.9);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}
+
+.optionalslop-grotesque pre {
+  position: relative;
+  z-index: 0;
+}
+
+.optionalslop-grotesque code,
+.optionalslop-grotesque .shiki,
+.optionalslop-grotesque .shiki span {
+  font-size: 0.82rem;
+  line-height: 1.15;
+}
+
+.optionalslop-copy {
+  position: relative;
+}
+
+.optionalslop-stamp {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 0.1rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(255, 93, 61, 0.35);
+  color: var(--deck-accent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
 .optional-soup-code {
   margin: 0.55rem 0 0;
   padding: 0.7rem 0.85rem;
@@ -895,7 +977,15 @@
   }
 
   .hero-talk-title {
-    font-size: 1.95rem;
+    font-size: 2.1rem;
+  }
+
+  .hero-talk-subtitle {
+    font-size: 1.05rem;
+  }
+
+  .workflow-beat-detail {
+    font-size: 1.15rem;
   }
 
   .thanks-title {

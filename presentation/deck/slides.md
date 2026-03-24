@@ -23,10 +23,9 @@ drawings:
 <NetworkHero :red-receive-every="10" :title-layout="true" :hidden-node-ids="['router', 'db']">
   <div class="hero-title-copy">
     <div class="hero-talk-title">
-      <span class="hero-title-line">Escaping Version Skew:</span>
-      <span class="hero-title-line hero-title-line-nowrap">Formalizing Compatibility</span>
-      <span class="hero-title-line">in a World of Partial Rollouts</span>
+      <span class="hero-title-line">Escaping Version Skew</span>
     </div>
+    <div class="hero-talk-subtitle">Formalizing compatibility in a world of partial rollouts</div>
     <div class="hero-talk-meta">Robbie Ostrow, Member of Technical Staff, OpenAI</div>
     <div class="hero-talk-event">SRECon Americas 2026</div>
   </div>
@@ -35,7 +34,7 @@ drawings:
 <!--
 Structured data is flowing between your systems. Some request hits the edge, which hits some API service, which maybe makes a couple more hops within your infrastructure. In the steady state – if you have enough capacity – it just works. 
 
-I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that are too complex for me, or more importantly, gpt 5.4, to understand. I want to talk to you today a bit about how we can better define boundaries between our systems. We should be able to detect and prevent breaking changes. We should be able to maintain strict contracts at these abstraction boundaries. And we should be able to do all of this automatically, without relying on humans to catch subtle breaking changes.
+I'm Robbie Ostrow - I work on infra at OpenAI. Our systems are big, and constantly growing and evolving, often in ways that are too complex for me, or more importantly, gpt 5.4, to understand. The short version of this talk is the title: escaping version skew. The subtitle is the method. I want to talk about how we can define better boundaries between systems, detect and prevent breaking changes, maintain strict contracts at those boundaries, and do it automatically instead of relying on humans to catch subtle incompatibilities.
 -->
 
 ---
@@ -104,7 +103,7 @@ layout: center
 ---
 
 <div class="emphasis-slide">
-  <div class="emphasis-phrase">Don't rely on rollout order.</div>
+  <div class="emphasis-phrase emphasis-phrase-coral">Don't rely on rollout order.</div>
 </div>
 
 <!--
@@ -186,8 +185,8 @@ Unfortunately, though, the stricter your schemas are, the easier it is for you t
 
 # Avoid optionalslop
 
-<div class="deck-grid-2 mt-8">
-  <div class="deck-schema-box">
+<div class="deck-grid-2 optional-soup-layout mt-8">
+  <div class="deck-schema-box optionalslop-grotesque">
 
 ```proto
 message UserProfile {
@@ -211,10 +210,15 @@ message UserProfile {
 ```
 
   </div>
-  <div class="fact-card boundary-card">
+  <div class="fact-card boundary-card optionalslop-copy">
+    <div class="optionalslop-stamp">compatibility residue</div>
     <div class="boundary-point">
       <div class="boundary-point-title">One type gets weaker over time</div>
       <div class="boundary-point-body">As old fields accumulate for compatibility, the shared proto stops expressing the real domain model and turns into "maybe this, maybe that".</div>
+    </div>
+    <div class="boundary-point">
+      <div class="boundary-point-title">Impossible states become routine</div>
+      <div class="boundary-point-body">Now business logic has to remember which subsets belong together, which are stale, and which combinations should never exist.</div>
     </div>
   </div>
 </div>
@@ -222,9 +226,12 @@ message UserProfile {
 <!--
 This is the maintenance smell I want to name: long-lived proto evolution often
 turns one shared type into a pile of optionals. Every migration, rollback path,
-and compatibility tail leaves residue in the schema. The result is a type that
-is technically compatible but increasingly bad at expressing which states are
-actually valid now. This type doesn't make impossible states unrepresentable! Now, the business logic everywhere that reads this proto is responsible for checking which subsets of these fields must appear together, which don't make sense, etc.
+and compatibility tail leaves residue in the schema. I want this slide to feel
+a little grotesque, because that's what it is: a type that is technically
+compatible but increasingly bad at expressing which states are actually valid
+now. This type doesn't make impossible states unrepresentable. It normalizes
+impossible states, and pushes the cleanup burden into business logic everywhere
+that reads it.
 
 I promised at the beginning that we can keep things safe while also reducing cognitive overhead and making impossible states impossible. We do this with tooling.
 -->
@@ -314,6 +321,31 @@ feel like a tax. They have to feel like the easy path.
 
 ---
 
+# Stamp every payload with a writer version.
+
+<div class="deck-grid-2 mt-10 writer-reader-principle">
+  <div class="law-card success">
+    <h3>Writers stamp the shape they emitted</h3>
+    <p>Add an explicit payload version or schema ID at the boundary, so a reader knows which historical branch it is parsing.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Readers branch on the stamp, not on vibes</h3>
+    <p>Make compatibility explicit and observable: parse by version, count by version, and delete by version when the tail is gone.</p>
+  </div>
+</div>
+
+<!--
+So what does that mean mechanically?
+
+First, stamp the payloads. If the reader is going to carry a small historical
+union, it needs to know which branch it is looking at. So writers should emit
+an explicit payload version or schema ID at the boundary. Then readers can
+branch on that stamp instead of guessing from shape, and you can measure
+exactly which old versions are still showing up in production.
+-->
+
+---
+
 # Today's contract for writers. A small union for readers.
 
 <div class="tooling-checklist tooling-checklist-compact mt-5">
@@ -326,15 +358,15 @@ feel like a tax. They have to feel like the easy path.
 </div>
 
 <!--
-So what does that mean mechanically?
+Then the six-step process is straightforward.
 
 You update the schema. The tooling checks whether that change is breaking under
 partial rollout. If it is, you don't make the writer sloppy. You keep the
 writer strict, and you widen the reader into a tagged union of the last few
 writer shapes you still need to handle.
 
-And then, if you can, you measure it. How often are we still deserializing the
-old branches? When that drops to zero, you don't have to guess. You have a real
+And then you measure it. How often are we still deserializing the old
+branches? When that drops to zero, you don't have to guess. You have a real
 signal that it's time to delete the old branch.
 
 That's the workflow I want: strict current writers, explicit historical readers,
