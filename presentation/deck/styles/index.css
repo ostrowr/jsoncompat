@@ -165,9 +165,11 @@
 .beat-card,
 .quote-card {
   padding: 1.2rem 1.25rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--deck-border);
-  background: linear-gradient(180deg, rgba(13, 25, 41, 0.96), rgba(11, 20, 33, 0.88));
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    linear-gradient(180deg, rgba(13, 25, 41, 0.82), rgba(11, 20, 33, 0.68));
   box-shadow: none;
   color: var(--deck-ink);
   position: relative;
@@ -236,10 +238,10 @@
 }
 
 .deck-callout {
-  padding: 0.8rem 1rem 0.8rem 1.05rem;
-  border-left: 5px solid var(--deck-accent);
-  border-radius: 0;
-  background: rgba(255, 93, 61, 0.08);
+  padding: 0.9rem 1.05rem 0.9rem 1.1rem;
+  border-left: 4px solid var(--deck-accent);
+  border-radius: 0 0.8rem 0.8rem 0;
+  background: linear-gradient(90deg, rgba(255, 93, 61, 0.1), rgba(255, 93, 61, 0.03) 70%, transparent);
 }
 
 .deck-micro {
@@ -820,10 +822,12 @@
   min-height: 6.2rem;
   padding: 0.85rem 0.95rem;
   border-radius: 1rem;
-  border: 1px solid rgba(79, 100, 129, 0.18);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-  color: #1f2937;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015)),
+    rgba(10, 20, 34, 0.72);
+  box-shadow: none;
+  color: rgba(244, 247, 251, 0.92);
   font-size: 0.98rem;
   line-height: 1.25;
 }
@@ -835,8 +839,8 @@
   width: 1.9rem;
   height: 1.9rem;
   border-radius: 999px;
-  background: rgba(15, 118, 110, 0.1);
-  color: #0f766e;
+  background: rgba(255, 93, 61, 0.14);
+  color: var(--deck-accent);
   font-size: 0.95rem;
   line-height: 1;
 }
@@ -950,6 +954,117 @@
   line-height: 1.18;
 }
 
+.witness-slide-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8rem minmax(0, 1fr);
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.witness-schema-panel {
+  padding: 1rem 1.05rem 0.9rem;
+  border-radius: 1rem;
+  background: rgba(3, 8, 14, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.witness-schema-old {
+  border-color: rgba(159, 176, 196, 0.22);
+}
+
+.witness-schema-new {
+  border-color: rgba(255, 93, 61, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 93, 61, 0.06);
+}
+
+.witness-label {
+  margin-bottom: 0.75rem;
+  color: var(--deck-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.witness-schema-panel pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent !important;
+}
+
+.witness-plain {
+  color: #e5edf7 !important;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.witness-schema-panel code,
+.witness-schema-panel .shiki,
+.witness-schema-panel .shiki span {
+  color: #e5edf7 !important;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.witness-change-rail {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  color: var(--deck-muted);
+}
+
+.witness-arrow {
+  color: var(--deck-accent);
+  font-size: 2.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.witness-change-copy {
+  max-width: 7rem;
+  text-align: center;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.witness-result {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  background: linear-gradient(90deg, rgba(255, 93, 61, 0.14), rgba(255, 93, 61, 0.05) 45%, rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 93, 61, 0.2);
+}
+
+.witness-result-kicker {
+  color: var(--deck-accent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.witness-result > code {
+  border-color: rgba(255, 93, 61, 0.22) !important;
+  background: rgba(3, 8, 14, 0.9) !important;
+  font-size: 1rem;
+}
+
+.witness-result-copy {
+  color: rgba(244, 247, 251, 0.9);
+  font-family: "Source Serif 4", serif;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
 @keyframes zoom-bridge-in {
   from {
     opacity: 0;
@@ -983,7 +1098,8 @@
   .deck-grid-3,
   .deck-three-laws,
   .compat-matrix,
-  .tooling-pipeline {
+  .tooling-pipeline,
+  .witness-slide-shell {
     grid-template-columns: 1fr;
   }
 
@@ -1038,5 +1154,14 @@
 
   .demo-setup-line {
     font-size: 2.35rem;
+  }
+
+  .witness-change-rail {
+    min-height: 4rem;
+  }
+
+  .witness-result {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 }

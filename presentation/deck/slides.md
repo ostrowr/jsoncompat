@@ -108,6 +108,7 @@ Now, this is not to say you shouldn't roll back. Rollback first, ask questions l
 </div>
 
 <!--
+[TODO: hate this slide] 
 If I could go back and hand past-us three things, it would be these.
 
 First, read-tail telemetry. Not just "are requests failing," but "which
@@ -117,7 +118,7 @@ the fleet while new-shaped cache entries were still live.
 
 Second, CI that checks mixed-version safety directly. Not "does the new code
 pass tests at head," but "can the old reader still parse what the new writer
-emits?" That is the actual rollout question.
+emits?" That is the actual rollout question, but's hard to test and formalize!
 
 Third, rollback-aware dashboards. Rollback is not a magic undo button if state
 outlives the binary that wrote it. I want the dashboard to make that painfully
@@ -127,7 +128,7 @@ That framing is really the whole talk. The key question is not whether the new
 version is healthy in isolation. It's whether the fleet is safe during the
 period where versions are mixed.
 
-[1:35]
+[1:00]
 -->
 
 ---
@@ -405,7 +406,7 @@ feel like a tax. It has to feel like the easy path.
   <div class="one-figure-slide pydantic-compat-example">
 
 ```python
-class UserProfileV3Writer(BaseModel):
+class UserProfileWriter(BaseModel):
     name: str = Field(min_length=1)
     age: int = Field(ge=0)
 ```
@@ -415,14 +416,14 @@ class UserProfileV3Writer(BaseModel):
 
 ```python
 type UserProfileReader =
-    | UserProfileV1
-    | UserProfileV2
-    | UserProfileV3
+    | UserProfileV1Reader
+    | UserProfileV2Reader
+    | UserProfileV3Reader
 
 match payload:
-    case UserProfileV3(name=name, age=age):
+    case UserProfileV3Reader(name=name, age=age):
         ...
-    case UserProfileV2(full_name=full_name):
+    case UserProfileV2Reader(full_name=full_name):
         ...
 ```
 
@@ -436,9 +437,8 @@ match payload:
 <!--
 This is the shape I mean.
 
-On the left, the writer type is just today's truth. If all new users have a
-name and an age, then the writer should say that. No optional compromise, no
-historical mush, no "well, sometimes maybe not."
+On the left, the generated writer class is just today's truth. If all new users have a
+name and an age, then the writer should enforce that. No optional compromise or historical mush.
 
 On the right, the reader is where we pay the compatibility cost. It is an
 explicit union of the old writer shapes we still need to accept. And then the
@@ -643,19 +643,70 @@ The important point here is that the only input to the language is the schema it
 <!--
 I want to show a live demo in two passes.
 
-First, the static checker. For a lot of ordinary schema changes, we can prove
-the answer directly from the schemas, and that's great. It's fast,
-deterministic, and easy to put in CI.
+First, the static checker. For a lot of ordinary schema changes, we can prove compatibility directly from the schemas, and that's great. It's fast, deterministic, and easy to put in CI.
 
-Then, if the schema gets too expressive for a complete proof, we switch to
-search. We ask the fuzzer for a concrete witness value that is accepted on one
-side and rejected on the other.
+Then, if the schema gets too expressive for a complete proof, we switch to search. We ask the fuzzer for a concrete witness value that is accepted on one side and rejected on the other.
 
-I like that split a lot. Proof when we can get it, examples when we can't. And
-the witness matters not just for CI, but for people and agents trying to
-understand what actually broke.
+I like that split a lot. Proof when we can get it, examples when we can't. And the witness matters not just for CI, but for people and agents trying to understand what actually broke.
 
 [1:05]
+-->
+
+---
+
+# A concrete witness makes breakage obvious
+
+<div class="witness-slide-shell mt-5">
+  <div class="witness-schema-panel witness-schema-old">
+    <div class="witness-label">Old schema</div>
+
+```json {all|10}
+"if": { "properties": { "mode": { "const": "percent" } } },
+"then": {
+  "properties": {
+    "value": { "maximum": 100 }
+  }
+}
+```
+
+  </div>
+  <div class="witness-change-rail">
+    <div class="witness-arrow">→</div>
+    <div class="witness-change-copy">one keyword tightens</div>
+  </div>
+  <div class="witness-schema-panel witness-schema-new">
+    <div class="witness-label">New schema</div>
+
+```json {all|4}
+"if": { "properties": { "mode": { "const": "percent" } } },
+"then": {
+  "properties": {
+    "value": { "exclusiveMaximum": 100 }
+  }
+}
+```
+
+  </div>
+</div>
+
+<div class="witness-result mt-6">
+  <div class="witness-result-kicker">Witness</div>
+  <code>{"mode":"percent","value":100}</code>
+  <div class="witness-result-copy">Valid before. Rejected after. </div>
+</div>
+
+<!--
+Here is an example of a small part of a schema with a breaking change. It's much easier to reason about compatibility when you have an example of where it falls apart.
+
+JSON schema includes some complex keywords like conditional if/thens that make static checks really complex.
+
+On the left, if mode is percent, value can be from 0 to 100 inclusive.
+
+On the right, someone tightens that to exclusiveMaximum 100. 
+
+The witness is `{"mode":"percent","value":100}`. Old writers can emit it. New
+readers reject it. That one payload is much more useful in a review or an
+incident than a paragraph of abstract compatibility prose.
 -->
 
 ---
@@ -750,9 +801,6 @@ writes and for new readers seeing old writes. Eventually, I hope that we can spl
 </div>
 
 <!--
-If you're thinking "this sounds nice, but I can't go home and rewrite every
-service boundary next week," I agree. I wouldn't start there either.
-
 So, if you accept that stricter is better, I would start adopting this idea in phases.
 
 Phase one: annotate the types that sit on real storage or queue boundaries and
@@ -768,6 +816,43 @@ You do not need the whole end-state on day one. You just need to move the
 riskiest boundaries from vibes to mechanical checks.
 
 [1:30]
+-->
+
+---
+
+# When not to do this
+
+<div class="deck-grid-2 mt-8">
+  <div class="law-card">
+    <h3>Probably not worth it</h3>
+    <p>Ephemeral internal RPCs with no durable state, no queues, and no meaningful rollback tail.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Absolutely worth it</h3>
+    <p>Caches, queues, databases, durable workflows, mobile or external clients, and any boundary where state outlives binary.</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-8">
+  <p class="deck-quote">Use the heavy machinery where old code and new state can meet. That is where version skew turns into incidents.</p>
+</div>
+
+<!--
+One reason SREs are right to be skeptical of talks like this is that not every
+boundary deserves heavy machinery.
+
+If you have an ephemeral internal RPC, no durable state, no queues, and no
+meaningful rollback tail, this may be overkill. Maybe ordinary API
+compatibility discipline is enough.
+
+Where it is absolutely worth it is caches, queues, databases, durable
+workflows, mobile or external clients, and any boundary where state outlives
+binary.
+
+That is the filter. Use the machinery where old code and new state can meet.
+That is where version skew turns into incidents. And the better your tooling is, the more places you can enforce without causing undue friction.
+
+[1:05]
 -->
 
 ---
@@ -811,7 +896,7 @@ Observe: measure which old versions are still being read, so you can see the
 tail, understand rollback risk, and know when cleanup is actually safe.
 
 That's the durable version of this. Not a one-off preflight for one scary
-change, not a system that requires engineers to think about subsumption every day, and think about which direction things are getting serialized and deserialized, but a system that makes the safe path the normal path.
+change, not a system that requires engineers to think about subsumption every day, and think about which direction things are getting serialized and deserialized, not optionalslop, but a system that makes the safe path the normal path.
 
 [1:00]
 -->
