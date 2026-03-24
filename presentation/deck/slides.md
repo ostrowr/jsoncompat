@@ -85,6 +85,52 @@ Now, this is not to say you shouldn't roll back. Rollback first, ask questions l
 -->
 
 ---
+
+# What would have made this obvious?
+
+<div class="deck-grid-3 mt-8 agent-contract-grid">
+  <div class="law-card success">
+    <h3>Read-tail telemetry</h3>
+    <p>Count deserializations by payload version, not just request errors.</p>
+  </div>
+  <div class="law-card success">
+    <h3>CI on mixed-version safety</h3>
+    <p>Reject a writer change if the old reader cannot still parse it.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Rollback-aware dashboards</h3>
+    <p>Show whether old readers are returning while new-shaped data is still live.</p>
+  </div>
+</div>
+
+<div class="deck-callout mt-8">
+  <p class="deck-quote">The key question is not "is the new version healthy?" but "is the fleet safe while versions are mixed?"</p>
+</div>
+
+<!--
+If I could go back and hand past-us three things, it would be these.
+
+First, read-tail telemetry. Not just "are requests failing," but "which
+payload versions are we still successfully or unsuccessfully deserializing
+right now?" If we had that, we could have seen that old readers were still in
+the fleet while new-shaped cache entries were still live.
+
+Second, CI that checks mixed-version safety directly. Not "does the new code
+pass tests at head," but "can the old reader still parse what the new writer
+emits?" That is the actual rollout question.
+
+Third, rollback-aware dashboards. Rollback is not a magic undo button if state
+outlives the binary that wrote it. I want the dashboard to make that painfully
+obvious before I make the incident worse.
+
+That framing is really the whole talk. The key question is not whether the new
+version is healthy in isolation. It's whether the fleet is safe during the
+period where versions are mixed.
+
+[1:35]
+-->
+
+---
 layout: center
 ---
 
@@ -313,7 +359,7 @@ Don't make your agents or your developers re-derive the contracts every time the
 
 ---
 
-# Writers strict. Readers wide.
+# Stop sharing types.
 
 <div class="deck-grid-2 mt-10 writer-reader-principle subsumption-containment-grid">
   <div class="law-card success">
@@ -349,6 +395,63 @@ that, the tooling has to be really good. Separate writer and reader types can't
 feel like a tax. It has to feel like the easy path.
 
 [1:10]
+-->
+
+---
+
+# A strict writer, a union reader
+
+<div class="deck-grid-2 mt-8">
+  <div class="one-figure-slide pydantic-compat-example">
+
+```python
+class UserProfileV3Writer(BaseModel):
+    name: str = Field(min_length=1)
+    age: int = Field(ge=0)
+```
+
+  </div>
+  <div class="one-figure-slide pydantic-compat-example">
+
+```python
+type UserProfileReader =
+    | UserProfileV1
+    | UserProfileV2
+    | UserProfileV3
+
+match payload:
+    case UserProfileV3(name=name, age=age):
+        ...
+    case UserProfileV2(full_name=full_name):
+        ...
+```
+
+  </div>
+</div>
+
+<div class="deck-callout mt-8">
+  <p class="deck-quote">New writes stay clean. Compatibility is quarantined to explicit old-version branches.</p>
+</div>
+
+<!--
+This is the shape I mean.
+
+On the left, the writer type is just today's truth. If all new users have a
+name and an age, then the writer should say that. No optional compromise, no
+historical mush, no "well, sometimes maybe not."
+
+On the right, the reader is where we pay the compatibility cost. It is an
+explicit union of the old writer shapes we still need to accept. And then the
+code branches on the versioned shape, instead of smuggling a bunch of
+compatibility guesses into one giant type.
+
+I like this because it quarantines the weirdness. New writes stay clean.
+Historical behavior is still supported, but it's obvious, local, and
+eventually deletable.
+
+Of course, no one will want to write this reader type. So we need to generate it with good tooling.
+
+[1:20]
 -->
 
 ---
@@ -517,6 +620,45 @@ The important point here is that the only input to the language is the schema it
 -->
 
 ---
+
+# Two passes: prove, then search
+
+<div class="deck-grid-2 mt-10 writer-reader-principle subsumption-containment-grid">
+  <div class="law-card success">
+    <h3>Static checker</h3>
+    <p>Fast, deterministic proofs for the common cases.</p>
+  </div>
+  <div class="law-card success">
+    <h3>Fuzzer</h3>
+    <p>Concrete counterexamples when the schema is too expressive for a complete proof.</p>
+  </div>
+</div>
+
+<div class="tooling-checklist tooling-checklist-compact mt-8">
+  <div class="tooling-step"><strong>1</strong><span>Try to prove set containment from the schemas alone.</span></div>
+  <div class="tooling-step"><strong>2</strong><span>If the proof is incomplete, search for a witness value.</span></div>
+  <div class="tooling-step"><strong>3</strong><span>Use the witness to make the breakage obvious to humans and agents.</span></div>
+</div>
+
+<!--
+I want to show a live demo in two passes.
+
+First, the static checker. For a lot of ordinary schema changes, we can prove
+the answer directly from the schemas, and that's great. It's fast,
+deterministic, and easy to put in CI.
+
+Then, if the schema gets too expressive for a complete proof, we switch to
+search. We ask the fuzzer for a concrete witness value that is accepted on one
+side and rejected on the other.
+
+I like that split a lot. Proof when we can get it, examples when we can't. And
+the witness matters not just for CI, but for people and agents trying to
+understand what actually broke.
+
+[1:05]
+-->
+
+---
 class: demo-full-bleed
 ---
 
@@ -591,6 +733,41 @@ With `direction="both"`, a change has to be safe for old readers seeing new
 writes and for new readers seeing old writes. Eventually, I hope that we can split types like UserProfile here into a writer and reader type, and evolve them more independently, allowing us to have strict writers and union readers like I keep talking about.
 
 [1:15]
+-->
+
+---
+
+# Adopt it in phases
+
+<div class="tooling-checklist">
+  <div class="tooling-step"><strong>1</strong><span>Start by annotating storage-boundary types and checking both rollout directions in CI.</span></div>
+  <div class="tooling-step"><strong>2</strong><span>Add writer-version stamps and measure which old branches are still being read.</span></div>
+  <div class="tooling-step"><strong>3</strong><span>Split strict writer types from union reader types on the boundaries that matter most.</span></div>
+</div>
+
+<div class="deck-callout mt-4">
+  <p class="deck-quote">You do not need the whole end-state on day one to start catching real breakages.</p>
+</div>
+
+<!--
+If you're thinking "this sounds nice, but I can't go home and rewrite every
+service boundary next week," I agree. I wouldn't start there either.
+
+So, if you accept that stricter is better, I would start adopting this idea in phases.
+
+Phase one: annotate the types that sit on real storage or queue boundaries and
+make CI check both rollout directions. That alone catches a lot of bugs.
+
+Phase two: stamp writer versions and measure the old read tail. Now you can
+see rollback risk and you have a principled way to know when cleanup is safe.
+
+Phase three: for the really important boundaries, split the strict writer type
+from the union reader type and generate the boring parts.
+
+You do not need the whole end-state on day one. You just need to move the
+riskiest boundaries from vibes to mechanical checks.
+
+[1:30]
 -->
 
 ---
