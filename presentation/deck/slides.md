@@ -79,7 +79,7 @@ layout: center
 <!--
 So, in this particular case, we would have been better served by letting the rollout continue. Once all of the pods were on the new version, everyone could have read all the cache entries, and we wouldn't have seen the secondary error spike. Sadly, we didn't realize this until the rollback completed, and by that time the safest way to recovery was to let the bad cache entries expire on their own.
 
-Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Hell, I was confusing myself on the previous slide talking about new versions talking to old versions talking to new versions, and that was only one service talking to one storage layer. It only gets more complicated than that. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleet and potentially customer fleets or clients. Our systems tend to break when they change, and we need a better theory of change.
+Now, this is not to say you shouldn't roll back. Rollback first, ask questions later is a good motto. But it just shows that as soon as you add the dimension of time into your systems, they get so so much more complicated to understand. Hell, I was confusing myself on the previous slide talking about new versions talking to old versions talking to new versions, and that was only one service talking to one storage layer. It only gets more complicated than that. Humans, agents, and tests tend to look at a single point of time, a single hash. That's convenient for understanding your system, but it's a lie once your systems get above toy-sized. We have to think about the infrastructure we run not at a single point of time, but also at all of the previous versions (and in some case future versions) that are running across our fleet and potentially customer fleets or clients. The systems we maintain most often break when they change, and we need a better theory of change.
 
 [1:15]
 -->
@@ -91,7 +91,7 @@ layout: center
 <div class="rollout-joke-setup">the secret to coordinating ordered rollouts at scale</div>
 
 <!--
-When we talk about breaking changes, we're usually talking about clients and servers. You've probably babysat many annoying changes of the flavor "let's expand what the server accepts first, then update the client to send the new thing, then hopefully remember to re-constrain the server to only accept the new thing. Usually we forget to do the third step. And you have to make sure that you remember to roll out the services in the right order. So, I'm going to begin this talk by telling you the secret to coordinating ordered rollouts in a system the size of OpenAI's:
+When we talk about breaking changes, we're usually talking about clients and servers. You've probably babysat many annoying changes of the flavor "let's expand what the server accepts first, then update the client to send the new thing, then hopefully remember to re-constrain the server to only accept the new thing. Usually we forget to do the third step, and so the server ends up limping around forever with some dead code. And, importantly, you have to make sure that you remember to roll out the services in the right order. So, I'm going to begin this talk by telling you the secret to coordinating ordered rollouts in a system the size of OpenAI's:
 
 [30s]
 -->
@@ -194,7 +194,7 @@ Well, yes. Protos do indeed solve the wire compatibility problem. But they do so
 
 So when I talk about defining schemas, I'm not just talking about the wire format. I'm also talking about contracts that can encode powerful rules, like json schema or extensions to protos like protovalidate.
 
-Unfortunately, though, of course, the stricter your schemas are, the easier it is for you to make a so-called "breaking change."
+Unfortunately, though, of course, the stricter your schemas are, the easier it is for you to make a so-called "breaking change," and we can't trust humans to manage the overhead. We need tooling.
 
 [1:10]
 -->
@@ -246,8 +246,9 @@ Our industry's current tooling encourages what I call optionalslop.
 
 Every migration, rollback path,
 and compatibility tail leaves some ugly *residue* in the schema. The schema on the left here shows 
-a type that is technically compatible but increasingly bad at expressing which states are actually valid
-today. This type doesn't make impossible states unrepresentable, and pushes the cleanup burden into business logic everywhere that reads it. So, sure, you're never going to get wire incompatibilities when you're using protos, but instead you'll see weird errors much deeper in your application code when you assume that legacy_full_name can't co-occur with phone_verified or something. If you don't encode as many rules as possible into your contract, I absolutely guarantee that a future developer will take advantage of the flexibility to send something that you don't expect.
+a type that is technically compatible throughout time but increasingly bad at expressing which states are actually valid today. 
+
+This type doesn't make impossible states unrepresentable, and pushes the cleanup burden into business logic everywhere that reads it. So, sure, you're never going to get wire incompatibilities when you're using protos, but instead you'll see weird errors much deeper in your application code when you assume that legacy_full_name can't co-occur with phone_verified or something. If you don't encode as many rules as possible into your contract, I absolutely guarantee that a future developer will take advantage of the flexibility to send something that you don't expect.
 
 I don't want to give you the feeling that I'm anti-proto. Certainly not. It's
 just not enough. We need a wire format plus additional rules, because at the
@@ -306,7 +307,7 @@ invent plausible-looking states that are subtly wrong. If the contract is
 strict, the legal state space is smaller, [advance] hidden assumptions become explicit,
 [advance] and you get a much sharper oracle for CI, review, and most importantly, agentic loops. If an agent can fuzz its own boundary by generating all reasonable input that satisfies some contract, it's going to be much more effective at proving its own correctness and building a robust system.
 
-[advance] Don't make your agents or your developers re-derive the contracts every time they look at the codebase. In some cases, they can, but doing so is like writing a runbook when you could have written a script. The script is just going to work. The runbook is going to mostly work, get out of date, have subtle bugs, etc. Even if context length becomes free, this will continue to be true. In terms of minimizing cognitive overhead for humans or for agents, a 100% guarantee that is easily definable is worth so much.
+[advance] Don't make your agents or your developers re-derive the contracts every time they look at the codebase. In some cases, they can, but doing so is like writing a runbook when you could have written a script. The script is just going to work. The runbook is going to mostly work, get out of date, have subtle bugs, etc. Even if context length becomes free, this will continue to be true. In terms of minimizing cognitive overhead for humans or for agents, a 100% guarantee that is easily definable is priceless.
 
 [2:30]
 -->
@@ -390,7 +391,7 @@ match payload:
 <!--
 This is the shape I mean.
 
-On the left, the generated writer class is just today's truth. If all new users have a
+On the left, the generated writer class in Python is just today's truth. If all new users have a
 name and an age, then the writer should enforce that. No optional compromise or historical mush.
 
 On the right, the reader is where we pay the compatibility cost. It is an
@@ -435,7 +436,7 @@ So what does that mean mechanically?
 The source of truth should be a contract in a schema DSL: proto plus
 protovalidate, JSON Schema, whatever you use. You can generate that from code if you insist, but I think maintaining the schema directly is better.
 
-Whenever the schema changes, use static analysis where possible and fuzzing otherwise to ask whether the change is breaking under partial rollout, and in which direction. That is a property of the contract, not of whatever data happens to be flowing today. You don't get to rely on assumptions that aren't encoded in the schema.
+Whenever the schema changes, use static analysis where possible and fuzzing otherwise to ask whether the change is breaking under partial rollout, and in which direction. That is a property of the contract, not of whatever data happens to be flowing today. *You don't get to rely on assumptions that aren't encoded in the schema.*
 
 If the change is breaking in either direction, CI should complain and tell you to stamp a new type. Writers use only the new type. Readers use the stamped union of the historical writer types they still need to accept. 
 
@@ -445,15 +446,15 @@ If you've done this right, a few nice things happen. Engineers stop simulating c
 
 Schema updates become more mechanical. And schemas start to represent points in time, which means you can branch explicitly on the stamp and later delete old branches when the metrics say they're gone. This is a superpower, because it allows us to delete old code that we can guarantee is no longer used. 
 
-Let's reiterate the 6 step process.
+So let's define this 6 step process that allows us to safely but strictly evolve schemas.
 
 First, [advance] update the schema to express some new expectation in business logic. "All users have names." [advance] Detect breaking changes. CI should look at your schema vs the one on trunk, master, main, whatever you call it, and reject changes that it can statically, or via fuzzing, determine are unsafe. [advance] Generate serializer and deserializers in the languages of your choice. Keep the writer type, the serializer type, as strict as possible. If all users have names, don't let name be optional.
 
 Now, our stamp command allows us [advance] Make reader, or deserializer types, a tagged union of the last few writer types. This allows us to explicitly branch at previous versions of your schema, basically quarantining and then eventually deleting old bits of unmaintained code. [advance] Measure how often old readers are still used. Since we're generating all these deserializers, why not generate them with some standard telemetry! [advance] Delete old branches when telemetry nears zero. 
 
-This requires a lot of tooling. You need a complicated breaking change detector. The logic is no longer nearly as simple as proto breaking changes. You need telemetry. You need code generation from your DSL into your programming language. You need to be able to fetch old schema versions in CI, and you need a way to mark schemas as currently evolving so you don't block engineers who don't care if they're making breaking changes to a brand new type. But once you have all that, it feels magic. Your generated clients just work, and more importantly, your business logic gets so much simpler - you just match on each part of the union you still have to support, and implement simple, constrained logic per-branch rather than an optional soup.
+This requires a lot of tooling. You need a complicated breaking change detector. The logic is no longer nearly as simple as proto breaking changes. You need telemetry. You need code generation from your DSL into your programming language. You need to be able to fetch old schema versions in CI, and you need a way to mark schemas as currently evolving so you don't block engineers who don't care if they're making breaking changes to a brand new type. But once you have all that, it feels magic. Your generated clients just work, and more importantly, your business logic gets so much simpler - you just match on each part of the union you still have to support, and implement simple, constrained logic per-branch rather than an optional soup. Engineers don't have to think about this process at all - CI enforces every step for them. 
 
-I promise I'll get to some of this tooling, but let's use the same animation as before to walk through a simple example. 
+Before we get into some of this tooling, let's continue the animation from before to walk through a simple example. 
 
 [2:50]
 -->
@@ -500,7 +501,7 @@ branch.
 
 In some cases, you'll never be able to remove the old types, but that's ok! It's much cleaner to have different codepaths based on a union branch.
 
-I don't really like talking about forward and backward compatibility since it always confuses me from whose perspective? For example, a system that takes input and returns output simultaneously acts as a deserializer (when it takes its input) and a serializer (when it returns its output.) So, instead, I prefer to talk about breaking changes from the perspective of the writer and reader, or serializer and deserializer.
+I don't really like talking about forward and backward compatibility since it always confuses me. from whose perspective are we talking? For example, a system that takes input and returns output simultaneously acts as a deserializer (when it takes its input) and a serializer (when it returns its output.) So, instead, I prefer to talk about breaking changes from the perspective of the writer and reader, or serializer and deserializer.
 
 [1:25]
 -->
@@ -567,9 +568,7 @@ If L(old) is a subset of L(new), that is, all values valid under the old schema 
 
 When either relation fails, if possible, the checker should able to produce a witness value showing the difference.
 
-One practical caveat: for serializer checks, jsoncompat assumes the writer only emits fields described by the schema, even if `additionalProperties` is true. Otherwise every optional-field addition looks unsafe.
-
-The reason this is hard is that it's impossible in most cases to enumerate the actual language, so you can't do an actual subset check. Instead, a subsumption checker like jsoncompat has to do special logic for each keyword that proves properties of new and old schemas. This gets really hard with recursive schemas, sum types, and other arbitrary constraints like regex format strings.
+The reason this is hard is that it's impossible in most cases to enumerate the actual language, so you can't do a direct subset check. Instead, a subsumption checker like jsoncompat has to do special logic for each keyword and set of keywords that proves properties of new and old schemas. This gets really hard with recursive schemas, sum types, and other arbitrary constraints like regex format strings.
 
 The important point here is that the only input to the language is the schema itself. If your business logic assumes some invariant that is not expressible in the schema, the subsumption checker cannot possibly catch it. So, you should try to avoid assuming such invariants, or, if you have to, you must extend the schema DSL itself.
 
@@ -655,15 +654,21 @@ I like that split a lot. Proof when we can get it, examples when we can't. And t
 <!--
 Here is an example of a small part of a schema with a breaking change. It's much easier to reason about compatibility when you have an example of where it falls apart.
 
-JSON schema includes some complex keywords like conditional if/thens that make static checks really complex.
+JSON schema includes some complex keywords like conditional if/thens that make static checks really complex, but in practice, this subschema is pretty simple.
 
-On the left, if mode is percent, value can be from 0 to 100 inclusive.
+[advance]
 
-On the right, someone tightens that to exclusiveMaximum 100. 
+On the left, if mode is percent, value, if an integer can be anything less than or equal to 100.
 
-The witness is `{"mode":"percent","value":100}`. Old writers can emit it. New
+[advance]
+
+On the right, we've tightened that to exclusiveMaximum 100. 
+
+Just glancing at this schema, you can probably derive this in your head pretty quickly, but imagine if this were a tiny part of a massive schema, or more complex rules were being evaluated. It's much more useful to think in terms of real values.
+
+A witness here is the value `{"mode":"percent","value":100}`. Old writers can emit it. New
 readers reject it. That one payload is much more useful in a review or an
-incident than a paragraph of abstract compatibility prose.
+incident than a paragraph of abstract compatibility prose like I've been giving you all morning.
 -->
 
 ---
@@ -694,15 +699,17 @@ complete static answer is much harder or not practical.
 
 [Click on fuzzer]
 
-So then we need fuzzing too. The workflow is: prove what we can statically, and
+So then we need fuzzing too. Like I mentioned before, the workflow is: prove what we can statically, and
 when the checker can't fully decide, search for concrete counterexamples. I
 like that combination a lot, because the static checker gives you fast,
 deterministic guardrails, and fuzzing gives you real examples when the logic
-gets too expressive for a complete proof. The nice thing about having the fuzzer is it also lets me and my agents iterate a lot faster on the static side of the house. The test harness is basically the fuzzer.
+gets too expressive for a complete proof. The nice thing about having the fuzzer is it also lets me and my agents iterate a lot faster on the static side of the house. The test harness for jsoncompat is its own fuzzer. 
 
 [play with the fuzzer a bit]
 
-This is MIT-licensed and it's the first time I'm talking about it anywhere so I'm sure it has lots of bugs, but so far where we've used it, it's been a huge boon for catching breaking changes at our storage boundaries.
+This is MIT-licensed and it's the first time I'm talking about it anywhere so I'm sure it has lots of bugs; I'm not trying to sell anything except a solution to a problem that has pestered me since the beginning of my career. 
+
+So far where we've used it at OpenAI, it's been a huge boon for catching breaking changes at our storage boundaries.
 
 [2:20]
 -->
@@ -729,16 +736,18 @@ class UserProfile(BaseModel):
 </div>
 
 <!--
-Instead of telling you that you have to go back to your company and insist that everyone rewrites all of their storage logic separating all of our serializer and deserializer types, write some codegen, etc, I want to leave you with a suggestion as to how to slowly adopt tooling like this. 
+Instead of telling you that you have to go back to your company and insist that everyone rewrites all of their wire types in some DSL separating all of your serializer and deserializer types, write some codegen, etc, I want to leave you with a suggestion as to how to slowly adopt tooling like this. 
 
 At openai, we have a lot of Pydantic schemas that define something we're storing somewhere; maybe in a database, maybe in redis, whatever. We don't have to go all the way off the bat and split the reader and writer type, even if I wish we did! Instead, we can decorate all these types with a jsoncompat decorator that writes the current schema to disk and checks breaking changes against previous commits, using the same static checks and fuzzing I just showed you! While this isn't as powerful as schema-first design and generated code, it's already caught a ton of subtle cases where people didn't realize they were making breaking changes.
 
-Here, it's trivial to adopt. Put the compatibility policy right next to the type definition. If we're using it for both directions, we say "both." The stable ID
+Here, it's trivial to adopt. Put the compatibility policy right next to the type definition. If we're using it for both directions, we say "both." If we're using it in just the serialization direction, say serializer! Then, we remove the deserialization functions from the class to make sure it can't be misused. The stable ID
 is the durable identity for this contract across renames and refactors, so CI
 can compare the current schema against the historical snapshots for that same logical payload.
 
 With `direction="both"`, a change has to be safe for old readers seeing new
 writes and for new readers seeing old writes. Eventually, I hope that we can split types like UserProfile here into a writer and reader type, and evolve them more independently, allowing us to have strict writers and union readers like I keep talking about.
+
+That auth cache type in the incident at the beginning of this talk is now decorated with this checker. We haven't completely guaranteed that we've fixed all compatibility issues, but we've eliminated a whole class of them. In fact, at OpenAI, tests enforce that models in certain types of our codebase are ALWAYS decorated with a compatibility checker like this. 
 
 [1:15]
 -->
@@ -761,7 +770,7 @@ writes and for new readers seeing old writes. Eventually, I hope that we can spl
 So, if you accept that stricter is better, I would start adopting this idea in phases.
 
 Phase one: annotate the types that sit on real storage or queue boundaries and
-make CI check both rollout directions. That alone catches a lot of bugs.
+make CI check both rollout directions. That alone catches a lot of bugs, including that auth sev. 
 
 Phase two: stamp writer versions and measure the old read tail. Now you can
 see rollback risk and you have a principled way to know when cleanup is safe.
