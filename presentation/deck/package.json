@@ -1,0 +1,27 @@
+{
+  "name": "jsoncompat-srecon-deck",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.8.1",
+  "scripts": {
+    "dev": "slidev --port 3030",
+    "build": "slidev build --out dist",
+    "export:pdf": "slidev export --output artifacts/deck.pdf",
+    "export:png": "slidev export --format png --output artifacts/slide-images",
+    "capture:assets": "node scripts/capture-simulator-assets.mjs",
+    "check": "pnpm run build",
+    "remote:dev": "slidev --port 3030 --remote"
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.2.8",
+    "@fontsource/ibm-plex-mono": "^5.2.6",
+    "@fontsource/source-serif-4": "^5.2.7"
+  },
+  "devDependencies": {
+    "@slidev/cli": "^52.14.1",
+    "@slidev/theme-seriph": "^0.25.0",
+    "playwright": "^1.58.2",
+    "playwright-chromium": "^1.58.2",
+    "vite": "^7.3.1"
+  }
+}

@@ -9,6 +9,7 @@ check:
   cargo test --workspace --all-features --all-targets --locked
   @echo "[just] checking TypeScript code …"
   pnpm --prefix web/jsoncompatdotcom run ci
+  pnpm --prefix web/jsoncompatdotcom run build
 
 # ---- Basic python smoke test ----
 

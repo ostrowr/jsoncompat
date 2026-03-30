@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port 3000",
     "start": "vite --port 3000",
-    "build": "vite build && tsc",
+    "build": "node ./scripts/build-deck.mjs && vite build && tsc",
     "serve": "vite preview",
     "test": "vitest run",
     "format": "biome format",
