@@ -6,14 +6,14 @@ Browser-native talk deck for the SRECon `jsoncompat` presentation.
 
 ```bash
 cd deck
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Build the SPA:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 The main website build also publishes this deck at `https://jsoncompat.com/deck/`.
@@ -21,14 +21,14 @@ The main website build also publishes this deck at `https://jsoncompat.com/deck/
 Export PDF or slide PNGs:
 
 ```bash
-npm run export:pdf
-npm run export:png
+pnpm run export:pdf
+pnpm run export:png
 ```
 
 Capture simulator backup stills and GIFs:
 
 ```bash
-npm run capture:assets
+pnpm run capture:assets
 ```
 
 This writes generated artifacts under `deck/artifacts/`.

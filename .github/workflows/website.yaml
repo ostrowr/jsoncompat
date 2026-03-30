@@ -32,15 +32,10 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: web/jsoncompatdotcom/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install website dependencies (frozen lockfile)
-        working-directory: web/jsoncompatdotcom
+      - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile --prefer-offline
-
-      - name: Install deck dependencies
-        working-directory: presentation/deck
-        run: npm ci
 
       - name: Run Biome checks
         working-directory: web/jsoncompatdotcom

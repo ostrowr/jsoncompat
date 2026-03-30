@@ -6,8 +6,8 @@ Live, keyboard-driven visualization of schema evolution and on-wire compatibilit
 
 ```bash
 cd interactive
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Open the local Vite URL (usually `http://localhost:5173`).
@@ -38,6 +38,6 @@ To customize the demo, edit this file (or point the app at another story JSON).
 ## Test
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```

@@ -1,0 +1,4 @@
+packages:
+  - "presentation/deck"
+  - "presentation/interactive"
+  - "web/jsoncompatdotcom"
