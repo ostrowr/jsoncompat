@@ -5,9 +5,13 @@ on:
     branches: [main]
     paths:
       - 'web/jsoncompatdotcom/**'
+      - 'presentation/deck/**'
+      - 'presentation/interactive/**'
   pull_request:
     paths:
       - 'web/jsoncompatdotcom/**'
+      - 'presentation/deck/**'
+      - 'presentation/interactive/**'
   workflow_dispatch:
 
 jobs:
@@ -34,6 +38,14 @@ jobs:
         working-directory: web/jsoncompatdotcom
         run: pnpm install --frozen-lockfile --prefer-offline
 
+      - name: Install deck dependencies
+        working-directory: presentation/deck
+        run: npm ci
+
       - name: Run Biome checks
         working-directory: web/jsoncompatdotcom
         run: pnpm run ci
+
+      - name: Build website
+        working-directory: web/jsoncompatdotcom
+        run: pnpm run build

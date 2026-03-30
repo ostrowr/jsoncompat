@@ -16,6 +16,8 @@ Build the SPA:
 npm run build
 ```
 
+The main website build also publishes this deck at `https://jsoncompat.com/deck/`.
+
 Export PDF or slide PNGs:
 
 ```bash

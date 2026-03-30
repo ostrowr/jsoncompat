@@ -15,6 +15,9 @@ To build this application for production:
 pnpm build
 ```
 
+This also builds the Slidev presentation into `public/deck` so it is served
+from `/deck/`.
+
 ## Testing
 
 This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:

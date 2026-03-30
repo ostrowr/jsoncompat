@@ -32,6 +32,14 @@ function HomePage() {
             Generate values
           </Link>
         </div>
+
+        <p className="mt-6 text-gray-700">
+          Want the overview?{" "}
+          <a href="/deck/" className="font-medium text-blue-600 hover:underline">
+            Open the interactive deck
+          </a>
+          .
+        </p>
       </section>
 
       {/* Features */}
