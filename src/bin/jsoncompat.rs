@@ -174,6 +174,7 @@ impl From<RoleCli> for backcompat::Role {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
     let cli = Cli::parse();
     match cli.command {
         Command::Generate(a) => cmd_generate(a),
