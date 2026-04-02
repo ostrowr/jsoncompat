@@ -148,24 +148,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(fmt) = format
                 && let Some(s) = format_gen::generate_for_format(fmt, rng)
             {
-                if min_length.is_some() || max_length.is_some() {
-                    log::warn!(
-                        "format {:?} was used; min_length/max_length constraints are ignored",
-                        fmt
-                    );
-                }
+                // min_length/max_length constraints are ignored when format is used.
                 return Value::String(s);
             }
 
             if let Some(pat) = pattern
                 && let Some(s) = regex_gen::generate_matching_string(pat, rng)
             {
-                if min_length.is_some() || max_length.is_some() {
-                    log::warn!(
-                        "pattern {:?} was used; min_length/max_length constraints are ignored",
-                        pat
-                    );
-                }
+                // min_length/max_length constraints are ignored when pattern is used.
                 return Value::String(s);
             }
 

@@ -7,7 +7,6 @@ repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
 
 [dependencies]
-log = "0.4"
 rand = "0.10"
 serde_json = "1.0.135"
 json_schema_ast = { path = "../schema", version = "0.2.6" }

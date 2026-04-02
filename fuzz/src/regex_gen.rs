@@ -103,10 +103,8 @@ impl<R: Rng> RegexGenerator<'_, R> {
 
             Expr::Delegate { inner, casei, .. } => self.gen_from_delegate(inner, *casei),
 
-            Expr::Backref(n) => {
-                log::warn!(
-                    "backreference \\{n} is not yet supported; generated string may not match the pattern"
-                );
+            Expr::Backref(_n) => {
+                // backreference \{n} is not yet supported; generated string may not match the pattern.
                 String::new()
             }
 

@@ -83,6 +83,16 @@ you'll be unable to deserialize any data that doesn't have a `name` property, wh
 
 If a schema is used by both a serializer and a deserializer, then a change to the schema that can break either should be considered "breaking."
 
+## Supported features
+
+Most JSON Schema Draft 2020-12 keywords are supported. Notable partial support:
+
+- **`format`**: Support for `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`,
+  `hostname`, `idn-hostname`.
+- **`pattern`** (regex): Best-effort string generation from regex patterns. Complex patterns (e.g. backreferences) may not produce matching strings.
+- When `format` or `pattern` is used, `minLength`/`maxLength` constraints are ignored during example generation.
+
+
 ## Development
 
 Requirements:
