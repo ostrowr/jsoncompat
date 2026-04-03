@@ -1,25 +1,29 @@
+/*
+The canonical representation implemented here is heavily inspired by Juan Cruz
+Viotti's `jsonschema canonicalize` format:
+
+https://github.com/sourcemeta/jsonschema/blob/67f5ebf04430d655383dab4f75758f65ab28b1ca/docs/canonicalize.markdown
+
+This implementation intentionally deviates in a few places to preserve metadata
+and expose schema structure in the ways `jsoncompat` needs for static
+compatibility checks.
+*/
+
+use crate::schema_metadata::{
+    JSONCOMPAT_METADATA_KEY, PRESERVED_SCHEMA_METADATA_KEYS, TERMINAL_SCHEMA_METADATA_KEYS,
+    is_schema_metadata_key,
+};
 use serde_json::{Map, Number, Value};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::ops::{BitOr, BitOrAssign};
 
 type Result<T> = std::result::Result<T, CanonicalizeError>;
 
-const JSONCOMPAT_METADATA_KEY: &str = "x-jsoncompat";
 const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
     "https://json-schema.org/draft/2020-12/schema#";
 const MAX_PASSES: usize = 64;
-
-const META_KEYS: [&str; 8] = [
-    "$schema",
-    "$id",
-    "$anchor",
-    "$dynamicAnchor",
-    "$defs",
-    "definitions",
-    "title",
-    JSONCOMPAT_METADATA_KEY,
-];
 
 #[derive(Debug, thiserror::Error)]
 pub enum CanonicalizeError {
@@ -85,7 +89,8 @@ enum PrimitiveType {
 }
 
 impl PrimitiveType {
-    fn bit(self) -> u8 {
+    #[must_use]
+    const fn bit(self) -> u8 {
         match self {
             Self::Null => 1 << 0,
             Self::Boolean => 1 << 1,
@@ -104,34 +109,52 @@ struct PrimitiveTypeSet {
 }
 
 impl PrimitiveTypeSet {
+    #[must_use]
     const fn empty() -> Self {
         Self { bits: 0 }
     }
 
-    fn singleton(primitive_type: PrimitiveType) -> Self {
-        Self {
-            bits: primitive_type.bit(),
-        }
-    }
-
-    fn insert(&mut self, primitive_type: PrimitiveType) {
-        self.bits |= primitive_type.bit();
-    }
-
-    fn union_with(&mut self, other: Self) {
-        self.bits |= other.bits;
-    }
-
+    #[must_use]
     const fn is_empty(self) -> bool {
         self.bits == 0
     }
 
-    const fn overlaps(self, other: Self) -> bool {
+    #[must_use]
+    const fn intersects(self, other: Self) -> bool {
         self.bits & other.bits != 0
     }
 
+    #[must_use]
     fn contains(self, primitive_type: PrimitiveType) -> bool {
         self.bits & primitive_type.bit() != 0
+    }
+}
+
+impl From<PrimitiveType> for PrimitiveTypeSet {
+    fn from(value: PrimitiveType) -> Self {
+        Self { bits: value.bit() }
+    }
+}
+
+impl BitOr for PrimitiveTypeSet {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self {
+            bits: self.bits | rhs.bits,
+        }
+    }
+}
+
+impl BitOrAssign for PrimitiveTypeSet {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
+    }
+}
+
+impl BitOrAssign<PrimitiveType> for PrimitiveTypeSet {
+    fn bitor_assign(&mut self, rhs: PrimitiveType) {
+        self.bits |= rhs.bit();
     }
 }
 
@@ -462,7 +485,7 @@ fn rewrite_schema_object(
     remove_empty_conditionals(&mut obj);
     remove_without_dependencies(&mut obj);
     dedupe_required(&mut obj, pointer)?;
-    dedupe_enum(&mut obj)?;
+    dedupe_enum(&mut obj);
     dedupe_schema_array(&mut obj, "allOf");
     dedupe_schema_array(&mut obj, "anyOf");
     simplify_allof(&mut obj);
@@ -500,7 +523,6 @@ fn rewrite_schema_object(
         return Ok(Value::Bool(true));
     }
 
-    let _ = pointer;
     Ok(schema)
 }
 
@@ -613,12 +635,11 @@ fn dedupe_required(schema: &mut Map<String, Value>, pointer: &str) -> Result<()>
     Ok(())
 }
 
-fn dedupe_enum(schema: &mut Map<String, Value>) -> Result<()> {
+fn dedupe_enum(schema: &mut Map<String, Value>) {
     let Some(Value::Array(values)) = schema.get("enum") else {
-        return Ok(());
+        return;
     };
     schema.insert("enum".to_owned(), Value::Array(sorted_unique_json(values)));
-    Ok(())
 }
 
 fn dedupe_schema_array(schema: &mut Map<String, Value>, keyword: &str) {
@@ -698,6 +719,7 @@ fn simplify_oneof(schema: &mut Map<String, Value>) -> Option<Value> {
     None
 }
 
+#[must_use]
 fn can_rewrite_oneof_to_anyof(branches: &[Value]) -> bool {
     let mut seen_types = PrimitiveTypeSet::empty();
     if branches.len() < 2 {
@@ -711,15 +733,16 @@ fn can_rewrite_oneof_to_anyof(branches: &[Value]) -> bool {
         if types.is_empty() {
             return false;
         }
-        if seen_types.overlaps(types) {
+        if seen_types.intersects(types) {
             return false;
         }
-        seen_types.union_with(types);
+        seen_types |= types;
     }
 
     true
 }
 
+#[must_use]
 fn branch_type_set(branch: &Value) -> Option<PrimitiveTypeSet> {
     match branch {
         Value::Bool(true) => None,
@@ -731,7 +754,7 @@ fn branch_type_set(branch: &Value) -> Option<PrimitiveTypeSet> {
             if let Some(Value::Array(values)) = obj.get("enum") {
                 let mut types = PrimitiveTypeSet::empty();
                 for value in values {
-                    types.insert(value_type_name(value)?);
+                    types |= value_type_name(value)?;
                 }
                 return Some(types);
             }
@@ -741,23 +764,24 @@ fn branch_type_set(branch: &Value) -> Option<PrimitiveTypeSet> {
     }
 }
 
+#[must_use]
 fn primitive_type_set(type_name: &str) -> Option<PrimitiveTypeSet> {
     match type_name {
-        "null" => Some(PrimitiveTypeSet::singleton(PrimitiveType::Null)),
-        "boolean" => Some(PrimitiveTypeSet::singleton(PrimitiveType::Boolean)),
-        "object" => Some(PrimitiveTypeSet::singleton(PrimitiveType::Object)),
-        "array" => Some(PrimitiveTypeSet::singleton(PrimitiveType::Array)),
-        "string" => Some(PrimitiveTypeSet::singleton(PrimitiveType::String)),
-        "number" => {
-            let mut types = PrimitiveTypeSet::singleton(PrimitiveType::Number);
-            types.insert(PrimitiveType::Integer);
-            Some(types)
-        }
-        "integer" => Some(PrimitiveTypeSet::singleton(PrimitiveType::Integer)),
+        "null" => Some(PrimitiveType::Null.into()),
+        "boolean" => Some(PrimitiveType::Boolean.into()),
+        "object" => Some(PrimitiveType::Object.into()),
+        "array" => Some(PrimitiveType::Array.into()),
+        "string" => Some(PrimitiveType::String.into()),
+        "number" => Some(
+            PrimitiveTypeSet::from(PrimitiveType::Number)
+                | PrimitiveTypeSet::from(PrimitiveType::Integer),
+        ),
+        "integer" => Some(PrimitiveType::Integer.into()),
         _ => None,
     }
 }
 
+#[must_use]
 fn value_type_name(value: &Value) -> Option<PrimitiveType> {
     match value {
         Value::Null => Some(PrimitiveType::Null),
@@ -1167,7 +1191,7 @@ fn normalize_type_specific_keywords(schema: &mut Map<String, Value>) {
     };
 
     schema.retain(|key, _| {
-        META_KEYS.contains(&key.as_str())
+        is_schema_metadata_key(key)
             || allowed.contains(&key.as_str())
             || matches!(
                 key.as_str(),
@@ -1349,7 +1373,7 @@ fn lower_type_array_to_any_of(schema: &mut Map<String, Value>, pointer: &str) ->
     let mut preserved = preserved_meta(schema);
     let mut branch_context = Map::new();
     for (key, value) in schema.iter() {
-        if key == "type" || key == "anyOf" || META_KEYS.contains(&key.as_str()) {
+        if key == "type" || key == "anyOf" || is_schema_metadata_key(key) {
             continue;
         }
         branch_context.insert(key.clone(), value.clone());
@@ -1672,7 +1696,7 @@ fn value_is_multiple_of(
 
 fn preserved_meta(schema: &Map<String, Value>) -> Map<String, Value> {
     let mut out = Map::new();
-    for key in META_KEYS {
+    for key in PRESERVED_SCHEMA_METADATA_KEYS {
         if let Some(value) = schema.get(key) {
             out.insert(key.to_owned(), value.clone());
         }
@@ -1688,14 +1712,7 @@ fn unsatisfiable_object(schema: &Map<String, Value>) -> Map<String, Value> {
 
 fn preserved_terminal_meta(schema: &Map<String, Value>) -> Map<String, Value> {
     let mut out = Map::new();
-    for key in [
-        "$schema",
-        "$id",
-        "$anchor",
-        "$dynamicAnchor",
-        "title",
-        JSONCOMPAT_METADATA_KEY,
-    ] {
+    for key in TERMINAL_SCHEMA_METADATA_KEYS {
         if let Some(value) = schema.get(key) {
             out.insert(key.to_owned(), value.clone());
         }
@@ -1822,20 +1839,20 @@ mod tests {
         let number = primitive_type_set("number").expect("number type set");
         let string = primitive_type_set("string").expect("string type set");
 
-        assert!(number.overlaps(integer));
-        assert!(integer.overlaps(number));
-        assert!(!string.overlaps(integer));
-        assert!(!integer.overlaps(string));
+        assert!(number.intersects(integer));
+        assert!(integer.intersects(number));
+        assert!(!string.intersects(integer));
+        assert!(!integer.intersects(string));
     }
 
     #[test]
     fn primitive_type_set_is_a_compact_union() {
-        let mut types = PrimitiveTypeSet::singleton(PrimitiveType::String);
-        types.union_with(PrimitiveTypeSet::singleton(PrimitiveType::Boolean));
+        let mut types = PrimitiveTypeSet::from(PrimitiveType::String);
+        types |= PrimitiveTypeSet::from(PrimitiveType::Boolean);
 
-        assert!(types.overlaps(PrimitiveTypeSet::singleton(PrimitiveType::String)));
-        assert!(types.overlaps(PrimitiveTypeSet::singleton(PrimitiveType::Boolean)));
-        assert!(!types.overlaps(PrimitiveTypeSet::singleton(PrimitiveType::Null)));
+        assert!(types.intersects(PrimitiveType::String.into()));
+        assert!(types.intersects(PrimitiveType::Boolean.into()));
+        assert!(!types.intersects(PrimitiveType::Null.into()));
     }
 
     #[test]

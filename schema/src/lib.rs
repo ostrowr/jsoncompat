@@ -4,6 +4,8 @@
 pub mod ast;
 pub mod canonicalize;
 
+mod schema_metadata;
+
 pub use ast::{
     AstError, SchemaNode, SchemaNodeKind, build_and_resolve_canonical_schema,
     build_canonical_schema_ast, resolve_refs,

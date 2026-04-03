@@ -1,4 +1,5 @@
 use crate::canonicalize::CanonicalSchema;
+use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
 use std::cell::{Ref, RefCell, RefMut};
@@ -812,47 +813,44 @@ fn build_schema_ast_from_value(raw: &Value) -> Result<SchemaNode> {
     };
 
     match SchemaShape::classify(obj) {
-        SchemaShape::Ref => parse_ref_schema(obj),
-        SchemaShape::Enum => parse_enum_schema(obj),
-        SchemaShape::Const => parse_const_schema(obj),
-        SchemaShape::Conditional => parse_conditional_schema(obj),
-        SchemaShape::AllOf => parse_all_of_schema(obj),
-        SchemaShape::AnyOf => parse_any_of_schema(obj),
-        SchemaShape::OneOf => parse_one_of_schema(obj),
-        SchemaShape::Not => parse_not_schema(obj),
-        SchemaShape::String => parse_string_schema(obj),
-        SchemaShape::Number => parse_number_schema(obj, false),
-        SchemaShape::Integer => parse_number_schema(obj, true),
-        SchemaShape::Boolean => parse_boolean_schema(obj),
-        SchemaShape::Null => parse_null_schema(obj),
+        SchemaShape::Ref(ref_path) => Ok(parse_ref_schema(ref_path)),
+        SchemaShape::Enum(values) => Ok(parse_enum_schema(values)),
+        SchemaShape::Const(value) => Ok(parse_const_schema(value)),
+        SchemaShape::Conditional {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => parse_conditional_schema(obj, if_schema, then_schema, else_schema),
+        SchemaShape::AllOf(subschemas) => parse_all_of_schema(obj, subschemas),
+        SchemaShape::AnyOf(subschemas) => parse_any_of_schema(obj, subschemas),
+        SchemaShape::OneOf(subschemas) => parse_one_of_schema(obj, subschemas),
+        SchemaShape::Not(schema) => parse_not_schema(schema),
+        SchemaShape::String => Ok(parse_string_schema(obj)),
+        SchemaShape::Number => Ok(parse_number_schema(obj, false)),
+        SchemaShape::Integer => Ok(parse_number_schema(obj, true)),
+        SchemaShape::Boolean => Ok(parse_boolean_schema(obj)),
+        SchemaShape::Null => Ok(parse_null_schema(obj)),
         SchemaShape::Object => parse_object_schema(obj),
         SchemaShape::Array => parse_array_schema(obj),
-        SchemaShape::TypeUnion => parse_type_union_schema(obj),
+        SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names),
         SchemaShape::Any => Ok(SchemaNode::any()),
     }
 }
 
-const SCHEMA_METADATA_KEYS: [&str; 8] = [
-    "$schema",
-    "$id",
-    "$anchor",
-    "$dynamicAnchor",
-    "$comment",
-    "$defs",
-    "title",
-    "x-jsoncompat",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SchemaShape {
-    Ref,
-    Enum,
-    Const,
-    Conditional,
-    AllOf,
-    AnyOf,
-    OneOf,
-    Not,
+enum SchemaShape<'a> {
+    Ref(&'a str),
+    Enum(&'a [Value]),
+    Const(&'a Value),
+    Conditional {
+        if_schema: Option<&'a Value>,
+        then_schema: Option<&'a Value>,
+        else_schema: Option<&'a Value>,
+    },
+    AllOf(&'a [Value]),
+    AnyOf(&'a [Value]),
+    OneOf(&'a [Value]),
+    Not(&'a Value),
     String,
     Number,
     Integer,
@@ -860,153 +858,230 @@ enum SchemaShape {
     Null,
     Object,
     Array,
-    TypeUnion,
+    TypeUnion(&'a [Value]),
     Any,
 }
 
-impl SchemaShape {
-    fn classify(obj: &Map<String, Value>) -> Self {
-        if matches!(obj.get("$ref"), Some(Value::String(_))) {
-            return Self::Ref;
+impl<'a> SchemaShape<'a> {
+    #[must_use]
+    fn classify(obj: &'a Map<String, Value>) -> Self {
+        let keywords = SchemaKeywords::classify(obj);
+
+        if let Some(ref_path) = keywords.ref_path {
+            return Self::Ref(ref_path);
         }
-        if matches!(obj.get("enum"), Some(Value::Array(_)))
-            && object_has_only_keyword_and_metadata(obj, "enum")
+        if let Some(values) = keywords.enum_values
+            && keywords.has_only_one_non_metadata_keyword()
         {
-            return Self::Enum;
+            return Self::Enum(values);
         }
-        if obj.contains_key("const") && object_has_only_keyword_and_metadata(obj, "const") {
-            return Self::Const;
+        if let Some(value) = keywords.const_value
+            && keywords.has_only_one_non_metadata_keyword()
+        {
+            return Self::Const(value);
         }
-        if obj.contains_key("if") || obj.contains_key("then") || obj.contains_key("else") {
-            return Self::Conditional;
+        if keywords.flags.contains(SchemaKeywordFlags::CONDITIONAL) {
+            return Self::Conditional {
+                if_schema: keywords.if_schema,
+                then_schema: keywords.then_schema,
+                else_schema: keywords.else_schema,
+            };
         }
-        if matches!(obj.get("allOf"), Some(Value::Array(_))) {
-            return Self::AllOf;
+        if let Some(subschemas) = keywords.all_of {
+            return Self::AllOf(subschemas);
         }
-        if matches!(obj.get("anyOf"), Some(Value::Array(_))) {
-            return Self::AnyOf;
+        if let Some(subschemas) = keywords.any_of {
+            return Self::AnyOf(subschemas);
         }
-        if matches!(obj.get("oneOf"), Some(Value::Array(_))) {
-            return Self::OneOf;
+        if let Some(subschemas) = keywords.one_of {
+            return Self::OneOf(subschemas);
         }
-        if obj.contains_key("not") {
-            return Self::Not;
+        if let Some(schema) = keywords.not_schema {
+            return Self::Not(schema);
         }
-        if let Some(shape) = classify_typed_schema_shape(obj) {
+        if let Some(shape) = keywords.type_shape {
             return shape;
         }
-        if object_has_object_keywords(obj) {
+        if keywords.flags.contains(SchemaKeywordFlags::OBJECT) {
             return Self::Object;
         }
-        if object_has_array_keywords(obj) {
+        if keywords.flags.contains(SchemaKeywordFlags::ARRAY) {
             return Self::Array;
         }
-        if object_has_string_keywords(obj) {
+        if keywords.flags.contains(SchemaKeywordFlags::STRING) {
             return Self::String;
         }
-        if object_has_numeric_enum_keywords(obj) {
+        if (keywords.enum_values.is_some() || keywords.const_value.is_some())
+            && keywords.flags.contains(SchemaKeywordFlags::NUMERIC)
+        {
             return Self::Number;
         }
         Self::Any
     }
-}
 
-fn classify_typed_schema_shape(obj: &Map<String, Value>) -> Option<SchemaShape> {
-    match obj.get("type") {
-        Some(Value::String(type_name)) => Some(match type_name.as_str() {
-            "string" => SchemaShape::String,
-            "number" => SchemaShape::Number,
-            "integer" => SchemaShape::Integer,
-            "boolean" => SchemaShape::Boolean,
-            "null" => SchemaShape::Null,
-            "object" => SchemaShape::Object,
-            "array" => SchemaShape::Array,
-            _ => SchemaShape::Any,
-        }),
-        Some(Value::Array(_)) => Some(SchemaShape::TypeUnion),
-        _ => None,
+    #[must_use]
+    fn typed(type_name: &str) -> Self {
+        match type_name {
+            "string" => Self::String,
+            "number" => Self::Number,
+            "integer" => Self::Integer,
+            "boolean" => Self::Boolean,
+            "null" => Self::Null,
+            "object" => Self::Object,
+            "array" => Self::Array,
+            _ => Self::Any,
+        }
     }
 }
 
-fn object_has_object_keywords(obj: &Map<String, Value>) -> bool {
-    obj.contains_key("properties")
-        || obj.contains_key("patternProperties")
-        || obj.contains_key("minProperties")
-        || obj.contains_key("maxProperties")
-        || obj.contains_key("required")
-        || obj.contains_key("additionalProperties")
-        || obj.contains_key("propertyNames")
-        || obj.contains_key("dependentRequired")
-        || obj.contains_key("dependentSchemas")
-        || obj.contains_key("unevaluatedProperties")
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct SchemaKeywordFlags {
+    bits: u8,
 }
 
-fn object_has_array_keywords(obj: &Map<String, Value>) -> bool {
-    obj.contains_key("items")
-        || obj.contains_key("prefixItems")
-        || obj.contains_key("contains")
-        || obj.contains_key("minItems")
-        || obj.contains_key("maxItems")
-        || obj.contains_key("minContains")
-        || obj.contains_key("maxContains")
-        || obj.contains_key("uniqueItems")
-        || obj.contains_key("unevaluatedItems")
-}
+impl SchemaKeywordFlags {
+    const OBJECT: Self = Self { bits: 1 << 0 };
+    const ARRAY: Self = Self { bits: 1 << 1 };
+    const STRING: Self = Self { bits: 1 << 2 };
+    const NUMERIC: Self = Self { bits: 1 << 3 };
+    const CONDITIONAL: Self = Self { bits: 1 << 4 };
 
-fn object_has_string_keywords(obj: &Map<String, Value>) -> bool {
-    obj.contains_key("minLength")
-        || obj.contains_key("maxLength")
-        || obj.contains_key("pattern")
-        || obj.contains_key("format")
-}
-
-fn object_has_numeric_enum_keywords(obj: &Map<String, Value>) -> bool {
-    (obj.contains_key("enum") || obj.contains_key("const"))
-        && (obj.contains_key("minimum")
-            || obj.contains_key("maximum")
-            || obj.contains_key("exclusiveMinimum")
-            || obj.contains_key("exclusiveMaximum")
-            || obj.contains_key("multipleOf"))
-}
-
-fn object_has_only_keyword_and_metadata(obj: &Map<String, Value>, keyword: &str) -> bool {
-    obj.keys()
-        .all(|key| key == keyword || is_schema_metadata_key(key))
-}
-
-fn is_schema_metadata_key(key: &str) -> bool {
-    SCHEMA_METADATA_KEYS.contains(&key)
-}
-
-fn strip_schema_metadata(obj: &mut Map<String, Value>) {
-    for key in SCHEMA_METADATA_KEYS {
-        obj.remove(key);
+    #[must_use]
+    const fn contains(self, flag: Self) -> bool {
+        self.bits & flag.bits != 0
     }
 }
 
-fn parse_ref_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Value::String(ref_path) = &obj["$ref"] else {
-        unreachable!("$ref shape was checked before parsing")
-    };
-    Ok(SchemaNode::new(SchemaNodeKind::Ref(ref_path.to_owned())))
+impl std::ops::BitOrAssign for SchemaKeywordFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
+    }
 }
 
-fn parse_enum_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Value::Array(values) = &obj["enum"] else {
-        unreachable!("enum shape was checked before parsing")
-    };
-    Ok(SchemaNode::new(SchemaNodeKind::Enum(values.clone())))
+#[derive(Debug, Default, Clone, Copy)]
+struct SchemaKeywords<'a> {
+    ref_path: Option<&'a str>,
+    enum_values: Option<&'a [Value]>,
+    const_value: Option<&'a Value>,
+    if_schema: Option<&'a Value>,
+    then_schema: Option<&'a Value>,
+    else_schema: Option<&'a Value>,
+    all_of: Option<&'a [Value]>,
+    any_of: Option<&'a [Value]>,
+    one_of: Option<&'a [Value]>,
+    not_schema: Option<&'a Value>,
+    type_shape: Option<SchemaShape<'a>>,
+    flags: SchemaKeywordFlags,
+    non_metadata_keyword_count: usize,
 }
 
-fn parse_const_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let value = obj
-        .get("const")
-        .expect("const shape was checked before parsing");
-    Ok(SchemaNode::new(SchemaNodeKind::Const(value.clone())))
+impl<'a> SchemaKeywords<'a> {
+    #[must_use]
+    fn classify(obj: &'a Map<String, Value>) -> Self {
+        let mut keywords = Self::default();
+
+        for (key, value) in obj {
+            if !is_schema_metadata_key(key) {
+                keywords.non_metadata_keyword_count += 1;
+            }
+
+            match key.as_str() {
+                "$ref" => {
+                    keywords.ref_path = value.as_str();
+                }
+                "enum" => {
+                    keywords.enum_values = value.as_array().map(Vec::as_slice);
+                }
+                "const" => {
+                    keywords.const_value = Some(value);
+                }
+                "if" => {
+                    keywords.if_schema = Some(value);
+                    keywords.flags |= SchemaKeywordFlags::CONDITIONAL;
+                }
+                "then" => {
+                    keywords.then_schema = Some(value);
+                    keywords.flags |= SchemaKeywordFlags::CONDITIONAL;
+                }
+                "else" => {
+                    keywords.else_schema = Some(value);
+                    keywords.flags |= SchemaKeywordFlags::CONDITIONAL;
+                }
+                "allOf" => {
+                    keywords.all_of = value.as_array().map(Vec::as_slice);
+                }
+                "anyOf" => {
+                    keywords.any_of = value.as_array().map(Vec::as_slice);
+                }
+                "oneOf" => {
+                    keywords.one_of = value.as_array().map(Vec::as_slice);
+                }
+                "not" => {
+                    keywords.not_schema = Some(value);
+                }
+                "type" => match value {
+                    Value::String(type_name) => {
+                        keywords.type_shape = Some(SchemaShape::typed(type_name));
+                    }
+                    Value::Array(type_names) => {
+                        keywords.type_shape = Some(SchemaShape::TypeUnion(type_names.as_slice()));
+                    }
+                    _ => {}
+                },
+                "properties"
+                | "patternProperties"
+                | "minProperties"
+                | "maxProperties"
+                | "required"
+                | "additionalProperties"
+                | "propertyNames"
+                | "dependentRequired"
+                | "dependentSchemas"
+                | "unevaluatedProperties" => {
+                    keywords.flags |= SchemaKeywordFlags::OBJECT;
+                }
+                "items" | "prefixItems" | "contains" | "minItems" | "maxItems" | "minContains"
+                | "maxContains" | "uniqueItems" | "unevaluatedItems" => {
+                    keywords.flags |= SchemaKeywordFlags::ARRAY;
+                }
+                "minLength" | "maxLength" | "pattern" | "format" => {
+                    keywords.flags |= SchemaKeywordFlags::STRING;
+                }
+                "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum" | "multipleOf" => {
+                    keywords.flags |= SchemaKeywordFlags::NUMERIC;
+                }
+                _ => {}
+            }
+        }
+
+        keywords
+    }
+
+    #[must_use]
+    const fn has_only_one_non_metadata_keyword(self) -> bool {
+        self.non_metadata_keyword_count == 1
+    }
 }
 
-fn parse_conditional_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Some(cond) = obj.get("if") else {
+fn parse_ref_schema(ref_path: &str) -> SchemaNode {
+    SchemaNode::new(SchemaNodeKind::Ref(ref_path.to_owned()))
+}
+
+fn parse_enum_schema(values: &[Value]) -> SchemaNode {
+    SchemaNode::new(SchemaNodeKind::Enum(values.to_vec()))
+}
+
+fn parse_const_schema(value: &Value) -> SchemaNode {
+    SchemaNode::new(SchemaNodeKind::Const(value.clone()))
+}
+
+fn parse_conditional_schema(
+    obj: &Map<String, Value>,
+    if_schema: Option<&Value>,
+    then_schema: Option<&Value>,
+    else_schema: Option<&Value>,
+) -> Result<SchemaNode> {
+    let Some(cond) = if_schema else {
         let mut base = obj.clone();
         base.remove("then");
         base.remove("else");
@@ -1014,14 +1089,8 @@ fn parse_conditional_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     };
 
     let if_schema = build_schema_ast_from_value(cond)?;
-    let then_schema = obj
-        .get("then")
-        .map(build_schema_ast_from_value)
-        .transpose()?;
-    let else_schema = obj
-        .get("else")
-        .map(build_schema_ast_from_value)
-        .transpose()?;
+    let then_schema = then_schema.map(build_schema_ast_from_value).transpose()?;
+    let else_schema = else_schema.map(build_schema_ast_from_value).transpose()?;
 
     let cond_node = SchemaNode::new(SchemaNodeKind::IfThenElse {
         if_schema,
@@ -1039,16 +1108,12 @@ fn parse_conditional_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     Ok(cond_node)
 }
 
-fn parse_all_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Value::Array(subs) = &obj["allOf"] else {
-        unreachable!("allOf shape was checked before parsing")
-    };
-
+fn parse_all_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result<SchemaNode> {
     let mut list = Vec::new();
     if let Some(base_schema) = parse_applicator_base_schema(obj, &["allOf"])? {
         list.push(base_schema);
     }
-    for schema in subs {
+    for schema in subschemas {
         list.push(build_schema_ast_from_value(schema)?);
     }
 
@@ -1057,13 +1122,10 @@ fn parse_all_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     ))))
 }
 
-fn parse_any_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Value::Array(subs) = &obj["anyOf"] else {
-        unreachable!("anyOf shape was checked before parsing")
-    };
-
+fn parse_any_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result<SchemaNode> {
     let any_of = SchemaNode::new(SchemaNodeKind::AnyOf(dedupe_schema_nodes(
-        subs.iter()
+        subschemas
+            .iter()
             .map(build_schema_ast_from_value)
             .collect::<Result<Vec<_>>>()?,
     )));
@@ -1078,13 +1140,10 @@ fn parse_any_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     Ok(any_of)
 }
 
-fn parse_one_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Value::Array(subs) = &obj["oneOf"] else {
-        unreachable!("oneOf shape was checked before parsing")
-    };
-
+fn parse_one_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result<SchemaNode> {
     let one_of = SchemaNode::new(SchemaNodeKind::OneOf(
-        subs.iter()
+        subschemas
+            .iter()
             .map(build_schema_ast_from_value)
             .collect::<Result<Vec<_>>>()?,
     ));
@@ -1099,17 +1158,13 @@ fn parse_one_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     Ok(one_of)
 }
 
-fn parse_not_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+fn parse_not_schema(schema: &Value) -> Result<SchemaNode> {
     Ok(SchemaNode::new(SchemaNodeKind::Not(
-        build_schema_ast_from_value(&obj["not"])?,
+        build_schema_ast_from_value(schema)?,
     )))
 }
 
-fn parse_type_union_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
-    let Value::Array(type_names) = &obj["type"] else {
-        unreachable!("type-array shape was checked before parsing")
-    };
-
+fn parse_type_union_schema(obj: &Map<String, Value>, type_names: &[Value]) -> Result<SchemaNode> {
     let mut variants = Vec::new();
     for type_name in type_names {
         if let Some(type_name) = type_name.as_str() {
@@ -1145,7 +1200,7 @@ fn parse_applicator_base_schema(
     }
 }
 
-fn parse_string_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+fn parse_string_schema(obj: &Map<String, Value>) -> SchemaNode {
     let min_length = Some(obj.get("minLength").and_then(|v| v.as_u64()).unwrap_or(0));
     let max_length = obj.get("maxLength").and_then(|v| v.as_u64());
     let pattern = obj
@@ -1158,13 +1213,13 @@ fn parse_string_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
         .map(|s| s.to_owned());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
-    Ok(SchemaNode::new(SchemaNodeKind::String {
+    SchemaNode::new(SchemaNodeKind::String {
         min_length,
         max_length,
         pattern,
         format,
         enumeration,
-    }))
+    })
 }
 
 fn dedupe_schema_nodes(nodes: Vec<SchemaNode>) -> Vec<SchemaNode> {
@@ -1177,7 +1232,7 @@ fn dedupe_schema_nodes(nodes: Vec<SchemaNode>) -> Vec<SchemaNode> {
     unique
 }
 
-fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> Result<SchemaNode> {
+fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> SchemaNode {
     let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
     let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
 
@@ -1205,34 +1260,34 @@ fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> Result<Schema
     if integer {
         let min_i = minimum.map(|m| m as i64);
         let max_i = maximum.map(|m| m as i64);
-        Ok(SchemaNode::new(SchemaNodeKind::Integer {
+        SchemaNode::new(SchemaNodeKind::Integer {
             minimum: min_i,
             maximum: max_i,
             exclusive_minimum,
             exclusive_maximum,
             multiple_of,
             enumeration,
-        }))
+        })
     } else {
-        Ok(SchemaNode::new(SchemaNodeKind::Number {
+        SchemaNode::new(SchemaNodeKind::Number {
             minimum,
             maximum,
             exclusive_minimum,
             exclusive_maximum,
             multiple_of,
             enumeration,
-        }))
+        })
     }
 }
 
-fn parse_boolean_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+fn parse_boolean_schema(obj: &Map<String, Value>) -> SchemaNode {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    Ok(SchemaNode::new(SchemaNodeKind::Boolean { enumeration }))
+    SchemaNode::new(SchemaNodeKind::Boolean { enumeration })
 }
 
-fn parse_null_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+fn parse_null_schema(obj: &Map<String, Value>) -> SchemaNode {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    Ok(SchemaNode::new(SchemaNodeKind::Null { enumeration }))
+    SchemaNode::new(SchemaNodeKind::Null { enumeration })
 }
 
 fn parse_object_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
