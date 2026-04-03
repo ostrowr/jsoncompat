@@ -1,0 +1,59 @@
+[
+  {
+    "description": "recursive binary tree reached through oneOf",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/tree",
+      "$defs": {
+        "tree": {
+          "oneOf": [
+            {
+              "const": null
+            },
+            {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "$ref": "#/$defs/tree"
+                },
+                "right": {
+                  "$ref": "#/$defs/tree"
+                }
+              },
+              "required": [
+                "left",
+                "right"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "description": "null leaf is valid",
+        "data": null,
+        "valid": true
+      },
+      {
+        "description": "nested finite tree is valid",
+        "data": {
+          "left": null,
+          "right": {
+            "left": null,
+            "right": null
+          }
+        },
+        "valid": true
+      },
+      {
+        "description": "missing a required child is invalid",
+        "data": {
+          "left": null
+        },
+        "valid": false
+      }
+    ]
+  }
+]

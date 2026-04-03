@@ -1,0 +1,74 @@
+[
+  {
+    "description": "if-only branches are still addressable through local refs",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/if"
+        }
+      ],
+      "if": {
+        "const": "ready"
+      }
+    },
+    "tests": [
+      {
+        "description": "the referenced if branch accepts its const",
+        "data": "ready",
+        "valid": true
+      },
+      {
+        "description": "other strings fail the referenced if branch",
+        "data": "not-ready",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "then and else without if are ignored",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "then": false,
+      "else": false
+    },
+    "tests": [
+      {
+        "description": "the root string type still accepts strings",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "the root string type still rejects non-strings",
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "boolean if branches choose then or else deterministically",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "if": true,
+      "then": {
+        "const": "yes"
+      },
+      "else": {
+        "const": "no"
+      }
+    },
+    "tests": [
+      {
+        "description": "the then branch applies when if is true",
+        "data": "yes",
+        "valid": true
+      },
+      {
+        "description": "the else branch does not apply when if is true",
+        "data": "no",
+        "valid": false
+      }
+    ]
+  }
+]

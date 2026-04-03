@@ -1,0 +1,73 @@
+[
+  {
+    "description": "local ref targets a prefixItems element by index",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/$defs/tuple/prefixItems/1"
+        }
+      ],
+      "$defs": {
+        "tuple": {
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "tests": [
+      {
+        "description": "the referenced second tuple schema accepts strings",
+        "data": "tail",
+        "valid": true
+      },
+      {
+        "description": "the referenced second tuple schema rejects integers",
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "local ref targets a legacy tuple items element by index",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/$defs/legacyTuple/items/0"
+        }
+      ],
+      "$defs": {
+        "legacyTuple": {
+          "items": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "description": "the referenced first tuple schema accepts integers",
+        "data": 7,
+        "valid": true
+      },
+      {
+        "description": "the referenced first tuple schema rejects strings",
+        "data": "7",
+        "valid": false
+      }
+    ]
+  }
+]

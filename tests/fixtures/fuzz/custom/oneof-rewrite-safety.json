@@ -1,0 +1,100 @@
+[
+  {
+    "description": "disjoint oneOf branches stay exclusive under canonicalization",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "int"
+            },
+            "value": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "str"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "tests": [
+      {
+        "description": "first discriminator branch is valid",
+        "data": {
+          "kind": "int",
+          "value": 1
+        },
+        "valid": true
+      },
+      {
+        "description": "second discriminator branch is valid",
+        "data": {
+          "kind": "str",
+          "value": "x"
+        },
+        "valid": true
+      },
+      {
+        "description": "wrong payload for the chosen discriminator is invalid",
+        "data": {
+          "kind": "int",
+          "value": "x"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "values matching both overlapping oneOf branches remain invalid",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number",
+          "minimum": 2
+        }
+      ]
+    },
+    "tests": [
+      {
+        "description": "an integer below the second branch minimum matches exactly one branch",
+        "data": 1,
+        "valid": true
+      },
+      {
+        "description": "a non-integral number above the second branch minimum matches exactly one branch",
+        "data": 2.5,
+        "valid": true
+      },
+      {
+        "description": "an integer above the second branch minimum matches both branches",
+        "data": 2,
+        "valid": false
+      }
+    ]
+  }
+]

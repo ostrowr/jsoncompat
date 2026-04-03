@@ -1,0 +1,75 @@
+[
+  {
+    "description": "object keywords with a non-object enum stay representable",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "x": {
+          "type": "string"
+        }
+      },
+      "enum": [
+        1
+      ]
+    },
+    "tests": [
+      {
+        "description": "the non-object enum value is valid",
+        "data": 1,
+        "valid": true
+      },
+      {
+        "description": "objects that only satisfy properties remain invalid",
+        "data": {
+          "x": "ok"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "string keywords with a non-string const stay representable",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minLength": 1,
+      "const": 7
+    },
+    "tests": [
+      {
+        "description": "the non-string const value is valid",
+        "data": 7,
+        "valid": true
+      },
+      {
+        "description": "strings matching minLength remain invalid",
+        "data": "7",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array keywords with a non-array const stay representable",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": "integer"
+      },
+      "const": "scalar"
+    },
+    "tests": [
+      {
+        "description": "the non-array const value is valid",
+        "data": "scalar",
+        "valid": true
+      },
+      {
+        "description": "arrays matching the items schema remain invalid",
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      }
+    ]
+  }
+]

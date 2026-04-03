@@ -1,0 +1,69 @@
+[
+  {
+    "description": "local refs into object keywords suppress unsafe type-union rewrites",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "alias": {
+          "$ref": "#/properties/id"
+        }
+      },
+      "required": [
+        "id",
+        "alias"
+      ],
+      "additionalProperties": false
+    },
+    "tests": [
+      {
+        "description": "objects with two string properties satisfy the local ref",
+        "data": {
+          "id": "abc",
+          "alias": "def"
+        },
+        "valid": true
+      },
+      {
+        "description": "objects with a non-string alias fail the local ref",
+        "data": {
+          "id": "abc",
+          "alias": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "nested local refs under array keywords suppress unsafe type-union rewrites",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/contains"
+      },
+      "contains": {
+        "const": "marker"
+      }
+    },
+    "tests": [
+      {
+        "description": "arrays of marker values satisfy both items and contains",
+        "data": [
+          "marker",
+          "marker"
+        ],
+        "valid": true
+      },
+      {
+        "description": "other item values fail the referenced contains schema",
+        "data": [
+          "other"
+        ],
+        "valid": false
+      }
+    ]
+  }
+]

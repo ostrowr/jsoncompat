@@ -1,0 +1,74 @@
+[
+  {
+    "description": "mutually recursive definitions alternate between a and b",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "next": {
+                  "$ref": "#/$defs/b"
+                }
+              },
+              "required": [
+                "next"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "b": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "next": {
+                  "$ref": "#/$defs/a"
+                }
+              },
+              "required": [
+                "next"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "description": "null base case is valid",
+        "data": null,
+        "valid": true
+      },
+      {
+        "description": "mutual recursion can terminate after b points back to null",
+        "data": {
+          "next": {
+            "next": null
+          }
+        },
+        "valid": true
+      },
+      {
+        "description": "non-object recursion payload is invalid",
+        "data": {
+          "next": {
+            "next": 1
+          }
+        },
+        "valid": false
+      }
+    ]
+  }
+]
