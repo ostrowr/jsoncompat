@@ -16,10 +16,7 @@ json_schema_ast = "0.2.1"
 ## Usage
 
 ```rust
-use json_schema_ast::{
-    SchemaNode, JSONSchema, build_and_resolve_canonical_schema, canonicalize_schema,
-    compile_canonical,
-};
+use json_schema_ast::{SchemaNode, JSONSchema, build_and_resolve_schema, compile};
 use serde_json::json;
 
 let raw = json!({
@@ -31,14 +28,11 @@ let raw = json!({
     "required": ["id"]
 });
 
-// Parse and canonicalize once at the boundary
-let schema = canonicalize_schema(&raw).unwrap();
-
 // Build AST
-let schema_node: SchemaNode = build_and_resolve_canonical_schema(&schema).unwrap();
+let schema_node: SchemaNode = build_and_resolve_schema(&raw).unwrap();
 
 // Compile a fast validator
-let validator: JSONSchema = compile_canonical(&schema).unwrap();
+let validator: JSONSchema = compile(&raw).unwrap();
 
 // Validate instances
 assert!(validator.is_valid(&json!({ "id": 42 })));

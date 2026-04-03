@@ -1,11 +1,8 @@
-use json_schema_ast::{
-    CanonicalSchema, CanonicalizeError, JSONSchema, build_and_resolve_canonical_schema,
-    canonicalize_schema, compile_canonical,
-};
-use json_schema_fuzz::generate_value;
+use crate::canonicalize::{CanonicalSchema, CanonicalizeError, canonicalize_schema};
+use crate::{JSONSchema, build_and_resolve_schema, compile};
 use jsonschema::Draft;
-use rand::{SeedableRng, rngs::StdRng};
-use serde_json::{Value, json};
+use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+use serde_json::{Map, Value, json};
 use std::fs;
 use std::path::Path;
 
@@ -54,10 +51,10 @@ fn canonicalize_every_fuzz_fixture_schema_is_idempotent_and_ast_equivalent()
             );
 
             let canonical_ast =
-                build_and_resolve_canonical_schema(&canonical).map_err(|error| {
+                build_and_resolve_schema(canonical.as_value()).map_err(|error| {
                     format!("{} schema #{index} canonical AST: {error}", path.display())
                 })?;
-            let canonical_again_ast = build_and_resolve_canonical_schema(&canonical_again)
+            let canonical_again_ast = build_and_resolve_schema(canonical_again.as_value())
                 .map_err(|error| {
                     format!(
                         "{} schema #{index} recanonicalized AST: {error}",
@@ -102,14 +99,10 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
                     return Err(format!("{} schema #{index}: {error}", path.display()).into());
                 }
             };
-            let canonical_ast =
-                build_and_resolve_canonical_schema(&canonical).map_err(|error| {
-                    format!("{} schema #{index} canonical AST: {error}", path.display())
-                })?;
             let raw_compiled = compile_without_canonicalization(schema_json).map_err(|error| {
                 format!("{} schema #{index} raw compile: {error}", path.display())
             })?;
-            let canonical_compiled = compile_canonical(&canonical).map_err(|error| {
+            let canonical_compiled = compile(canonical.as_value()).map_err(|error| {
                 format!(
                     "{} schema #{index} canonical compile: {error}",
                     path.display()
@@ -120,14 +113,14 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
             let mut stream_b_rng = StdRng::seed_from_u64(schema_seed(&path, index, 1));
 
             for sample_index in 0..SEMANTIC_EQUIVALENCE_SAMPLES_PER_SCHEMA {
-                let from_stream_a = generate_value(&canonical_ast, &mut stream_a_rng, 6);
+                let from_stream_a = random_probe_candidate(&mut stream_a_rng, 6);
                 assert_compiled_validators_agree(
                     &raw_compiled,
                     &canonical_compiled,
                     &path,
                     index,
                     &from_stream_a,
-                    "generated from canonical AST stream A",
+                    "generated from probe stream A",
                     sample_index,
                 )?;
                 for (mutation_index, candidate) in semantic_probe_candidates(&from_stream_a)
@@ -141,20 +134,20 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
                         index,
                         &candidate,
                         &format!(
-                            "mutation #{mutation_index} of value generated from canonical AST stream A"
+                            "mutation #{mutation_index} of value generated from probe stream A"
                         ),
                         sample_index,
                     )?;
                 }
 
-                let from_stream_b = generate_value(&canonical_ast, &mut stream_b_rng, 6);
+                let from_stream_b = random_probe_candidate(&mut stream_b_rng, 6);
                 assert_compiled_validators_agree(
                     &raw_compiled,
                     &canonical_compiled,
                     &path,
                     index,
                     &from_stream_b,
-                    "generated from canonical AST stream B",
+                    "generated from probe stream B",
                     sample_index,
                 )?;
                 for (mutation_index, candidate) in semantic_probe_candidates(&from_stream_b)
@@ -168,7 +161,7 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
                         index,
                         &candidate,
                         &format!(
-                            "mutation #{mutation_index} of value generated from canonical AST stream B"
+                            "mutation #{mutation_index} of value generated from probe stream B"
                         ),
                         sample_index,
                     )?;
@@ -349,6 +342,55 @@ fn canonicalize_preserves_local_ref_targets_in_object_keywords() {
 }
 
 #[test]
+fn canonicalize_preserves_pruned_keyword_branches_when_local_refs_target_them() {
+    let raw = json!({
+        "type": "object",
+        "prefixItems": [
+            {
+                "type": "string"
+            }
+        ],
+        "$defs": {
+            "Alias": {
+                "$ref": "#/prefixItems/0"
+            }
+        },
+        "properties": {
+            "value": {
+                "$ref": "#/$defs/Alias"
+            }
+        }
+    });
+
+    let canonical = canonicalize_schema(&raw).unwrap();
+    assert_eq!(
+        canonical.as_value(),
+        &json!({
+            "$defs": {
+                "Alias": {
+                    "$ref": "#/prefixItems/0"
+                }
+            },
+            "minProperties": 0,
+            "prefixItems": [
+                {
+                    "minLength": 0,
+                    "type": "string"
+                }
+            ],
+            "properties": {
+                "value": {
+                    "$ref": "#/$defs/Alias"
+                }
+            },
+            "type": "object"
+        })
+    );
+
+    build_and_resolve_schema(canonical.as_value()).unwrap();
+}
+
+#[test]
 fn canonicalize_lowers_boolean_and_null_types_to_enum() {
     assert_eq!(
         canonicalize_schema(&json!({ "type": "boolean" }))
@@ -424,7 +466,7 @@ fn canonicalize_does_not_rewrite_oneof_integer_overlapping_integral_numeric_enum
     );
 
     let raw_compiled = compile_without_canonicalization(&raw).unwrap();
-    let canonical_compiled = compile_canonical(&canonical).unwrap();
+    let canonical_compiled = compile(canonical.as_value()).unwrap();
     for value in [json!(1), json!(1.0), json!(2)] {
         assert_eq!(
             raw_compiled.is_valid(&value),
@@ -458,6 +500,29 @@ fn canonicalize_converts_integral_exclusive_integer_bounds_and_checks_equal_boun
             "multipleOf": 2
         }),
         &json!({ "not": true }),
+    );
+}
+
+#[test]
+fn canonicalize_collapses_overflowed_exclusive_integer_bounds_to_unsatisfiable() {
+    assert_canonicalizes_to(
+        &json!({
+            "type": "integer",
+            "exclusiveMaximum": i64::MIN
+        }),
+        &json!({
+            "not": true
+        }),
+    );
+
+    assert_canonicalizes_to(
+        &json!({
+            "type": "integer",
+            "exclusiveMinimum": i64::MAX
+        }),
+        &json!({
+            "not": true
+        }),
     );
 }
 
@@ -1120,6 +1185,48 @@ fn schema_seed(path: &Path, schema_index: usize, stream: u64) -> u64 {
             state.wrapping_mul(1099511628211) ^ u64::from(byte)
         })
         ^ (schema_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
+
+fn random_probe_candidate(rng: &mut impl Rng, depth: u8) -> Value {
+    if depth == 0 {
+        return match rng.random_range(0..=4) {
+            0 => Value::Null,
+            1 => Value::Bool(rng.random_bool(0.5)),
+            2 => json!(rng.random_range(-3..=3)),
+            3 => json!(rng.random_range(-3.0..=3.0)),
+            _ => Value::String("jsoncompat".to_owned()),
+        };
+    }
+
+    match rng.random_range(0..=6) {
+        0 => Value::Null,
+        1 => Value::Bool(rng.random_bool(0.5)),
+        2 => json!(rng.random_range(-10..=10)),
+        3 => json!(rng.random_range(-10.0..=10.0)),
+        4 => {
+            let length = rng.random_range(0..=8);
+            let value: String = (0..length)
+                .map(|_| rng.sample(rand::distr::Alphanumeric) as char)
+                .collect();
+            Value::String(value)
+        }
+        5 => {
+            let mut items = Vec::new();
+            let length = rng.random_range(0..=4);
+            for _ in 0..length {
+                items.push(random_probe_candidate(rng, depth - 1));
+            }
+            Value::Array(items)
+        }
+        _ => {
+            let mut object = Map::new();
+            let length = rng.random_range(0..=4);
+            for index in 0..length {
+                object.insert(format!("k{index}"), random_probe_candidate(rng, depth - 1));
+            }
+            Value::Object(object)
+        }
+    }
 }
 
 fn assert_compiled_validators_agree(

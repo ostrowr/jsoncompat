@@ -1,9 +1,6 @@
 use json_schema_ast as schema;
 
-use schema::{
-    SchemaNode, SchemaNodeKind, build_and_resolve_canonical_schema, build_canonical_schema_ast,
-    canonicalize_schema, compile_canonical,
-};
+use schema::{SchemaNode, SchemaNodeKind, build_and_resolve_schema, compile};
 use serde_json::Value;
 use serde_json::json;
 
@@ -22,9 +19,7 @@ fn resolve_local_ref() {
         "definitions": {"Int": {"type":"integer"}},
         "$ref": "#/definitions/Int"
     });
-    let canonical = canonicalize_schema(&raw).unwrap();
-    let mut ast = build_canonical_schema_ast(&canonical).unwrap();
-    schema::resolve_refs(&mut ast, &canonical, &[]).unwrap();
+    let ast = build_and_resolve_schema(&raw).unwrap();
     assert!(matches!(&*ast.borrow(), SchemaNodeKind::Integer { .. }));
 }
 
@@ -43,9 +38,7 @@ fn resolve_recursive_ref() {
         },
         "$ref": "#/$defs/Node"
     });
-    let canonical = canonicalize_schema(&raw).unwrap();
-    let mut ast = build_canonical_schema_ast(&canonical).unwrap();
-    schema::resolve_refs(&mut ast, &canonical, &[]).unwrap();
+    let ast = build_and_resolve_schema(&raw).unwrap();
     {
         let guard = ast.borrow();
         if let SchemaNodeKind::Object { properties, .. } = &*guard {
@@ -69,9 +62,7 @@ fn resolve_duplicate_refs_share_pointer() {
             "b": {"$ref": "#/$defs/Thing"}
         }
     });
-    let canonical = canonicalize_schema(&raw).unwrap();
-    let mut ast = build_canonical_schema_ast(&canonical).unwrap();
-    schema::resolve_refs(&mut ast, &canonical, &[]).unwrap();
+    let ast = build_and_resolve_schema(&raw).unwrap();
 
     let guard = ast.borrow();
     if let SchemaNodeKind::Object { properties, .. } = &*guard {
@@ -238,11 +229,9 @@ fn metadata_only_enum_wrapper_uses_terminal_enum_shape() {
 }
 
 fn build_schema(raw: &Value) -> SchemaNode {
-    let schema = canonicalize_schema(raw).unwrap();
-    build_and_resolve_canonical_schema(&schema).unwrap()
+    build_and_resolve_schema(raw).unwrap()
 }
 
 fn compile_ast(ast: &SchemaNode) -> schema::JSONSchema {
-    let schema = canonicalize_schema(&ast.to_json()).unwrap();
-    compile_canonical(&schema).unwrap()
+    compile(&ast.to_json()).unwrap()
 }

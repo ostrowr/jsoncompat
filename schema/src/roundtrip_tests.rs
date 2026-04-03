@@ -1,4 +1,5 @@
-use json_schema_ast::{CanonicalizeError, build_and_resolve_canonical_schema, canonicalize_schema};
+use crate::build_and_resolve_schema;
+use crate::canonicalize::{CanonicalizeError, canonicalize_schema};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -50,12 +51,12 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
 
             let schema = canonicalize_schema(&schema_json)
                 .map_err(|error| format!("{} canonicalize: {error}", path.display()))?;
-            let ast = build_and_resolve_canonical_schema(&schema)
+            let ast = build_and_resolve_schema(schema.as_value())
                 .map_err(|error| format!("{}: {error}", path.display()))?;
             let json = ast.to_json();
             let schema2 = canonicalize_schema(&json)
                 .map_err(|error| format!("{} roundtrip canonicalize: {error}", path.display()))?;
-            let ast2 = build_and_resolve_canonical_schema(&schema2)
+            let ast2 = build_and_resolve_schema(schema2.as_value())
                 .map_err(|error| format!("{} roundtrip: {error}", path.display()))?;
             if ast != ast2 {
                 panic!(

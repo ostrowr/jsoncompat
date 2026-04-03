@@ -26,6 +26,7 @@ const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
 const MAX_PASSES: usize = 64;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CanonicalizeError {
     #[error("schema node at '{pointer}' must be an object or boolean schema, got {actual_type}")]
     InvalidSchemaNodeType {
@@ -86,6 +87,12 @@ enum PrimitiveType {
     String,
     Number,
     Integer,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum NormalizedIntegerBound {
+    Inclusive(Value),
+    Unsatisfiable,
 }
 
 impl PrimitiveType {
@@ -163,16 +170,17 @@ impl BitOrAssign<PrimitiveType> for PrimitiveTypeSet {
 /// This wrapper intentionally keeps the canonical representation opaque so
 /// callers have to construct it through `canonicalize_schema`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalSchema {
+pub(crate) struct CanonicalSchema {
     value: Value,
 }
 
 impl CanonicalSchema {
-    pub fn as_value(&self) -> &Value {
+    pub(crate) fn as_value(&self) -> &Value {
         &self.value
     }
 
-    pub fn into_value(self) -> Value {
+    #[cfg(test)]
+    pub(crate) fn into_value(self) -> Value {
         self.value
     }
 }
@@ -186,7 +194,7 @@ impl AsRef<Value> for CanonicalSchema {
 /// Canonicalize a JSON Schema document by surfacing implicit constraints,
 /// lowering syntax sugar into explicit forms, preserving declaration metadata
 /// used by downstream codegen, and applying a deterministic key/value ordering.
-pub fn canonicalize_schema(schema: &Value) -> Result<CanonicalSchema> {
+pub(crate) fn canonicalize_schema(schema: &Value) -> Result<CanonicalSchema> {
     let local_ref_targets = collect_local_schema_refs(schema);
     let options = CanonicalizationOptions {
         local_ref_targets: &local_ref_targets,
@@ -198,7 +206,7 @@ pub fn canonicalize_schema(schema: &Value) -> Result<CanonicalSchema> {
 }
 
 /// Return a recursively key-sorted clone of arbitrary JSON data.
-pub fn canonicalize_json(value: &Value) -> Value {
+pub(crate) fn canonicalize_json(value: &Value) -> Value {
     match value {
         Value::Object(obj) => Value::Object(sorted_object(
             obj.iter()
@@ -497,9 +505,11 @@ fn rewrite_schema_object(
     }
     fold_required_dependencies(&mut obj, pointer)?;
     infer_required_properties(&mut obj, pointer)?;
-    normalize_numeric_bounds(&mut obj, pointer)?;
+    if let Some(result) = normalize_numeric_bounds(&mut obj, pointer)? {
+        return Ok(result);
+    }
     normalize_single_type_arrays(&mut obj, pointer)?;
-    normalize_type_specific_keywords(&mut obj);
+    normalize_type_specific_keywords(&mut obj, pointer, options.local_ref_targets);
     lower_const_with_type(&mut obj);
     lower_enum_with_type(&mut obj);
     if let Some(result) = lower_equal_bounds_to_enum(&mut obj, pointer)? {
@@ -944,7 +954,10 @@ fn infer_required_properties(schema: &mut Map<String, Value>, pointer: &str) -> 
     Ok(())
 }
 
-fn normalize_numeric_bounds(schema: &mut Map<String, Value>, pointer: &str) -> Result<()> {
+fn normalize_numeric_bounds(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+) -> Result<Option<Value>> {
     if let (Some(maximum), Some(exclusive_maximum)) =
         (schema.get("maximum"), schema.get("exclusiveMaximum"))
         && let (Some(maximum), Some(exclusive_maximum)) =
@@ -986,7 +999,14 @@ fn normalize_numeric_bounds(schema: &mut Map<String, Value>, pointer: &str) -> R
                 integer_exclusive_maximum(&bound, &join_pointer(pointer, "exclusiveMaximum"))?
         {
             schema.remove("exclusiveMaximum");
-            schema.insert("maximum".to_owned(), bound);
+            match bound {
+                NormalizedIntegerBound::Inclusive(bound) => {
+                    schema.insert("maximum".to_owned(), bound);
+                }
+                NormalizedIntegerBound::Unsatisfiable => {
+                    return Ok(Some(Value::Object(unsatisfiable_object(schema))));
+                }
+            }
         }
         if !schema.contains_key("minimum")
             && let Some(bound) = schema.get("exclusiveMinimum").cloned()
@@ -994,11 +1014,18 @@ fn normalize_numeric_bounds(schema: &mut Map<String, Value>, pointer: &str) -> R
                 integer_exclusive_minimum(&bound, &join_pointer(pointer, "exclusiveMinimum"))?
         {
             schema.remove("exclusiveMinimum");
-            schema.insert("minimum".to_owned(), bound);
+            match bound {
+                NormalizedIntegerBound::Inclusive(bound) => {
+                    schema.insert("minimum".to_owned(), bound);
+                }
+                NormalizedIntegerBound::Unsatisfiable => {
+                    return Ok(Some(Value::Object(unsatisfiable_object(schema))));
+                }
+            }
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 fn integer_floor(value: &Value, pointer: &str) -> Result<Option<Value>> {
@@ -1033,18 +1060,31 @@ fn integer_ceil(value: &Value, pointer: &str) -> Result<Option<Value>> {
     Ok(Some(number_from_f64(value.ceil(), pointer)?))
 }
 
-fn integer_exclusive_maximum(value: &Value, pointer: &str) -> Result<Option<Value>> {
+fn integer_exclusive_maximum(
+    value: &Value,
+    pointer: &str,
+) -> Result<Option<NormalizedIntegerBound>> {
     let Some(number) = value.as_number() else {
         return Ok(None);
     };
     if let Some(value) = number.as_i64() {
-        return Ok(Some(Value::Number(Number::from(value.saturating_sub(1)))));
+        return Ok(Some(
+            value
+                .checked_sub(1)
+                .map(|value| NormalizedIntegerBound::Inclusive(Value::Number(Number::from(value))))
+                .unwrap_or(NormalizedIntegerBound::Unsatisfiable),
+        ));
     }
     if let Some(value) = number.as_u64() {
         return if value == 0 {
-            Ok(Some(Value::Number(Number::from(-1_i64))))
+            Ok(Some(NormalizedIntegerBound::Inclusive(Value::Number(
+                Number::from(-1_i64),
+            ))))
         } else {
-            Ok(Some(Value::Number(Number::from(value - 1))))
+            let maximum = (value - 1).min(i64::MAX as u64);
+            Ok(Some(NormalizedIntegerBound::Inclusive(Value::Number(
+                Number::from(maximum),
+            ))))
         };
     }
     let Some(value) = number.as_f64() else {
@@ -1057,18 +1097,41 @@ fn integer_exclusive_maximum(value: &Value, pointer: &str) -> Result<Option<Valu
     if value.fract() == 0.0 {
         normalized -= 1.0;
     }
-    Ok(Some(number_from_f64(normalized, pointer)?))
+    if normalized < i64::MIN as f64 {
+        return Ok(Some(NormalizedIntegerBound::Unsatisfiable));
+    }
+    if normalized > i64::MAX as f64 {
+        return Ok(Some(NormalizedIntegerBound::Inclusive(Value::Number(
+            Number::from(i64::MAX),
+        ))));
+    }
+    Ok(Some(NormalizedIntegerBound::Inclusive(number_from_f64(
+        normalized, pointer,
+    )?)))
 }
 
-fn integer_exclusive_minimum(value: &Value, pointer: &str) -> Result<Option<Value>> {
+fn integer_exclusive_minimum(
+    value: &Value,
+    pointer: &str,
+) -> Result<Option<NormalizedIntegerBound>> {
     let Some(number) = value.as_number() else {
         return Ok(None);
     };
     if let Some(value) = number.as_i64() {
-        return Ok(Some(Value::Number(Number::from(value.saturating_add(1)))));
+        return Ok(Some(
+            value
+                .checked_add(1)
+                .map(|value| NormalizedIntegerBound::Inclusive(Value::Number(Number::from(value))))
+                .unwrap_or(NormalizedIntegerBound::Unsatisfiable),
+        ));
     }
     if let Some(value) = number.as_u64() {
-        return Ok(Some(Value::Number(Number::from(value.saturating_add(1)))));
+        if value >= i64::MAX as u64 {
+            return Ok(Some(NormalizedIntegerBound::Unsatisfiable));
+        }
+        return Ok(Some(NormalizedIntegerBound::Inclusive(Value::Number(
+            Number::from(value + 1),
+        ))));
     }
     let Some(value) = number.as_f64() else {
         return Err(CanonicalizeError::NonFiniteNumericKeyword {
@@ -1080,7 +1143,17 @@ fn integer_exclusive_minimum(value: &Value, pointer: &str) -> Result<Option<Valu
     if value.fract() == 0.0 {
         normalized += 1.0;
     }
-    Ok(Some(number_from_f64(normalized, pointer)?))
+    if normalized > i64::MAX as f64 {
+        return Ok(Some(NormalizedIntegerBound::Unsatisfiable));
+    }
+    if normalized < i64::MIN as f64 {
+        return Ok(Some(NormalizedIntegerBound::Inclusive(Value::Number(
+            Number::from(i64::MIN),
+        ))));
+    }
+    Ok(Some(NormalizedIntegerBound::Inclusive(number_from_f64(
+        normalized, pointer,
+    )?)))
 }
 
 fn number_from_f64(value: f64, pointer: &str) -> Result<Value> {
@@ -1117,7 +1190,11 @@ fn normalize_single_type_arrays(schema: &mut Map<String, Value>, pointer: &str) 
     Ok(())
 }
 
-fn normalize_type_specific_keywords(schema: &mut Map<String, Value>) {
+fn normalize_type_specific_keywords(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) {
     let Some(type_name) = schema.get("type").and_then(Value::as_str) else {
         return;
     };
@@ -1193,6 +1270,7 @@ fn normalize_type_specific_keywords(schema: &mut Map<String, Value>) {
     schema.retain(|key, _| {
         is_schema_metadata_key(key)
             || allowed.contains(&key.as_str())
+            || preserve_unknown_keyword_at_pointer(&join_pointer(pointer, key), local_ref_targets)
             || matches!(
                 key.as_str(),
                 "allOf"
@@ -1861,3 +1939,6 @@ mod tests {
         assert_eq!(value_type_name(&json!(1.5)), Some(PrimitiveType::Number));
     }
 }
+
+#[cfg(test)]
+mod integration_tests;

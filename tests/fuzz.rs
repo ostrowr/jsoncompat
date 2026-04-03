@@ -1,8 +1,8 @@
 //! Fuzzer tests.
 
-use json_schema_ast::{CanonicalizeError, canonicalize_schema, compile_canonical};
+use json_schema_ast::{AstError, SchemaError, compile};
 use json_schema_fuzz::generate_value;
-use jsoncompat::build_and_resolve_canonical_schema;
+use jsoncompat::build_and_resolve_schema;
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -147,17 +147,19 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let schema = match canonicalize_schema(schema_json) {
-            Ok(schema) => schema,
+        let ast = match build_and_resolve_schema(schema_json) {
+            Ok(ast) => ast,
             Err(error) if schema_declares_unsupported_schema_uri(schema_json) => {
                 assert!(
                     matches!(
                         error,
-                        CanonicalizeError::UnsupportedSchemaDialect {
-                            ref pointer,
-                            expected_uri: JSON_SCHEMA_DRAFT_2020_12,
-                            ..
-                        } if pointer == "#/$schema"
+                        AstError::Schema(
+                            SchemaError::UnsupportedSchemaDialect {
+                                ref pointer,
+                                expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+                                ..
+                            }
+                        ) if pointer == "#/$schema"
                     ),
                     "unexpected unsupported-$schema error for {rel_str} schema #{idx}: {error}"
                 );
@@ -165,8 +167,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(error) => return Err(error.into()),
         };
-        let ast = build_and_resolve_canonical_schema(&schema)?;
-        let compiled = compile_canonical(&schema)?;
+        let compiled = compile(schema_json)?;
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 

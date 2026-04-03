@@ -1,4 +1,5 @@
-use crate::canonicalize::CanonicalSchema;
+use crate::SchemaError;
+use crate::canonicalize::{CanonicalSchema, canonicalize_schema};
 use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
@@ -10,7 +11,10 @@ use std::rc::Rc;
 type Result<T> = std::result::Result<T, AstError>;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AstError {
+    #[error(transparent)]
+    Schema(#[from] SchemaError),
     #[error("local $ref '{ref_path}' does not resolve to a schema node in the current document")]
     UnresolvedReference { ref_path: String },
 }
@@ -22,15 +26,15 @@ pub enum AstError {
 pub struct SchemaNode(Rc<RefCell<SchemaNodeKind>>);
 
 impl SchemaNode {
-    pub fn new(kind: SchemaNodeKind) -> Self {
+    pub(crate) fn new(kind: SchemaNodeKind) -> Self {
         Self(Rc::new(RefCell::new(kind)))
     }
 
-    pub fn bool_schema(value: bool) -> Self {
+    pub(crate) fn bool_schema(value: bool) -> Self {
         Self::new(SchemaNodeKind::BoolSchema(value))
     }
 
-    pub fn any() -> Self {
+    pub(crate) fn any() -> Self {
         Self::new(SchemaNodeKind::Any)
     }
 
@@ -38,7 +42,7 @@ impl SchemaNode {
         self.0.borrow()
     }
 
-    pub fn borrow_mut(&self) -> RefMut<'_, SchemaNodeKind> {
+    pub(crate) fn borrow_mut(&self) -> RefMut<'_, SchemaNodeKind> {
         self.0.borrow_mut()
     }
 
@@ -705,6 +709,7 @@ impl Eq for SchemaNode {}
 /// the back-compat checker or fuzz generator) can reason about schemas
 /// without constantly reparsing raw JSON values.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum SchemaNodeKind {
     BoolSchema(bool),
     Any,
@@ -792,15 +797,15 @@ pub enum SchemaNodeKind {
     Ref(String),
 }
 
-/// Build and fully resolve a schema node from a canonical schema document.
-pub fn build_and_resolve_canonical_schema(raw: &CanonicalSchema) -> Result<SchemaNode> {
-    let mut root = build_canonical_schema_ast(raw)?;
-    resolve_refs(&mut root, raw, &[])?;
+/// Build and fully resolve a schema node from a JSON Schema document.
+pub fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
+    let canonical = canonicalize_schema(raw)?;
+    let mut root = build_schema_ast_from_canonical(&canonical)?;
+    resolve_refs_from_canonical_root(&mut root, &canonical, &[])?;
     Ok(root)
 }
 
-/// Build the high-level AST from a canonical schema without resolving references.
-pub fn build_canonical_schema_ast(raw: &CanonicalSchema) -> Result<SchemaNode> {
+fn build_schema_ast_from_canonical(raw: &CanonicalSchema) -> Result<SchemaNode> {
     build_schema_ast_from_value(raw.as_value())
 }
 
@@ -1422,8 +1427,7 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     }))
 }
 
-/// Recursively resolves `SchemaNode::Ref` by looking up fragments in `root_json`.
-pub fn resolve_refs(
+fn resolve_refs_from_canonical_root(
     node: &mut SchemaNode,
     root_json: &CanonicalSchema,
     visited: &[String],
@@ -1465,7 +1469,7 @@ fn resolve_refs_internal(
                 .collect();
             let mut current = root_json;
             for p in &parts {
-                if let Some(next) = current.get(p.as_str()) {
+                if let Some(next) = resolve_json_pointer_child(current, p) {
                     current = next;
                 } else {
                     return Err(AstError::UnresolvedReference {
@@ -1601,6 +1605,17 @@ fn resolve_refs_internal(
     Ok(())
 }
 
+fn resolve_json_pointer_child<'a>(current: &'a Value, token: &str) -> Option<&'a Value> {
+    match current {
+        Value::Object(object) => object.get(token),
+        Value::Array(items) => token
+            .parse::<usize>()
+            .ok()
+            .and_then(|index| items.get(index)),
+        _ => None,
+    }
+}
+
 fn normalize_resolved_node(node: &mut SchemaNode) {
     let replacement = {
         let mut guard = node.borrow_mut();
@@ -1674,94 +1689,4 @@ fn is_any_schema(node: &SchemaNode) -> bool {
 
 fn is_false_schema(node: &SchemaNode) -> bool {
     matches!(&*node.borrow(), SchemaNodeKind::BoolSchema(false))
-}
-
-/// Minimal check if an *instance* `val` is valid against `schema`.
-///
-/// This helper purposefully supports only the keyword subset that the fuzz
-/// generator and back-compat checker rely on.  It is **not** a full JSON
-/// Schema validator.
-pub fn instance_is_valid_against(val: &Value, schema: &SchemaNode) -> bool {
-    use SchemaNodeKind::*;
-
-    match &*schema.borrow() {
-        BoolSchema(false) => false,
-        BoolSchema(true) | Any => true,
-
-        Enum(e) => e.contains(val),
-
-        AllOf(subs) => subs.iter().all(|s| instance_is_valid_against(val, s)),
-        AnyOf(subs) => subs.iter().any(|s| instance_is_valid_against(val, s)),
-        OneOf(subs) => {
-            let mut count = 0;
-            for s in subs {
-                if instance_is_valid_against(val, s) {
-                    count += 1;
-                }
-            }
-            count == 1
-        }
-        Not(sub) => !instance_is_valid_against(val, sub),
-        IfThenElse {
-            if_schema,
-            then_schema,
-            else_schema,
-        } => {
-            if instance_is_valid_against(val, if_schema) {
-                if let Some(t) = then_schema {
-                    instance_is_valid_against(val, t)
-                } else {
-                    true
-                }
-            } else if let Some(e) = else_schema {
-                instance_is_valid_against(val, e)
-            } else {
-                true
-            }
-        }
-
-        String { enumeration, .. } => {
-            if let Some(e) = enumeration
-                && !e.contains(val)
-            {
-                return false;
-            }
-            val.is_string()
-        }
-        Number { enumeration, .. } => {
-            if let Some(e) = enumeration
-                && !e.contains(val)
-            {
-                return false;
-            }
-            val.is_number()
-        }
-        Integer { enumeration, .. } => {
-            if let Some(e) = enumeration
-                && !e.contains(val)
-            {
-                return false;
-            }
-            val.as_i64().is_some()
-        }
-        Boolean { enumeration } => {
-            if let Some(e) = enumeration
-                && !e.contains(val)
-            {
-                return false;
-            }
-            val.is_boolean()
-        }
-        Null { enumeration } => {
-            if let Some(e) = enumeration
-                && !e.contains(val)
-            {
-                return false;
-            }
-            val.is_null()
-        }
-        Object { .. } | Array { .. } => true,
-
-        _ => true,
-    }
 }

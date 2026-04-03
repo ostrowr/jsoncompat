@@ -1,5 +1,5 @@
 use crate::SchemaNode;
-use json_schema_ast::{SchemaNodeKind, canonicalize_schema, compile_canonical};
+use json_schema_ast::{SchemaNodeKind, compile};
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
@@ -35,9 +35,8 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
         (Enum(sub_e), _) => {
             let schema_json = sup.to_json();
-            canonicalize_schema(&schema_json)
+            compile(&schema_json)
                 .ok()
-                .and_then(|schema| compile_canonical(&schema).ok())
                 .map(|compiled| sub_e.iter().all(|value| compiled.is_valid(value)))
                 .unwrap_or(false)
         }
@@ -68,9 +67,8 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
         (Const(s_val), _) => {
             let schema_json = sup.to_json();
-            canonicalize_schema(&schema_json)
+            compile(&schema_json)
                 .ok()
-                .and_then(|schema| compile_canonical(&schema).ok())
                 .map(|compiled| compiled.is_valid(s_val))
                 .unwrap_or(false)
         }
@@ -93,6 +91,7 @@ fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &SchemaNode) ->
             maximum: smax,
             exclusive_minimum: sexmin,
             exclusive_maximum: sexmax,
+            multiple_of: smul,
             enumeration: s_en,
             ..
         },
@@ -101,6 +100,7 @@ fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &SchemaNode) ->
             maximum: pmax,
             exclusive_minimum: pexmin,
             exclusive_maximum: pexmax,
+            multiple_of: pmul,
             enumeration: p_en,
             ..
         },
@@ -115,12 +115,10 @@ fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &SchemaNode) ->
     if !check_numeric_inclusion(smax.map(|value| value as f64), sexmax, pmax, pexmax, false) {
         return false;
     }
-    if let (Some(se), Some(pe)) = (s_en, p_en)
-        && !se.iter().all(|value| pe.contains(value))
-    {
+    if !check_multiple_of_inclusion(smul, pmul) {
         return false;
     }
-    true
+    check_enum_inclusion(s_en.as_deref(), p_en.as_deref())
 }
 
 /// Compare the **constraints** of two nodes of the *same* basic type.
@@ -169,6 +167,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 maximum: smax,
                 exclusive_minimum: sexmin,
                 exclusive_maximum: sexmax,
+                multiple_of: smul,
                 enumeration: s_en,
                 ..
             },
@@ -177,6 +176,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 maximum: pmax,
                 exclusive_minimum: pexmin,
                 exclusive_maximum: pexmax,
+                multiple_of: pmul,
                 enumeration: p_en,
                 ..
             },
@@ -187,12 +187,10 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             if !check_numeric_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
-            if let (Some(se), Some(pe)) = (s_en, p_en)
-                && !se.iter().all(|v| pe.contains(v))
-            {
+            if !check_multiple_of_inclusion(smul, pmul) {
                 return false;
             }
-            true
+            check_enum_inclusion(s_en.as_deref(), p_en.as_deref())
         }
 
         (
@@ -201,6 +199,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 maximum: smax,
                 exclusive_minimum: sexmin,
                 exclusive_maximum: sexmax,
+                multiple_of: smul,
                 enumeration: s_en,
                 ..
             },
@@ -209,6 +208,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 maximum: pmax,
                 exclusive_minimum: pexmin,
                 exclusive_maximum: pexmax,
+                multiple_of: pmul,
                 enumeration: p_en,
                 ..
             },
@@ -219,22 +219,15 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             if !check_int_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
-            if let (Some(se), Some(pe)) = (s_en, p_en)
-                && !se.iter().all(|v| pe.contains(v))
-            {
+            if !check_multiple_of_inclusion(smul, pmul) {
                 return false;
             }
-            true
+            check_enum_inclusion(s_en.as_deref(), p_en.as_deref())
         }
 
         (Boolean { enumeration: s_e }, Boolean { enumeration: p_e })
         | (Null { enumeration: s_e }, Null { enumeration: p_e }) => {
-            if let (Some(se), Some(pe)) = (s_e, p_e)
-                && !se.iter().all(|v| pe.contains(v))
-            {
-                return false;
-            }
-            true
+            check_enum_inclusion(s_e.as_deref(), p_e.as_deref())
         }
 
         (
@@ -270,9 +263,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 return false;
             }
 
-            if let (Some(se), Some(pe)) = (s_en, p_en)
-                && !se.iter().all(|v| pe.contains(v))
-            {
+            if !check_enum_inclusion(s_en.as_deref(), p_en.as_deref()) {
                 return false;
             }
 
@@ -350,9 +341,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             if !is_subschema_of(&sitems, &pitems) {
                 return false;
             }
-            if let (Some(se), Some(pe)) = (s_en, p_en)
-                && !se.iter().all(|v| pe.contains(v))
-            {
+            if !check_enum_inclusion(s_en.as_deref(), p_en.as_deref()) {
                 return false;
             }
             true
@@ -388,6 +377,32 @@ fn check_numeric_inclusion(
     }
 }
 
+fn check_multiple_of_inclusion(sub_multiple_of: Option<f64>, sup_multiple_of: Option<f64>) -> bool {
+    let Some(sup_multiple_of) = sup_multiple_of else {
+        return true;
+    };
+    let Some(sub_multiple_of) = sub_multiple_of else {
+        return false;
+    };
+    if sub_multiple_of <= 0.0 || sup_multiple_of <= 0.0 {
+        return false;
+    }
+
+    let ratio = sub_multiple_of / sup_multiple_of;
+    (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
+}
+
+fn check_enum_inclusion(
+    sub_enum: Option<&[serde_json::Value]>,
+    sup_enum: Option<&[serde_json::Value]>,
+) -> bool {
+    match (sub_enum, sup_enum) {
+        (_, None) => true,
+        (Some(sub_enum), Some(sup_enum)) => sub_enum.iter().all(|value| sup_enum.contains(value)),
+        (None, Some(_)) => false,
+    }
+}
+
 fn check_int_inclusion(
     s_val: Option<i64>,
     s_excl: bool,
@@ -417,50 +432,38 @@ fn check_int_inclusion(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use json_schema_ast::{build_and_resolve_canonical_schema, canonicalize_schema};
+    use json_schema_ast::build_and_resolve_schema;
     use serde_json::json;
 
     #[test]
     fn allof_tighten_subset() {
-        let old = build_and_resolve_canonical_schema(
-            &canonicalize_schema(&json!({
+        let old = build_and_resolve_schema(&json!({
             "allOf": [
                 {"type": "integer", "minimum": 0},
                 {"maximum": 10}
             ]
-            }))
-            .unwrap(),
-        )
+        }))
         .unwrap();
-        let new = build_and_resolve_canonical_schema(
-            &canonicalize_schema(&json!({
+        let new = build_and_resolve_schema(&json!({
             "type": "integer",
             "minimum": 0,
             "maximum": 5
-            }))
-            .unwrap(),
-        )
+        }))
         .unwrap();
         assert!(is_subschema_of(&new, &old));
     }
 
     #[test]
     fn exclusive_bounds_subset() {
-        let old = build_and_resolve_canonical_schema(
-            &canonicalize_schema(&json!({
+        let old = build_and_resolve_schema(&json!({
             "minimum": 1,
             "exclusiveMinimum": 1
-            }))
-            .unwrap(),
-        )
+        }))
         .unwrap();
-        let new = build_and_resolve_canonical_schema(
-            &canonicalize_schema(&json!({
+        let new = build_and_resolve_schema(&json!({
             "exclusiveMinimum": 1,
             "maximum": 3
-            }))
-            .unwrap(),
-        )
+        }))
         .unwrap();
 
         assert!(is_subschema_of(&new, &old));
@@ -468,21 +471,49 @@ mod tests {
 
     #[test]
     fn enum_with_numeric_bound_is_not_subsumed_by_wider_enum() {
-        let old = build_and_resolve_canonical_schema(
-            &canonicalize_schema(&json!({
+        let old = build_and_resolve_schema(&json!({
                 "type": "number",
                 "enum": [0, 1],
                 "minimum": 1
-            }))
-            .unwrap(),
-        )
+        }))
         .unwrap();
-        let new = build_and_resolve_canonical_schema(
-            &canonicalize_schema(&json!({
+        let new = build_and_resolve_schema(&json!({
                 "enum": [0, 1]
-            }))
-            .unwrap(),
-        )
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn integer_multiple_of_must_be_at_least_as_constrained_as_number_multiple_of() {
+        let old = build_and_resolve_schema(&json!({
+                "type": "number",
+                "multipleOf": 2
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+                "type": "integer",
+                "multipleOf": 3
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn integer_schema_without_enum_is_not_subsumed_by_old_number_enum() {
+        let old = build_and_resolve_schema(&json!({
+                "type": "number",
+                "enum": [1],
+                "minimum": 1
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2
+        }))
         .unwrap();
 
         assert!(!is_subschema_of(&new, &old));

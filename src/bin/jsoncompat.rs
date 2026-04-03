@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_ast::{CanonicalSchema, JSONSchema, canonicalize_schema, compile_canonical};
+use json_schema_ast::{JSONSchema, compile};
 use jsoncompat as backcompat;
 
 use rand::Rng;
@@ -29,14 +29,12 @@ impl SchemaDoc {
         // Read JSON (stdin if `-`).
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
-        let schema =
-            canonicalize_schema(&json).with_context(|| format!("canonicalizing {path}"))?;
 
         // Build AST and a validator for fast membership checks.
-        let ast = backcompat::build_and_resolve_canonical_schema(&schema)
+        let ast = backcompat::build_and_resolve_schema(&json)
             .with_context(|| format!("building AST for {path}"))?;
-        let validator = compile_canonical(&schema)
-            .with_context(|| format!("compiling validator for {path}"))?;
+        let validator =
+            compile(&json).with_context(|| format!("compiling validator for {path}"))?;
 
         Ok(Self { ast, validator })
     }
@@ -261,7 +259,7 @@ struct RawGoldenEntry {
 
 struct GoldenEntry {
     mode: RoleCli,
-    schema: CanonicalSchema,
+    schema: Value,
     stable_id: String,
 }
 
@@ -275,13 +273,11 @@ fn load_golden_file(path: &str) -> Result<GoldenFile> {
     golden
         .into_iter()
         .map(|(id, entry)| {
-            let schema = canonicalize_schema(&entry.schema)
-                .with_context(|| format!("canonicalizing schema '{id}' in golden file {path}"))?;
             Ok((
                 id,
                 GoldenEntry {
                     mode: entry.mode,
-                    schema,
+                    schema: entry.schema,
                     stable_id: entry.stable_id,
                 },
             ))
@@ -311,12 +307,12 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
     match (old, new) {
         (Some(old), Some(new)) => {
             let (old_schema, new_schema) = (
-                backcompat::build_and_resolve_canonical_schema(&old.schema),
-                backcompat::build_and_resolve_canonical_schema(&new.schema),
+                backcompat::build_and_resolve_schema(&old.schema),
+                backcompat::build_and_resolve_schema(&new.schema),
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
-                    if old.schema == new.schema {
+                    if old_schema == new_schema {
                         return Grade {
                             id: new.stable_id.clone(),
                             mode: old.mode,
@@ -325,8 +321,8 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                     }
                     let ok = backcompat::check_compat(&old_schema, &new_schema, old.mode.into());
                     if !ok {
-                        let old_validator = compile_canonical(&old.schema).unwrap();
-                        let new_validator = compile_canonical(&new.schema).unwrap();
+                        let old_validator = compile(&old.schema).unwrap();
+                        let new_validator = compile(&new.schema).unwrap();
                         let mut rng = rand::rng();
                         let example = sample_incompat(
                             &SchemaDoc {
@@ -566,10 +562,47 @@ fn cmd_ci(args: CiArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn role_conversion() {
         let r: backcompat::Role = RoleCli::Serializer.into();
         assert!(matches!(r, backcompat::Role::Serializer));
+    }
+
+    #[test]
+    fn ci_command_accepts_identical_canonicalized_golden_files() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir();
+        let old_path = dir.join(format!("jsoncompat-ci-old-{unique}.json"));
+        let new_path = dir.join(format!("jsoncompat-ci-new-{unique}.json"));
+        let golden = r##"{
+  "example": {
+    "mode": "serializer",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema#",
+      "type": "integer",
+      "minimum": 1
+    },
+    "stable_id": "example"
+  }
+}"##;
+
+        fs::write(&old_path, golden).unwrap();
+        fs::write(&new_path, golden).unwrap();
+
+        let result = cmd_ci(CiArgs {
+            old: old_path.to_string_lossy().into_owned(),
+            new: new_path.to_string_lossy().into_owned(),
+            display: DisplayMode::Json,
+        });
+
+        fs::remove_file(old_path).unwrap();
+        fs::remove_file(new_path).unwrap();
+        result.unwrap();
     }
 }

@@ -1,9 +1,7 @@
 mod format_gen;
 mod regex_gen;
 
-use json_schema_ast::{
-    JSONSchema, SchemaNode, SchemaNodeKind, canonicalize_schema, compile_canonical,
-};
+use json_schema_ast::{JSONSchema, SchemaNode, SchemaNodeKind, compile};
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
 
@@ -84,7 +82,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     // possible that the fast generation above skipped an optional
                     // property that later turned out to be required by another
                     // branch.  We deterministically fill any such gaps here.
-                    let mut missing: HashMap<std::string::String, SchemaNode> = HashMap::new();
+                    let mut missing: HashMap<std::string::String, Option<SchemaNode>> =
+                        HashMap::new();
                     for sub in object_subschemas {
                         if let Object {
                             properties,
@@ -94,18 +93,17 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                         {
                             for req in required {
                                 if !combined.contains_key(req) {
-                                    if let Some(prop_schema) = properties.get(req) {
-                                        missing.insert(req.clone(), prop_schema.clone());
-                                    } else {
-                                        missing.insert(req.clone(), SchemaNode::any());
-                                    }
+                                    missing.insert(req.clone(), properties.get(req).cloned());
                                 }
                             }
                         }
                     }
 
                     for (k, schema) in missing {
-                        let val = generate_value(&schema, rng, depth.saturating_sub(1));
+                        let val = match schema {
+                            Some(schema) => generate_value(&schema, rng, depth.saturating_sub(1)),
+                            None => random_any(rng, depth.saturating_sub(1)),
+                        };
                         combined.insert(k, val);
                     }
 
@@ -546,6 +544,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         AnyOf(_) => Value::Null,
         OneOf(_) => Value::Null,
         Enum(_) => Value::Null,
+        _ => random_any(rng, depth),
     }
 }
 
@@ -642,8 +641,7 @@ fn build_property_name_validator(schema: &SchemaNode) -> Option<json_schema_ast:
 
 fn compile_schema_node(schema: &SchemaNode) -> Option<JSONSchema> {
     let raw = schema.to_json();
-    let schema = canonicalize_schema(&raw).ok()?;
-    compile_canonical(&schema).ok()
+    compile(&raw).ok()
 }
 
 fn property_name_allows(validator: Option<&json_schema_ast::JSONSchema>, candidate: &str) -> bool {
@@ -753,7 +751,7 @@ fn literal_from_simple_pattern(pattern: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use json_schema_ast::build_and_resolve_canonical_schema;
+    use json_schema_ast::build_and_resolve_schema;
     use rand::{SeedableRng, rngs::StdRng};
     use serde_json::json;
 
@@ -777,7 +775,6 @@ mod tests {
             },
             "required": ["class"]
         });
-        let schema = canonicalize_schema(&raw).unwrap();
-        build_and_resolve_canonical_schema(&schema).unwrap()
+        build_and_resolve_schema(&raw).unwrap()
     }
 }
