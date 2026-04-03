@@ -30,6 +30,9 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
 
+      - name: Install uv
+        run: cargo install uv --locked
+
       - name: Cache cargo registry and build outputs
         uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
         with:
@@ -69,10 +72,10 @@ jobs:
         uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i '3.11 3.12 3.13'
+          args: --release --out dist -i '3.12 3.13'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
-          working-directory: python
+          working-directory: pybindings
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -94,10 +97,10 @@ jobs:
         uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i '3.11 3.12 3.13'
+          args: --release --out dist -i '3.12 3.13'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: musllinux_1_2
-          working-directory: python
+          working-directory: pybindings
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -119,9 +122,9 @@ jobs:
         uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i '3.11 3.12 3.13'
+          args: --release --out dist -i '3.12 3.13'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          working-directory: python
+          working-directory: pybindings
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -143,9 +146,9 @@ jobs:
         uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i '3.11 3.12 3.13'
+          args: --release --out dist -i '3.12 3.13'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          working-directory: python
+          working-directory: pybindings
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

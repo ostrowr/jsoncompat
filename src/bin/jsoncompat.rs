@@ -10,8 +10,9 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_ast::{JSONSchema, compile};
+use json_schema_ast::{JSONSchema, canonicalize_json, compile};
 use jsoncompat as backcompat;
+use jsoncompat_codegen::generate_dataclass_models;
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -60,6 +61,20 @@ fn read_to_string(path: &str) -> Result<String> {
     }
 }
 
+fn read_json(path: &str) -> Result<Value> {
+    let raw = read_to_string(path)?;
+    serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))
+}
+
+fn print_json(value: &Value, pretty: bool) -> Result<()> {
+    if pretty {
+        println!("{}", serde_json::to_string_pretty(value)?);
+    } else {
+        println!("{}", serde_json::to_string(value)?);
+    }
+    Ok(())
+}
+
 // Sampling logic shared by fuzzing and counterexample search
 fn sample_incompat<R: Rng>(
     old: &SchemaDoc,
@@ -103,6 +118,10 @@ enum Command {
     Compat(CompatArgs),
     /// Check compatibility between two golden files.
     CI(CiArgs),
+    /// Stamp a schema into versioned writer/reader envelopes.
+    Stamp(StampArgs),
+    /// Normalize a stamped schema bundle into a codegen-ready schema profile.
+    Codegen(CodegenArgs),
 }
 
 #[derive(Args)]
@@ -155,6 +174,53 @@ struct CiArgs {
     display: DisplayMode,
 }
 
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+enum StampDisplayMode {
+    Bundle,
+    Writer,
+    Reader,
+    Manifest,
+}
+
+#[derive(Args)]
+struct StampArgs {
+    /// Path to the schema manifest.
+    #[arg(long)]
+    manifest: String,
+    /// Stable schema identifier.
+    #[arg(long)]
+    id: String,
+    /// Update the manifest file after stamping succeeds.
+    #[arg(long)]
+    write_manifest: bool,
+    /// Display mode.
+    #[arg(short, long, value_enum, default_value_t = StampDisplayMode::Bundle)]
+    display: StampDisplayMode,
+    /// Pretty-print output (multi-line).
+    #[arg(short, long)]
+    pretty: bool,
+    /// Path to the current JSON Schema. Use '-' for STDIN.
+    schema: String,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+enum CodegenTarget {
+    Dataclasses,
+    Schema,
+}
+
+#[derive(Args)]
+struct CodegenArgs {
+    /// Code generation target.
+    #[arg(long, value_enum)]
+    target: CodegenTarget,
+    /// Pretty-print output (multi-line).
+    #[arg(short, long)]
+    pretty: bool,
+    /// Path to a JSON Schema document. Use '-' for STDIN.
+    schema: String,
+}
+
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum RoleCli {
@@ -179,6 +245,8 @@ fn main() -> Result<()> {
         Command::Generate(a) => cmd_generate(a),
         Command::Compat(a) => cmd_compat(a),
         Command::CI(a) => cmd_ci(a),
+        Command::Stamp(a) => cmd_stamp(a),
+        Command::Codegen(a) => cmd_codegen(a),
     }
 }
 
@@ -539,6 +607,56 @@ fn cmd_ci(args: CiArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn load_stamp_manifest(path: &str) -> Result<backcompat::StampManifest> {
+    if !Path::new(path).exists() {
+        return Ok(backcompat::StampManifest::empty());
+    }
+
+    let raw = read_to_string(path)?;
+    let manifest: backcompat::StampManifest =
+        serde_json::from_str(&raw).with_context(|| format!("parsing manifest file {path}"))?;
+    Ok(manifest)
+}
+
+fn cmd_stamp(args: StampArgs) -> Result<()> {
+    let manifest = load_stamp_manifest(&args.manifest)?;
+    let schema = read_json(&args.schema)?;
+    let result = backcompat::stamp_schema(&manifest, &args.id, schema)?;
+
+    if args.write_manifest {
+        backcompat::write_stamp_manifest_atomic(&args.manifest, &result.manifest)?;
+    }
+
+    match args.display {
+        StampDisplayMode::Bundle => {
+            let value = serde_json::to_value(&result.bundle)?;
+            print_json(&value, args.pretty)
+        }
+        StampDisplayMode::Writer => print_json(&result.bundle.writer, args.pretty),
+        StampDisplayMode::Reader => print_json(&result.bundle.reader, args.pretty),
+        StampDisplayMode::Manifest => {
+            let value = serde_json::to_value(&result.manifest)?;
+            print_json(&value, args.pretty)
+        }
+    }
+}
+
+fn cmd_codegen(args: CodegenArgs) -> Result<()> {
+    let schema = read_json(&args.schema)?;
+
+    match args.target {
+        CodegenTarget::Dataclasses => {
+            let source = generate_dataclass_models(&schema)?;
+            print!("{source}");
+            Ok(())
+        }
+        CodegenTarget::Schema => {
+            let value = canonicalize_json(&schema);
+            print_json(&value, args.pretty)
+        }
+    }
 }
 
 #[cfg(test)]

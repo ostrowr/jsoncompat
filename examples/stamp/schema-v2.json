@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "age": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "interests": {
+      "type": "integer"
+    }
+  },
+  "required": ["name", "age", "interests"]
+}

@@ -1,0 +1,13 @@
+[package]
+name = "jsoncompat_codegen"
+version = "0.2.6"
+edition = "2024"
+description = "Canonical stamped JSON Schema bundles for jsoncompat code generation"
+repository = "https://github.com/ostrowr/jsoncompat"
+license = "MIT"
+
+[dependencies]
+json_schema_ast = { path = "../schema", version = "0.2.6" }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.135"
+thiserror = "2.0.11"

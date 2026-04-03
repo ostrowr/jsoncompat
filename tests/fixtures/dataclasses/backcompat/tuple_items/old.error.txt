@@ -1,0 +1,1 @@
+invalid schema at '#/items': subschemas must be objects or booleans

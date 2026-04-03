@@ -1,0 +1,1 @@
+unsupported $ref 'folderInteger.json' at '#/$defs/baz/items/$ref'

@@ -13,8 +13,14 @@ pub use json_schema_ast::{
     SchemaNode, SchemaNodeKind, build_and_resolve_schema, build_schema_ast, resolve_refs,
 };
 
+mod stamp;
 mod subset;
 
+pub use stamp::{
+    ENVELOPE_DATA_KEY, ENVELOPE_VERSION_KEY, STAMP_MANIFEST_VERSION, SchemaHistory,
+    SchemaVersionEntry, StampBundle, StampError, StampManifest, StampResult, StampStatus,
+    canonical_schema_hash, stamp_schema, write_stamp_manifest_atomic,
+};
 pub use subset::{is_subschema_of, type_constraints_subsumed};
 
 /// The role under which a compatibility check is performed.

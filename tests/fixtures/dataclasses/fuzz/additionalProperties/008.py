@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import typing
+
+from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GeneratedSchemaFoo2(jsoncompat_dataclasses.DataclassRootModel):
+    __jsoncompat_schema__: typing.ClassVar[str] = "{}"
+    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"dependentSchemas\":{\"foo\":{},\"foo2\":{\"properties\":{\"bar\":{}}}},\"properties\":{\"foo2\":{}}}"
+    foo2: (GeneratedSchemaFoo2 | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo2", omittable=True)
+
+GeneratedSchemaFoo2.__jsoncompat_root_annotation__ = typing.Any
+
+GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
+    jsoncompat_dataclasses.jsoncompat_field_spec("foo2", "foo2", (GeneratedSchemaFoo2 | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+)
+
+JSONCOMPAT_MODEL = GeneratedSchema

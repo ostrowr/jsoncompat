@@ -1,0 +1,1 @@
+unsupported $ref 'nested/foo-ref-string.json' at '#/properties/name/$ref'

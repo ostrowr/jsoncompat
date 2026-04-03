@@ -1,0 +1,1 @@
+unsupported $ref '/absref/foobar.json' at '#/$ref'

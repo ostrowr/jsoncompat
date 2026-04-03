@@ -1,0 +1,1 @@
+unsupported $ref 'urn:uuid:deadbeef-1234-ff00-00ff-4321feebdaed#something' at '#/properties/foo/$ref'

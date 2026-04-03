@@ -1,0 +1,1 @@
+unsupported $ref 'extendible-dynamic-ref.json' at '#/$ref'

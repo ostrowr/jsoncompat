@@ -10,7 +10,7 @@ pub use ast::{
 use anyhow::{Context, Result};
 use jsonschema::Draft;
 pub use jsonschema::JSONSchema;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// Compile the provided raw JSON Schema into the proven validator, enforcing
 /// Draft 2020‑12 semantics.  Higher‑level crates use this to avoid relying on
@@ -26,4 +26,22 @@ pub fn compile(schema: &Value) -> Result<JSONSchema> {
         .with_draft(Draft::Draft202012)
         .compile(static_ref)
         .context("Failed to compile JSON Schema")
+}
+
+/// Return a recursively canonicalized JSON value with object keys sorted.
+pub fn canonicalize_json(value: &Value) -> Value {
+    match value {
+        Value::Object(obj) => {
+            let mut canonical = Map::new();
+            let mut keys = obj.keys().collect::<Vec<_>>();
+            keys.sort();
+            for key in keys {
+                let child = obj.get(key).expect("key from map");
+                canonical.insert(key.clone(), canonicalize_json(child));
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
+        _ => value.clone(),
+    }
 }

@@ -1,0 +1,1 @@
+unsupported $ref 'item' at '#/$defs/bar/items/$ref'

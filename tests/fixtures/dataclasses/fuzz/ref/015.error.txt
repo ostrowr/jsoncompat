@@ -1,0 +1,1 @@
+unsupported $ref '#/$defs/inner' at '#/properties/foo/$ref'
