@@ -1,4 +1,6 @@
-use json_schema_ast::{SchemaNode, SchemaNodeKind, compile};
+use json_schema_ast::{
+    JSONSchema, SchemaNode, SchemaNodeKind, canonicalize_schema, compile_canonical,
+};
 use rand::Rng;
 use serde_json::{Map, Value};
 
@@ -37,75 +39,117 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 return Value::Null;
             }
 
-            if subs.iter().all(|s| matches!(&*s.borrow(), Object { .. })) {
-                use std::collections::HashMap;
+            let validator = compile_schema_node(schema);
+            let non_trivial = subs
+                .iter()
+                .filter(|sub| !matches!(&*sub.borrow(), BoolSchema(true) | Any))
+                .collect::<Vec<_>>();
 
-                let mut combined = Map::new();
-                for sub in subs {
-                    if let Value::Object(obj) = generate_value(sub, rng, depth.saturating_sub(1)) {
-                        for (k, v) in obj {
-                            combined.insert(k, v);
-                        }
-                    }
-                }
+            let object_subschemas = subs
+                .iter()
+                .map(object_schema_branch)
+                .collect::<Option<Vec<_>>>();
 
-                // Ensure that every branch's required properties exist in the
-                // merged object.  The generator is probabilistic, so it is
-                // possible that the fast generation above skipped an optional
-                // property that later turned out to be required by another
-                // branch.  We deterministically fill any such gaps here.
-                let mut missing: HashMap<std::string::String, SchemaNode> = HashMap::new();
-                for sub in subs {
-                    if let Object {
-                        properties,
-                        required,
-                        ..
-                    } = &*sub.borrow()
-                    {
-                        for req in required {
-                            if !combined.contains_key(req) {
-                                if let Some(prop_schema) = properties.get(req) {
-                                    missing.insert(req.clone(), prop_schema.clone());
-                                } else {
-                                    missing.insert(req.clone(), SchemaNode::any());
+            for _ in 0..32 {
+                let candidate = if let Some(object_subschemas) = &object_subschemas {
+                    use std::collections::HashMap;
+
+                    let mut combined = Map::new();
+                    for sub in object_subschemas {
+                        if let Object {
+                            properties,
+                            required,
+                            additional,
+                            ..
+                        } = &*sub.borrow()
+                            && let Value::Object(obj) =
+                                generate_value(sub, rng, depth.saturating_sub(1))
+                        {
+                            for (k, v) in obj {
+                                if required.contains(&k)
+                                    || !matches!(&*additional.borrow(), BoolSchema(true) | Any)
+                                    || properties.contains_key(&k)
+                                {
+                                    combined.insert(k, v);
                                 }
                             }
                         }
                     }
-                }
 
-                for (k, schema) in missing {
-                    let val = generate_value(&schema, rng, depth.saturating_sub(1));
-                    combined.insert(k, val);
-                }
+                    // Ensure that every branch's required properties exist in the
+                    // merged object.  The generator is probabilistic, so it is
+                    // possible that the fast generation above skipped an optional
+                    // property that later turned out to be required by another
+                    // branch.  We deterministically fill any such gaps here.
+                    let mut missing: HashMap<std::string::String, SchemaNode> = HashMap::new();
+                    for sub in object_subschemas {
+                        if let Object {
+                            properties,
+                            required,
+                            ..
+                        } = &*sub.borrow()
+                        {
+                            for req in required {
+                                if !combined.contains_key(req) {
+                                    if let Some(prop_schema) = properties.get(req) {
+                                        missing.insert(req.clone(), prop_schema.clone());
+                                    } else {
+                                        missing.insert(req.clone(), SchemaNode::any());
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                return Value::Object(combined);
-            }
+                    for (k, schema) in missing {
+                        let val = generate_value(&schema, rng, depth.saturating_sub(1));
+                        combined.insert(k, val);
+                    }
 
-            for sub in subs {
-                if matches!(&*sub.borrow(), BoolSchema(true) | Any) {
-                    continue;
+                    Value::Object(combined)
+                } else if non_trivial.is_empty() {
+                    random_any(rng, depth)
+                } else {
+                    let index = rng.gen_range(0..non_trivial.len());
+                    generate_value(non_trivial[index], rng, depth.saturating_sub(1))
+                };
+
+                if validator
+                    .as_ref()
+                    .is_none_or(|compiled| compiled.is_valid(&candidate))
+                {
+                    return candidate;
                 }
-                return generate_value(sub, rng, depth.saturating_sub(1));
             }
 
             random_any(rng, depth)
         }
 
         AnyOf(subs) if !subs.is_empty() => {
-            let idx = rng.gen_range(0..subs.len());
-            generate_value(&subs[idx], rng, depth.saturating_sub(1))
+            let validators: Vec<_> = subs.iter().map(compile_schema_node).collect();
+
+            for _ in 0..32 {
+                let index = rng.gen_range(0..subs.len());
+                let candidate = generate_value(&subs[index], rng, depth.saturating_sub(1));
+                if validators[index]
+                    .as_ref()
+                    .is_none_or(|validator| validator.is_valid(&candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            random_any(rng, depth)
         }
 
         OneOf(subs) if !subs.is_empty() => {
-            let validators: Vec<_> = subs
-                .iter()
-                .map(|s| json_schema_ast::compile(&s.to_json()).ok())
-                .collect();
+            let validators: Vec<_> = subs.iter().map(compile_schema_node).collect();
 
             for _ in 0..32 {
                 let pick = rng.gen_range(0..subs.len());
-                let candidate = generate_value(&subs[pick], rng, depth.saturating_sub(1));
+                let candidate_schema =
+                    object_schema_branch(&subs[pick]).unwrap_or_else(|| subs[pick].clone());
+                let candidate = generate_value(&candidate_schema, rng, depth.saturating_sub(1));
 
                 let mut ok = 0;
                 for v in validators.iter().flatten() {
@@ -130,14 +174,21 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         String {
             min_length,
             max_length,
+            pattern,
             enumeration,
-            ..
         } => {
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
                 let idx = rng.gen_range(0..e.len());
                 return e[idx].clone();
+            }
+            if let Some(pattern) = pattern
+                && let Some(candidate) = literal_from_simple_pattern(pattern)
+                && candidate.len() as u64 >= min_length.unwrap_or(0)
+                && max_length.is_none_or(|limit| (candidate.len() as u64) <= limit)
+            {
+                return Value::String(candidate);
             }
 
             let len_min = min_length.unwrap_or(0);
@@ -273,6 +324,21 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 return e[idx].clone();
             }
 
+            let min_p: usize = min_properties.unwrap_or(0);
+            if min_p == 0
+                && properties.is_empty()
+                && matches!(
+                    &*additional.borrow(),
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+                )
+                && matches!(
+                    &*property_names.borrow(),
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+                )
+            {
+                return Value::Object(Map::new());
+            }
+
             let mut map = Map::new();
             for (k, prop_schema) in properties {
                 if !property_name_allows(property_name_validator.as_ref(), k) {
@@ -293,7 +359,6 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 }
             }
 
-            let min_p: usize = min_properties.unwrap_or(0);
             let max_p: usize = max_properties.unwrap_or(usize::MAX);
 
             if !matches!(&*additional.borrow(), BoolSchema(false)) {
@@ -374,6 +439,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             min_items,
             max_items,
             contains,
+            min_contains,
             enumeration,
         } => {
             if let Some(e) = enumeration
@@ -389,12 +455,21 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             };
 
             let max_i = max_items.unwrap_or(base_min + 5).max(base_min);
+            if base_min == 0
+                && contains.is_none()
+                && matches!(&*items.borrow(), BoolSchema(true) | Any)
+            {
+                return Value::Array(Vec::new());
+            }
             let length = rng.gen_range(base_min..=max_i.min(base_min + 5));
 
             let mut arr = Vec::new();
             if let Some(c_schema) = contains {
-                let v = generate_value(c_schema, rng, depth.saturating_sub(1));
-                arr.push(v);
+                let target = min_contains.unwrap_or(1).max(1);
+                for _ in 0..target {
+                    let v = generate_value(c_schema, rng, depth.saturating_sub(1));
+                    arr.push(v);
+                }
             }
 
             while arr.len() < length as usize {
@@ -411,16 +486,27 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             then_schema,
             else_schema,
         } => {
-            if rng.gen_bool(0.5)
-                && let Some(t) = then_schema
-            {
-                return generate_value(t, rng, depth.saturating_sub(1));
+            let validator = compile_schema_node(schema);
+            for _ in 0..32 {
+                let candidate = if rng.gen_bool(0.5)
+                    && let Some(t) = then_schema
+                {
+                    generate_value(t, rng, depth.saturating_sub(1))
+                } else if let Some(e) = else_schema {
+                    generate_value(e, rng, depth.saturating_sub(1))
+                } else {
+                    generate_value(if_schema, rng, depth.saturating_sub(1))
+                };
+
+                if validator
+                    .as_ref()
+                    .is_none_or(|compiled| compiled.is_valid(&candidate))
+                {
+                    return candidate;
+                }
             }
-            if let Some(e) = else_schema {
-                generate_value(e, rng, depth.saturating_sub(1))
-            } else {
-                generate_value(if_schema, rng, depth.saturating_sub(1))
-            }
+
+            random_any(rng, depth)
         }
         Const(v) => v.clone(),
         Type(_) => Value::Null,
@@ -441,6 +527,24 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         AnyOf(_) => Value::Null,
         OneOf(_) => Value::Null,
         Enum(_) => Value::Null,
+    }
+}
+
+fn object_schema_branch(schema: &SchemaNode) -> Option<SchemaNode> {
+    use SchemaNodeKind::*;
+
+    match &*schema.borrow() {
+        Object { .. } => Some(schema.clone()),
+        AnyOf(subs) | OneOf(subs) => subs.iter().find_map(object_schema_branch),
+        IfThenElse {
+            then_schema,
+            else_schema,
+            ..
+        } => else_schema
+            .as_ref()
+            .and_then(object_schema_branch)
+            .or_else(|| then_schema.as_ref().and_then(object_schema_branch)),
+        _ => None,
     }
 }
 
@@ -513,8 +617,14 @@ fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
 fn build_property_name_validator(schema: &SchemaNode) -> Option<json_schema_ast::JSONSchema> {
     match &*schema.borrow() {
         SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => None,
-        _ => compile(&schema.to_json()).ok(),
+        _ => compile_schema_node(schema),
     }
+}
+
+fn compile_schema_node(schema: &SchemaNode) -> Option<JSONSchema> {
+    let raw = schema.to_json();
+    let schema = canonicalize_schema(&raw).ok()?;
+    compile_canonical(&schema).ok()
 }
 
 fn property_name_allows(validator: Option<&json_schema_ast::JSONSchema>, candidate: &str) -> bool {
@@ -570,6 +680,51 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
         .collect()
 }
 
+fn literal_from_simple_pattern(pattern: &str) -> Option<String> {
+    let body = pattern.strip_prefix('^')?.strip_suffix('$')?;
+    if body.is_empty() {
+        return None;
+    }
+
+    let mut literal = String::new();
+    let mut chars = body.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            if ch.is_ascii_alphanumeric() || ch == ' ' || ch == '-' || ch == '_' {
+                literal.push(ch);
+                continue;
+            }
+            return None;
+        }
+
+        let escaped = match chars.next()? {
+            't' => '\t',
+            'n' => '\n',
+            'r' => '\r',
+            '\\' => '\\',
+            'd' => '0',
+            'D' => 'a',
+            's' => ' ',
+            'S' => 'a',
+            'w' => 'a',
+            'W' => '!',
+            'c' => {
+                let control = chars.next()?;
+                if control.is_ascii_alphabetic() {
+                    ((control.to_ascii_uppercase() as u8) & 0x1f) as char
+                } else {
+                    return None;
+                }
+            }
+            other if other.is_ascii_punctuation() => other,
+            _ => return None,
+        };
+        literal.push(escaped);
+    }
+
+    Some(literal)
+}
+
 // lots to improve here:
 // - anyof generation
 // - better random any
@@ -579,6 +734,7 @@ fn random_string(rng: &mut impl Rng, len_range: std::ops::Range<usize>) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use json_schema_ast::build_and_resolve_canonical_schema;
     use rand::{SeedableRng, rngs::StdRng};
     use serde_json::json;
 
@@ -602,6 +758,7 @@ mod tests {
             },
             "required": ["class"]
         });
-        json_schema_ast::build_and_resolve_schema(&raw).unwrap()
+        let schema = canonicalize_schema(&raw).unwrap();
+        build_and_resolve_canonical_schema(&schema).unwrap()
     }
 }

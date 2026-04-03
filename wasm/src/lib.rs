@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use json_schema_fuzz::generate_value;
-use jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use jsoncompat::{Role, build_and_resolve_canonical_schema, canonicalize_schema, check_compat};
 
 use rand::thread_rng;
 use serde_json::Value as JsonValue;
@@ -42,10 +42,14 @@ pub fn check_compat_js(
     let role_e = parse_role(role)?;
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
-
-    let old_ast = build_and_resolve_schema(&old_raw)
+    let old_schema = canonicalize_schema(&old_raw)
         .map_err(|e| JsValue::from_str(&format!("invalid old schema: {e}")))?;
-    let new_ast = build_and_resolve_schema(&new_raw)
+    let new_schema = canonicalize_schema(&new_raw)
+        .map_err(|e| JsValue::from_str(&format!("invalid new schema: {e}")))?;
+
+    let old_ast = build_and_resolve_canonical_schema(&old_schema)
+        .map_err(|e| JsValue::from_str(&format!("invalid old schema: {e}")))?;
+    let new_ast = build_and_resolve_canonical_schema(&new_schema)
         .map_err(|e| JsValue::from_str(&format!("invalid new schema: {e}")))?;
 
     Ok(check_compat(&old_ast, &new_ast, role_e))
@@ -59,7 +63,9 @@ pub fn check_compat_js(
 #[wasm_bindgen(js_name = generate_value)]
 pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue> {
     let raw = parse_json(schema_json)?;
-    let schema_ast = build_and_resolve_schema(&raw)
+    let schema = canonicalize_schema(&raw)
+        .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
+    let schema_ast = build_and_resolve_canonical_schema(&schema)
         .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
 
     let mut rng = thread_rng();

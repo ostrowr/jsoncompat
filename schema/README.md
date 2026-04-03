@@ -16,7 +16,10 @@ json_schema_ast = "0.2.1"
 ## Usage
 
 ```rust
-use json_schema_ast::{build_and_resolve_schema, compile, SchemaNode, JSONSchema};
+use json_schema_ast::{
+    SchemaNode, JSONSchema, build_and_resolve_canonical_schema, canonicalize_schema,
+    compile_canonical,
+};
 use serde_json::json;
 
 let raw = json!({
@@ -28,15 +31,22 @@ let raw = json!({
     "required": ["id"]
 });
 
+// Parse and canonicalize once at the boundary
+let schema = canonicalize_schema(&raw).unwrap();
+
 // Build AST
-let schema_node: SchemaNode = build_and_resolve_schema(&raw).unwrap();
+let schema_node: SchemaNode = build_and_resolve_canonical_schema(&schema).unwrap();
 
 // Compile a fast validator
-let validator: JSONSchema = compile(&raw).unwrap();
+let validator: JSONSchema = compile_canonical(&schema).unwrap();
 
 // Validate instances
 assert!(validator.is_valid(&json!({ "id": 42 })));
 ```
+
+If a schema document sets `$schema`, it must be exactly Draft 2020-12
+(`https://json-schema.org/draft/2020-12/schema`, with an optional trailing
+`#`). Omitting `$schema` is allowed and is interpreted as Draft 2020-12.
 
 ## License
 

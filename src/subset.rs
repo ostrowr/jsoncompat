@@ -1,5 +1,5 @@
 use crate::SchemaNode;
-use json_schema_ast::{SchemaNodeKind, compile};
+use json_schema_ast::{SchemaNodeKind, canonicalize_schema, compile_canonical};
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
@@ -33,7 +33,14 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         (_, AllOf(sups)) => sups.iter().all(|schema| is_subschema_of(sub, schema)),
 
         (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
-        (Enum(_), _) => false,
+        (Enum(sub_e), _) => {
+            let schema_json = sup.to_json();
+            canonicalize_schema(&schema_json)
+                .ok()
+                .and_then(|schema| compile_canonical(&schema).ok())
+                .map(|compiled| sub_e.iter().all(|value| compiled.is_valid(value)))
+                .unwrap_or(false)
+        }
         (_, Enum(_)) => false,
 
         (Not(subn), _) => match &*subn.borrow() {
@@ -55,11 +62,15 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         | (Object { .. }, Object { .. })
         | (Array { .. }, Array { .. }) => type_constraints_subsumed(sub, sup),
 
+        (Integer { .. }, Number { .. }) => integer_constraints_subsumed_by_number(sub, sup),
+
         (Const(s_val), Const(p_val)) => s_val == p_val,
 
         (Const(s_val), _) => {
             let schema_json = sup.to_json();
-            compile(&schema_json)
+            canonicalize_schema(&schema_json)
+                .ok()
+                .and_then(|schema| compile_canonical(&schema).ok())
                 .map(|compiled| compiled.is_valid(s_val))
                 .unwrap_or(false)
         }
@@ -68,6 +79,48 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
         _ => false,
     }
+}
+
+fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    use SchemaNodeKind::*;
+
+    let sub_kind = sub.borrow().clone();
+    let sup_kind = sup.borrow().clone();
+
+    let (
+        Integer {
+            minimum: smin,
+            maximum: smax,
+            exclusive_minimum: sexmin,
+            exclusive_maximum: sexmax,
+            enumeration: s_en,
+            ..
+        },
+        Number {
+            minimum: pmin,
+            maximum: pmax,
+            exclusive_minimum: pexmin,
+            exclusive_maximum: pexmax,
+            enumeration: p_en,
+            ..
+        },
+    ) = (sub_kind, sup_kind)
+    else {
+        return false;
+    };
+
+    if !check_numeric_inclusion(smin.map(|value| value as f64), sexmin, pmin, pexmin, true) {
+        return false;
+    }
+    if !check_numeric_inclusion(smax.map(|value| value as f64), sexmax, pmax, pexmax, false) {
+        return false;
+    }
+    if let (Some(se), Some(pe)) = (s_en, p_en)
+        && !se.iter().all(|value| pe.contains(value))
+    {
+        return false;
+    }
+    true
 }
 
 /// Compare the **constraints** of two nodes of the *same* basic type.
@@ -364,40 +417,74 @@ fn check_int_inclusion(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use json_schema_ast::build_and_resolve_schema;
+    use json_schema_ast::{build_and_resolve_canonical_schema, canonicalize_schema};
     use serde_json::json;
 
     #[test]
     fn allof_tighten_subset() {
-        let old = build_and_resolve_schema(&json!({
+        let old = build_and_resolve_canonical_schema(
+            &canonicalize_schema(&json!({
             "allOf": [
                 {"type": "integer", "minimum": 0},
                 {"maximum": 10}
             ]
-        }))
+            }))
+            .unwrap(),
+        )
         .unwrap();
-        let new = build_and_resolve_schema(&json!({
+        let new = build_and_resolve_canonical_schema(
+            &canonicalize_schema(&json!({
             "type": "integer",
             "minimum": 0,
             "maximum": 5
-        }))
+            }))
+            .unwrap(),
+        )
         .unwrap();
         assert!(is_subschema_of(&new, &old));
     }
 
     #[test]
     fn exclusive_bounds_subset() {
-        let old = build_and_resolve_schema(&json!({
+        let old = build_and_resolve_canonical_schema(
+            &canonicalize_schema(&json!({
             "minimum": 1,
             "exclusiveMinimum": 1
-        }))
+            }))
+            .unwrap(),
+        )
         .unwrap();
-        let new = build_and_resolve_schema(&json!({
-            "minimum": 1,
+        let new = build_and_resolve_canonical_schema(
+            &canonicalize_schema(&json!({
+            "exclusiveMinimum": 1,
             "maximum": 3
-        }))
+            }))
+            .unwrap(),
+        )
         .unwrap();
 
         assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn enum_with_numeric_bound_is_not_subsumed_by_wider_enum() {
+        let old = build_and_resolve_canonical_schema(
+            &canonicalize_schema(&json!({
+                "type": "number",
+                "enum": [0, 1],
+                "minimum": 1
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let new = build_and_resolve_canonical_schema(
+            &canonicalize_schema(&json!({
+                "enum": [0, 1]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(!is_subschema_of(&new, &old));
     }
 }

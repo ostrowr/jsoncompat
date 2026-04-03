@@ -1,10 +1,18 @@
-use anyhow::{Result, anyhow};
+use crate::canonicalize::CanonicalSchema;
 use percent_encoding::percent_decode_str;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
+
+type Result<T> = std::result::Result<T, AstError>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum AstError {
+    #[error("local $ref '{ref_path}' does not resolve to a schema node in the current document")]
+    UnresolvedReference { ref_path: String },
+}
 
 /// Shared, interior-mutable representation of a JSON Schema node.  Using
 /// reference counting allows multiple parents to point to the same node which
@@ -223,6 +231,7 @@ impl SchemaNode {
                 min_items,
                 max_items,
                 contains,
+                min_contains,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
@@ -238,6 +247,11 @@ impl SchemaNode {
                 }
                 if let Some(c) = contains {
                     obj.insert("contains".into(), c.to_json());
+                }
+                if let Some(min_contains) = min_contains
+                    && *min_contains != 1
+                {
+                    obj.insert("minContains".into(), Value::Number((*min_contains).into()));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -452,6 +466,7 @@ impl PartialEq for SchemaNode {
             match (&*a_kind, &*b_kind) {
                 (BoolSchema(ax), BoolSchema(bx)) => ax == bx,
                 (Any, Any) => true,
+                (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
                 (
                     String {
                         min_length: ax,
@@ -566,6 +581,7 @@ impl PartialEq for SchemaNode {
                         min_items: amin,
                         max_items: amax,
                         contains: acontains,
+                        min_contains: amin_contains,
                         enumeration: aenum,
                     },
                     Array {
@@ -573,10 +589,15 @@ impl PartialEq for SchemaNode {
                         min_items: bmin,
                         max_items: bmax,
                         contains: bcontains,
+                        min_contains: bmin_contains,
                         enumeration: benum,
                     },
                 ) => {
-                    if amin != bmin || amax != bmax || aenum != benum {
+                    if amin != bmin
+                        || amax != bmax
+                        || amin_contains != bmin_contains
+                        || aenum != benum
+                    {
                         return false;
                     }
                     if !eq_inner(aitems, bitems, seen) {
@@ -725,6 +746,7 @@ pub enum SchemaNodeKind {
         min_items: Option<u64>,
         max_items: Option<u64>,
         contains: Option<SchemaNode>,
+        min_contains: Option<u64>,
         enumeration: Option<Vec<Value>>,
     },
 
@@ -762,159 +784,359 @@ pub enum SchemaNodeKind {
     Ref(String),
 }
 
-/// Build and fully resolve a schema node from raw JSON + a base URL.
-pub fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
-    let mut root = build_schema_ast(raw)?;
+/// Build and fully resolve a schema node from a canonical schema document.
+pub fn build_and_resolve_canonical_schema(raw: &CanonicalSchema) -> Result<SchemaNode> {
+    let mut root = build_canonical_schema_ast(raw)?;
     resolve_refs(&mut root, raw, &[])?;
     Ok(root)
 }
 
-/// Build the high-level AST without immediately resolving references.
-pub fn build_schema_ast(raw: &Value) -> Result<SchemaNode> {
+/// Build the high-level AST from a canonical schema without resolving references.
+pub fn build_canonical_schema_ast(raw: &CanonicalSchema) -> Result<SchemaNode> {
+    build_schema_ast_from_value(raw.as_value())
+}
+
+fn build_schema_ast_from_value(raw: &Value) -> Result<SchemaNode> {
     if let Some(b) = raw.as_bool() {
         return Ok(SchemaNode::bool_schema(b));
     }
-    if !raw.is_object() {
+    let Some(obj) = raw.as_object() else {
         return Ok(SchemaNode::any());
-    }
+    };
 
-    let obj = raw.as_object().unwrap();
-
-    if let Some(Value::String(r)) = obj.get("$ref") {
-        return Ok(SchemaNode::new(SchemaNodeKind::Ref(r.to_owned())));
-    }
-
-    if let Some(Value::Array(e)) = obj.get("enum") {
-        return Ok(SchemaNode::new(SchemaNodeKind::Enum(e.clone())));
-    }
-
-    if let Some(c) = obj.get("const") {
-        return Ok(SchemaNode::new(SchemaNodeKind::Const(c.clone())));
-    }
-
-    if obj.contains_key("if") || obj.contains_key("then") || obj.contains_key("else") {
-        if let Some(cond) = obj.get("if") {
-            let if_schema = build_schema_ast(cond)?;
-            let then_schema = match obj.get("then") {
-                Some(v) => Some(build_schema_ast(v)?),
-                None => None,
-            };
-            let else_schema = match obj.get("else") {
-                Some(v) => Some(build_schema_ast(v)?),
-                None => None,
-            };
-            let mut base = obj.clone();
-            base.remove("if");
-            base.remove("then");
-            base.remove("else");
-            const META_KEYS: [&str; 4] = ["$schema", "$id", "$comment", "$defs"];
-            for key in META_KEYS {
-                base.remove(key);
-            }
-            let cond_node = SchemaNode::new(SchemaNodeKind::IfThenElse {
-                if_schema,
-                then_schema,
-                else_schema,
-            });
-            if !base.is_empty() {
-                let subs = vec![build_schema_ast(&Value::Object(base))?, cond_node.clone()];
-                return Ok(SchemaNode::new(SchemaNodeKind::AllOf(subs)));
-            } else {
-                return Ok(cond_node);
-            }
-        } else {
-            let mut base = obj.clone();
-            base.remove("then");
-            base.remove("else");
-            return build_schema_ast(&Value::Object(base));
-        }
-    }
-
-    if let Some(Value::Array(subs)) = obj.get("allOf") {
-        let mut list = Vec::new();
-        if obj.len() > 1 {
-            let mut base = obj.clone();
-            base.remove("allOf");
-            const META_KEYS: [&str; 4] = ["$schema", "$id", "$comment", "$defs"];
-            for key in META_KEYS {
-                base.remove(key);
-            }
-            if !base.is_empty() {
-                list.push(build_schema_ast(&Value::Object(base))?);
-            }
-        }
-        for s in subs {
-            list.push(build_schema_ast(s)?);
-        }
-        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(list)));
-    }
-    if let Some(Value::Array(subs)) = obj.get("anyOf") {
-        let parsed = subs
-            .iter()
-            .map(build_schema_ast)
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(SchemaNode::new(SchemaNodeKind::AnyOf(parsed)));
-    }
-    if let Some(Value::Array(subs)) = obj.get("oneOf") {
-        let parsed = subs
-            .iter()
-            .map(build_schema_ast)
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(SchemaNode::new(SchemaNodeKind::OneOf(parsed)));
-    }
-    if let Some(n) = obj.get("not") {
-        return Ok(SchemaNode::new(SchemaNodeKind::Not(build_schema_ast(n)?)));
-    }
-
-    match obj.get("type") {
-        Some(Value::String(t)) => match t.as_str() {
-            "string" => parse_string_schema(obj),
-            "number" => parse_number_schema(obj, false),
-            "integer" => parse_number_schema(obj, true),
-            "boolean" => parse_boolean_schema(obj),
-            "null" => parse_null_schema(obj),
-            "object" => parse_object_schema(obj),
-            "array" => parse_array_schema(obj),
-            _ => Ok(SchemaNode::any()),
-        },
-        Some(Value::Array(arr)) => {
-            let mut variants = Vec::new();
-            for t_val in arr {
-                if let Some(t_str) = t_val.as_str() {
-                    let mut cloned = obj.clone();
-                    cloned.insert("type".into(), Value::String(t_str.into()));
-                    variants.push(build_schema_ast(&Value::Object(cloned))?);
-                }
-            }
-            if variants.len() == 1 {
-                Ok(variants.remove(0))
-            } else {
-                Ok(SchemaNode::new(SchemaNodeKind::AnyOf(variants)))
-            }
-        }
-        _ => {
-            if obj.contains_key("properties")
-                || obj.contains_key("minProperties")
-                || obj.contains_key("maxProperties")
-                || obj.contains_key("required")
-            {
-                parse_object_schema(obj)
-            } else if obj.contains_key("items") {
-                parse_array_schema(obj)
-            } else if obj.contains_key("minLength")
-                || obj.contains_key("maxLength")
-                || obj.contains_key("pattern")
-            {
-                parse_string_schema(obj)
-            } else {
-                Ok(SchemaNode::any())
-            }
-        }
+    match SchemaShape::classify(obj) {
+        SchemaShape::Ref => parse_ref_schema(obj),
+        SchemaShape::Enum => parse_enum_schema(obj),
+        SchemaShape::Const => parse_const_schema(obj),
+        SchemaShape::Conditional => parse_conditional_schema(obj),
+        SchemaShape::AllOf => parse_all_of_schema(obj),
+        SchemaShape::AnyOf => parse_any_of_schema(obj),
+        SchemaShape::OneOf => parse_one_of_schema(obj),
+        SchemaShape::Not => parse_not_schema(obj),
+        SchemaShape::String => parse_string_schema(obj),
+        SchemaShape::Number => parse_number_schema(obj, false),
+        SchemaShape::Integer => parse_number_schema(obj, true),
+        SchemaShape::Boolean => parse_boolean_schema(obj),
+        SchemaShape::Null => parse_null_schema(obj),
+        SchemaShape::Object => parse_object_schema(obj),
+        SchemaShape::Array => parse_array_schema(obj),
+        SchemaShape::TypeUnion => parse_type_union_schema(obj),
+        SchemaShape::Any => Ok(SchemaNode::any()),
     }
 }
 
-fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
-    let min_length = obj.get("minLength").and_then(|v| v.as_u64());
+const SCHEMA_METADATA_KEYS: [&str; 8] = [
+    "$schema",
+    "$id",
+    "$anchor",
+    "$dynamicAnchor",
+    "$comment",
+    "$defs",
+    "title",
+    "x-jsoncompat",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SchemaShape {
+    Ref,
+    Enum,
+    Const,
+    Conditional,
+    AllOf,
+    AnyOf,
+    OneOf,
+    Not,
+    String,
+    Number,
+    Integer,
+    Boolean,
+    Null,
+    Object,
+    Array,
+    TypeUnion,
+    Any,
+}
+
+impl SchemaShape {
+    fn classify(obj: &Map<String, Value>) -> Self {
+        if matches!(obj.get("$ref"), Some(Value::String(_))) {
+            return Self::Ref;
+        }
+        if matches!(obj.get("enum"), Some(Value::Array(_)))
+            && object_has_only_keyword_and_metadata(obj, "enum")
+        {
+            return Self::Enum;
+        }
+        if obj.contains_key("const") && object_has_only_keyword_and_metadata(obj, "const") {
+            return Self::Const;
+        }
+        if obj.contains_key("if") || obj.contains_key("then") || obj.contains_key("else") {
+            return Self::Conditional;
+        }
+        if matches!(obj.get("allOf"), Some(Value::Array(_))) {
+            return Self::AllOf;
+        }
+        if matches!(obj.get("anyOf"), Some(Value::Array(_))) {
+            return Self::AnyOf;
+        }
+        if matches!(obj.get("oneOf"), Some(Value::Array(_))) {
+            return Self::OneOf;
+        }
+        if obj.contains_key("not") {
+            return Self::Not;
+        }
+        if let Some(shape) = classify_typed_schema_shape(obj) {
+            return shape;
+        }
+        if object_has_object_keywords(obj) {
+            return Self::Object;
+        }
+        if object_has_array_keywords(obj) {
+            return Self::Array;
+        }
+        if object_has_string_keywords(obj) {
+            return Self::String;
+        }
+        if object_has_numeric_enum_keywords(obj) {
+            return Self::Number;
+        }
+        Self::Any
+    }
+}
+
+fn classify_typed_schema_shape(obj: &Map<String, Value>) -> Option<SchemaShape> {
+    match obj.get("type") {
+        Some(Value::String(type_name)) => Some(match type_name.as_str() {
+            "string" => SchemaShape::String,
+            "number" => SchemaShape::Number,
+            "integer" => SchemaShape::Integer,
+            "boolean" => SchemaShape::Boolean,
+            "null" => SchemaShape::Null,
+            "object" => SchemaShape::Object,
+            "array" => SchemaShape::Array,
+            _ => SchemaShape::Any,
+        }),
+        Some(Value::Array(_)) => Some(SchemaShape::TypeUnion),
+        _ => None,
+    }
+}
+
+fn object_has_object_keywords(obj: &Map<String, Value>) -> bool {
+    obj.contains_key("properties")
+        || obj.contains_key("patternProperties")
+        || obj.contains_key("minProperties")
+        || obj.contains_key("maxProperties")
+        || obj.contains_key("required")
+        || obj.contains_key("additionalProperties")
+        || obj.contains_key("propertyNames")
+        || obj.contains_key("dependentRequired")
+        || obj.contains_key("dependentSchemas")
+        || obj.contains_key("unevaluatedProperties")
+}
+
+fn object_has_array_keywords(obj: &Map<String, Value>) -> bool {
+    obj.contains_key("items")
+        || obj.contains_key("prefixItems")
+        || obj.contains_key("contains")
+        || obj.contains_key("minItems")
+        || obj.contains_key("maxItems")
+        || obj.contains_key("minContains")
+        || obj.contains_key("maxContains")
+        || obj.contains_key("uniqueItems")
+        || obj.contains_key("unevaluatedItems")
+}
+
+fn object_has_string_keywords(obj: &Map<String, Value>) -> bool {
+    obj.contains_key("minLength") || obj.contains_key("maxLength") || obj.contains_key("pattern")
+}
+
+fn object_has_numeric_enum_keywords(obj: &Map<String, Value>) -> bool {
+    (obj.contains_key("enum") || obj.contains_key("const"))
+        && (obj.contains_key("minimum")
+            || obj.contains_key("maximum")
+            || obj.contains_key("exclusiveMinimum")
+            || obj.contains_key("exclusiveMaximum")
+            || obj.contains_key("multipleOf"))
+}
+
+fn object_has_only_keyword_and_metadata(obj: &Map<String, Value>, keyword: &str) -> bool {
+    obj.keys()
+        .all(|key| key == keyword || is_schema_metadata_key(key))
+}
+
+fn is_schema_metadata_key(key: &str) -> bool {
+    SCHEMA_METADATA_KEYS.contains(&key)
+}
+
+fn strip_schema_metadata(obj: &mut Map<String, Value>) {
+    for key in SCHEMA_METADATA_KEYS {
+        obj.remove(key);
+    }
+}
+
+fn parse_ref_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Value::String(ref_path) = &obj["$ref"] else {
+        unreachable!("$ref shape was checked before parsing")
+    };
+    Ok(SchemaNode::new(SchemaNodeKind::Ref(ref_path.to_owned())))
+}
+
+fn parse_enum_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Value::Array(values) = &obj["enum"] else {
+        unreachable!("enum shape was checked before parsing")
+    };
+    Ok(SchemaNode::new(SchemaNodeKind::Enum(values.clone())))
+}
+
+fn parse_const_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let value = obj
+        .get("const")
+        .expect("const shape was checked before parsing");
+    Ok(SchemaNode::new(SchemaNodeKind::Const(value.clone())))
+}
+
+fn parse_conditional_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Some(cond) = obj.get("if") else {
+        let mut base = obj.clone();
+        base.remove("then");
+        base.remove("else");
+        return build_schema_ast_from_value(&Value::Object(base));
+    };
+
+    let if_schema = build_schema_ast_from_value(cond)?;
+    let then_schema = obj
+        .get("then")
+        .map(build_schema_ast_from_value)
+        .transpose()?;
+    let else_schema = obj
+        .get("else")
+        .map(build_schema_ast_from_value)
+        .transpose()?;
+
+    let cond_node = SchemaNode::new(SchemaNodeKind::IfThenElse {
+        if_schema,
+        then_schema,
+        else_schema,
+    });
+
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["if", "then", "else"])? {
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(vec![
+            base_schema,
+            cond_node,
+        ])));
+    }
+
+    Ok(cond_node)
+}
+
+fn parse_all_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Value::Array(subs) = &obj["allOf"] else {
+        unreachable!("allOf shape was checked before parsing")
+    };
+
+    let mut list = Vec::new();
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["allOf"])? {
+        list.push(base_schema);
+    }
+    for schema in subs {
+        list.push(build_schema_ast_from_value(schema)?);
+    }
+
+    Ok(SchemaNode::new(SchemaNodeKind::AllOf(dedupe_schema_nodes(
+        list,
+    ))))
+}
+
+fn parse_any_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Value::Array(subs) = &obj["anyOf"] else {
+        unreachable!("anyOf shape was checked before parsing")
+    };
+
+    let any_of = SchemaNode::new(SchemaNodeKind::AnyOf(dedupe_schema_nodes(
+        subs.iter()
+            .map(build_schema_ast_from_value)
+            .collect::<Result<Vec<_>>>()?,
+    )));
+
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["anyOf"])? {
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(vec![
+            base_schema,
+            any_of,
+        ])));
+    }
+
+    Ok(any_of)
+}
+
+fn parse_one_of_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Value::Array(subs) = &obj["oneOf"] else {
+        unreachable!("oneOf shape was checked before parsing")
+    };
+
+    let one_of = SchemaNode::new(SchemaNodeKind::OneOf(
+        subs.iter()
+            .map(build_schema_ast_from_value)
+            .collect::<Result<Vec<_>>>()?,
+    ));
+
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["oneOf"])? {
+        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(vec![
+            base_schema,
+            one_of,
+        ])));
+    }
+
+    Ok(one_of)
+}
+
+fn parse_not_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    Ok(SchemaNode::new(SchemaNodeKind::Not(
+        build_schema_ast_from_value(&obj["not"])?,
+    )))
+}
+
+fn parse_type_union_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let Value::Array(type_names) = &obj["type"] else {
+        unreachable!("type-array shape was checked before parsing")
+    };
+
+    let mut variants = Vec::new();
+    for type_name in type_names {
+        if let Some(type_name) = type_name.as_str() {
+            let mut typed_obj = obj.clone();
+            typed_obj.insert("type".into(), Value::String(type_name.into()));
+            variants.push(build_schema_ast_from_value(&Value::Object(typed_obj))?);
+        }
+    }
+
+    if variants.len() == 1 {
+        Ok(variants.remove(0))
+    } else {
+        Ok(SchemaNode::new(SchemaNodeKind::AnyOf(dedupe_schema_nodes(
+            variants,
+        ))))
+    }
+}
+
+fn parse_applicator_base_schema(
+    obj: &Map<String, Value>,
+    applicator_keys: &[&str],
+) -> Result<Option<SchemaNode>> {
+    let mut base = obj.clone();
+    for key in applicator_keys {
+        base.remove(*key);
+    }
+    strip_schema_metadata(&mut base);
+
+    if base.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(build_schema_ast_from_value(&Value::Object(base))?))
+    }
+}
+
+fn parse_string_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+    let min_length = Some(obj.get("minLength").and_then(|v| v.as_u64()).unwrap_or(0));
     let max_length = obj.get("maxLength").and_then(|v| v.as_u64());
     let pattern = obj
         .get("pattern")
@@ -930,7 +1152,17 @@ fn parse_string_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
     }))
 }
 
-fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> Result<SchemaNode> {
+fn dedupe_schema_nodes(nodes: Vec<SchemaNode>) -> Vec<SchemaNode> {
+    let mut unique = Vec::new();
+    for node in nodes {
+        if unique.iter().all(|existing| existing != &node) {
+            unique.push(node);
+        }
+    }
+    unique
+}
+
+fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> Result<SchemaNode> {
     let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
     let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
 
@@ -952,7 +1184,8 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
     let multiple_of = obj
         .get("multipleOf")
         .and_then(|v| v.as_f64())
-        .filter(|m| *m > 0.0);
+        .filter(|m| *m > 0.0)
+        .or_else(|| integer.then_some(1.0));
 
     if integer {
         let min_i = minimum.map(|m| m as i64);
@@ -977,21 +1210,21 @@ fn parse_number_schema(obj: &serde_json::Map<String, Value>, integer: bool) -> R
     }
 }
 
-fn parse_boolean_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+fn parse_boolean_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     Ok(SchemaNode::new(SchemaNodeKind::Boolean { enumeration }))
 }
 
-fn parse_null_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+fn parse_null_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
     Ok(SchemaNode::new(SchemaNodeKind::Null { enumeration }))
 }
 
-fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+fn parse_object_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     let mut properties = HashMap::new();
     if let Some(Value::Object(props)) = obj.get("properties") {
         for (k, v) in props {
-            properties.insert(k.clone(), build_schema_ast(v)?);
+            properties.insert(k.clone(), build_schema_ast_from_value(v)?);
         }
     }
     let required: HashSet<String> = obj
@@ -1013,19 +1246,21 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
     let additional = match obj.get("additionalProperties") {
         None => SchemaNode::any(),
         Some(Value::Bool(b)) => SchemaNode::bool_schema(*b),
-        Some(other) => build_schema_ast(other)?,
+        Some(other) => build_schema_ast_from_value(other)?,
     };
 
     let property_names = match obj.get("propertyNames") {
         None => SchemaNode::any(),
-        Some(Value::Bool(b)) => SchemaNode::bool_schema(*b),
-        Some(other) => build_schema_ast(other)?,
+        Some(Value::Bool(true)) => SchemaNode::any(),
+        Some(Value::Bool(false)) => SchemaNode::bool_schema(false),
+        Some(other) => build_schema_ast_from_value(other)?,
     };
 
     let min_properties = obj
         .get("minProperties")
         .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+        .map(|v| v as usize)
+        .or(Some(required.len()));
     let max_properties = obj
         .get("maxProperties")
         .and_then(|v| v.as_u64())
@@ -1063,31 +1298,48 @@ fn parse_object_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNod
     }))
 }
 
-fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode> {
+fn parse_array_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     let items_node = match obj.get("items") {
         None => SchemaNode::any(),
+        Some(Value::Bool(true)) => SchemaNode::any(),
+        Some(Value::Bool(false)) => SchemaNode::bool_schema(false),
         Some(Value::Array(arr)) => {
             if arr.is_empty() {
                 SchemaNode::any()
             } else if arr.len() == 1 {
-                build_schema_ast(&arr[0])?
+                build_schema_ast_from_value(&arr[0])?
             } else {
                 let subnodes = arr
                     .iter()
-                    .map(build_schema_ast)
+                    .map(build_schema_ast_from_value)
                     .collect::<Result<Vec<SchemaNode>>>()?;
                 SchemaNode::new(SchemaNodeKind::AllOf(subnodes))
             }
         }
-        Some(other) => build_schema_ast(other)?,
+        Some(other) => build_schema_ast_from_value(other)?,
     };
-    let min_items = obj.get("minItems").and_then(|v| v.as_u64());
+    let min_items = obj.get("minItems").and_then(|v| v.as_u64()).or_else(|| {
+        if obj.contains_key("contains") {
+            obj.get("minContains")
+                .and_then(|value| value.as_u64())
+                .or(Some(1))
+        } else {
+            Some(0)
+        }
+    });
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
     let contains_node = match obj.get("contains") {
         None => None,
-        Some(v) => Some(build_schema_ast(v)?),
+        Some(v) => Some(build_schema_ast_from_value(v)?),
+    };
+    let min_contains = if contains_node.is_some() {
+        obj.get("minContains")
+            .and_then(|value| value.as_u64())
+            .or(Some(1))
+    } else {
+        None
     };
 
     Ok(SchemaNode::new(SchemaNodeKind::Array {
@@ -1095,15 +1347,20 @@ fn parse_array_schema(obj: &serde_json::Map<String, Value>) -> Result<SchemaNode
         min_items,
         max_items,
         contains: contains_node,
+        min_contains,
         enumeration,
     }))
 }
 
 /// Recursively resolves `SchemaNode::Ref` by looking up fragments in `root_json`.
-pub fn resolve_refs(node: &mut SchemaNode, root_json: &Value, visited: &[String]) -> Result<()> {
+pub fn resolve_refs(
+    node: &mut SchemaNode,
+    root_json: &CanonicalSchema,
+    visited: &[String],
+) -> Result<()> {
     let mut stack = visited.to_vec();
     let mut cache: HashMap<String, SchemaNode> = HashMap::new();
-    resolve_refs_internal(node, root_json, &mut stack, &mut cache)
+    resolve_refs_internal(node, root_json.as_value(), &mut stack, &mut cache)
 }
 
 fn resolve_refs_internal(
@@ -1141,10 +1398,12 @@ fn resolve_refs_internal(
                 if let Some(next) = current.get(p.as_str()) {
                     current = next;
                 } else {
-                    return Err(anyhow!("Unresolved reference: {}", path));
+                    return Err(AstError::UnresolvedReference {
+                        ref_path: path.clone(),
+                    });
                 }
             }
-            let mut resolved = build_schema_ast(current)?;
+            let mut resolved = build_schema_ast_from_value(current)?;
             cache.insert(path.clone(), resolved.clone());
             stack.push(path.clone());
             resolve_refs_internal(&mut resolved, root_json, stack, cache)?;
@@ -1152,42 +1411,82 @@ fn resolve_refs_internal(
             cache.insert(path.clone(), resolved.clone());
             *node = resolved;
         } else {
-            *node.borrow_mut() = SchemaNodeKind::BoolSchema(true);
+            *node.borrow_mut() = SchemaNodeKind::Any;
         }
         return Ok(());
     }
 
-    if let SchemaNodeKind::AllOf(children) = &mut *node.borrow_mut() {
+    if matches!(&*node.borrow(), SchemaNodeKind::AllOf(_)) {
+        let mut children = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::AllOf(children) => children.clone(),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
         for child in children.iter_mut() {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        *node.borrow_mut() = SchemaNodeKind::AllOf(children);
+        normalize_resolved_node(node);
         return Ok(());
     }
-    if let SchemaNodeKind::AnyOf(children) = &mut *node.borrow_mut() {
+    if matches!(&*node.borrow(), SchemaNodeKind::AnyOf(_)) {
+        let mut children = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::AnyOf(children) => children.clone(),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
         for child in children.iter_mut() {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        *node.borrow_mut() = SchemaNodeKind::AnyOf(children);
+        normalize_resolved_node(node);
         return Ok(());
     }
-    if let SchemaNodeKind::OneOf(children) = &mut *node.borrow_mut() {
+    if matches!(&*node.borrow(), SchemaNodeKind::OneOf(_)) {
+        let mut children = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::OneOf(children) => children.clone(),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
         for child in children.iter_mut() {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        *node.borrow_mut() = SchemaNodeKind::OneOf(children);
+        normalize_resolved_node(node);
         return Ok(());
     }
-    if let SchemaNodeKind::IfThenElse {
-        if_schema,
-        then_schema,
-        else_schema,
-    } = &mut *node.borrow_mut()
-    {
-        resolve_refs_internal(if_schema, root_json, stack, cache)?;
-        if let Some(t) = then_schema {
+    if matches!(&*node.borrow(), SchemaNodeKind::IfThenElse { .. }) {
+        let (mut if_schema, mut then_schema, mut else_schema) = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::IfThenElse {
+                    if_schema,
+                    then_schema,
+                    else_schema,
+                } => (if_schema.clone(), then_schema.clone(), else_schema.clone()),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
+
+        resolve_refs_internal(&mut if_schema, root_json, stack, cache)?;
+        if let Some(t) = &mut then_schema {
             resolve_refs_internal(t, root_json, stack, cache)?;
         }
-        if let Some(e) = else_schema {
+        if let Some(e) = &mut else_schema {
             resolve_refs_internal(e, root_json, stack, cache)?;
         }
+        *node.borrow_mut() = SchemaNodeKind::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        };
+        normalize_resolved_node(node);
         return Ok(());
     }
     if let SchemaNodeKind::Not(sub) = &mut *node.borrow_mut() {
@@ -1230,6 +1529,81 @@ fn resolve_refs_internal(
     }
 
     Ok(())
+}
+
+fn normalize_resolved_node(node: &mut SchemaNode) {
+    let replacement = {
+        let mut guard = node.borrow_mut();
+        match &mut *guard {
+            SchemaNodeKind::AllOf(children) => {
+                if children.iter().any(is_false_schema) {
+                    Some(SchemaNodeKind::BoolSchema(false))
+                } else {
+                    children.retain(|child| !is_any_schema(child));
+                    *children = dedupe_schema_nodes(children.clone());
+                    collapse_applicator_children(children, true)
+                }
+            }
+            SchemaNodeKind::AnyOf(children) => {
+                if children.iter().any(is_any_schema) {
+                    Some(SchemaNodeKind::Any)
+                } else {
+                    children.retain(|child| !is_false_schema(child));
+                    *children = dedupe_schema_nodes(children.clone());
+                    collapse_applicator_children(children, false)
+                }
+            }
+            SchemaNodeKind::OneOf(children) => collapse_applicator_children(children, false),
+            SchemaNodeKind::IfThenElse {
+                then_schema,
+                else_schema,
+                ..
+            } => {
+                if then_schema.as_ref().is_some_and(is_any_schema) {
+                    *then_schema = None;
+                }
+                if else_schema.as_ref().is_some_and(is_any_schema) {
+                    *else_schema = None;
+                }
+                if then_schema.is_none() && else_schema.is_none() {
+                    Some(SchemaNodeKind::Any)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    };
+
+    if let Some(kind) = replacement {
+        *node.borrow_mut() = kind;
+    }
+}
+
+fn collapse_applicator_children(
+    children: &[SchemaNode],
+    empty_is_any: bool,
+) -> Option<SchemaNodeKind> {
+    match children.len() {
+        0 => Some(if empty_is_any {
+            SchemaNodeKind::Any
+        } else {
+            SchemaNodeKind::BoolSchema(false)
+        }),
+        1 => Some(children[0].borrow().clone()),
+        _ => None,
+    }
+}
+
+fn is_any_schema(node: &SchemaNode) -> bool {
+    matches!(
+        &*node.borrow(),
+        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+    )
+}
+
+fn is_false_schema(node: &SchemaNode) -> bool {
+    matches!(&*node.borrow(), SchemaNodeKind::BoolSchema(false))
 }
 
 /// Minimal check if an *instance* `val` is valid against `schema`.

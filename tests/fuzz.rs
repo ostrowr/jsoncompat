@@ -1,8 +1,8 @@
 //! Fuzzer tests.
 
-use json_schema_ast::compile;
+use json_schema_ast::{CanonicalizeError, canonicalize_schema, compile_canonical};
 use json_schema_fuzz::generate_value;
-use jsoncompat::build_and_resolve_schema;
+use jsoncompat::build_and_resolve_canonical_schema;
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -10,6 +10,9 @@ use std::fs;
 use std::path::Path;
 
 const N_ITERATIONS: usize = 1000;
+const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
+const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
+    "https://json-schema.org/draft/2020-12/schema#";
 
 /// Load the temporary whitelist that allows individual failures to be marked
 /// as expected while we iteratively improve the fuzzer.
@@ -34,68 +37,29 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "not.json".to_string(),
-        [2, 3, 4, 5, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "if-then-else.json".to_string(),
-        [3, 4, 5, 7, 8, 9].iter().cloned().collect(),
+        [2, 4, 5, 8].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedItems.json".to_string(),
-        [5, 9, 12, 18].iter().cloned().collect(),
+        [12, 18].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33].iter().cloned().collect(),
+        [12, 16].iter().cloned().collect(),
     );
 
-    map.insert(
-        "items.json".to_string(),
-        [2, 3, 5, 7, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "uniqueItems.json".to_string(),
-        [2, 5].iter().cloned().collect(),
-    );
+    map.insert("items.json".to_string(), [3, 7].iter().cloned().collect());
 
-    map.insert(
-        "properties.json".to_string(),
-        [1, 2].iter().cloned().collect(),
-    );
+    map.insert("properties.json".to_string(), [1].iter().cloned().collect());
 
     map.insert(
         "anchor.json".to_string(),
         [0, 1, 2, 3].iter().cloned().collect(),
     );
     map.insert(
-        "additionalProperties.json".to_string(),
-        [5].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "infinite-loop-detection.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-
-    map.insert(
         "optional/anchor.json".to_string(),
         [0].iter().cloned().collect(),
     );
-    map.insert(
-        "optional/ecmascript-regex.json".to_string(),
-        [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-            30, 31,
-        ]
-        .iter()
-        .cloned()
-        .collect(),
-    );
-    map.insert(
-        "optional/non-bmp-regex.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
         "optional/unknownKeyword.json".to_string(),
         [0].iter().cloned().collect(),
@@ -111,7 +75,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
     map.insert(
         "dynamicRef.json".to_string(),
-        [2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
+        [3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
             .iter()
             .cloned()
             .collect(),
@@ -119,24 +83,16 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
     map.insert(
         "ref.json".to_string(),
-        [6, 10, 11, 17, 19, 27, 28, 29, 30, 31]
+        [6, 10, 17, 19, 27, 28, 29, 30, 31]
             .iter()
             .cloned()
             .collect(),
-    );
-
-    map.insert(
-        "if-then-else.json".to_string(),
-        [7, 8].iter().cloned().collect(),
     );
 
     map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
     map.insert(
         "refRemote.json".to_string(),
-        [0, 1, 2, 3, 4, 8, 9, 11, 12, 13, 14]
-            .iter()
-            .cloned()
-            .collect(),
+        [0, 1, 2, 3, 8, 9, 11, 12, 13, 14].iter().cloned().collect(),
     );
     map.insert(
         "optional/cross-draft.json".to_string(),
@@ -191,9 +147,26 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let ast = build_and_resolve_schema(schema_json)?;
-
-        let compiled = compile(schema_json)?;
+        let schema = match canonicalize_schema(schema_json) {
+            Ok(schema) => schema,
+            Err(error) if schema_declares_unsupported_schema_uri(schema_json) => {
+                assert!(
+                    matches!(
+                        error,
+                        CanonicalizeError::UnsupportedSchemaDialect {
+                            ref pointer,
+                            expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+                            ..
+                        } if pointer == "#/$schema"
+                    ),
+                    "unexpected unsupported-$schema error for {rel_str} schema #{idx}: {error}"
+                );
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let ast = build_and_resolve_canonical_schema(&schema)?;
+        let compiled = compile_canonical(&schema)?;
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 
@@ -235,4 +208,22 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
+    match schema {
+        Value::Object(object) => {
+            if let Some(schema_uri) = object.get("$schema")
+                && !matches!(
+                    schema_uri.as_str(),
+                    Some(JSON_SCHEMA_DRAFT_2020_12 | JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT)
+                )
+            {
+                return true;
+            }
+            object.values().any(schema_declares_unsupported_schema_uri)
+        }
+        Value::Array(items) => items.iter().any(schema_declares_unsupported_schema_uri),
+        _ => false,
+    }
 }

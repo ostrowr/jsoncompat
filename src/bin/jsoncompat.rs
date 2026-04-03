@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_ast::{JSONSchema, compile};
+use json_schema_ast::{CanonicalSchema, JSONSchema, canonicalize_schema, compile_canonical};
 use jsoncompat as backcompat;
 
 use rand::Rng;
@@ -29,12 +29,14 @@ impl SchemaDoc {
         // Read JSON (stdin if `-`).
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
+        let schema =
+            canonicalize_schema(&json).with_context(|| format!("canonicalizing {path}"))?;
 
         // Build AST and a validator for fast membership checks.
-        let ast = backcompat::build_and_resolve_schema(&json)
+        let ast = backcompat::build_and_resolve_canonical_schema(&schema)
             .with_context(|| format!("building AST for {path}"))?;
-        let validator =
-            compile(&json).with_context(|| format!("compiling validator for {path}"))?;
+        let validator = compile_canonical(&schema)
+            .with_context(|| format!("compiling validator for {path}"))?;
 
         Ok(Self { ast, validator })
     }
@@ -251,9 +253,15 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
 }
 
 #[derive(Deserialize)]
-struct GoldenEntry {
+struct RawGoldenEntry {
     mode: RoleCli,
     schema: serde_json::Value,
+    stable_id: String,
+}
+
+struct GoldenEntry {
+    mode: RoleCli,
+    schema: CanonicalSchema,
     stable_id: String,
 }
 
@@ -261,10 +269,24 @@ type GoldenFile = std::collections::HashMap<String, GoldenEntry>;
 
 fn load_golden_file(path: &str) -> Result<GoldenFile> {
     let raw = read_to_string(path)?;
-    let golden: GoldenFile =
+    let golden: std::collections::HashMap<String, RawGoldenEntry> =
         serde_json::from_str(&raw).with_context(|| format!("parsing golden file {path}"))?;
 
-    Ok(golden)
+    golden
+        .into_iter()
+        .map(|(id, entry)| {
+            let schema = canonicalize_schema(&entry.schema)
+                .with_context(|| format!("canonicalizing schema '{id}' in golden file {path}"))?;
+            Ok((
+                id,
+                GoldenEntry {
+                    mode: entry.mode,
+                    schema,
+                    stable_id: entry.stable_id,
+                },
+            ))
+        })
+        .collect()
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -289,8 +311,8 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
     match (old, new) {
         (Some(old), Some(new)) => {
             let (old_schema, new_schema) = (
-                backcompat::build_and_resolve_schema(&old.schema),
-                backcompat::build_and_resolve_schema(&new.schema),
+                backcompat::build_and_resolve_canonical_schema(&old.schema),
+                backcompat::build_and_resolve_canonical_schema(&new.schema),
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
@@ -303,8 +325,8 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                     }
                     let ok = backcompat::check_compat(&old_schema, &new_schema, old.mode.into());
                     if !ok {
-                        let old_validator = compile(&old.schema).unwrap();
-                        let new_validator = compile(&new.schema).unwrap();
+                        let old_validator = compile_canonical(&old.schema).unwrap();
+                        let new_validator = compile_canonical(&new.schema).unwrap();
                         let mut rng = rand::thread_rng();
                         let example = sample_incompat(
                             &SchemaDoc {

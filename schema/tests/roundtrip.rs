@@ -1,7 +1,11 @@
-use json_schema_ast::build_and_resolve_schema;
+use json_schema_ast::{CanonicalizeError, build_and_resolve_canonical_schema, canonicalize_schema};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
+
+const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
+const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
+    "https://json-schema.org/draft/2020-12/schema#";
 
 #[test]
 fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,11 +34,54 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
             if schema_json == Value::Bool(false) {
                 continue;
             }
-            let ast = build_and_resolve_schema(&schema_json)?;
+
+            if schema_declares_unsupported_schema_uri(&schema_json) {
+                let error = canonicalize_schema(&schema_json).unwrap_err();
+                assert!(matches!(
+                    error,
+                    CanonicalizeError::UnsupportedSchemaDialect {
+                        pointer,
+                        expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+                        ..
+                    } if pointer == "#/$schema"
+                ));
+                continue;
+            }
+
+            let schema = canonicalize_schema(&schema_json)
+                .map_err(|error| format!("{} canonicalize: {error}", path.display()))?;
+            let ast = build_and_resolve_canonical_schema(&schema)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
             let json = ast.to_json();
-            let ast2 = build_and_resolve_schema(&json)?;
-            assert_eq!(ast, ast2, "roundtrip failed for {}", path.display());
+            let schema2 = canonicalize_schema(&json)
+                .map_err(|error| format!("{} roundtrip canonicalize: {error}", path.display()))?;
+            let ast2 = build_and_resolve_canonical_schema(&schema2)
+                .map_err(|error| format!("{} roundtrip: {error}", path.display()))?;
+            if ast != ast2 {
+                panic!(
+                    "roundtrip failed for {}\noriginal: {}\ninput: {}\nroundtrip: {}",
+                    path.display(),
+                    serde_json::to_string_pretty(&schema_json)?,
+                    serde_json::to_string_pretty(&json)?,
+                    serde_json::to_string_pretty(&ast2.to_json())?,
+                );
+            }
         }
     }
     Ok(())
+}
+
+fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
+    let Some(uri) = schema
+        .as_object()
+        .and_then(|object| object.get("$schema"))
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+
+    !matches!(
+        uri,
+        JSON_SCHEMA_DRAFT_2020_12 | JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT
+    )
 }

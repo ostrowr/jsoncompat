@@ -1,6 +1,6 @@
-use json_schema_ast::compile;
+use json_schema_ast::{build_and_resolve_canonical_schema, canonicalize_schema, compile_canonical};
 use json_schema_fuzz::generate_value;
-use jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use jsoncompat::{Role, check_compat};
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::Value;
@@ -37,10 +37,12 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let old_raw: Value = serde_json::from_slice(&fs::read(dir.join("old.json"))?)?;
     let new_raw: Value = serde_json::from_slice(&fs::read(dir.join("new.json"))?)?;
     let expect: Expectation = serde_json::from_slice(&fs::read(expect_file)?)?;
+    let old_schema = canonicalize_schema(&old_raw)?;
+    let new_schema = canonicalize_schema(&new_raw)?;
 
     // Build ASTs
-    let old_ast = build_and_resolve_schema(&old_raw)?;
-    let new_ast = build_and_resolve_schema(&new_raw)?;
+    let old_ast = build_and_resolve_canonical_schema(&old_schema)?;
+    let new_ast = build_and_resolve_canonical_schema(&new_schema)?;
 
     // Core compat result
     let ser = check_compat(&old_ast, &new_ast, Role::Serializer);
@@ -59,8 +61,8 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let ex_path = dir.join("examples.json");
     if ex_path.exists() {
         let samples: SampleSets = serde_json::from_slice(&fs::read(&ex_path)?)?;
-        let compiled_old = compile(&old_raw)?;
-        let compiled_new = compile(&new_raw)?;
+        let compiled_old = compile_canonical(&old_schema)?;
+        let compiled_new = compile_canonical(&new_schema)?;
 
         for v in &samples.old_only {
             assert!(
@@ -91,8 +93,8 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Quick fuzz confirmation (10 samples each direction)
-    let compiled_old = compile(&old_raw)?;
-    let compiled_new = compile(&new_raw)?;
+    let compiled_old = compile_canonical(&old_schema)?;
+    let compiled_new = compile_canonical(&new_schema)?;
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
 
     for _ in 0..100 {

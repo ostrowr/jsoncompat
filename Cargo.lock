@@ -597,10 +597,12 @@ dependencies = [
 name = "json_schema_ast"
 version = "0.2.6"
 dependencies = [
- "anyhow",
+ "json_schema_fuzz",
  "jsonschema",
  "percent-encoding",
+ "rand",
  "serde_json",
+ "thiserror",
  "url",
 ]
 

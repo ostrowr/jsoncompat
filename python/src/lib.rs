@@ -1,7 +1,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use ::jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use ::jsoncompat::{Role, build_and_resolve_canonical_schema, canonicalize_schema, check_compat};
 use json_schema_fuzz::generate_value;
 
 use rand::thread_rng;
@@ -46,10 +46,14 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
 
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
-
-    let old_ast = build_and_resolve_schema(&old_raw)
+    let old_schema = canonicalize_schema(&old_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid old schema: {e}")))?;
-    let new_ast = build_and_resolve_schema(&new_raw)
+    let new_schema = canonicalize_schema(&new_raw)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
+
+    let old_ast = build_and_resolve_canonical_schema(&old_schema)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid old schema: {e}")))?;
+    let new_ast = build_and_resolve_canonical_schema(&new_schema)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
 
     Ok(check_compat(&old_ast, &new_ast, role_e))
@@ -72,7 +76,9 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
 #[pyo3(signature = (schema_json, depth=5), name = "generate_value")]
 fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let raw = parse_json(schema_json)?;
-    let schema_ast = build_and_resolve_schema(&raw)
+    let schema = canonicalize_schema(&raw)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
+    let schema_ast = build_and_resolve_canonical_schema(&schema)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
 
     let mut rng = thread_rng();

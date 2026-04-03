@@ -10,7 +10,8 @@
 // downstream crates can just depend on *this* crate for both parsing and
 // compatibility checking if they wish.
 pub use json_schema_ast::{
-    SchemaNode, SchemaNodeKind, build_and_resolve_schema, build_schema_ast, resolve_refs,
+    CanonicalSchema, SchemaNode, SchemaNodeKind, build_and_resolve_canonical_schema,
+    build_canonical_schema_ast, canonicalize_json, canonicalize_schema, resolve_refs,
 };
 
 mod subset;
