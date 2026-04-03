@@ -32,6 +32,7 @@ console = "0.16.0"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }
+criterion = "0.5"
 datatest-stable = "0.1"
 
 [[test]]
@@ -40,4 +41,12 @@ harness = false
 
 [[test]]
 name = "fuzz"
+harness = false
+
+[[bench]]
+name = "validator_cache"
+harness = false
+
+[[bench]]
+name = "schema_ops"
 harness = false

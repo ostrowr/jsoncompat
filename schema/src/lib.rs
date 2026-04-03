@@ -6,45 +6,61 @@ mod canonicalize;
 
 mod schema_metadata;
 
-pub use ast::{AstError, SchemaNode, SchemaNodeKind, build_and_resolve_schema};
+pub use ast::{AstError, SchemaNode, SchemaNodeId, SchemaNodeKind, build_and_resolve_schema};
 pub use canonicalize::CanonicalizeError as SchemaError;
 
-use canonicalize::{CanonicalSchema, canonicalize_schema};
+#[cfg(test)]
+use canonicalize::CanonicalSchema;
+use canonicalize::validate_schema_dialects;
 use jsonschema::Draft;
 pub use jsonschema::JSONSchema;
 use serde_json::Value;
+use std::borrow::Cow;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CompileError {
     #[error(transparent)]
     Schema(#[from] SchemaError),
-    #[error("canonical schema failed Draft 2020-12 validator compilation: {source}")]
+    #[error("schema failed Draft 2020-12 validator compilation: {source}")]
     ValidatorRejectedSchema {
         #[source]
         source: Box<jsonschema::ValidationError<'static>>,
     },
 }
-/// Compile a JSON Schema document after normalizing it into the internal
-/// representation used by the AST builder and subset checker.
+/// Compile a JSON Schema document directly with the validator backend.
 pub fn compile(schema: &Value) -> Result<JSONSchema, CompileError> {
-    let canonical = canonicalize_schema(schema)?;
-    compile_canonical(&canonical)
+    validate_schema_dialects(schema)?;
+    compile_schema_value(schema)
 }
 
-fn compile_canonical(schema: &CanonicalSchema) -> Result<JSONSchema, CompileError> {
-    // The `jsonschema` crate keeps references to the original schema tree
-    // inside the compiled validator, therefore the value passed in must live
-    // for `'static`.  We perform a light‑weight clone and leak it – acceptable
-    // for short‑running test/fuzz sessions.
-    let owned = schema.as_value().clone();
-    let static_ref: &'static serde_json::Value = Box::leak(Box::new(owned));
+#[cfg(test)]
+pub(crate) fn compile_canonical(schema: &CanonicalSchema) -> Result<JSONSchema, CompileError> {
+    compile_schema_value(schema.as_value())
+}
+
+fn compile_schema_value(schema: &Value) -> Result<JSONSchema, CompileError> {
+    // `jsonschema::JSONSchema` owns the compiled validation tree, but schema
+    // compilation errors borrow the rejected schema fragment. Convert those
+    // failures into owned errors before returning so callers do not need to
+    // keep the original `Value` alive.
     JSONSchema::options()
         .with_draft(Draft::Draft202012)
-        .compile(static_ref)
+        .compile(schema)
         .map_err(|source| CompileError::ValidatorRejectedSchema {
-            source: Box::new(source),
+            source: Box::new(owned_validation_error(source)),
         })
+}
+
+fn owned_validation_error(
+    source: jsonschema::ValidationError<'_>,
+) -> jsonschema::ValidationError<'static> {
+    jsonschema::ValidationError {
+        instance: Cow::Owned(source.instance.into_owned()),
+        kind: source.kind,
+        instance_path: source.instance_path,
+        schema_path: source.schema_path,
+    }
 }
 
 #[cfg(test)]

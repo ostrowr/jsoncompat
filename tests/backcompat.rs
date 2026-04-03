@@ -1,5 +1,5 @@
 use json_schema_ast::{build_and_resolve_schema, compile};
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::ValueGenerator;
 use jsoncompat::{Role, check_compat};
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
@@ -93,10 +93,12 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Quick fuzz confirmation (10 samples each direction)
     let compiled_old = compile(&old_raw)?;
     let compiled_new = compile(&new_raw)?;
+    let mut old_generator = ValueGenerator::new();
+    let mut new_generator = ValueGenerator::new();
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
 
     for _ in 0..100 {
-        let v_new = generate_value(&new_ast, &mut rng, 4);
+        let v_new = new_generator.generate_value(&new_ast, &mut rng, 4);
         if expect.serializer {
             assert!(
                 compiled_old.is_valid(&v_new),
@@ -104,7 +106,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        let v_old = generate_value(&old_ast, &mut rng, 4);
+        let v_old = old_generator.generate_value(&old_ast, &mut rng, 4);
         if expect.deserializer {
             assert!(
                 compiled_new.is_valid(&v_old),

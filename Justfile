@@ -6,10 +6,18 @@ check:
   cargo fmt --all
   cargo clippy --workspace --all-features --all-targets -- -D warnings
   cargo check --workspace --all-features --all-targets --locked
-  cargo test --workspace --all-features --all-targets --locked
+  cargo test --workspace --all-features --locked
   @echo "[just] checking TypeScript code …"
   pnpm --prefix web/jsoncompatdotcom run ci
   pnpm --prefix web/jsoncompatdotcom run build
+
+bench:
+  @echo "[just] running Rust benchmarks …"
+  cargo bench --benches
+
+bench-check:
+  @echo "[just] smoke-checking Rust benchmarks …"
+  cargo bench --benches -- --test
 
 # ---- Basic python smoke test ----
 

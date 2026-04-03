@@ -1,7 +1,7 @@
 //! Fuzzer tests.
 
 use json_schema_ast::{AstError, SchemaError, compile};
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::ValueGenerator;
 use jsoncompat::build_and_resolve_schema;
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
@@ -135,7 +135,10 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         let ast = match build_and_resolve_schema(schema_json) {
             Ok(ast) => ast,
-            Err(error) if schema_declares_unsupported_schema_uri(schema_json) => {
+            Err(error)
+                if !validate_fixture_tests
+                    && schema_declares_unsupported_schema_uri(schema_json) =>
+            {
                 assert!(
                     matches!(
                         error,
@@ -154,6 +157,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => return Err(error.into()),
         };
         let compiled = compile(schema_json)?;
+        let mut generator = ValueGenerator::new();
 
         if validate_fixture_tests {
             for fixture_test in &fixture_schema.tests {
@@ -174,7 +178,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         let mut success = true;
         for _ in 0..N_ITERATIONS {
-            let candidate = generate_value(&ast, &mut rng, 6);
+            let candidate = generator.generate_value(&ast, &mut rng, 6);
             if !compiled.is_valid(&candidate) {
                 if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
                     panic!(

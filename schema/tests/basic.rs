@@ -1,6 +1,8 @@
 use json_schema_ast as schema;
 
-use schema::{SchemaNode, SchemaNodeKind, build_and_resolve_schema, compile};
+use schema::{
+    CompileError, SchemaError, SchemaNode, SchemaNodeKind, build_and_resolve_schema, compile,
+};
 use serde_json::Value;
 use serde_json::json;
 
@@ -14,13 +16,90 @@ fn roundtrip_compile_validate() {
 }
 
 #[test]
+fn compile_validates_original_type_union_schema() {
+    let raw = json!({
+        "type": ["integer", "string"],
+        "minimum": 2,
+        "minLength": 2
+    });
+
+    let compiled = compile(&raw).unwrap();
+
+    assert!(compiled.is_valid(&json!(2)));
+    assert!(compiled.is_valid(&json!("ab")));
+    assert!(!compiled.is_valid(&json!(1)));
+    assert!(!compiled.is_valid(&json!("a")));
+    assert!(!compiled.is_valid(&json!(null)));
+}
+
+#[test]
+fn compile_rejects_non_2020_12_schema_uri_before_validator_backend() {
+    let raw = json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "string"
+    });
+
+    let error = compile(&raw).unwrap_err();
+
+    assert!(matches!(
+        error,
+        CompileError::Schema(SchemaError::UnsupportedSchemaDialect {
+            pointer,
+            expected_uri: "https://json-schema.org/draft/2020-12/schema",
+            actual_uri,
+        }) if pointer == "#/$schema" && actual_uri == "http://json-schema.org/draft-07/schema#"
+    ));
+}
+
+#[test]
+fn compile_does_not_treat_schema_keys_inside_const_values_as_nested_dialects() {
+    let raw = json!({
+        "const": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "string"
+        }
+    });
+
+    let compiled = compile(&raw).unwrap();
+
+    assert!(compiled.is_valid(&json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "string"
+    })));
+    assert!(!compiled.is_valid(&json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+    })));
+}
+
+#[test]
+fn compile_error_is_owned_after_input_schema_is_dropped() {
+    let error = {
+        let raw = json!({
+            "type": 1
+        });
+        compile(&raw).unwrap_err()
+    };
+
+    assert!(matches!(
+        error,
+        CompileError::ValidatorRejectedSchema { .. }
+    ));
+    assert!(
+        error
+            .to_string()
+            .contains("schema failed Draft 2020-12 validator compilation")
+    );
+}
+
+#[test]
 fn resolve_local_ref() {
     let raw = json!({
         "definitions": {"Int": {"type":"integer"}},
         "$ref": "#/definitions/Int"
     });
     let ast = build_and_resolve_schema(&raw).unwrap();
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::Integer { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::Integer { .. }));
 }
 
 #[test]
@@ -40,8 +119,8 @@ fn resolve_recursive_ref() {
     });
     let ast = build_and_resolve_schema(&raw).unwrap();
     {
-        let guard = ast.borrow();
-        if let SchemaNodeKind::Object { properties, .. } = &*guard {
+        let guard = ast.kind();
+        if let SchemaNodeKind::Object { properties, .. } = guard {
             let next = properties.get("next").expect("next property");
             assert!(next.ptr_eq(&ast));
         } else {
@@ -64,8 +143,8 @@ fn resolve_duplicate_refs_share_pointer() {
     });
     let ast = build_and_resolve_schema(&raw).unwrap();
 
-    let guard = ast.borrow();
-    if let SchemaNodeKind::Object { properties, .. } = &*guard {
+    let guard = ast.kind();
+    if let SchemaNodeKind::Object { properties, .. } = guard {
         let a = properties.get("a").expect("property a");
         let b = properties.get("b").expect("property b");
         assert!(a.ptr_eq(b));
@@ -88,8 +167,8 @@ fn resolve_self_recursive_allof_without_panicking() {
     });
 
     let ast = build_and_resolve_schema(&raw).unwrap();
-    let guard = ast.borrow();
-    assert!(matches!(&*guard, SchemaNodeKind::AllOf(children) if children.len() == 1));
+    let guard = ast.kind();
+    assert!(matches!(guard, SchemaNodeKind::AllOf(children) if children.len() == 1));
 }
 
 #[test]
@@ -124,12 +203,12 @@ fn enum_with_minimum_uses_number_schema_shape() {
         "minimum": 1
     }));
 
-    let guard = ast.borrow();
+    let guard = ast.kind();
     let SchemaNodeKind::Number {
         minimum,
         enumeration,
         ..
-    } = &*guard
+    } = guard
     else {
         panic!("expected number schema, got {guard:?}");
     };
@@ -145,8 +224,8 @@ fn non_numeric_enum_with_minimum_uses_terminal_enum_shape() {
         "minimum": 1
     }));
 
-    let guard = ast.borrow();
-    let SchemaNodeKind::Enum(values) = &*guard else {
+    let guard = ast.kind();
+    let SchemaNodeKind::Enum(values) = guard else {
         panic!("expected enum schema, got {guard:?}");
     };
 
@@ -162,8 +241,8 @@ fn non_object_enum_with_object_keywords_uses_terminal_enum_shape() {
         "enum": [1]
     }));
 
-    let guard = ast.borrow();
-    let SchemaNodeKind::Enum(values) = &*guard else {
+    let guard = ast.kind();
+    let SchemaNodeKind::Enum(values) = guard else {
         panic!("expected enum schema, got {guard:?}");
     };
 
@@ -177,8 +256,8 @@ fn non_array_enum_with_array_keywords_uses_terminal_enum_shape() {
         "enum": [1]
     }));
 
-    let guard = ast.borrow();
-    let SchemaNodeKind::Enum(values) = &*guard else {
+    let guard = ast.kind();
+    let SchemaNodeKind::Enum(values) = guard else {
         panic!("expected enum schema, got {guard:?}");
     };
 
@@ -192,8 +271,8 @@ fn non_string_enum_with_string_keywords_uses_terminal_enum_shape() {
         "enum": [1]
     }));
 
-    let guard = ast.borrow();
-    let SchemaNodeKind::Enum(values) = &*guard else {
+    let guard = ast.kind();
+    let SchemaNodeKind::Enum(values) = guard else {
         panic!("expected enum schema, got {guard:?}");
     };
 
@@ -207,12 +286,12 @@ fn const_with_pattern_uses_string_schema_shape() {
         "pattern": "^a"
     }));
 
-    let guard = ast.borrow();
+    let guard = ast.kind();
     let SchemaNodeKind::String {
         pattern,
         enumeration,
         ..
-    } = &*guard
+    } = guard
     else {
         panic!("expected string schema, got {guard:?}");
     };
@@ -230,20 +309,20 @@ fn nested_format_only_schema_uses_string_branch_in_implicit_union() {
         }
     }));
 
-    let guard = ast.borrow();
-    let SchemaNodeKind::Object { properties, .. } = &*guard else {
+    let guard = ast.kind();
+    let SchemaNodeKind::Object { properties, .. } = guard else {
         panic!("expected object schema, got {guard:?}");
     };
 
     let email = properties.get("email").expect("email property");
-    let email_guard = email.borrow();
-    let SchemaNodeKind::AnyOf(branches) = &*email_guard else {
+    let email_guard = email.kind();
+    let SchemaNodeKind::AnyOf(branches) = email_guard else {
         panic!("expected implicit union for email property, got {email_guard:?}");
     };
 
     assert!(branches.iter().any(|branch| {
         matches!(
-            &*branch.borrow(),
+            branch.kind(),
             SchemaNodeKind::String {
                 format: Some(format),
                 ..
@@ -260,29 +339,26 @@ fn bare_multiple_of_under_conditional_gets_the_same_implicit_union_as_root() {
         "else": { "type": "string" }
     }));
 
-    let guard = ast.borrow();
+    let guard = ast.kind();
     let SchemaNodeKind::IfThenElse {
         then_schema,
         else_schema,
         ..
-    } = &*guard
+    } = guard
     else {
         panic!("expected conditional schema, got {guard:?}");
     };
 
     let then_schema = then_schema.as_ref().expect("then schema");
     assert!(matches!(
-        &*then_schema.borrow(),
+        then_schema.kind(),
         SchemaNodeKind::AnyOf(branches)
             if branches
                 .iter()
-                .any(|branch| matches!(&*branch.borrow(), SchemaNodeKind::Number { .. }))
+                .any(|branch| matches!(branch.kind(), SchemaNodeKind::Number { .. }))
     ));
     let else_schema = else_schema.as_ref().expect("else schema");
-    assert!(matches!(
-        &*else_schema.borrow(),
-        SchemaNodeKind::String { .. }
-    ));
+    assert!(matches!(else_schema.kind(), SchemaNodeKind::String { .. }));
 }
 
 #[test]
@@ -300,8 +376,8 @@ fn metadata_only_enum_wrapper_uses_terminal_enum_shape() {
         "enum": [42]
     }));
 
-    let guard = ast.borrow();
-    let SchemaNodeKind::Enum(values) = &*guard else {
+    let guard = ast.kind();
+    let SchemaNodeKind::Enum(values) = guard else {
         panic!("expected enum schema, got {guard:?}");
     };
 
@@ -316,7 +392,7 @@ fn resolves_local_refs_with_percent_encoded_pointer_tokens() {
     }))
     .unwrap();
 
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
 #[test]
@@ -331,7 +407,7 @@ fn preserves_dangling_then_target_without_if() {
     }))
     .unwrap();
 
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
 #[test]
@@ -346,7 +422,7 @@ fn preserves_if_target_without_then_or_else() {
     }))
     .unwrap();
 
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
 #[test]
@@ -360,26 +436,25 @@ fn preserves_not_false_target_when_referenced_from_then_branch() {
     }))
     .unwrap();
 
-    let guard = ast.borrow();
+    let guard = ast.kind();
     let SchemaNodeKind::IfThenElse {
         if_schema,
         then_schema: Some(then_schema),
         else_schema: None,
-    } = &*guard
+    } = guard
     else {
         panic!("expected normalized conditional schema, got {guard:?}");
     };
 
     assert!(matches!(
-        &*if_schema.borrow(),
+        if_schema.kind(),
         SchemaNodeKind::BoolSchema(false)
     ));
     assert!(matches!(
-        &*then_schema.borrow(),
+        then_schema.kind(),
         SchemaNodeKind::BoolSchema(false)
     ));
 
-    drop(guard);
     let compiled = compile_ast(&ast);
     assert!(compiled.is_valid(&json!(null)));
     assert!(compiled.is_valid(&json!("value")));
@@ -412,7 +487,7 @@ fn preserves_indexed_allof_ref_targets_when_deduping_equivalent_branches() {
     }))
     .unwrap();
 
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
 #[test]
@@ -438,7 +513,7 @@ fn preserves_referenced_descendants_under_unsatisfiable_branches() {
     }))
     .unwrap();
 
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
 #[test]
@@ -468,7 +543,7 @@ fn preserves_referenced_defs_when_anyof_or_oneof_collapses_to_false() {
         }),
     ] {
         let ast = build_and_resolve_schema(&schema).unwrap();
-        assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+        assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
     }
 }
 
@@ -486,7 +561,7 @@ fn preserves_referenced_anyof_branch_when_true_branch_is_present() {
     .unwrap();
 
     assert!(matches!(
-        &*ast.borrow(),
+        ast.kind(),
         SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
     ));
 }
@@ -504,7 +579,7 @@ fn preserves_referenced_defs_when_false_schema_is_canonicalized() {
     }))
     .unwrap();
 
-    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
 fn build_schema(raw: &Value) -> SchemaNode {

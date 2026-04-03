@@ -196,6 +196,8 @@ impl AsRef<Value> for CanonicalSchema {
 /// lowering syntax sugar into explicit forms, preserving declaration metadata
 /// used by downstream codegen, and applying a deterministic key/value ordering.
 pub(crate) fn canonicalize_schema(schema: &Value) -> Result<CanonicalSchema> {
+    validate_schema_dialects(schema)?;
+
     let local_ref_targets = collect_local_schema_refs(schema);
     let options = CanonicalizationOptions {
         local_ref_targets: &local_ref_targets,
@@ -204,6 +206,122 @@ pub(crate) fn canonicalize_schema(schema: &Value) -> Result<CanonicalSchema> {
     Ok(CanonicalSchema {
         value: canonicalize_schema_value(schema, "#", options)?,
     })
+}
+
+pub(crate) fn validate_schema_dialects(schema: &Value) -> Result<()> {
+    let local_ref_targets = collect_local_schema_refs(schema);
+    validate_schema_dialects_at_pointer(schema, "#", &local_ref_targets)
+}
+
+fn validate_schema_dialects_at_pointer(
+    schema: &Value,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) -> Result<()> {
+    match schema {
+        Value::Object(object) => {
+            if let Some(schema_uri) = object.get("$schema") {
+                canonicalize_schema_uri(schema_uri, &join_pointer(pointer, "$schema"))?;
+            }
+            for (key, value) in object {
+                if should_strip_keyword(key) {
+                    continue;
+                }
+
+                let child_pointer = join_pointer(pointer, key);
+                if is_known_keyword(key) {
+                    validate_known_keyword_dialects(key, value, &child_pointer, local_ref_targets)?;
+                } else if preserve_unknown_keyword_at_pointer(&child_pointer, local_ref_targets) {
+                    validate_unknown_keyword_dialects(value, &child_pointer, local_ref_targets)?;
+                }
+            }
+        }
+        Value::Array(_) | Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+
+    Ok(())
+}
+
+fn validate_known_keyword_dialects(
+    key: &str,
+    value: &Value,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) -> Result<()> {
+    match key {
+        "$schema" => Ok(()),
+        "not"
+        | "if"
+        | "then"
+        | "else"
+        | "contains"
+        | "additionalProperties"
+        | "propertyNames"
+        | "unevaluatedItems"
+        | "unevaluatedProperties"
+        | "contentSchema" => validate_schema_dialects_at_pointer(value, pointer, local_ref_targets),
+        "items" => match value {
+            Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    validate_schema_dialects_at_pointer(
+                        item,
+                        &join_pointer(pointer, &index.to_string()),
+                        local_ref_targets,
+                    )?;
+                }
+                Ok(())
+            }
+            _ => validate_schema_dialects_at_pointer(value, pointer, local_ref_targets),
+        },
+        "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+            if let Value::Array(items) = value {
+                for (index, item) in items.iter().enumerate() {
+                    validate_schema_dialects_at_pointer(
+                        item,
+                        &join_pointer(pointer, &index.to_string()),
+                        local_ref_targets,
+                    )?;
+                }
+            }
+            Ok(())
+        }
+        "properties" | "patternProperties" | "$defs" | "definitions" | "dependentSchemas" => {
+            if let Value::Object(entries) = value {
+                for (name, child) in entries {
+                    validate_schema_dialects_at_pointer(
+                        child,
+                        &join_pointer(pointer, &escape_pointer_token(name)),
+                        local_ref_targets,
+                    )?;
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_unknown_keyword_dialects(
+    value: &Value,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) -> Result<()> {
+    match value {
+        Value::Object(_) | Value::Bool(_) => {
+            validate_schema_dialects_at_pointer(value, pointer, local_ref_targets)
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                validate_unknown_keyword_dialects(
+                    item,
+                    &join_pointer(pointer, &index.to_string()),
+                    local_ref_targets,
+                )?;
+            }
+            Ok(())
+        }
+        Value::Null | Value::Number(_) | Value::String(_) => Ok(()),
+    }
 }
 
 /// Return a recursively key-sorted clone of arbitrary JSON data.

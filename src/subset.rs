@@ -1,17 +1,50 @@
 use crate::SchemaNode;
-use json_schema_ast::{SchemaNodeKind, compile};
+use json_schema_ast::{JSONSchema, SchemaNodeId, SchemaNodeKind, compile};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+#[derive(Default)]
+struct SubschemaCheckContext {
+    compiled_sup_validators: HashMap<SchemaNodeId, Option<Rc<JSONSchema>>>,
+}
+
+impl SubschemaCheckContext {
+    fn compile_sup_validator(&mut self, sup: &SchemaNode) -> Option<Rc<JSONSchema>> {
+        let node_id = sup.id();
+        if let Some(validator) = self.compiled_sup_validators.get(&node_id) {
+            return validator.clone();
+        }
+
+        let validator = if schema_contains_cycle(sup, &mut Vec::new()) {
+            None
+        } else {
+            compile(&sup.to_json()).ok().map(Rc::new)
+        };
+        self.compiled_sup_validators
+            .insert(node_id, validator.clone());
+        validator
+    }
+}
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
 pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    is_subschema_of_with_context(sub, sup, &mut SubschemaCheckContext::default())
+}
+
+fn is_subschema_of_with_context(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
     if sub == sup {
         return true;
     }
 
     use SchemaNodeKind::*;
 
-    let sub_kind = sub.borrow().clone();
-    let sup_kind = sup.borrow().clone();
+    let sub_kind = sub.kind().clone();
+    let sup_kind = sup.kind().clone();
 
     match (&sub_kind, &sup_kind) {
         (BoolSchema(false), _) => true,
@@ -22,32 +55,33 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
         // Keep sub-combinator handlers before sup-combinator handlers so when
         // both sides are unions we reason branch-wise on `sub` first.
-        (AnyOf(subs), _) | (OneOf(subs), _) => {
-            subs.iter().all(|branch| is_subschema_of(branch, sup))
-        }
-        (AllOf(subs), _) => subs.iter().all(|schema| is_subschema_of(schema, sup)),
+        (AnyOf(subs), _) | (OneOf(subs), _) => subs
+            .iter()
+            .all(|branch| is_subschema_of_with_context(branch, sup, context)),
+        (AllOf(subs), _) => subs
+            .iter()
+            .all(|schema| is_subschema_of_with_context(schema, sup, context)),
 
-        (_, AnyOf(sups)) | (_, OneOf(sups)) => {
-            sups.iter().any(|branch| is_subschema_of(sub, branch))
-        }
-        (_, AllOf(sups)) => sups.iter().all(|schema| is_subschema_of(sub, schema)),
+        (_, AnyOf(sups)) | (_, OneOf(sups)) => sups
+            .iter()
+            .any(|branch| is_subschema_of_with_context(sub, branch, context)),
+        (_, AllOf(sups)) => sups
+            .iter()
+            .all(|schema| is_subschema_of_with_context(sub, schema, context)),
 
         (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
-        (Enum(sub_e), _) => {
-            let schema_json = sup.to_json();
-            compile(&schema_json)
-                .ok()
-                .map(|compiled| sub_e.iter().all(|value| compiled.is_valid(value)))
-                .unwrap_or(false)
-        }
+        (Enum(sub_e), _) => context
+            .compile_sup_validator(sup)
+            .map(|compiled| sub_e.iter().all(|value| compiled.is_valid(value)))
+            .unwrap_or(false),
         (_, Enum(_)) => false,
 
-        (Not(subn), _) => match &*subn.borrow() {
+        (Not(subn), _) => match subn.kind() {
             Any | BoolSchema(true) => true,
             BoolSchema(false) => !matches!(sup_kind, Any | BoolSchema(true)),
             _ => false,
         },
-        (_, Not(supn)) => match &*supn.borrow() {
+        (_, Not(supn)) => match supn.kind() {
             Any | BoolSchema(true) => matches!(sub_kind, BoolSchema(false)),
             BoolSchema(false) => matches!(sub_kind, BoolSchema(true) | Any),
             _ => false,
@@ -59,19 +93,16 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
         | (Boolean { .. }, Boolean { .. })
         | (Null { .. }, Null { .. })
         | (Object { .. }, Object { .. })
-        | (Array { .. }, Array { .. }) => type_constraints_subsumed(sub, sup),
+        | (Array { .. }, Array { .. }) => type_constraints_subsumed_with_context(sub, sup, context),
 
         (Integer { .. }, Number { .. }) => integer_constraints_subsumed_by_number(sub, sup),
 
         (Const(s_val), Const(p_val)) => s_val == p_val,
 
-        (Const(s_val), _) => {
-            let schema_json = sup.to_json();
-            compile(&schema_json)
-                .ok()
-                .map(|compiled| compiled.is_valid(s_val))
-                .unwrap_or(false)
-        }
+        (Const(s_val), _) => context
+            .compile_sup_validator(sup)
+            .map(|compiled| compiled.is_valid(s_val))
+            .unwrap_or(false),
 
         (_, Const(_)) => false,
 
@@ -82,8 +113,8 @@ pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &SchemaNode) -> bool {
     use SchemaNodeKind::*;
 
-    let sub_kind = sub.borrow().clone();
-    let sup_kind = sup.borrow().clone();
+    let sub_kind = sub.kind().clone();
+    let sup_kind = sup.kind().clone();
 
     let (
         Integer {
@@ -123,10 +154,18 @@ fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &SchemaNode) ->
 
 /// Compare the **constraints** of two nodes of the *same* basic type.
 pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    type_constraints_subsumed_with_context(sub, sup, &mut SubschemaCheckContext::default())
+}
+
+fn type_constraints_subsumed_with_context(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
     use SchemaNodeKind::*;
 
-    let sub_kind = sub.borrow().clone();
-    let sup_kind = sup.borrow().clone();
+    let sub_kind = sub.kind().clone();
+    let sup_kind = sup.kind().clone();
 
     match (sub_kind, sup_kind) {
         (
@@ -273,7 +312,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
 
             for (key, s_schema) in &sprops {
                 if let Some(p_schema) = pprops.get(key) {
-                    if !is_subschema_of(s_schema, p_schema) {
+                    if !is_subschema_of_with_context(s_schema, p_schema, context) {
                         return false;
                     }
                 } else {
@@ -283,18 +322,20 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                     // subset would have produced (or, if `additionalProperties`
                     // was `false`, reject immediately).
                     let additional_allows =
-                        !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
-                    if !additional_allows || !is_subschema_of(s_schema, &p_addl) {
+                        !matches!(s_addl.kind(), SchemaNodeKind::BoolSchema(false));
+                    if !additional_allows
+                        || !is_subschema_of_with_context(s_schema, &p_addl, context)
+                    {
                         return false;
                     }
                 }
             }
 
-            if !is_subschema_of(&s_addl, &p_addl) {
+            if !is_subschema_of_with_context(&s_addl, &p_addl, context) {
                 return false;
             }
 
-            if !is_subschema_of(&s_prop_names, &p_prop_names) {
+            if !is_subschema_of_with_context(&s_prop_names, &p_prop_names, context) {
                 return false;
             }
 
@@ -303,7 +344,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
                 // then the subset may only allow `trigger` when those keys are
                 // unconditionally present.
                 let trigger_allowed = sprops.contains_key(trigger)
-                    || !matches!(&*s_addl.borrow(), SchemaNodeKind::BoolSchema(false));
+                    || !matches!(s_addl.kind(), SchemaNodeKind::BoolSchema(false));
                 if trigger_allowed && !deps.iter().all(|d| sreq.contains(d)) {
                     return false;
                 }
@@ -338,7 +379,7 @@ pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
             {
                 return false;
             }
-            if !is_subschema_of(&sitems, &pitems) {
+            if !is_subschema_of_with_context(&sitems, &pitems, context) {
                 return false;
             }
             if !check_enum_inclusion(s_en.as_deref(), p_en.as_deref()) {
@@ -426,6 +467,59 @@ fn check_int_inclusion(
         if s_excl { subv <= supv } else { subv < supv }
     } else {
         subv <= supv
+    }
+}
+
+fn schema_contains_cycle(schema: &SchemaNode, path: &mut Vec<SchemaNode>) -> bool {
+    if path.iter().any(|ancestor| ancestor.ptr_eq(schema)) {
+        return true;
+    }
+
+    let children = schema_children(schema);
+    if children.is_empty() {
+        return false;
+    }
+
+    path.push(schema.clone());
+    let contains_cycle = children
+        .iter()
+        .any(|child| schema_contains_cycle(child, path));
+    path.pop();
+    contains_cycle
+}
+
+fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
+    use SchemaNodeKind::*;
+
+    match schema.kind() {
+        AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
+        Not(child) | AdditionalProperties(child) => vec![child.clone()],
+        IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => std::iter::once(if_schema.clone())
+            .chain(then_schema.iter().cloned())
+            .chain(else_schema.iter().cloned())
+            .collect(),
+        Object {
+            properties,
+            additional,
+            property_names,
+            ..
+        } => properties
+            .values()
+            .cloned()
+            .chain(std::iter::once(additional.clone()))
+            .chain(std::iter::once(property_names.clone()))
+            .collect(),
+        Array {
+            items, contains, ..
+        } => std::iter::once(items.clone())
+            .chain(contains.iter().cloned())
+            .collect(),
+        Defs(map) => map.values().cloned().collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -517,5 +611,27 @@ mod tests {
         .unwrap();
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn enum_is_not_checked_by_serializing_recursive_sup_schema() {
+        let sup = build_and_resolve_schema(&json!({
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "next": { "$ref": "#/$defs/Node" }
+                    }
+                }
+            },
+            "$ref": "#/$defs/Node"
+        }))
+        .unwrap();
+        let sub = build_and_resolve_schema(&json!({
+            "enum": [1]
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&sub, &sup));
     }
 }

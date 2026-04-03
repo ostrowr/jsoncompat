@@ -10,14 +10,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json_schema_fuzz = "0.2.1"
+json_schema_fuzz = "0.2.6"
 ```
 
 ## Usage
 
 ```rust
 use json_schema_ast::{build_and_resolve_schema, SchemaNode};
-use json_schema_fuzz::generate_value;
+use json_schema_fuzz::ValueGenerator;
 use serde_json::json;
 use rand::thread_rng;
 
@@ -35,10 +35,15 @@ let schema_node: SchemaNode = build_and_resolve_schema(&raw).unwrap();
 
 // Generate a random value
 let mut rng = thread_rng();
-let value = generate_value(&schema_node, &mut rng, 4);
+let mut generator = ValueGenerator::new();
+let value = generator.generate_value(&schema_node, &mut rng, 4);
 
 println!("{}", value);
 ```
+
+If you only need a single sample, `generate_value(&schema_node, &mut rng, depth)` is still
+available as a one-shot helper. For repeated generation from the same AST, prefer
+`ValueGenerator` so compiled subvalidators are cached across calls.
 
 ## License
 

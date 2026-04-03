@@ -1,6 +1,5 @@
 use crate::canonicalize::{CanonicalSchema, CanonicalizeError, canonicalize_schema};
-use crate::{JSONSchema, build_and_resolve_schema, compile};
-use jsonschema::Draft;
+use crate::{JSONSchema, build_and_resolve_schema, compile, compile_canonical};
 use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Map, Value, json};
 use std::fs;
@@ -24,11 +23,15 @@ fn canonicalize_every_fuzz_fixture_schema_is_idempotent_and_ast_equivalent()
         let bytes = fs::read(&path)?;
         let root: Value = serde_json::from_slice(&bytes)?;
         let schemas = collect_embedded_schemas(&root);
+        let is_custom_fixture = is_custom_fixture_path(&path);
 
         for (index, schema_json) in schemas.iter().enumerate() {
             let canonical = match canonicalize_schema(schema_json) {
                 Ok(canonical) => canonical,
-                Err(error) if schema_declares_unsupported_schema_uri(schema_json) => {
+                Err(error)
+                    if !is_custom_fixture
+                        && schema_declares_unsupported_schema_uri(schema_json) =>
+                {
                     assert_unsupported_schema_uri_error(schema_json, &error, path.display(), index);
                     continue;
                 }
@@ -87,11 +90,15 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
         let bytes = fs::read(&path)?;
         let root: Value = serde_json::from_slice(&bytes)?;
         let schemas = collect_embedded_schemas(&root);
+        let is_custom_fixture = is_custom_fixture_path(&path);
 
         for (index, schema_json) in schemas.iter().enumerate() {
             let canonical = match canonicalize_schema(schema_json) {
                 Ok(canonical) => canonical,
-                Err(error) if schema_declares_unsupported_schema_uri(schema_json) => {
+                Err(error)
+                    if !is_custom_fixture
+                        && schema_declares_unsupported_schema_uri(schema_json) =>
+                {
                     assert_unsupported_schema_uri_error(schema_json, &error, path.display(), index);
                     continue;
                 }
@@ -99,10 +106,10 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
                     return Err(format!("{} schema #{index}: {error}", path.display()).into());
                 }
             };
-            let raw_compiled = compile_without_canonicalization(schema_json).map_err(|error| {
+            let raw_compiled = compile(schema_json).map_err(|error| {
                 format!("{} schema #{index} raw compile: {error}", path.display())
             })?;
-            let canonical_compiled = compile(canonical.as_value()).map_err(|error| {
+            let canonical_compiled = compile_canonical(&canonical).map_err(|error| {
                 format!(
                     "{} schema #{index} canonical compile: {error}",
                     path.display()
@@ -617,8 +624,8 @@ fn canonicalize_does_not_rewrite_oneof_integer_overlapping_integral_numeric_enum
         }),
     );
 
-    let raw_compiled = compile_without_canonicalization(&raw).unwrap();
-    let canonical_compiled = compile(canonical.as_value()).unwrap();
+    let raw_compiled = compile(&raw).unwrap();
+    let canonical_compiled = compile_canonical(&canonical).unwrap();
     for value in [json!(1), json!(1.0), json!(2)] {
         assert_eq!(
             raw_compiled.is_valid(&value),
@@ -1270,6 +1277,12 @@ fn collect_fixture_files(
     Ok(())
 }
 
+fn is_custom_fixture_path(path: &Path) -> bool {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .contains("/custom/")
+}
+
 fn collect_embedded_schemas(root: &Value) -> Vec<Value> {
     match root {
         Value::Array(items) => items
@@ -1336,17 +1349,6 @@ fn assert_canonicalizes_to(raw: &Value, expected: &Value) -> CanonicalSchema {
 fn assert_canonicalize_error(raw: &Value, expected: &str) {
     let error = canonicalize_schema(raw).unwrap_err().to_string();
     assert_eq!(error, expected);
-}
-
-fn compile_without_canonicalization(
-    schema_json: &Value,
-) -> Result<JSONSchema, Box<jsonschema::ValidationError<'static>>> {
-    let owned = schema_json.clone();
-    let static_ref: &'static Value = Box::leak(Box::new(owned));
-    JSONSchema::options()
-        .with_draft(Draft::Draft202012)
-        .compile(static_ref)
-        .map_err(Box::new)
 }
 
 fn schema_seed(path: &Path, schema_index: usize, stream: u64) -> u64 {

@@ -4,17 +4,71 @@ mod regex_gen;
 use json_schema_ast::{JSONSchema, SchemaNode, SchemaNodeKind, compile};
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use json_schema_ast::SchemaNodeId;
+
+/// Stateful value generator that caches compiled subvalidators by AST node identity.
+#[derive(Default)]
+pub struct ValueGenerator {
+    validators: HashMap<SchemaNodeId, Option<Rc<JSONSchema>>>,
+}
+
+impl ValueGenerator {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Generate a random JSON value *intended* to satisfy `schema`.
+    /// We limit recursion with `depth`.
+    pub fn generate_value(&mut self, schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
+        generate_value_with_context(schema, rng, depth, self)
+    }
+
+    fn compile_schema_node(&mut self, schema: &SchemaNode) -> Option<Rc<JSONSchema>> {
+        let node_id = schema.id();
+        if let Some(validator) = self.validators.get(&node_id) {
+            return validator.clone();
+        }
+
+        let validator = if schema_contains_cycle(schema, &mut Vec::new()) {
+            None
+        } else {
+            compile(&schema.to_json()).ok().map(Rc::new)
+        };
+        self.validators.insert(node_id, validator.clone());
+        validator
+    }
+
+    fn build_property_name_validator(&mut self, schema: &SchemaNode) -> Option<Rc<JSONSchema>> {
+        match schema.kind() {
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => None,
+            _ => self.compile_schema_node(schema),
+        }
+    }
+}
 
 /// Generate a random JSON value *intended* to satisfy `schema`.
 /// We limit recursion with `depth`.
 pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
+    ValueGenerator::new().generate_value(schema, rng, depth)
+}
+
+fn generate_value_with_context(
+    schema: &SchemaNode,
+    rng: &mut impl Rng,
+    depth: u8,
+    generator: &mut ValueGenerator,
+) -> Value {
     if depth == 0 {
         return Value::Null;
     }
 
     use SchemaNodeKind::*;
 
-    match &*schema.borrow() {
+    match schema.kind() {
         BoolSchema(false) => Value::Null,
         BoolSchema(true) | Any => random_any(rng, depth),
 
@@ -33,17 +87,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             //   3. otherwise fall back to any non-trivial branch (ignoring
             //      `true`/`Any`) which is usually sufficient for simple
             //      intersections such as `[{}, {"type": "number"}]`.
-            if subs
-                .iter()
-                .any(|s| matches!(&*s.borrow(), BoolSchema(false)))
-            {
+            if subs.iter().any(|s| matches!(s.kind(), BoolSchema(false))) {
                 return Value::Null;
             }
 
-            let validator = compile_schema_node(schema);
+            let validator = generator.compile_schema_node(schema);
             let non_trivial = subs
                 .iter()
-                .filter(|sub| !matches!(&*sub.borrow(), BoolSchema(true) | Any))
+                .filter(|sub| !matches!(sub.kind(), BoolSchema(true) | Any))
                 .collect::<Vec<_>>();
 
             let object_subschemas = subs
@@ -63,13 +114,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                             additional,
                             min_properties,
                             ..
-                        } = &*sub.borrow()
+                        } = sub.kind()
                             && let Value::Object(obj) =
-                                generate_value(sub, rng, depth.saturating_sub(1))
+                                generator.generate_value(sub, rng, depth.saturating_sub(1))
                         {
                             for (k, v) in obj {
                                 if required.contains(&k)
-                                    || !matches!(&*additional.borrow(), BoolSchema(true) | Any)
+                                    || !matches!(additional.kind(), BoolSchema(true) | Any)
                                     || properties.contains_key(&k)
                                     || min_properties
                                         .is_some_and(|minimum| minimum > required.len())
@@ -92,7 +143,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                             properties,
                             required,
                             ..
-                        } = &*sub.borrow()
+                        } = sub.kind()
                         {
                             for req in required {
                                 if !combined.contains_key(req) {
@@ -104,7 +155,9 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 
                     for (k, schema) in missing {
                         let val = match schema {
-                            Some(schema) => generate_value(&schema, rng, depth.saturating_sub(1)),
+                            Some(schema) => {
+                                generator.generate_value(&schema, rng, depth.saturating_sub(1))
+                            }
                             None => random_any(rng, depth.saturating_sub(1)),
                         };
                         combined.insert(k, val);
@@ -115,7 +168,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     random_any(rng, depth)
                 } else {
                     let index = rng.random_range(0..non_trivial.len());
-                    generate_value(non_trivial[index], rng, depth.saturating_sub(1))
+                    generator.generate_value(non_trivial[index], rng, depth.saturating_sub(1))
                 };
 
                 if validator
@@ -130,11 +183,15 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         }
 
         AnyOf(subs) if !subs.is_empty() => {
-            let validators: Vec<_> = subs.iter().map(compile_schema_node).collect();
+            let validators: Vec<_> = subs
+                .iter()
+                .map(|schema| generator.compile_schema_node(schema))
+                .collect();
 
             for _ in 0..32 {
                 let index = rng.random_range(0..subs.len());
-                let candidate = generate_value(&subs[index], rng, depth.saturating_sub(1));
+                let candidate =
+                    generator.generate_value(&subs[index], rng, depth.saturating_sub(1));
                 if validators[index]
                     .as_ref()
                     .is_none_or(|validator| validator.is_valid(&candidate))
@@ -147,13 +204,17 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
         }
 
         OneOf(subs) if !subs.is_empty() => {
-            let validators: Vec<_> = subs.iter().map(compile_schema_node).collect();
+            let validators: Vec<_> = subs
+                .iter()
+                .map(|schema| generator.compile_schema_node(schema))
+                .collect();
 
             for _ in 0..32 {
                 let pick = rng.random_range(0..subs.len());
                 let candidate_schema =
                     object_schema_branch(&subs[pick]).unwrap_or_else(|| subs[pick].clone());
-                let candidate = generate_value(&candidate_schema, rng, depth.saturating_sub(1));
+                let candidate =
+                    generator.generate_value(&candidate_schema, rng, depth.saturating_sub(1));
 
                 let mut ok = 0;
                 for v in validators.iter().flatten() {
@@ -335,7 +396,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             enumeration,
             ..
         } => {
-            let property_name_validator = build_property_name_validator(property_names);
+            let property_name_validator = generator.build_property_name_validator(property_names);
             if let Some(e) = enumeration
                 && !e.is_empty()
             {
@@ -347,11 +408,11 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if min_p == 0
                 && properties.is_empty()
                 && matches!(
-                    &*additional.borrow(),
+                    additional.kind(),
                     SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
                 )
                 && matches!(
-                    &*property_names.borrow(),
+                    property_names.kind(),
                     SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
                 )
             {
@@ -370,18 +431,17 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                 let include = if must_include {
                     true
                 } else {
-                    !matches!(&*prop_schema.borrow(), BoolSchema(true) | Any)
-                        && rng.random_bool(0.7)
+                    !matches!(prop_schema.kind(), BoolSchema(true) | Any) && rng.random_bool(0.7)
                 };
                 if include {
-                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    let val = generator.generate_value(prop_schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                 }
             }
 
             let max_p: usize = max_properties.unwrap_or(usize::MAX);
 
-            if !matches!(&*additional.borrow(), BoolSchema(false)) {
+            if !matches!(additional.kind(), BoolSchema(false)) {
                 // If we need to hit `minProperties`, keep inventing additional keys
                 // until we reach the minimum before attempting the probabilistic
                 // extras.
@@ -391,13 +451,14 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                         property_name_validator.as_ref(),
                         rng,
                         depth,
+                        generator,
                     ) else {
                         break;
                     };
                     if map.contains_key(&key) {
                         continue;
                     }
-                    let val = generate_value(additional, rng, depth.saturating_sub(1));
+                    let val = generator.generate_value(additional, rng, depth.saturating_sub(1));
                     map.insert(key, val);
                 }
 
@@ -409,6 +470,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                             property_name_validator.as_ref(),
                             rng,
                             depth,
+                            generator,
                         ) else {
                             break;
                         };
@@ -416,7 +478,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                             attempts += 1;
                             continue;
                         }
-                        let val = generate_value(additional, rng, depth.saturating_sub(1));
+                        let val =
+                            generator.generate_value(additional, rng, depth.saturating_sub(1));
                         map.insert(key, val);
                         attempts += 1;
                     }
@@ -431,7 +494,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     if map.contains_key(k) {
                         continue;
                     }
-                    let val = generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    let val = generator.generate_value(prop_schema, rng, depth.saturating_sub(1));
                     map.insert(k.clone(), val);
                     if map.len() >= min_p {
                         break;
@@ -447,7 +510,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                     .find(|(name, _)| property_name_allows(property_name_validator.as_ref(), name))
                     .or_else(|| properties.iter().next())
             {
-                let val = generate_value(schema, rng, depth.saturating_sub(1));
+                let val = generator.generate_value(schema, rng, depth.saturating_sub(1));
                 map.insert(k.clone(), val);
             }
 
@@ -475,9 +538,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             };
 
             let max_i = max_items.unwrap_or(base_min + 5).max(base_min);
-            if base_min == 0
-                && contains.is_none()
-                && matches!(&*items.borrow(), BoolSchema(true) | Any)
+            if base_min == 0 && contains.is_none() && matches!(items.kind(), BoolSchema(true) | Any)
             {
                 return Value::Array(Vec::new());
             }
@@ -487,13 +548,13 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             if let Some(c_schema) = contains {
                 let target = min_contains.unwrap_or(1).max(1);
                 for _ in 0..target {
-                    let v = generate_value(c_schema, rng, depth.saturating_sub(1));
+                    let v = generator.generate_value(c_schema, rng, depth.saturating_sub(1));
                     arr.push(v);
                 }
             }
 
             while arr.len() < length as usize {
-                let v = generate_value(items, rng, depth.saturating_sub(1));
+                let v = generator.generate_value(items, rng, depth.saturating_sub(1));
                 arr.push(v);
             }
             Value::Array(arr)
@@ -506,16 +567,16 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
             then_schema,
             else_schema,
         } => {
-            let validator = compile_schema_node(schema);
+            let validator = generator.compile_schema_node(schema);
             for _ in 0..32 {
                 let candidate = if rng.random_bool(0.5)
                     && let Some(t) = then_schema
                 {
-                    generate_value(t, rng, depth.saturating_sub(1))
+                    generator.generate_value(t, rng, depth.saturating_sub(1))
                 } else if let Some(e) = else_schema {
-                    generate_value(e, rng, depth.saturating_sub(1))
+                    generator.generate_value(e, rng, depth.saturating_sub(1))
                 } else {
-                    generate_value(if_schema, rng, depth.saturating_sub(1))
+                    generator.generate_value(if_schema, rng, depth.saturating_sub(1))
                 };
 
                 if validator
@@ -554,7 +615,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
 fn object_schema_branch(schema: &SchemaNode) -> Option<SchemaNode> {
     use SchemaNodeKind::*;
 
-    match &*schema.borrow() {
+    match schema.kind() {
         Object { .. } => Some(schema.clone()),
         AnyOf(subs) | OneOf(subs) => subs.iter().find_map(object_schema_branch),
         IfThenElse {
@@ -635,21 +696,6 @@ fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
     Value::Object(Map::new())
 }
 
-fn build_property_name_validator(schema: &SchemaNode) -> Option<json_schema_ast::JSONSchema> {
-    match &*schema.borrow() {
-        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => None,
-        _ => compile_schema_node(schema),
-    }
-}
-
-fn compile_schema_node(schema: &SchemaNode) -> Option<JSONSchema> {
-    if schema_contains_cycle(schema, &mut Vec::new()) {
-        return None;
-    }
-    let raw = schema.to_json();
-    compile(&raw).ok()
-}
-
 fn schema_contains_cycle(schema: &SchemaNode, path: &mut Vec<SchemaNode>) -> bool {
     if path.iter().any(|ancestor| ancestor.ptr_eq(schema)) {
         return true;
@@ -671,7 +717,7 @@ fn schema_contains_cycle(schema: &SchemaNode, path: &mut Vec<SchemaNode>) -> boo
 fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
     use SchemaNodeKind::*;
 
-    match &*schema.borrow() {
+    match schema.kind() {
         AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
         Not(child) | AdditionalProperties(child) => vec![child.clone()],
         IfThenElse {
@@ -703,7 +749,7 @@ fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
     }
 }
 
-fn property_name_allows(validator: Option<&json_schema_ast::JSONSchema>, candidate: &str) -> bool {
+fn property_name_allows(validator: Option<&Rc<JSONSchema>>, candidate: &str) -> bool {
     match validator {
         None => true,
         Some(v) => v.is_valid(&Value::String(candidate.to_owned())),
@@ -712,9 +758,10 @@ fn property_name_allows(validator: Option<&json_schema_ast::JSONSchema>, candida
 
 fn generate_property_key(
     property_names: &SchemaNode,
-    validator: Option<&json_schema_ast::JSONSchema>,
+    validator: Option<&Rc<JSONSchema>>,
     rng: &mut impl Rng,
     depth: u8,
+    generator: &mut ValueGenerator,
 ) -> Option<String> {
     if validator.is_none() {
         return Some(random_key(rng));
@@ -723,9 +770,9 @@ fn generate_property_key(
     let validator = validator.unwrap();
 
     for _ in 0..32 {
-        let candidate = match &*property_names.borrow() {
+        let candidate = match property_names.kind() {
             SchemaNodeKind::String { .. } => {
-                match generate_value(property_names, rng, depth.saturating_sub(1)) {
+                match generator.generate_value(property_names, rng, depth.saturating_sub(1)) {
                     Value::String(s) => s,
                     _ => random_key(rng),
                 }

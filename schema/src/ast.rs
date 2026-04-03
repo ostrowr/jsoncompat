@@ -3,7 +3,7 @@ use crate::canonicalize::{CanonicalSchema, canonicalize_schema};
 use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::{OnceCell, Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
@@ -19,35 +19,31 @@ pub enum AstError {
     UnresolvedReference { ref_path: String },
 }
 
-/// Shared, interior-mutable representation of a JSON Schema node.  Using
-/// reference counting allows multiple parents to point to the same node which
+/// Shared immutable representation of a resolved JSON Schema node.
+///
+/// Reference counting allows multiple parents to point to the same node, which
 /// is required to faithfully model schemas containing recursive `$ref`s.
 #[derive(Clone)]
-pub struct SchemaNode(Rc<RefCell<SchemaNodeKind>>);
+pub struct SchemaNode(Rc<OnceCell<SchemaNodeKind>>);
+
+/// Stable identity for one in-memory schema node within the lifetime of the AST.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SchemaNodeId(usize);
 
 impl SchemaNode {
-    pub(crate) fn new(kind: SchemaNodeKind) -> Self {
-        Self(Rc::new(RefCell::new(kind)))
-    }
-
-    pub(crate) fn bool_schema(value: bool) -> Self {
-        Self::new(SchemaNodeKind::BoolSchema(value))
-    }
-
-    pub(crate) fn any() -> Self {
-        Self::new(SchemaNodeKind::Any)
-    }
-
-    pub fn borrow(&self) -> Ref<'_, SchemaNodeKind> {
-        self.0.borrow()
-    }
-
-    pub(crate) fn borrow_mut(&self) -> RefMut<'_, SchemaNodeKind> {
-        self.0.borrow_mut()
+    pub fn kind(&self) -> &SchemaNodeKind {
+        self.0
+            .get()
+            .expect("resolved SchemaNode must be initialized before use")
     }
 
     fn ptr_id(&self) -> usize {
         Rc::as_ptr(&self.0) as usize
+    }
+
+    #[must_use]
+    pub fn id(&self) -> SchemaNodeId {
+        SchemaNodeId(self.ptr_id())
     }
 
     pub fn ptr_eq(&self, other: &SchemaNode) -> bool {
@@ -73,7 +69,7 @@ impl SchemaNode {
             let children = {
                 use SchemaNodeKind::*;
 
-                match &*node.borrow() {
+                match node.kind() {
                     AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
                     Not(child) => vec![child.clone()],
                     IfThenElse {
@@ -153,7 +149,7 @@ impl SchemaNode {
     pub fn to_json(&self) -> Value {
         use SchemaNodeKind::*;
 
-        match &*self.borrow() {
+        match self.kind() {
             BoolSchema(b) => Value::Bool(*b),
             Any => Value::Object(serde_json::Map::new()),
 
@@ -337,7 +333,7 @@ impl SchemaNode {
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("array".into()));
-                if !matches!(&*items.borrow(), SchemaNodeKind::Any) {
+                if !matches!(items.kind(), SchemaNodeKind::Any) {
                     obj.insert("items".into(), items.to_json());
                 }
                 if let Some(mi) = min_items {
@@ -390,7 +386,7 @@ impl SchemaNode {
                     );
                 }
 
-                match &*additional.borrow() {
+                match additional.kind() {
                     SchemaNodeKind::Any => {}
                     SchemaNodeKind::BoolSchema(b) => {
                         obj.insert("additionalProperties".into(), Value::Bool(*b));
@@ -400,7 +396,7 @@ impl SchemaNode {
                     }
                 }
 
-                match &*property_names.borrow() {
+                match property_names.kind() {
                     SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => {}
                     SchemaNodeKind::BoolSchema(b) => {
                         obj.insert("propertyNames".into(), Value::Bool(*b));
@@ -543,17 +539,52 @@ impl SchemaNode {
     }
 }
 
-impl fmt::Debug for SchemaNode {
+#[derive(Clone)]
+struct MutableSchemaNode(Rc<RefCell<MutableSchemaNodeKind>>);
+
+type MutableSchemaNodeKind = SchemaNodeKind<MutableSchemaNode>;
+
+impl MutableSchemaNode {
+    fn new(kind: MutableSchemaNodeKind) -> Self {
+        Self(Rc::new(RefCell::new(kind)))
+    }
+
+    fn bool_schema(value: bool) -> Self {
+        Self::new(SchemaNodeKind::BoolSchema(value))
+    }
+
+    fn any() -> Self {
+        Self::new(SchemaNodeKind::Any)
+    }
+
+    fn borrow(&self) -> Ref<'_, MutableSchemaNodeKind> {
+        self.0.borrow()
+    }
+
+    fn borrow_mut(&self) -> RefMut<'_, MutableSchemaNodeKind> {
+        self.0.borrow_mut()
+    }
+
+    fn ptr_id(&self) -> usize {
+        Rc::as_ptr(&self.0) as usize
+    }
+}
+
+impl fmt::Debug for MutableSchemaNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SchemaNode")
+        f.debug_struct("MutableSchemaNode")
             .field("id", &self.ptr_id())
             .finish()
     }
 }
 
-impl PartialEq for SchemaNode {
+impl PartialEq for MutableSchemaNode {
     fn eq(&self, other: &Self) -> bool {
-        fn eq_inner(a: &SchemaNode, b: &SchemaNode, seen: &mut HashSet<(usize, usize)>) -> bool {
+        fn eq_inner(
+            a: &MutableSchemaNode,
+            b: &MutableSchemaNode,
+            seen: &mut HashSet<(usize, usize)>,
+        ) -> bool {
             use SchemaNodeKind::*;
 
             let key = (a.ptr_id(), b.ptr_id());
@@ -793,6 +824,428 @@ impl PartialEq for SchemaNode {
     }
 }
 
+impl Eq for MutableSchemaNode {}
+
+fn freeze_schema_node(
+    node: &MutableSchemaNode,
+    cache: &mut HashMap<usize, SchemaNode>,
+) -> SchemaNode {
+    let node_id = node.ptr_id();
+    if let Some(existing) = cache.get(&node_id) {
+        return existing.clone();
+    }
+
+    let frozen = SchemaNode(Rc::new(OnceCell::new()));
+    cache.insert(node_id, frozen.clone());
+
+    let kind = freeze_schema_node_kind(node.borrow().clone(), cache);
+    frozen
+        .0
+        .set(kind)
+        .expect("frozen SchemaNode must be initialized exactly once");
+    frozen
+}
+
+fn freeze_schema_node_kind(
+    kind: MutableSchemaNodeKind,
+    cache: &mut HashMap<usize, SchemaNode>,
+) -> SchemaNodeKind {
+    use SchemaNodeKind::*;
+
+    match kind {
+        BoolSchema(value) => BoolSchema(value),
+        Any => Any,
+        String {
+            min_length,
+            max_length,
+            pattern,
+            format,
+            enumeration,
+        } => String {
+            min_length,
+            max_length,
+            pattern,
+            format,
+            enumeration,
+        },
+        Number {
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            multiple_of,
+            enumeration,
+        } => Number {
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            multiple_of,
+            enumeration,
+        },
+        Integer {
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            multiple_of,
+            enumeration,
+        } => Integer {
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            multiple_of,
+            enumeration,
+        },
+        Boolean { enumeration } => Boolean { enumeration },
+        Null { enumeration } => Null { enumeration },
+        Object {
+            properties,
+            required,
+            additional,
+            property_names,
+            min_properties,
+            max_properties,
+            dependent_required,
+            enumeration,
+        } => Object {
+            properties: properties
+                .into_iter()
+                .map(|(name, child)| (name, freeze_schema_node(&child, cache)))
+                .collect(),
+            required,
+            additional: freeze_schema_node(&additional, cache),
+            property_names: freeze_schema_node(&property_names, cache),
+            min_properties,
+            max_properties,
+            dependent_required,
+            enumeration,
+        },
+        Array {
+            items,
+            min_items,
+            max_items,
+            contains,
+            min_contains,
+            enumeration,
+        } => Array {
+            items: freeze_schema_node(&items, cache),
+            min_items,
+            max_items,
+            contains: contains.map(|child| freeze_schema_node(&child, cache)),
+            min_contains,
+            enumeration,
+        },
+        Defs(defs) => Defs(
+            defs.into_iter()
+                .map(|(name, child)| (name, freeze_schema_node(&child, cache)))
+                .collect(),
+        ),
+        AllOf(children) => AllOf(
+            children
+                .iter()
+                .map(|child| freeze_schema_node(child, cache))
+                .collect(),
+        ),
+        AnyOf(children) => AnyOf(
+            children
+                .iter()
+                .map(|child| freeze_schema_node(child, cache))
+                .collect(),
+        ),
+        OneOf(children) => OneOf(
+            children
+                .iter()
+                .map(|child| freeze_schema_node(child, cache))
+                .collect(),
+        ),
+        Not(child) => Not(freeze_schema_node(&child, cache)),
+        IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => IfThenElse {
+            if_schema: freeze_schema_node(&if_schema, cache),
+            then_schema: then_schema.map(|child| freeze_schema_node(&child, cache)),
+            else_schema: else_schema.map(|child| freeze_schema_node(&child, cache)),
+        },
+        Const(value) => Const(value),
+        Enum(values) => Enum(values),
+        Type(type_name) => Type(type_name),
+        Minimum(bound) => Minimum(bound),
+        Maximum(bound) => Maximum(bound),
+        Required(required) => Required(required),
+        AdditionalProperties(schema) => AdditionalProperties(freeze_schema_node(&schema, cache)),
+        Format(format) => Format(format),
+        ContentEncoding(encoding) => ContentEncoding(encoding),
+        ContentMediaType(media_type) => ContentMediaType(media_type),
+        Title(title) => Title(title),
+        Description(description) => Description(description),
+        Default(value) => Default(value),
+        Examples(values) => Examples(values),
+        ReadOnly(value) => ReadOnly(value),
+        WriteOnly(value) => WriteOnly(value),
+        Ref(ref_path) => Ref(ref_path),
+    }
+}
+
+impl fmt::Debug for SchemaNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SchemaNode")
+            .field("id", &self.ptr_id())
+            .finish()
+    }
+}
+
+impl std::borrow::Borrow<SchemaNodeKind> for SchemaNode {
+    fn borrow(&self) -> &SchemaNodeKind {
+        self.kind()
+    }
+}
+
+impl PartialEq for SchemaNode {
+    fn eq(&self, other: &Self) -> bool {
+        fn eq_inner(a: &SchemaNode, b: &SchemaNode, seen: &mut HashSet<(usize, usize)>) -> bool {
+            use SchemaNodeKind::*;
+
+            let key = (a.ptr_id(), b.ptr_id());
+            if !seen.insert(key) {
+                return true;
+            }
+
+            let a_kind = a.kind();
+            let b_kind = b.kind();
+
+            match (a_kind, b_kind) {
+                (BoolSchema(ax), BoolSchema(bx)) => ax == bx,
+                (Any, Any) => true,
+                (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
+                (
+                    String {
+                        min_length: ax,
+                        max_length: ay,
+                        pattern: ap,
+                        format: af,
+                        enumeration: ae,
+                    },
+                    String {
+                        min_length: bx,
+                        max_length: by,
+                        pattern: bp,
+                        format: bf,
+                        enumeration: be,
+                    },
+                ) => ax == bx && ay == by && ap == bp && af == bf && ae == be,
+                (
+                    Number {
+                        minimum: amin,
+                        maximum: amax,
+                        exclusive_minimum: aexmin,
+                        exclusive_maximum: aexmax,
+                        multiple_of: amul,
+                        enumeration: aenum,
+                    },
+                    Number {
+                        minimum: bmin,
+                        maximum: bmax,
+                        exclusive_minimum: bexmin,
+                        exclusive_maximum: bexmax,
+                        multiple_of: bmul,
+                        enumeration: benum,
+                    },
+                ) => {
+                    amin == bmin
+                        && amax == bmax
+                        && aexmin == bexmin
+                        && aexmax == bexmax
+                        && amul == bmul
+                        && aenum == benum
+                }
+                (
+                    Integer {
+                        minimum: amin,
+                        maximum: amax,
+                        exclusive_minimum: aexmin,
+                        exclusive_maximum: aexmax,
+                        multiple_of: amul,
+                        enumeration: aenum,
+                    },
+                    Integer {
+                        minimum: bmin,
+                        maximum: bmax,
+                        exclusive_minimum: bexmin,
+                        exclusive_maximum: bexmax,
+                        multiple_of: bmul,
+                        enumeration: benum,
+                    },
+                ) => {
+                    amin == bmin
+                        && amax == bmax
+                        && aexmin == bexmin
+                        && aexmax == bexmax
+                        && amul == bmul
+                        && aenum == benum
+                }
+                (Boolean { enumeration: ae }, Boolean { enumeration: be }) => ae == be,
+                (Null { enumeration: ae }, Null { enumeration: be }) => ae == be,
+                (
+                    Object {
+                        properties: aprops,
+                        required: areq,
+                        additional: aaddl,
+                        property_names: apropnames,
+                        min_properties: amin,
+                        max_properties: amax,
+                        dependent_required: adep,
+                        enumeration: aenum,
+                    },
+                    Object {
+                        properties: bprops,
+                        required: breq,
+                        additional: baddl,
+                        property_names: bpropnames,
+                        min_properties: bmin,
+                        max_properties: bmax,
+                        dependent_required: bdep,
+                        enumeration: benum,
+                    },
+                ) => {
+                    if areq != breq
+                        || amin != bmin
+                        || amax != bmax
+                        || adep != bdep
+                        || aenum != benum
+                        || !eq_inner(apropnames, bpropnames, seen)
+                        || aprops.len() != bprops.len()
+                    {
+                        return false;
+                    }
+                    for (k, aval) in aprops {
+                        let Some(bval) = bprops.get(k) else {
+                            return false;
+                        };
+                        if !eq_inner(aval, bval, seen) {
+                            return false;
+                        }
+                    }
+                    eq_inner(aaddl, baddl, seen)
+                }
+                (
+                    Array {
+                        items: aitems,
+                        min_items: amin,
+                        max_items: amax,
+                        contains: acontains,
+                        min_contains: amin_contains,
+                        enumeration: aenum,
+                    },
+                    Array {
+                        items: bitems,
+                        min_items: bmin,
+                        max_items: bmax,
+                        contains: bcontains,
+                        min_contains: bmin_contains,
+                        enumeration: benum,
+                    },
+                ) => {
+                    if amin != bmin
+                        || amax != bmax
+                        || amin_contains != bmin_contains
+                        || aenum != benum
+                    {
+                        return false;
+                    }
+                    if !eq_inner(aitems, bitems, seen) {
+                        return false;
+                    }
+                    match (acontains, bcontains) {
+                        (None, None) => true,
+                        (Some(av), Some(bv)) => eq_inner(av, bv, seen),
+                        _ => false,
+                    }
+                }
+                (Defs(a), Defs(b)) => {
+                    if a.len() != b.len() {
+                        return false;
+                    }
+                    for (k, aval) in a {
+                        let Some(bval) = b.get(k) else {
+                            return false;
+                        };
+                        if !eq_inner(aval, bval, seen) {
+                            return false;
+                        }
+                    }
+                    true
+                }
+                (AllOf(a), AllOf(b)) | (AnyOf(a), AnyOf(b)) | (OneOf(a), OneOf(b)) => {
+                    if a.len() != b.len() {
+                        return false;
+                    }
+                    for (av, bv) in a.iter().zip(b.iter()) {
+                        if !eq_inner(av, bv, seen) {
+                            return false;
+                        }
+                    }
+                    true
+                }
+                (Not(a), Not(b)) => eq_inner(a, b, seen),
+                (
+                    IfThenElse {
+                        if_schema: a_if,
+                        then_schema: a_then,
+                        else_schema: a_else,
+                    },
+                    IfThenElse {
+                        if_schema: b_if,
+                        then_schema: b_then,
+                        else_schema: b_else,
+                    },
+                ) => {
+                    if !eq_inner(a_if, b_if, seen) {
+                        return false;
+                    }
+                    match (a_then, b_then) {
+                        (None, None) => {}
+                        (Some(av), Some(bv)) => {
+                            if !eq_inner(av, bv, seen) {
+                                return false;
+                            }
+                        }
+                        _ => return false,
+                    }
+                    match (a_else, b_else) {
+                        (None, None) => true,
+                        (Some(av), Some(bv)) => eq_inner(av, bv, seen),
+                        _ => false,
+                    }
+                }
+                (Const(a), Const(b)) => a == b,
+                (Enum(a), Enum(b)) => a == b,
+                (Type(a), Type(b)) => a == b,
+                (Minimum(a), Minimum(b)) => a == b,
+                (Maximum(a), Maximum(b)) => a == b,
+                (Required(a), Required(b)) => a == b,
+                (AdditionalProperties(a), AdditionalProperties(b)) => eq_inner(a, b, seen),
+                (Format(a), Format(b)) => a == b,
+                (ContentEncoding(a), ContentEncoding(b)) => a == b,
+                (ContentMediaType(a), ContentMediaType(b)) => a == b,
+                (Title(a), Title(b)) => a == b,
+                (Description(a), Description(b)) => a == b,
+                (Default(a), Default(b)) => a == b,
+                (Examples(a), Examples(b)) => a == b,
+                (ReadOnly(a), ReadOnly(b)) => a == b,
+                (WriteOnly(a), WriteOnly(b)) => a == b,
+                (Ref(a), Ref(b)) => a == b,
+                _ => false,
+            }
+        }
+
+        eq_inner(self, other, &mut HashSet::new())
+    }
+}
+
 impl Eq for SchemaNode {}
 
 /// An internal Abstract Syntax Tree (AST) representing a fully-resolved JSON
@@ -802,7 +1255,7 @@ impl Eq for SchemaNode {}
 /// without constantly reparsing raw JSON values.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum SchemaNodeKind {
+pub enum SchemaNodeKind<Node = SchemaNode> {
     BoolSchema(bool),
     Any,
 
@@ -837,34 +1290,34 @@ pub enum SchemaNodeKind {
     },
 
     Object {
-        properties: HashMap<String, SchemaNode>,
+        properties: HashMap<String, Node>,
         required: HashSet<String>,
-        additional: SchemaNode,
-        property_names: SchemaNode,
+        additional: Node,
+        property_names: Node,
         min_properties: Option<usize>,
         max_properties: Option<usize>,
         dependent_required: HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
     },
     Array {
-        items: SchemaNode,
+        items: Node,
         min_items: Option<u64>,
         max_items: Option<u64>,
-        contains: Option<SchemaNode>,
+        contains: Option<Node>,
         min_contains: Option<u64>,
         enumeration: Option<Vec<Value>>,
     },
 
-    Defs(HashMap<String, SchemaNode>),
+    Defs(HashMap<String, Node>),
 
-    AllOf(Vec<SchemaNode>),
-    AnyOf(Vec<SchemaNode>),
-    OneOf(Vec<SchemaNode>),
-    Not(SchemaNode),
+    AllOf(Vec<Node>),
+    AnyOf(Vec<Node>),
+    OneOf(Vec<Node>),
+    Not(Node),
     IfThenElse {
-        if_schema: SchemaNode,
-        then_schema: Option<SchemaNode>,
-        else_schema: Option<SchemaNode>,
+        if_schema: Node,
+        then_schema: Option<Node>,
+        else_schema: Option<Node>,
     },
 
     Const(Value),
@@ -873,7 +1326,7 @@ pub enum SchemaNodeKind {
     Minimum(f64),
     Maximum(f64),
     Required(Vec<String>),
-    AdditionalProperties(SchemaNode),
+    AdditionalProperties(Node),
 
     Format(String),
     ContentEncoding(String),
@@ -894,19 +1347,19 @@ pub fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
     let canonical = canonicalize_schema(raw)?;
     let mut root = build_schema_ast_from_canonical(&canonical)?;
     resolve_refs_from_canonical_root(&mut root, &canonical, &[])?;
-    Ok(root)
+    Ok(freeze_schema_node(&root, &mut HashMap::new()))
 }
 
-fn build_schema_ast_from_canonical(raw: &CanonicalSchema) -> Result<SchemaNode> {
+fn build_schema_ast_from_canonical(raw: &CanonicalSchema) -> Result<MutableSchemaNode> {
     build_schema_ast_from_value(raw.as_value())
 }
 
-fn build_schema_ast_from_value(raw: &Value) -> Result<SchemaNode> {
+fn build_schema_ast_from_value(raw: &Value) -> Result<MutableSchemaNode> {
     if let Some(b) = raw.as_bool() {
-        return Ok(SchemaNode::bool_schema(b));
+        return Ok(MutableSchemaNode::bool_schema(b));
     }
     let Some(obj) = raw.as_object() else {
-        return Ok(SchemaNode::any());
+        return Ok(MutableSchemaNode::any());
     };
 
     match SchemaShape::classify(obj) {
@@ -930,7 +1383,7 @@ fn build_schema_ast_from_value(raw: &Value) -> Result<SchemaNode> {
         SchemaShape::Object => parse_object_schema(obj),
         SchemaShape::Array => parse_array_schema(obj),
         SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names),
-        SchemaShape::Any => Ok(SchemaNode::any()),
+        SchemaShape::Any => Ok(MutableSchemaNode::any()),
     }
 }
 
@@ -1187,16 +1640,16 @@ impl<'a> SchemaKeywords<'a> {
     }
 }
 
-fn parse_ref_schema(ref_path: &str) -> SchemaNode {
-    SchemaNode::new(SchemaNodeKind::Ref(ref_path.to_owned()))
+fn parse_ref_schema(ref_path: &str) -> MutableSchemaNode {
+    MutableSchemaNode::new(SchemaNodeKind::Ref(ref_path.to_owned()))
 }
 
-fn parse_enum_schema(values: &[Value]) -> SchemaNode {
-    SchemaNode::new(SchemaNodeKind::Enum(values.to_vec()))
+fn parse_enum_schema(values: &[Value]) -> MutableSchemaNode {
+    MutableSchemaNode::new(SchemaNodeKind::Enum(values.to_vec()))
 }
 
-fn parse_const_schema(value: &Value) -> SchemaNode {
-    SchemaNode::new(SchemaNodeKind::Const(value.clone()))
+fn parse_const_schema(value: &Value) -> MutableSchemaNode {
+    MutableSchemaNode::new(SchemaNodeKind::Const(value.clone()))
 }
 
 fn parse_conditional_schema(
@@ -1204,7 +1657,7 @@ fn parse_conditional_schema(
     if_schema: Option<&Value>,
     then_schema: Option<&Value>,
     else_schema: Option<&Value>,
-) -> Result<SchemaNode> {
+) -> Result<MutableSchemaNode> {
     let Some(cond) = if_schema else {
         let mut base = obj.clone();
         base.remove("then");
@@ -1216,14 +1669,14 @@ fn parse_conditional_schema(
     let then_schema = then_schema.map(build_schema_ast_from_value).transpose()?;
     let else_schema = else_schema.map(build_schema_ast_from_value).transpose()?;
 
-    let cond_node = SchemaNode::new(SchemaNodeKind::IfThenElse {
+    let cond_node = MutableSchemaNode::new(SchemaNodeKind::IfThenElse {
         if_schema,
         then_schema,
         else_schema,
     });
 
     if let Some(base_schema) = parse_applicator_base_schema(obj, &["if", "then", "else"])? {
-        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(vec![
+        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
             base_schema,
             cond_node,
         ])));
@@ -1232,7 +1685,10 @@ fn parse_conditional_schema(
     Ok(cond_node)
 }
 
-fn parse_all_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result<SchemaNode> {
+fn parse_all_of_schema(
+    obj: &Map<String, Value>,
+    subschemas: &[Value],
+) -> Result<MutableSchemaNode> {
     let mut list = Vec::new();
     if let Some(base_schema) = parse_applicator_base_schema(obj, &["allOf"])? {
         list.push(base_schema);
@@ -1241,13 +1697,16 @@ fn parse_all_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result
         list.push(build_schema_ast_from_value(schema)?);
     }
 
-    Ok(SchemaNode::new(SchemaNodeKind::AllOf(dedupe_schema_nodes(
-        list,
-    ))))
+    Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(
+        dedupe_mutable_schema_nodes(list),
+    )))
 }
 
-fn parse_any_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result<SchemaNode> {
-    let any_of = SchemaNode::new(SchemaNodeKind::AnyOf(dedupe_schema_nodes(
+fn parse_any_of_schema(
+    obj: &Map<String, Value>,
+    subschemas: &[Value],
+) -> Result<MutableSchemaNode> {
+    let any_of = MutableSchemaNode::new(SchemaNodeKind::AnyOf(dedupe_mutable_schema_nodes(
         subschemas
             .iter()
             .map(build_schema_ast_from_value)
@@ -1255,7 +1714,7 @@ fn parse_any_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result
     )));
 
     if let Some(base_schema) = parse_applicator_base_schema(obj, &["anyOf"])? {
-        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(vec![
+        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
             base_schema,
             any_of,
         ])));
@@ -1264,8 +1723,11 @@ fn parse_any_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result
     Ok(any_of)
 }
 
-fn parse_one_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result<SchemaNode> {
-    let one_of = SchemaNode::new(SchemaNodeKind::OneOf(
+fn parse_one_of_schema(
+    obj: &Map<String, Value>,
+    subschemas: &[Value],
+) -> Result<MutableSchemaNode> {
+    let one_of = MutableSchemaNode::new(SchemaNodeKind::OneOf(
         subschemas
             .iter()
             .map(build_schema_ast_from_value)
@@ -1273,7 +1735,7 @@ fn parse_one_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result
     ));
 
     if let Some(base_schema) = parse_applicator_base_schema(obj, &["oneOf"])? {
-        return Ok(SchemaNode::new(SchemaNodeKind::AllOf(vec![
+        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
             base_schema,
             one_of,
         ])));
@@ -1282,13 +1744,16 @@ fn parse_one_of_schema(obj: &Map<String, Value>, subschemas: &[Value]) -> Result
     Ok(one_of)
 }
 
-fn parse_not_schema(schema: &Value) -> Result<SchemaNode> {
-    Ok(SchemaNode::new(SchemaNodeKind::Not(
+fn parse_not_schema(schema: &Value) -> Result<MutableSchemaNode> {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::Not(
         build_schema_ast_from_value(schema)?,
     )))
 }
 
-fn parse_type_union_schema(obj: &Map<String, Value>, type_names: &[Value]) -> Result<SchemaNode> {
+fn parse_type_union_schema(
+    obj: &Map<String, Value>,
+    type_names: &[Value],
+) -> Result<MutableSchemaNode> {
     let mut variants = Vec::new();
     for type_name in type_names {
         if let Some(type_name) = type_name.as_str() {
@@ -1301,16 +1766,16 @@ fn parse_type_union_schema(obj: &Map<String, Value>, type_names: &[Value]) -> Re
     if variants.len() == 1 {
         Ok(variants.remove(0))
     } else {
-        Ok(SchemaNode::new(SchemaNodeKind::AnyOf(dedupe_schema_nodes(
-            variants,
-        ))))
+        Ok(MutableSchemaNode::new(SchemaNodeKind::AnyOf(
+            dedupe_mutable_schema_nodes(variants),
+        )))
     }
 }
 
 fn parse_applicator_base_schema(
     obj: &Map<String, Value>,
     applicator_keys: &[&str],
-) -> Result<Option<SchemaNode>> {
+) -> Result<Option<MutableSchemaNode>> {
     let mut base = obj.clone();
     for key in applicator_keys {
         base.remove(*key);
@@ -1324,7 +1789,7 @@ fn parse_applicator_base_schema(
     }
 }
 
-fn parse_string_schema(obj: &Map<String, Value>) -> SchemaNode {
+fn parse_string_schema(obj: &Map<String, Value>) -> MutableSchemaNode {
     let min_length = Some(obj.get("minLength").and_then(|v| v.as_u64()).unwrap_or(0));
     let max_length = obj.get("maxLength").and_then(|v| v.as_u64());
     let pattern = obj
@@ -1337,7 +1802,7 @@ fn parse_string_schema(obj: &Map<String, Value>) -> SchemaNode {
         .map(|s| s.to_owned());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
-    SchemaNode::new(SchemaNodeKind::String {
+    MutableSchemaNode::new(SchemaNodeKind::String {
         min_length,
         max_length,
         pattern,
@@ -1346,7 +1811,7 @@ fn parse_string_schema(obj: &Map<String, Value>) -> SchemaNode {
     })
 }
 
-fn dedupe_schema_nodes(nodes: Vec<SchemaNode>) -> Vec<SchemaNode> {
+fn dedupe_mutable_schema_nodes(nodes: Vec<MutableSchemaNode>) -> Vec<MutableSchemaNode> {
     let mut unique = Vec::new();
     for node in nodes {
         if unique.iter().all(|existing| existing != &node) {
@@ -1356,7 +1821,7 @@ fn dedupe_schema_nodes(nodes: Vec<SchemaNode>) -> Vec<SchemaNode> {
     unique
 }
 
-fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> SchemaNode {
+fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> MutableSchemaNode {
     let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
     let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
 
@@ -1384,7 +1849,7 @@ fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> SchemaNode {
     if integer {
         let min_i = minimum.map(|m| m as i64);
         let max_i = maximum.map(|m| m as i64);
-        SchemaNode::new(SchemaNodeKind::Integer {
+        MutableSchemaNode::new(SchemaNodeKind::Integer {
             minimum: min_i,
             maximum: max_i,
             exclusive_minimum,
@@ -1393,7 +1858,7 @@ fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> SchemaNode {
             enumeration,
         })
     } else {
-        SchemaNode::new(SchemaNodeKind::Number {
+        MutableSchemaNode::new(SchemaNodeKind::Number {
             minimum,
             maximum,
             exclusive_minimum,
@@ -1404,17 +1869,17 @@ fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> SchemaNode {
     }
 }
 
-fn parse_boolean_schema(obj: &Map<String, Value>) -> SchemaNode {
+fn parse_boolean_schema(obj: &Map<String, Value>) -> MutableSchemaNode {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    SchemaNode::new(SchemaNodeKind::Boolean { enumeration })
+    MutableSchemaNode::new(SchemaNodeKind::Boolean { enumeration })
 }
 
-fn parse_null_schema(obj: &Map<String, Value>) -> SchemaNode {
+fn parse_null_schema(obj: &Map<String, Value>) -> MutableSchemaNode {
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    SchemaNode::new(SchemaNodeKind::Null { enumeration })
+    MutableSchemaNode::new(SchemaNodeKind::Null { enumeration })
 }
 
-fn parse_object_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
     let mut properties = HashMap::new();
     if let Some(Value::Object(props)) = obj.get("properties") {
         for (k, v) in props {
@@ -1433,20 +1898,20 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
 
     for name in &required {
         if !properties.contains_key(name) {
-            properties.insert(name.clone(), SchemaNode::any());
+            properties.insert(name.clone(), MutableSchemaNode::any());
         }
     }
 
     let additional = match obj.get("additionalProperties") {
-        None => SchemaNode::any(),
-        Some(Value::Bool(b)) => SchemaNode::bool_schema(*b),
+        None => MutableSchemaNode::any(),
+        Some(Value::Bool(b)) => MutableSchemaNode::bool_schema(*b),
         Some(other) => build_schema_ast_from_value(other)?,
     };
 
     let property_names = match obj.get("propertyNames") {
-        None => SchemaNode::any(),
-        Some(Value::Bool(true)) => SchemaNode::any(),
-        Some(Value::Bool(false)) => SchemaNode::bool_schema(false),
+        None => MutableSchemaNode::any(),
+        Some(Value::Bool(true)) => MutableSchemaNode::any(),
+        Some(Value::Bool(false)) => MutableSchemaNode::bool_schema(false),
         Some(other) => build_schema_ast_from_value(other)?,
     };
 
@@ -1480,7 +1945,7 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
         .unwrap_or_default();
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
-    Ok(SchemaNode::new(SchemaNodeKind::Object {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::Object {
         properties,
         required,
         additional,
@@ -1492,22 +1957,22 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
     }))
 }
 
-fn parse_array_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
+fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
     let items_node = match obj.get("items") {
-        None => SchemaNode::any(),
-        Some(Value::Bool(true)) => SchemaNode::any(),
-        Some(Value::Bool(false)) => SchemaNode::bool_schema(false),
+        None => MutableSchemaNode::any(),
+        Some(Value::Bool(true)) => MutableSchemaNode::any(),
+        Some(Value::Bool(false)) => MutableSchemaNode::bool_schema(false),
         Some(Value::Array(arr)) => {
             if arr.is_empty() {
-                SchemaNode::any()
+                MutableSchemaNode::any()
             } else if arr.len() == 1 {
                 build_schema_ast_from_value(&arr[0])?
             } else {
                 let subnodes = arr
                     .iter()
                     .map(build_schema_ast_from_value)
-                    .collect::<Result<Vec<SchemaNode>>>()?;
-                SchemaNode::new(SchemaNodeKind::AllOf(subnodes))
+                    .collect::<Result<Vec<MutableSchemaNode>>>()?;
+                MutableSchemaNode::new(SchemaNodeKind::AllOf(subnodes))
             }
         }
         Some(other) => build_schema_ast_from_value(other)?,
@@ -1536,7 +2001,7 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
         None
     };
 
-    Ok(SchemaNode::new(SchemaNodeKind::Array {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::Array {
         items: items_node,
         min_items,
         max_items,
@@ -1547,20 +2012,20 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
 }
 
 fn resolve_refs_from_canonical_root(
-    node: &mut SchemaNode,
+    node: &mut MutableSchemaNode,
     root_json: &CanonicalSchema,
     visited: &[String],
 ) -> Result<()> {
     let mut stack = visited.to_vec();
-    let mut cache: HashMap<String, SchemaNode> = HashMap::new();
+    let mut cache: HashMap<String, MutableSchemaNode> = HashMap::new();
     resolve_refs_internal(node, root_json.as_value(), &mut stack, &mut cache)
 }
 
 fn resolve_refs_internal(
-    node: &mut SchemaNode,
+    node: &mut MutableSchemaNode,
     root_json: &Value,
     stack: &mut Vec<String>,
-    cache: &mut HashMap<String, SchemaNode>,
+    cache: &mut HashMap<String, MutableSchemaNode>,
 ) -> Result<()> {
     let ref_path = {
         let guard = node.borrow();
@@ -1826,7 +2291,7 @@ fn resolve_json_pointer_child<'a>(current: &'a Value, token: &str) -> Option<&'a
     }
 }
 
-fn normalize_resolved_node(node: &mut SchemaNode) {
+fn normalize_resolved_node(node: &mut MutableSchemaNode) {
     let current = node.borrow().clone();
     let replacement = match current {
         SchemaNodeKind::AllOf(mut children) => {
@@ -1834,7 +2299,7 @@ fn normalize_resolved_node(node: &mut SchemaNode) {
                 Some(SchemaNodeKind::BoolSchema(false))
             } else {
                 children.retain(|child| !is_any_schema(child));
-                children = dedupe_schema_nodes(children);
+                children = dedupe_mutable_schema_nodes(children);
                 collapse_applicator_children(&children, true)
                     .or(Some(SchemaNodeKind::AllOf(children)))
             }
@@ -1844,7 +2309,7 @@ fn normalize_resolved_node(node: &mut SchemaNode) {
                 Some(SchemaNodeKind::Any)
             } else {
                 children.retain(|child| !is_false_schema(child));
-                children = dedupe_schema_nodes(children);
+                children = dedupe_mutable_schema_nodes(children);
                 collapse_applicator_children(&children, false)
                     .or(Some(SchemaNodeKind::AnyOf(children)))
             }
@@ -1891,9 +2356,9 @@ fn normalize_resolved_node(node: &mut SchemaNode) {
 }
 
 fn collapse_applicator_children(
-    children: &[SchemaNode],
+    children: &[MutableSchemaNode],
     empty_is_any: bool,
-) -> Option<SchemaNodeKind> {
+) -> Option<MutableSchemaNodeKind> {
     match children.len() {
         0 => Some(if empty_is_any {
             SchemaNodeKind::Any
@@ -1905,13 +2370,13 @@ fn collapse_applicator_children(
     }
 }
 
-fn is_any_schema(node: &SchemaNode) -> bool {
+fn is_any_schema(node: &MutableSchemaNode) -> bool {
     matches!(
         &*node.borrow(),
         SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
     )
 }
 
-fn is_false_schema(node: &SchemaNode) -> bool {
+fn is_false_schema(node: &MutableSchemaNode) -> bool {
     matches!(&*node.borrow(), SchemaNodeKind::BoolSchema(false))
 }

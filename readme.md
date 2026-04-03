@@ -92,6 +92,14 @@ Most JSON Schema Draft 2020-12 keywords are supported. Notable partial support:
 - **`pattern`** (regex): Best-effort string generation from regex patterns. Complex patterns (e.g. backreferences) may not produce matching strings.
 - When `format` or `pattern` is used, `minLength`/`maxLength` constraints are ignored during example generation.
 
+## Validation and canonicalization
+
+This project intentionally separates runtime validation from the canonical schema representation used by compatibility analysis:
+
+- `json_schema_ast::compile(&raw_schema)` validates the original schema document directly with the `jsonschema` crate. Before compilation, it rejects any `$schema` declaration other than Draft 2020-12 (`https://json-schema.org/draft/2020-12/schema` or the same URI with a trailing `#`).
+- `json_schema_ast::build_and_resolve_schema(&raw_schema)` first canonicalizes the schema, then builds the internal AST used for compatibility checks, code generation, and fuzz-driven value generation.
+- The test suite compares raw-schema validators against canonical-schema validators on generated probes. Any semantic disagreement is a canonicalization bug.
+
 
 ## Development
 
@@ -103,6 +111,22 @@ Run tests:
 
 ```bash
 just check
+```
+
+Run the performance benchmark harnesses:
+
+```bash
+just bench
+```
+
+The schema operation benchmarks use a fixed handpicked corpus under
+[benches/fixtures](benches/fixtures) so broad fuzz fixture changes do not move
+the benchmark baseline.
+
+For a fast smoke check of the benchmark binary:
+
+```bash
+just bench-check
 ```
 
 See the [Justfile](Justfile) for more commands
