@@ -10,17 +10,44 @@
       "if": {
         "type": "string"
       }
-    }
+    },
+    "tests": [
+      {
+        "description": "string instances satisfy the referenced if schema",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "non-strings fail the referenced if schema",
+        "data": 1,
+        "valid": false
+      }
+    ]
   },
   {
     "description": "local ref to #/not survives canonicalization when not: false is simplified",
     "schema": {
-      "if": false,
+      "if": true,
       "then": {
+        "type": "string"
+      },
+      "else": {
         "$ref": "#/not"
       },
       "not": false
-    }
+    },
+    "tests": [
+      {
+        "description": "strings are still accepted",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "the root string type still rejects numbers",
+        "data": 1,
+        "valid": false
+      }
+    ]
   },
   {
     "description": "indexed allOf refs remain valid when duplicate branches are present",
@@ -50,7 +77,19 @@
           }
         ]
       }
-    }
+    },
+    "tests": [
+      {
+        "description": "strings satisfy the referenced branch",
+        "data": "value",
+        "valid": true
+      },
+      {
+        "description": "non-strings fail the referenced branch",
+        "data": false,
+        "valid": false
+      }
+    ]
   },
   {
     "description": "refs into unsatisfiable descendants remain valid",
@@ -74,7 +113,19 @@
           }
         ]
       }
-    }
+    },
+    "tests": [
+      {
+        "description": "strings satisfy the referenced descendant schema",
+        "data": "value",
+        "valid": true
+      },
+      {
+        "description": "non-strings fail the referenced descendant schema",
+        "data": 7,
+        "valid": false
+      }
+    ]
   },
   {
     "description": "sibling $defs survive anyOf false collapse when they are local ref targets",
@@ -94,7 +145,19 @@
           }
         }
       }
-    }
+    },
+    "tests": [
+      {
+        "description": "strings satisfy the referenced $defs target",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "non-strings fail the referenced $defs target",
+        "data": null,
+        "valid": false
+      }
+    ]
   },
   {
     "description": "sibling $defs survive oneOf false collapse when they are local ref targets",
@@ -114,7 +177,19 @@
           }
         }
       }
-    }
+    },
+    "tests": [
+      {
+        "description": "strings satisfy the referenced $defs target",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "non-strings fail the referenced $defs target",
+        "data": {},
+        "valid": false
+      }
+    ]
   },
   {
     "description": "non-object enum values with object keywords stay representable",
@@ -125,7 +200,21 @@
       "enum": [
         1
       ]
-    }
+    },
+    "tests": [
+      {
+        "description": "the enum value remains valid",
+        "data": 1,
+        "valid": true
+      },
+      {
+        "description": "objects matching the property schema are still rejected",
+        "data": {
+          "x": true
+        },
+        "valid": false
+      }
+    ]
   },
   {
     "description": "non-array enum values with array keywords stay representable",
@@ -134,7 +223,21 @@
       "enum": [
         1
       ]
-    }
+    },
+    "tests": [
+      {
+        "description": "the enum value remains valid",
+        "data": 1,
+        "valid": true
+      },
+      {
+        "description": "arrays matching the array keywords are still rejected",
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
   },
   {
     "description": "non-string enum values with string keywords stay representable",
@@ -143,6 +246,18 @@
       "enum": [
         1
       ]
-    }
+    },
+    "tests": [
+      {
+        "description": "the enum value remains valid",
+        "data": 1,
+        "valid": true
+      },
+      {
+        "description": "strings matching minLength are still rejected",
+        "data": "1",
+        "valid": false
+      }
+    ]
   }
 ]

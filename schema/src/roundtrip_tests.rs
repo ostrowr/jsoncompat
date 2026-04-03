@@ -53,6 +53,11 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|error| format!("{} canonicalize: {error}", path.display()))?;
             let ast = build_and_resolve_schema(schema.as_value())
                 .map_err(|error| format!("{}: {error}", path.display()))?;
+            if ast.has_cycle() {
+                // `SchemaNode::to_json()` serializes trees, not graph backedges.
+                // Recursive fixtures are still covered by `tests/fuzz.rs`.
+                continue;
+            }
             let json = ast.to_json();
             let schema2 = canonicalize_schema(&json)
                 .map_err(|error| format!("{} roundtrip canonicalize: {error}", path.display()))?;

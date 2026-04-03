@@ -54,6 +54,98 @@ impl SchemaNode {
         Rc::ptr_eq(&self.0, &other.0)
     }
 
+    #[cfg(test)]
+    pub(crate) fn has_cycle(&self) -> bool {
+        fn visit(
+            node: &SchemaNode,
+            active: &mut HashSet<usize>,
+            seen: &mut HashSet<usize>,
+        ) -> bool {
+            let id = node.ptr_id();
+            if active.contains(&id) {
+                return true;
+            }
+            if !seen.insert(id) {
+                return false;
+            }
+
+            active.insert(id);
+            let children = {
+                use SchemaNodeKind::*;
+
+                match &*node.borrow() {
+                    AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
+                    Not(child) => vec![child.clone()],
+                    IfThenElse {
+                        if_schema,
+                        then_schema,
+                        else_schema,
+                    } => {
+                        let mut children = vec![if_schema.clone()];
+                        if let Some(child) = then_schema {
+                            children.push(child.clone());
+                        }
+                        if let Some(child) = else_schema {
+                            children.push(child.clone());
+                        }
+                        children
+                    }
+                    Object {
+                        properties,
+                        additional,
+                        property_names,
+                        ..
+                    } => properties
+                        .values()
+                        .cloned()
+                        .chain(std::iter::once(additional.clone()))
+                        .chain(std::iter::once(property_names.clone()))
+                        .collect(),
+                    Array {
+                        items, contains, ..
+                    } => {
+                        let mut children = vec![items.clone()];
+                        if let Some(child) = contains {
+                            children.push(child.clone());
+                        }
+                        children
+                    }
+                    AdditionalProperties(child) => vec![child.clone()],
+                    Defs(children) => children.values().cloned().collect(),
+                    BoolSchema(_)
+                    | Any
+                    | String { .. }
+                    | Number { .. }
+                    | Integer { .. }
+                    | Boolean { .. }
+                    | Null { .. }
+                    | Ref(_)
+                    | Const(_)
+                    | Enum(_)
+                    | Type(_)
+                    | Required(_)
+                    | Minimum(_)
+                    | Maximum(_)
+                    | Format(_)
+                    | ContentEncoding(_)
+                    | ContentMediaType(_)
+                    | Title(_)
+                    | Description(_)
+                    | Default(_)
+                    | Examples(_)
+                    | ReadOnly(_)
+                    | WriteOnly(_) => Vec::new(),
+                }
+            };
+
+            let has_cycle = children.iter().any(|child| visit(child, active, seen));
+            active.remove(&id);
+            has_cycle
+        }
+
+        visit(self, &mut HashSet::new(), &mut HashSet::new())
+    }
+
     /// Convert the AST node back into a *minimal* JSON representation.  This
     /// is **lossy** for complex scenarios but is sufficient for the validator
     /// tests and fuzz harness (which only relies on the subset of keywords we

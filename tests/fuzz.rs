@@ -112,23 +112,7 @@ datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = fs::read(file)?;
     let root: Value = serde_json::from_slice(&bytes)?;
-
-    // Collect all schemas contained in the file.  For the official test‑suite
-    // this is typically an array of objects each with a `schema` member.
-    let mut schemas = Vec::new();
-    match &root {
-        Value::Array(groups) => {
-            for item in groups {
-                if let Some(s) = item.get("schema") {
-                    schemas.push(s.clone());
-                }
-            }
-        }
-        v => {
-            // Fallback: treat the entire document as a single schema.
-            schemas.push(v.clone());
-        }
-    }
+    let schemas = collect_fixture_schemas(&root);
 
     // Deterministic RNG per file for reproducibility.
     let seed = 0xBADBABE + file.to_string_lossy().len() as u64;
@@ -137,11 +121,13 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Whitelist lookup key – path relative to the fixtures root.
     let rel_path = file.strip_prefix("tests/fixtures/fuzz").unwrap_or(file);
     let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+    let validate_fixture_tests = rel_str.starts_with("custom/");
 
     let whitelist = load_whitelist();
     let allowed = whitelist.get::<str>(rel_str.as_ref());
 
-    for (idx, schema_json) in schemas.iter().enumerate() {
+    for (idx, fixture_schema) in schemas.iter().enumerate() {
+        let schema_json = &fixture_schema.schema;
         // Skip `false` schemas – they have an empty instance set by design.
         if schema_json == &Value::Bool(false) {
             continue;
@@ -168,6 +154,21 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => return Err(error.into()),
         };
         let compiled = compile(schema_json)?;
+
+        if validate_fixture_tests {
+            for fixture_test in &fixture_schema.tests {
+                assert_eq!(
+                    compiled.is_valid(&fixture_test.data),
+                    fixture_test.valid,
+                    "{} schema #{idx} ({}) fixture test {:?} returned the wrong validation result\n\nSchema:\n{}\n\nInstance:\n{}",
+                    rel_str,
+                    fixture_schema.description,
+                    fixture_test.description,
+                    serde_json::to_string_pretty(schema_json)?,
+                    serde_json::to_string_pretty(&fixture_test.data)?,
+                );
+            }
+        }
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 
@@ -209,6 +210,68 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct FixtureSchema {
+    description: String,
+    schema: Value,
+    tests: Vec<FixtureTest>,
+}
+
+#[derive(Debug)]
+struct FixtureTest {
+    description: String,
+    data: Value,
+    valid: bool,
+}
+
+fn collect_fixture_schemas(root: &Value) -> Vec<FixtureSchema> {
+    match root {
+        Value::Array(groups) => groups
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                let schema = item.get("schema")?.clone();
+                let description = item
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("schema #{index}"));
+                let tests = item
+                    .get("tests")
+                    .and_then(Value::as_array)
+                    .map(|tests| {
+                        tests
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(test_index, test)| {
+                                Some(FixtureTest {
+                                    description: test
+                                        .get("description")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_owned)
+                                        .unwrap_or_else(|| format!("test #{test_index}")),
+                                    data: test.get("data")?.clone(),
+                                    valid: test.get("valid")?.as_bool()?,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some(FixtureSchema {
+                    description,
+                    schema,
+                    tests,
+                })
+            })
+            .collect(),
+        schema => vec![FixtureSchema {
+            description: "root schema".to_owned(),
+            schema: schema.clone(),
+            tests: Vec::new(),
+        }],
+    }
 }
 
 fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
