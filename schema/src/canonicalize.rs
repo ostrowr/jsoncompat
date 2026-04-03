@@ -13,6 +13,7 @@ use crate::schema_metadata::{
     JSONCOMPAT_METADATA_KEY, PRESERVED_SCHEMA_METADATA_KEYS, TERMINAL_SCHEMA_METADATA_KEYS,
     is_schema_metadata_key,
 };
+use percent_encoding::percent_decode_str;
 use serde_json::{Map, Number, Value};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
@@ -491,16 +492,16 @@ fn rewrite_schema_object(
     normalize_schema_uri(&mut obj);
     remove_not_false(&mut obj);
     remove_empty_conditionals(&mut obj);
-    remove_without_dependencies(&mut obj);
+    remove_without_dependencies(&mut obj, pointer, options.local_ref_targets);
     dedupe_required(&mut obj, pointer)?;
     dedupe_enum(&mut obj);
     dedupe_schema_array(&mut obj, "allOf");
     dedupe_schema_array(&mut obj, "anyOf");
-    simplify_allof(&mut obj);
-    if let Some(result) = simplify_anyof(&mut obj) {
+    simplify_allof(&mut obj, pointer, options.local_ref_targets);
+    if let Some(result) = simplify_anyof(&mut obj, pointer, options.local_ref_targets) {
         return Ok(result);
     }
-    if let Some(result) = simplify_oneof(&mut obj) {
+    if let Some(result) = simplify_oneof(&mut obj, pointer, options.local_ref_targets) {
         return Ok(result);
     }
     fold_required_dependencies(&mut obj, pointer)?;
@@ -590,18 +591,28 @@ fn remove_empty_conditionals(schema: &mut Map<String, Value>) {
     }
 }
 
-fn remove_without_dependencies(schema: &mut Map<String, Value>) {
+fn remove_without_dependencies(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) {
     if !schema.contains_key("if") {
-        if schema
-            .get("then")
-            .is_some_and(|then_schema| !schema_contains_resource_identifier(then_schema))
-        {
+        if schema.get("then").is_some_and(|then_schema| {
+            !schema_contains_resource_identifier(then_schema)
+                && !preserve_unknown_keyword_at_pointer(
+                    &join_pointer(pointer, "then"),
+                    local_ref_targets,
+                )
+        }) {
             schema.remove("then");
         }
-        if schema
-            .get("else")
-            .is_some_and(|else_schema| !schema_contains_resource_identifier(else_schema))
-        {
+        if schema.get("else").is_some_and(|else_schema| {
+            !schema_contains_resource_identifier(else_schema)
+                && !preserve_unknown_keyword_at_pointer(
+                    &join_pointer(pointer, "else"),
+                    local_ref_targets,
+                )
+        }) {
             schema.remove("else");
         }
     }
@@ -669,13 +680,25 @@ fn dedupe_schema_array(schema: &mut Map<String, Value>, keyword: &str) {
     schema.insert(keyword.to_owned(), Value::Array(unique));
 }
 
-fn simplify_allof(schema: &mut Map<String, Value>) {
+fn simplify_allof(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) {
     let Some(Value::Array(branches)) = schema.get_mut("allOf") else {
         return;
     };
 
+    if preserve_unknown_keyword_at_pointer(&join_pointer(pointer, "allOf"), local_ref_targets) {
+        return;
+    }
+
     if branches.iter().any(|branch| branch == &Value::Bool(false)) {
-        let preserved = preserved_terminal_meta(schema);
+        let preserved = if preserve_unknown_keyword_at_pointer(pointer, local_ref_targets) {
+            preserved_meta(schema)
+        } else {
+            preserved_terminal_meta(schema)
+        };
         schema.clear();
         schema.extend(preserved);
         schema.insert("not".to_owned(), Value::Bool(true));
@@ -688,10 +711,18 @@ fn simplify_allof(schema: &mut Map<String, Value>) {
     }
 }
 
-fn simplify_anyof(schema: &mut Map<String, Value>) -> Option<Value> {
+fn simplify_anyof(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) -> Option<Value> {
     let Some(Value::Array(branches)) = schema.get_mut("anyOf") else {
         return None;
     };
+
+    if preserve_unknown_keyword_at_pointer(&join_pointer(pointer, "anyOf"), local_ref_targets) {
+        return None;
+    }
 
     if branches.iter().any(|branch| branch == &Value::Bool(true)) {
         schema.remove("anyOf");
@@ -710,10 +741,18 @@ fn simplify_anyof(schema: &mut Map<String, Value>) -> Option<Value> {
     None
 }
 
-fn simplify_oneof(schema: &mut Map<String, Value>) -> Option<Value> {
+fn simplify_oneof(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) -> Option<Value> {
     let Some(Value::Array(branches)) = schema.get("oneOf") else {
         return None;
     };
+
+    if preserve_unknown_keyword_at_pointer(&join_pointer(pointer, "oneOf"), local_ref_targets) {
+        return None;
+    }
 
     if branches.len() == 1 && branches[0] == Value::Bool(false) {
         let mut obj = preserved_terminal_meta(schema);
@@ -1032,8 +1071,13 @@ fn integer_floor(value: &Value, pointer: &str) -> Result<Option<Value>> {
     let Some(number) = value.as_number() else {
         return Ok(None);
     };
-    if number.is_i64() || number.is_u64() {
-        return Ok(Some(Value::Number(number.clone())));
+    if let Some(value) = number.as_i64() {
+        return Ok(Some(Value::Number(Number::from(value))));
+    }
+    if let Some(value) = number.as_u64() {
+        return Ok(Some(Value::Number(Number::from(checked_i64_from_u64(
+            value, pointer,
+        )?))));
     }
     let Some(value) = number.as_f64() else {
         return Err(CanonicalizeError::NonFiniteNumericKeyword {
@@ -1048,8 +1092,13 @@ fn integer_ceil(value: &Value, pointer: &str) -> Result<Option<Value>> {
     let Some(number) = value.as_number() else {
         return Ok(None);
     };
-    if number.is_i64() || number.is_u64() {
-        return Ok(Some(Value::Number(number.clone())));
+    if let Some(value) = number.as_i64() {
+        return Ok(Some(Value::Number(Number::from(value))));
+    }
+    if let Some(value) = number.as_u64() {
+        return Ok(Some(Value::Number(Number::from(checked_i64_from_u64(
+            value, pointer,
+        )?))));
     }
     let Some(value) = number.as_f64() else {
         return Err(CanonicalizeError::NonFiniteNumericKeyword {
@@ -1525,9 +1574,9 @@ fn collect_local_schema_refs(schema: &Value) -> BTreeSet<String> {
 fn collect_local_schema_refs_in_value(key: &str, value: &Value, refs: &mut BTreeSet<String>) {
     if matches!(key, "$ref" | "$dynamicRef")
         && let Some(reference) = value.as_str()
-        && reference.starts_with('#')
+        && let Some(reference) = normalize_local_ref_target(reference)
     {
-        refs.insert(reference.to_owned());
+        refs.insert(reference);
     }
 
     match value {
@@ -1553,6 +1602,23 @@ fn preserve_unknown_keyword_at_pointer(
     local_ref_targets
         .iter()
         .any(|reference| reference == pointer || reference.starts_with(&prefix))
+}
+
+fn normalize_local_ref_target(reference: &str) -> Option<String> {
+    if reference == "#" {
+        return Some(reference.to_owned());
+    }
+
+    let stripped = reference.strip_prefix("#/")?;
+    let mut normalized = String::from("#");
+    for token in stripped.split('/') {
+        let mut decoded = percent_decode_str(token).decode_utf8_lossy().into_owned();
+        decoded = decoded.replace("~1", "/");
+        decoded = decoded.replace("~0", "~");
+        normalized.push('/');
+        normalized.push_str(&escape_pointer_token(&decoded));
+    }
+    Some(normalized)
 }
 
 fn schema_contains_resource_identifier(schema: &Value) -> bool {
@@ -1729,24 +1795,8 @@ fn value_is_multiple_of(
 ) -> Result<bool> {
     match type_name {
         "integer" => {
-            let Some(value) = value
-                .as_i64()
-                .or_else(|| value.as_u64().map(|value| value as i64))
-            else {
-                return Err(CanonicalizeError::IntegerKeywordOutOfRange {
-                    pointer: value_pointer.to_owned(),
-                    keyword: last_pointer_token(value_pointer),
-                });
-            };
-            let Some(multiple_of) = multiple_of
-                .as_i64()
-                .or_else(|| multiple_of.as_u64().map(|value| value as i64))
-            else {
-                return Err(CanonicalizeError::IntegerKeywordOutOfRange {
-                    pointer: multiple_of_pointer.to_owned(),
-                    keyword: last_pointer_token(multiple_of_pointer),
-                });
-            };
+            let value = integer_value_from_json(value, value_pointer)?;
+            let multiple_of = integer_value_from_json(multiple_of, multiple_of_pointer)?;
             Ok(multiple_of != 0 && value % multiple_of == 0)
         }
         "number" => {
@@ -1770,6 +1820,32 @@ fn value_is_multiple_of(
         }
         _ => Ok(true),
     }
+}
+
+fn integer_value_from_json(value: &Value, pointer: &str) -> Result<i64> {
+    let Some(number) = value.as_number() else {
+        return Err(CanonicalizeError::IntegerKeywordOutOfRange {
+            pointer: pointer.to_owned(),
+            keyword: last_pointer_token(pointer),
+        });
+    };
+    if let Some(value) = number.as_i64() {
+        return Ok(value);
+    }
+    if let Some(value) = number.as_u64() {
+        return checked_i64_from_u64(value, pointer);
+    }
+    Err(CanonicalizeError::IntegerKeywordOutOfRange {
+        pointer: pointer.to_owned(),
+        keyword: last_pointer_token(pointer),
+    })
+}
+
+fn checked_i64_from_u64(value: u64, pointer: &str) -> Result<i64> {
+    i64::try_from(value).map_err(|_| CanonicalizeError::IntegerKeywordOutOfRange {
+        pointer: pointer.to_owned(),
+        keyword: last_pointer_token(pointer),
+    })
 }
 
 fn preserved_meta(schema: &Map<String, Value>) -> Map<String, Value> {

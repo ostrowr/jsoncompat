@@ -75,6 +75,24 @@ fn resolve_duplicate_refs_share_pointer() {
 }
 
 #[test]
+fn resolve_self_recursive_allof_without_panicking() {
+    let raw = json!({
+        "$defs": {
+            "A": {
+                "allOf": [
+                    { "$ref": "#/$defs/A" }
+                ]
+            }
+        },
+        "$ref": "#/$defs/A"
+    });
+
+    let ast = build_and_resolve_schema(&raw).unwrap();
+    let guard = ast.borrow();
+    assert!(matches!(&*guard, SchemaNodeKind::AllOf(children) if children.len() == 1));
+}
+
+#[test]
 fn boolean_schemas() {
     let sample = json!({"k":1});
     for b in [true, false] {
@@ -118,6 +136,21 @@ fn enum_with_minimum_uses_number_schema_shape() {
 
     assert_eq!(*minimum, Some(1.0));
     assert_eq!(enumeration.as_ref().unwrap(), &vec![json!(0), json!(1)]);
+}
+
+#[test]
+fn non_numeric_enum_with_minimum_uses_terminal_enum_shape() {
+    let ast = build_schema(&json!({
+        "enum": ["x"],
+        "minimum": 1
+    }));
+
+    let guard = ast.borrow();
+    let SchemaNodeKind::Enum(values) = &*guard else {
+        panic!("expected enum schema, got {guard:?}");
+    };
+
+    assert_eq!(values, &vec![json!("x")]);
 }
 
 #[test]
@@ -226,6 +259,67 @@ fn metadata_only_enum_wrapper_uses_terminal_enum_shape() {
     };
 
     assert_eq!(values, &vec![json!(42)]);
+}
+
+#[test]
+fn resolves_local_refs_with_percent_encoded_pointer_tokens() {
+    let ast = build_and_resolve_schema(&json!({
+        "x foo": { "type": "string" },
+        "$ref": "#/x%20foo"
+    }))
+    .unwrap();
+
+    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+}
+
+#[test]
+fn preserves_dangling_then_target_without_if() {
+    let ast = build_and_resolve_schema(&json!({
+        "allOf": [
+            { "$ref": "#/then" }
+        ],
+        "then": {
+            "type": "string"
+        }
+    }))
+    .unwrap();
+
+    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
+}
+
+#[test]
+fn preserves_referenced_anyof_branch_when_true_branch_is_present() {
+    let ast = build_and_resolve_schema(&json!({
+        "allOf": [
+            { "$ref": "#/anyOf/0" }
+        ],
+        "anyOf": [
+            true,
+            { "type": "string" }
+        ]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        &*ast.borrow(),
+        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+    ));
+}
+
+#[test]
+fn preserves_referenced_defs_when_false_schema_is_canonicalized() {
+    let ast = build_and_resolve_schema(&json!({
+        "x": {
+            "allOf": [false],
+            "$defs": {
+                "A": { "type": "string" }
+            }
+        },
+        "$ref": "#/x/$defs/A"
+    }))
+    .unwrap();
+
+    assert!(matches!(&*ast.borrow(), SchemaNodeKind::String { .. }));
 }
 
 fn build_schema(raw: &Value) -> SchemaNode {

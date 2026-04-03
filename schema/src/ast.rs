@@ -916,10 +916,15 @@ impl<'a> SchemaShape<'a> {
         if keywords.flags.contains(SchemaKeywordFlags::STRING) {
             return Self::String;
         }
-        if (keywords.enum_values.is_some() || keywords.const_value.is_some())
-            && keywords.flags.contains(SchemaKeywordFlags::NUMERIC)
+        if keywords.flags.contains(SchemaKeywordFlags::NUMERIC) && keywords.values_are_all_numeric()
         {
             return Self::Number;
+        }
+        if let Some(values) = keywords.enum_values {
+            return Self::Enum(values);
+        }
+        if let Some(value) = keywords.const_value {
+            return Self::Const(value);
         }
         Self::Any
     }
@@ -1065,6 +1070,15 @@ impl<'a> SchemaKeywords<'a> {
     #[must_use]
     const fn has_only_one_non_metadata_keyword(self) -> bool {
         self.non_metadata_keyword_count == 1
+    }
+
+    #[must_use]
+    fn values_are_all_numeric(self) -> bool {
+        (self.enum_values.is_some() || self.const_value.is_some())
+            && self
+                .enum_values
+                .is_none_or(|values| values.iter().all(Value::is_number))
+            && self.const_value.is_none_or(Value::is_number)
     }
 }
 
@@ -1563,42 +1577,135 @@ fn resolve_refs_internal(
         normalize_resolved_node(node);
         return Ok(());
     }
-    if let SchemaNodeKind::Not(sub) = &mut *node.borrow_mut() {
-        resolve_refs_internal(sub, root_json, stack, cache)?;
+    if matches!(&*node.borrow(), SchemaNodeKind::Not(_)) {
+        let mut sub = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::Not(sub) => sub.clone(),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
+        resolve_refs_internal(&mut sub, root_json, stack, cache)?;
+        *node.borrow_mut() = SchemaNodeKind::Not(sub);
         return Ok(());
     }
-    if let SchemaNodeKind::Object {
-        properties,
-        additional,
-        property_names,
-        ..
-    } = &mut *node.borrow_mut()
-    {
+    if matches!(&*node.borrow(), SchemaNodeKind::Object { .. }) {
+        let (
+            mut properties,
+            required,
+            mut additional,
+            mut property_names,
+            min_properties,
+            max_properties,
+            dependent_required,
+            enumeration,
+        ) = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::Object {
+                    properties,
+                    required,
+                    additional,
+                    property_names,
+                    min_properties,
+                    max_properties,
+                    dependent_required,
+                    enumeration,
+                } => (
+                    properties.clone(),
+                    required.clone(),
+                    additional.clone(),
+                    property_names.clone(),
+                    *min_properties,
+                    *max_properties,
+                    dependent_required.clone(),
+                    enumeration.clone(),
+                ),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
+
         for child in properties.values_mut() {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
-        resolve_refs_internal(additional, root_json, stack, cache)?;
-        resolve_refs_internal(property_names, root_json, stack, cache)?;
+        resolve_refs_internal(&mut additional, root_json, stack, cache)?;
+        resolve_refs_internal(&mut property_names, root_json, stack, cache)?;
+        *node.borrow_mut() = SchemaNodeKind::Object {
+            properties,
+            required,
+            additional,
+            property_names,
+            min_properties,
+            max_properties,
+            dependent_required,
+            enumeration,
+        };
         return Ok(());
     }
-    if let SchemaNodeKind::Array {
-        items, contains, ..
-    } = &mut *node.borrow_mut()
-    {
-        resolve_refs_internal(items, root_json, stack, cache)?;
-        if let Some(child) = contains {
+    if matches!(&*node.borrow(), SchemaNodeKind::Array { .. }) {
+        let (mut items, min_items, max_items, mut contains, min_contains, enumeration) = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::Array {
+                    items,
+                    min_items,
+                    max_items,
+                    contains,
+                    min_contains,
+                    enumeration,
+                } => (
+                    items.clone(),
+                    *min_items,
+                    *max_items,
+                    contains.clone(),
+                    *min_contains,
+                    enumeration.clone(),
+                ),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
+
+        resolve_refs_internal(&mut items, root_json, stack, cache)?;
+        if let Some(child) = &mut contains {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        *node.borrow_mut() = SchemaNodeKind::Array {
+            items,
+            min_items,
+            max_items,
+            contains,
+            min_contains,
+            enumeration,
+        };
         return Ok(());
     }
-    if let SchemaNodeKind::AdditionalProperties(schema) = &mut *node.borrow_mut() {
-        resolve_refs_internal(schema, root_json, stack, cache)?;
+    if matches!(
+        &*node.borrow(),
+        SchemaNodeKind::AdditionalProperties(_)
+    ) {
+        let mut schema = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::AdditionalProperties(schema) => schema.clone(),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
+        resolve_refs_internal(&mut schema, root_json, stack, cache)?;
+        *node.borrow_mut() = SchemaNodeKind::AdditionalProperties(schema);
         return Ok(());
     }
-    if let SchemaNodeKind::Defs(map) = &mut *node.borrow_mut() {
+    if matches!(&*node.borrow(), SchemaNodeKind::Defs(_)) {
+        let mut map = {
+            let guard = node.borrow();
+            match &*guard {
+                SchemaNodeKind::Defs(map) => map.clone(),
+                _ => unreachable!("node kind checked above"),
+            }
+        };
         for child in map.values_mut() {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        *node.borrow_mut() = SchemaNodeKind::Defs(map);
         return Ok(());
     }
 
@@ -1617,47 +1724,53 @@ fn resolve_json_pointer_child<'a>(current: &'a Value, token: &str) -> Option<&'a
 }
 
 fn normalize_resolved_node(node: &mut SchemaNode) {
-    let replacement = {
-        let mut guard = node.borrow_mut();
-        match &mut *guard {
-            SchemaNodeKind::AllOf(children) => {
-                if children.iter().any(is_false_schema) {
-                    Some(SchemaNodeKind::BoolSchema(false))
-                } else {
-                    children.retain(|child| !is_any_schema(child));
-                    *children = dedupe_schema_nodes(children.clone());
-                    collapse_applicator_children(children, true)
-                }
+    let current = node.borrow().clone();
+    let replacement = match current {
+        SchemaNodeKind::AllOf(mut children) => {
+            if children.iter().any(is_false_schema) {
+                Some(SchemaNodeKind::BoolSchema(false))
+            } else {
+                children.retain(|child| !is_any_schema(child));
+                children = dedupe_schema_nodes(children);
+                collapse_applicator_children(&children, true)
+                    .or(Some(SchemaNodeKind::AllOf(children)))
             }
-            SchemaNodeKind::AnyOf(children) => {
-                if children.iter().any(is_any_schema) {
-                    Some(SchemaNodeKind::Any)
-                } else {
-                    children.retain(|child| !is_false_schema(child));
-                    *children = dedupe_schema_nodes(children.clone());
-                    collapse_applicator_children(children, false)
-                }
-            }
-            SchemaNodeKind::OneOf(children) => collapse_applicator_children(children, false),
-            SchemaNodeKind::IfThenElse {
-                then_schema,
-                else_schema,
-                ..
-            } => {
-                if then_schema.as_ref().is_some_and(is_any_schema) {
-                    *then_schema = None;
-                }
-                if else_schema.as_ref().is_some_and(is_any_schema) {
-                    *else_schema = None;
-                }
-                if then_schema.is_none() && else_schema.is_none() {
-                    Some(SchemaNodeKind::Any)
-                } else {
-                    None
-                }
-            }
-            _ => None,
         }
+        SchemaNodeKind::AnyOf(mut children) => {
+            if children.iter().any(is_any_schema) {
+                Some(SchemaNodeKind::Any)
+            } else {
+                children.retain(|child| !is_false_schema(child));
+                children = dedupe_schema_nodes(children);
+                collapse_applicator_children(&children, false)
+                    .or(Some(SchemaNodeKind::AnyOf(children)))
+            }
+        }
+        SchemaNodeKind::OneOf(children) => {
+            collapse_applicator_children(&children, false).or(Some(SchemaNodeKind::OneOf(children)))
+        }
+        SchemaNodeKind::IfThenElse {
+            if_schema,
+            mut then_schema,
+            mut else_schema,
+        } => {
+            if then_schema.as_ref().is_some_and(is_any_schema) {
+                then_schema = None;
+            }
+            if else_schema.as_ref().is_some_and(is_any_schema) {
+                else_schema = None;
+            }
+            if then_schema.is_none() && else_schema.is_none() {
+                Some(SchemaNodeKind::Any)
+            } else {
+                Some(SchemaNodeKind::IfThenElse {
+                    if_schema,
+                    then_schema,
+                    else_schema,
+                })
+            }
+        }
+        _ => None,
     };
 
     if let Some(kind) = replacement {

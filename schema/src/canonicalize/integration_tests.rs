@@ -504,6 +504,25 @@ fn canonicalize_converts_integral_exclusive_integer_bounds_and_checks_equal_boun
 }
 
 #[test]
+fn canonicalize_rejects_integer_bounds_above_i64_max() {
+    let error = canonicalize_schema(&json!({
+        "type": "integer",
+        "minimum": 9223372036854775809_u64,
+        "maximum": 9223372036854775809_u64,
+        "multipleOf": 3
+    }))
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CanonicalizeError::IntegerKeywordOutOfRange {
+            pointer,
+            ..
+        } if pointer == "#/minimum" || pointer == "#/maximum"
+    ));
+}
+
+#[test]
 fn canonicalize_collapses_overflowed_exclusive_integer_bounds_to_unsatisfiable() {
     assert_canonicalizes_to(
         &json!({

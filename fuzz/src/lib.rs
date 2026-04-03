@@ -61,6 +61,7 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                             properties,
                             required,
                             additional,
+                            min_properties,
                             ..
                         } = &*sub.borrow()
                             && let Value::Object(obj) =
@@ -70,6 +71,8 @@ pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Val
                                 if required.contains(&k)
                                     || !matches!(&*additional.borrow(), BoolSchema(true) | Any)
                                     || properties.contains_key(&k)
+                                    || min_properties
+                                        .is_some_and(|minimum| minimum > required.len())
                                 {
                                     combined.insert(k, v);
                                 }
@@ -640,8 +643,64 @@ fn build_property_name_validator(schema: &SchemaNode) -> Option<json_schema_ast:
 }
 
 fn compile_schema_node(schema: &SchemaNode) -> Option<JSONSchema> {
+    if schema_contains_cycle(schema, &mut Vec::new()) {
+        return None;
+    }
     let raw = schema.to_json();
     compile(&raw).ok()
+}
+
+fn schema_contains_cycle(schema: &SchemaNode, path: &mut Vec<SchemaNode>) -> bool {
+    if path.iter().any(|ancestor| ancestor.ptr_eq(schema)) {
+        return true;
+    }
+
+    let children = schema_children(schema);
+    if children.is_empty() {
+        return false;
+    }
+
+    path.push(schema.clone());
+    let contains_cycle = children
+        .iter()
+        .any(|child| schema_contains_cycle(child, path));
+    path.pop();
+    contains_cycle
+}
+
+fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
+    use SchemaNodeKind::*;
+
+    match &*schema.borrow() {
+        AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
+        Not(child) | AdditionalProperties(child) => vec![child.clone()],
+        IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => std::iter::once(if_schema.clone())
+            .chain(then_schema.iter().cloned())
+            .chain(else_schema.iter().cloned())
+            .collect(),
+        Object {
+            properties,
+            additional,
+            property_names,
+            ..
+        } => properties
+            .values()
+            .cloned()
+            .chain(std::iter::once(additional.clone()))
+            .chain(std::iter::once(property_names.clone()))
+            .collect(),
+        Array {
+            items, contains, ..
+        } => std::iter::once(items.clone())
+            .chain(contains.iter().cloned())
+            .collect(),
+        Defs(map) => map.values().cloned().collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn property_name_allows(validator: Option<&json_schema_ast::JSONSchema>, candidate: &str) -> bool {
@@ -763,6 +822,77 @@ mod tests {
             let value = generate_value(&schema, &mut rng, 5);
             let obj = value.as_object().expect("expected object");
             assert!(obj.contains_key("class"));
+        }
+    }
+
+    #[test]
+    fn recursive_allof_with_cyclic_object_branch_does_not_stack_overflow() {
+        let schema = build_and_resolve_schema(&json!({
+            "$defs": {
+                "A": {
+                    "allOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "next": { "$ref": "#/$defs/A" }
+                            }
+                        },
+                        { "type": "number" }
+                    ]
+                }
+            },
+            "$ref": "#/$defs/A"
+        }))
+        .unwrap();
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let _ = generate_value(&schema, &mut rng, 5);
+    }
+
+    #[test]
+    fn recursive_anyof_branch_does_not_get_serialized_before_generation() {
+        let schema = build_and_resolve_schema(&json!({
+            "$defs": {
+                "Node": {
+                    "properties": {
+                        "next": { "$ref": "#/$defs/Node" }
+                    }
+                }
+            },
+            "anyOf": [
+                { "$ref": "#/$defs/Node" },
+                { "type": "string" }
+            ]
+        }))
+        .unwrap();
+
+        let mut rng = StdRng::seed_from_u64(7);
+        let _ = generate_value(&schema, &mut rng, 5);
+    }
+
+    #[test]
+    fn allof_object_generation_keeps_extra_keys_for_min_properties() {
+        let schema = build_and_resolve_schema(&json!({
+            "allOf": [
+                {
+                    "type": "object",
+                    "minProperties": 1
+                },
+                {
+                    "type": "object"
+                }
+            ]
+        }))
+        .unwrap();
+
+        let compiled = compile(&schema.to_json()).unwrap();
+        let mut rng = StdRng::seed_from_u64(12);
+        for _ in 0..20 {
+            let value = generate_value(&schema, &mut rng, 5);
+            assert!(
+                compiled.is_valid(&value),
+                "generated invalid value: {value}"
+            );
         }
     }
 
