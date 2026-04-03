@@ -11,11 +11,11 @@ const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
 #[test]
 fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let dir = Path::new("../tests/fixtures/fuzz");
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
+    let mut files = Vec::new();
+    collect_fixture_files(dir, &mut files)?;
+    files.sort();
+
+    for path in files {
         let bytes = fs::read(&path)?;
         let root: Value = serde_json::from_slice(&bytes)?;
 
@@ -67,6 +67,21 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::to_string_pretty(&ast2.to_json())?,
                 );
             }
+        }
+    }
+    Ok(())
+}
+
+fn collect_fixture_files(
+    dir: &Path,
+    files: &mut Vec<std::path::PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_fixture_files(&path, files)?;
+        } else if path.extension().and_then(|value| value.to_str()) == Some("json") {
+            files.push(path);
         }
     }
     Ok(())

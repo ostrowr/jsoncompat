@@ -490,13 +490,13 @@ fn rewrite_schema_object(
     let mut obj = source.clone();
 
     normalize_schema_uri(&mut obj);
-    remove_not_false(&mut obj);
-    remove_empty_conditionals(&mut obj);
+    remove_not_false(&mut obj, pointer, options.local_ref_targets);
+    remove_empty_conditionals(&mut obj, pointer, options.local_ref_targets);
     remove_without_dependencies(&mut obj, pointer, options.local_ref_targets);
     dedupe_required(&mut obj, pointer)?;
     dedupe_enum(&mut obj);
-    dedupe_schema_array(&mut obj, "allOf");
-    dedupe_schema_array(&mut obj, "anyOf");
+    dedupe_schema_array(&mut obj, "allOf", pointer, options.local_ref_targets);
+    dedupe_schema_array(&mut obj, "anyOf", pointer, options.local_ref_targets);
     simplify_allof(&mut obj, pointer, options.local_ref_targets);
     if let Some(result) = simplify_anyof(&mut obj, pointer, options.local_ref_targets) {
         return Ok(result);
@@ -522,7 +522,7 @@ fn rewrite_schema_object(
     lower_boolean_and_null_types(&mut obj);
     insert_implicit_type_union(&mut obj, pointer, options.local_ref_targets);
     lower_type_array_to_any_of(&mut obj, pointer)?;
-    if let Some(result) = rewrite_unsatisfiable_object(&obj) {
+    if let Some(result) = rewrite_unsatisfiable_object(&obj, pointer, options.local_ref_targets) {
         return Ok(result);
     }
     fill_implicit_constraints(&mut obj);
@@ -569,13 +569,23 @@ fn canonicalize_schema_uri(value: &Value, pointer: &str) -> Result<Value> {
     }
 }
 
-fn remove_not_false(schema: &mut Map<String, Value>) {
-    if schema.get("not") == Some(&Value::Bool(false)) {
+fn remove_not_false(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) {
+    if schema.get("not") == Some(&Value::Bool(false))
+        && !preserve_unknown_keyword_at_pointer(&join_pointer(pointer, "not"), local_ref_targets)
+    {
         schema.remove("not");
     }
 }
 
-fn remove_empty_conditionals(schema: &mut Map<String, Value>) {
+fn remove_empty_conditionals(
+    schema: &mut Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) {
     if matches!(schema.get("then"), Some(Value::Bool(true))) {
         schema.remove("then");
     }
@@ -586,6 +596,7 @@ fn remove_empty_conditionals(schema: &mut Map<String, Value>) {
         && !schema.contains_key("then")
         && !schema.contains_key("else")
         && !schema_contains_resource_identifier(if_schema)
+        && !preserve_unknown_keyword_at_pointer(&join_pointer(pointer, "if"), local_ref_targets)
     {
         schema.remove("if");
     }
@@ -663,10 +674,19 @@ fn dedupe_enum(schema: &mut Map<String, Value>) {
     schema.insert("enum".to_owned(), Value::Array(sorted_unique_json(values)));
 }
 
-fn dedupe_schema_array(schema: &mut Map<String, Value>, keyword: &str) {
+fn dedupe_schema_array(
+    schema: &mut Map<String, Value>,
+    keyword: &str,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) {
     let Some(Value::Array(values)) = schema.get(keyword) else {
         return;
     };
+
+    if preserve_unknown_keyword_at_pointer(&join_pointer(pointer, keyword), local_ref_targets) {
+        return;
+    }
 
     let mut seen = BTreeSet::new();
     let mut unique = Vec::new();
@@ -731,7 +751,11 @@ fn simplify_anyof(
 
     branches.retain(|branch| branch != &Value::Bool(false));
     if branches.is_empty() || (branches.len() == 1 && branches[0] == Value::Bool(false)) {
-        let mut obj = preserved_terminal_meta(schema);
+        let mut obj = if preserve_unknown_keyword_at_pointer(pointer, local_ref_targets) {
+            preserved_meta(schema)
+        } else {
+            preserved_terminal_meta(schema)
+        };
         obj.insert("not".to_owned(), Value::Bool(true));
         return Some(Value::Object(sorted_object(obj)));
     }
@@ -755,7 +779,11 @@ fn simplify_oneof(
     }
 
     if branches.len() == 1 && branches[0] == Value::Bool(false) {
-        let mut obj = preserved_terminal_meta(schema);
+        let mut obj = if preserve_unknown_keyword_at_pointer(pointer, local_ref_targets) {
+            preserved_meta(schema)
+        } else {
+            preserved_terminal_meta(schema)
+        };
         obj.insert("not".to_owned(), Value::Bool(true));
         return Some(Value::Object(sorted_object(obj)));
     }
@@ -1634,7 +1662,15 @@ fn schema_contains_resource_identifier(schema: &Value) -> bool {
     }
 }
 
-fn rewrite_unsatisfiable_object(schema: &Map<String, Value>) -> Option<Value> {
+fn rewrite_unsatisfiable_object(
+    schema: &Map<String, Value>,
+    pointer: &str,
+    local_ref_targets: &BTreeSet<String>,
+) -> Option<Value> {
+    if preserve_unknown_keyword_at_pointer(pointer, local_ref_targets) {
+        return None;
+    }
+
     let type_name = schema.get("type").and_then(Value::as_str);
     match type_name {
         Some("string") => {

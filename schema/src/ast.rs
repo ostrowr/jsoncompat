@@ -907,13 +907,19 @@ impl<'a> SchemaShape<'a> {
         if let Some(shape) = keywords.type_shape {
             return shape;
         }
-        if keywords.flags.contains(SchemaKeywordFlags::OBJECT) {
+        if keywords.flags.contains(SchemaKeywordFlags::OBJECT)
+            && keywords.values_are_all(Value::is_object)
+        {
             return Self::Object;
         }
-        if keywords.flags.contains(SchemaKeywordFlags::ARRAY) {
+        if keywords.flags.contains(SchemaKeywordFlags::ARRAY)
+            && keywords.values_are_all(Value::is_array)
+        {
             return Self::Array;
         }
-        if keywords.flags.contains(SchemaKeywordFlags::STRING) {
+        if keywords.flags.contains(SchemaKeywordFlags::STRING)
+            && keywords.values_are_all(Value::is_string)
+        {
             return Self::String;
         }
         if keywords.flags.contains(SchemaKeywordFlags::NUMERIC) && keywords.values_are_all_numeric()
@@ -1079,6 +1085,13 @@ impl<'a> SchemaKeywords<'a> {
                 .enum_values
                 .is_none_or(|values| values.iter().all(Value::is_number))
             && self.const_value.is_none_or(Value::is_number)
+    }
+
+    #[must_use]
+    fn values_are_all(self, mut predicate: impl FnMut(&Value) -> bool) -> bool {
+        self.enum_values
+            .is_none_or(|values| values.iter().all(&mut predicate))
+            && self.const_value.is_none_or(predicate)
     }
 }
 
@@ -1587,6 +1600,7 @@ fn resolve_refs_internal(
         };
         resolve_refs_internal(&mut sub, root_json, stack, cache)?;
         *node.borrow_mut() = SchemaNodeKind::Not(sub);
+        normalize_resolved_node(node);
         return Ok(());
     }
     if matches!(&*node.borrow(), SchemaNodeKind::Object { .. }) {
@@ -1679,10 +1693,7 @@ fn resolve_refs_internal(
         };
         return Ok(());
     }
-    if matches!(
-        &*node.borrow(),
-        SchemaNodeKind::AdditionalProperties(_)
-    ) {
+    if matches!(&*node.borrow(), SchemaNodeKind::AdditionalProperties(_)) {
         let mut schema = {
             let guard = node.borrow();
             match &*guard {
@@ -1748,6 +1759,15 @@ fn normalize_resolved_node(node: &mut SchemaNode) {
         }
         SchemaNodeKind::OneOf(children) => {
             collapse_applicator_children(&children, false).or(Some(SchemaNodeKind::OneOf(children)))
+        }
+        SchemaNodeKind::Not(sub) => {
+            if is_false_schema(&sub) {
+                Some(SchemaNodeKind::Any)
+            } else if is_any_schema(&sub) {
+                Some(SchemaNodeKind::BoolSchema(false))
+            } else {
+                Some(SchemaNodeKind::Not(sub))
+            }
         }
         SchemaNodeKind::IfThenElse {
             if_schema,

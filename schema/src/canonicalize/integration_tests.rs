@@ -391,6 +391,158 @@ fn canonicalize_preserves_pruned_keyword_branches_when_local_refs_target_them() 
 }
 
 #[test]
+fn canonicalize_preserves_if_targets_without_then_or_else() {
+    let canonical = assert_canonicalizes_to(
+        &json!({
+            "allOf": [
+                { "$ref": "#/if" }
+            ],
+            "if": {
+                "type": "string"
+            }
+        }),
+        &json!({
+            "allOf": [
+                { "$ref": "#/if" }
+            ],
+            "if": {
+                "minLength": 0,
+                "type": "string"
+            }
+        }),
+    );
+
+    build_and_resolve_schema(canonical.as_value()).unwrap();
+}
+
+#[test]
+fn canonicalize_preserves_not_false_targets() {
+    let canonical = assert_canonicalizes_to(
+        &json!({
+            "if": false,
+            "then": {
+                "$ref": "#/not"
+            },
+            "not": false
+        }),
+        &json!({
+            "if": false,
+            "not": false,
+            "then": {
+                "$ref": "#/not"
+            }
+        }),
+    );
+
+    build_and_resolve_schema(canonical.as_value()).unwrap();
+}
+
+#[test]
+fn canonicalize_keeps_duplicate_applicator_items_when_indexed_refs_target_them() {
+    let canonical = canonicalize_schema(&json!({
+        "allOf": [
+            {
+                "$ref": "#/x/allOf/1/properties/value"
+            }
+        ],
+        "x": {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "value": { "type": "string" }
+                    }
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "value": { "type": "string" }
+                    }
+                }
+            ]
+        }
+    }))
+    .unwrap();
+
+    let all_of = canonical.as_value()["x"]["allOf"].as_array().unwrap();
+    assert_eq!(all_of.len(), 2);
+    assert_eq!(all_of[0], all_of[1]);
+    build_and_resolve_schema(canonical.as_value()).unwrap();
+}
+
+#[test]
+fn canonicalize_preserves_descendants_of_unsatisfiable_branches_when_locally_referenced() {
+    let canonical = canonicalize_schema(&json!({
+        "allOf": [
+            {
+                "$ref": "#/x/allOf/0/properties/value"
+            }
+        ],
+        "x": {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "value": { "type": "string" }
+                    },
+                    "minProperties": 2,
+                    "maxProperties": 1
+                }
+            ]
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(
+        canonical.as_value()["x"]["allOf"][0]["properties"]["value"],
+        json!({
+            "minLength": 0,
+            "type": "string"
+        })
+    );
+    build_and_resolve_schema(canonical.as_value()).unwrap();
+}
+
+#[test]
+fn canonicalize_preserves_defs_when_false_anyof_or_oneof_is_referenced() {
+    for raw in [
+        json!({
+            "allOf": [
+                { "$ref": "#/x/$defs/A" }
+            ],
+            "x": {
+                "anyOf": [false],
+                "$defs": {
+                    "A": { "type": "string" }
+                }
+            }
+        }),
+        json!({
+            "allOf": [
+                { "$ref": "#/x/$defs/A" }
+            ],
+            "x": {
+                "oneOf": [false],
+                "$defs": {
+                    "A": { "type": "string" }
+                }
+            }
+        }),
+    ] {
+        let canonical = canonicalize_schema(&raw).unwrap();
+        assert_eq!(
+            canonical.as_value()["x"]["$defs"]["A"],
+            json!({
+                "minLength": 0,
+                "type": "string"
+            })
+        );
+        assert_eq!(canonical.as_value()["x"]["not"], json!(true));
+        build_and_resolve_schema(canonical.as_value()).unwrap();
+    }
+}
+
+#[test]
 fn canonicalize_lowers_boolean_and_null_types_to_enum() {
     assert_eq!(
         canonicalize_schema(&json!({ "type": "boolean" }))
