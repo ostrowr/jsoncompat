@@ -1,0 +1,1 @@
+unsupported $ref '#/$defs/percent%25field' at '#/properties/percent/$ref'

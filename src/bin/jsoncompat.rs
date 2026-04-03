@@ -18,6 +18,8 @@ use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 #[path = "jsoncompat/ci.rs"]
 mod ci;
+#[path = "jsoncompat/codegen.rs"]
+mod codegen;
 #[path = "jsoncompat/compat.rs"]
 mod compat;
 #[path = "jsoncompat/demo.rs"]
@@ -26,6 +28,8 @@ mod demo;
 mod generate;
 #[path = "jsoncompat/lower_openapi.rs"]
 mod lower_openapi;
+#[path = "jsoncompat/stamp.rs"]
+mod stamp;
 
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
@@ -130,6 +134,10 @@ enum Command {
     Compat(compat::CompatArgs),
     /// Check compatibility between two golden files.
     CI(ci::CiArgs),
+    /// Stamp a schema into versioned writer/reader envelopes.
+    Stamp(stamp::StampArgs),
+    /// Generate code or normalized schema output from JSON Schema.
+    Codegen(codegen::CodegenArgs),
     /// Print the lowered JSON Schema contracts for an OpenAPI 3.1 document.
     #[command(name = "lower-openapi")]
     LowerOpenApi(lower_openapi::LowerOpenApiArgs),
@@ -161,6 +169,8 @@ fn main() -> Result<()> {
         Command::Generate(a) => generate::cmd(a),
         Command::Compat(a) => compat::cmd(a),
         Command::CI(a) => ci::cmd(a),
+        Command::Stamp(a) => stamp::cmd(a),
+        Command::Codegen(a) => codegen::cmd(a),
         Command::LowerOpenApi(a) => lower_openapi::cmd(a),
         Command::Demo(a) => demo::cmd(a),
     }

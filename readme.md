@@ -29,7 +29,7 @@ cargo install jsoncompat
 
 Python and JavaScript/WebAssembly packages are documented separately:
 
-- [Python bindings](python/README.md)
+- [Python bindings](pybindings/README.md)
 - [JavaScript/WebAssembly bindings](wasm/README.md)
 
 ## Quick start
@@ -75,6 +75,56 @@ Run the guided CLI demo:
 ```bash
 jsoncompat demo --noninteractive
 ```
+
+## Stamped schemas
+
+`jsoncompat stamp` turns a schema into separate writer and reader schemas using
+a versioned envelope:
+
+```json
+{
+  "version": 2,
+  "data": {
+    "name": "Ada"
+  }
+}
+```
+
+Writers emit only the latest schema version, while readers accept a tagged
+union of historical writer versions. The command stores schema history in a
+manifest file and appends a new version whenever a change is not compatible in
+both directions.
+
+```bash
+jsoncompat stamp --manifest schemas.manifest.json --id user-profile --write-manifest schema.json
+jsoncompat stamp --manifest schemas.manifest.json --id user-profile --display writer schema.json > writer.schema.json
+jsoncompat stamp --manifest schemas.manifest.json --id user-profile --display reader schema.json > reader.schema.json
+jsoncompat codegen --target schema reader.schema.json
+jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
+```
+
+### Dataclass code generation
+
+`jsoncompat codegen --target dataclasses` accepts any JSON Schema document and
+emits frozen, slotted Python dataclasses that import shared construction and
+serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
+carry the source schema in `__jsoncompat_schema__`, validate through the Python
+runtime package, and expose:
+
+- `from_json(...)` / `from_json_string(...)` constructors for schema-checked
+  deserialization;
+- `to_json(...)` / `to_json_string(...)` serializers that validate emitted
+  JSON against the attached schema;
+- `__jsoncompat_extra__` for unknown object properties when
+  `additionalProperties` is allowed;
+- `JSONCOMPAT_MISSING` for omitted optional fields so absent and explicit
+  `null` stay distinguishable.
+
+If the input schema contains `x-jsoncompat` metadata from `jsoncompat stamp`,
+generated writer envelopes inherit from `WriterDataclassModel`, which disables
+deserialization methods, and generated reader envelopes inherit from
+`ReaderDataclassModel` / `ReaderDataclassRootModel`, which disable
+serialization methods.
 
 ## Choose a role
 

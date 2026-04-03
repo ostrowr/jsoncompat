@@ -1,0 +1,1 @@
+unsupported $ref 'http://localhost:1234/nested-absolute-ref-to-string.json' at '#/$ref'

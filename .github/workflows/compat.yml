@@ -23,11 +23,11 @@ jobs:
           git fetch origin main
           echo "MERGE_BASE=$(git merge-base HEAD origin/main)" >> $GITHUB_OUTPUT
 
-      - name: Checkout pydantic_golden from MERGE_BASE
+      - name: Checkout stamp example schema from MERGE_BASE
         run: |
-          cp examples/python/pydantic_golden/tests/schemas.golden examples/python/pydantic_golden/tests/schemas.golden.new
-          git checkout ${{ steps.merge_base.outputs.MERGE_BASE }} -- examples/python/pydantic_golden/tests/schemas.golden
+          cp examples/stamp/schema-v2.json examples/stamp/schema-v2.json.new
+          git checkout ${{ steps.merge_base.outputs.MERGE_BASE }} -- examples/stamp/schema-v2.json
 
       - name: Run jsoncompat ci
         run: |
-          cargo run --bin jsoncompat ci examples/python/pydantic_golden/tests/schemas.golden examples/python/pydantic_golden/tests/schemas.golden.new
+          cargo run --bin jsoncompat ci examples/stamp/schema-v2.json examples/stamp/schema-v2.json.new

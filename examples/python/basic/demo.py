@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["jsoncompat"]
 # [tool.uv.sources]
-# jsoncompat = { path = "../../../python", editable = true }
+# jsoncompat = { path = "../../../pybindings", editable = true }
 # ///
 """End-to-end demo for the Python bindings of jsoncompat.
 

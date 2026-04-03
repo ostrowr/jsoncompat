@@ -1,0 +1,1 @@
+unsupported $ref '#/unknown-keyword' at '#/properties/bar/$ref'

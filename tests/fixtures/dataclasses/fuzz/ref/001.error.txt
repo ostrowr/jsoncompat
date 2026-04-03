@@ -1,0 +1,1 @@
+unsupported $ref '#/properties/foo' at '#/properties/bar/$ref'
