@@ -98,14 +98,16 @@ impl SchemaNode {
                         .chain(std::iter::once(property_names.clone()))
                         .collect(),
                     Array {
-                        items, contains, ..
-                    } => {
-                        let mut children = vec![items.clone()];
-                        if let Some(child) = contains {
-                            children.push(child.clone());
-                        }
-                        children
-                    }
+                        prefix_items,
+                        items,
+                        contains,
+                        ..
+                    } => prefix_items
+                        .iter()
+                        .cloned()
+                        .chain(std::iter::once(items.clone()))
+                        .chain(contains.iter().map(|contains| contains.schema.clone()))
+                        .collect(),
                     AdditionalProperties(child) => vec![child.clone()],
                     Defs(children) => children.values().cloned().collect(),
                     BoolSchema(_)
@@ -324,15 +326,22 @@ impl SchemaNode {
             }
 
             Array {
+                prefix_items,
                 items,
                 min_items,
                 max_items,
                 contains,
-                min_contains,
+                unique_items,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("array".into()));
+                if !prefix_items.is_empty() {
+                    obj.insert(
+                        "prefixItems".into(),
+                        Value::Array(prefix_items.iter().map(SchemaNode::to_json).collect()),
+                    );
+                }
                 if !matches!(items.kind(), SchemaNodeKind::Any) {
                     obj.insert("items".into(), items.to_json());
                 }
@@ -342,13 +351,20 @@ impl SchemaNode {
                 if let Some(ma) = max_items {
                     obj.insert("maxItems".into(), Value::Number((*ma).into()));
                 }
-                if let Some(c) = contains {
-                    obj.insert("contains".into(), c.to_json());
+                if let Some(contains) = contains {
+                    obj.insert("contains".into(), contains.schema.to_json());
+                    if contains.min_contains != 1 {
+                        obj.insert(
+                            "minContains".into(),
+                            Value::Number(contains.min_contains.into()),
+                        );
+                    }
+                    if let Some(max_contains) = contains.max_contains {
+                        obj.insert("maxContains".into(), Value::Number(max_contains.into()));
+                    }
                 }
-                if let Some(min_contains) = min_contains
-                    && *min_contains != 1
-                {
-                    obj.insert("minContains".into(), Value::Number((*min_contains).into()));
+                if *unique_items {
+                    obj.insert("uniqueItems".into(), Value::Bool(true));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -711,35 +727,49 @@ impl PartialEq for MutableSchemaNode {
                 }
                 (
                     Array {
+                        prefix_items: aprefix_items,
                         items: aitems,
                         min_items: amin,
                         max_items: amax,
                         contains: acontains,
-                        min_contains: amin_contains,
+                        unique_items: a_unique_items,
                         enumeration: aenum,
                     },
                     Array {
+                        prefix_items: bprefix_items,
                         items: bitems,
                         min_items: bmin,
                         max_items: bmax,
                         contains: bcontains,
-                        min_contains: bmin_contains,
+                        unique_items: b_unique_items,
                         enumeration: benum,
                     },
                 ) => {
                     if amin != bmin
                         || amax != bmax
-                        || amin_contains != bmin_contains
+                        || a_unique_items != b_unique_items
                         || aenum != benum
+                        || aprefix_items.len() != bprefix_items.len()
                     {
                         return false;
+                    }
+                    for (a_prefix_item, b_prefix_item) in
+                        aprefix_items.iter().zip(bprefix_items.iter())
+                    {
+                        if !eq_inner(a_prefix_item, b_prefix_item, seen) {
+                            return false;
+                        }
                     }
                     if !eq_inner(aitems, bitems, seen) {
                         return false;
                     }
                     match (acontains, bcontains) {
                         (None, None) => true,
-                        (Some(av), Some(bv)) => eq_inner(av, bv, seen),
+                        (Some(av), Some(bv)) => {
+                            av.min_contains == bv.min_contains
+                                && av.max_contains == bv.max_contains
+                                && eq_inner(&av.schema, &bv.schema, seen)
+                        }
                         _ => false,
                     }
                 }
@@ -923,18 +953,27 @@ fn freeze_schema_node_kind(
             enumeration,
         },
         Array {
+            prefix_items,
             items,
             min_items,
             max_items,
             contains,
-            min_contains,
+            unique_items,
             enumeration,
         } => Array {
+            prefix_items: prefix_items
+                .into_iter()
+                .map(|child| freeze_schema_node(&child, cache))
+                .collect(),
             items: freeze_schema_node(&items, cache),
             min_items,
             max_items,
-            contains: contains.map(|child| freeze_schema_node(&child, cache)),
-            min_contains,
+            contains: contains.map(|contains| ArrayContains {
+                schema: freeze_schema_node(&contains.schema, cache),
+                min_contains: contains.min_contains,
+                max_contains: contains.max_contains,
+            }),
+            unique_items,
             enumeration,
         },
         Defs(defs) => Defs(
@@ -1133,35 +1172,49 @@ impl PartialEq for SchemaNode {
                 }
                 (
                     Array {
+                        prefix_items: aprefix_items,
                         items: aitems,
                         min_items: amin,
                         max_items: amax,
                         contains: acontains,
-                        min_contains: amin_contains,
+                        unique_items: a_unique_items,
                         enumeration: aenum,
                     },
                     Array {
+                        prefix_items: bprefix_items,
                         items: bitems,
                         min_items: bmin,
                         max_items: bmax,
                         contains: bcontains,
-                        min_contains: bmin_contains,
+                        unique_items: b_unique_items,
                         enumeration: benum,
                     },
                 ) => {
                     if amin != bmin
                         || amax != bmax
-                        || amin_contains != bmin_contains
+                        || a_unique_items != b_unique_items
                         || aenum != benum
+                        || aprefix_items.len() != bprefix_items.len()
                     {
                         return false;
+                    }
+                    for (a_prefix_item, b_prefix_item) in
+                        aprefix_items.iter().zip(bprefix_items.iter())
+                    {
+                        if !eq_inner(a_prefix_item, b_prefix_item, seen) {
+                            return false;
+                        }
                     }
                     if !eq_inner(aitems, bitems, seen) {
                         return false;
                     }
                     match (acontains, bcontains) {
                         (None, None) => true,
-                        (Some(av), Some(bv)) => eq_inner(av, bv, seen),
+                        (Some(av), Some(bv)) => {
+                            av.min_contains == bv.min_contains
+                                && av.max_contains == bv.max_contains
+                                && eq_inner(&av.schema, &bv.schema, seen)
+                        }
                         _ => false,
                     }
                 }
@@ -1248,6 +1301,15 @@ impl PartialEq for SchemaNode {
 
 impl Eq for SchemaNode {}
 
+/// Array `contains` constraints are stored as a single structured value so the
+/// count bounds cannot drift out of sync with the subschema itself.
+#[derive(Debug, Clone)]
+pub struct ArrayContains<Node = SchemaNode> {
+    pub schema: Node,
+    pub min_contains: u64,
+    pub max_contains: Option<u64>,
+}
+
 /// An internal Abstract Syntax Tree (AST) representing a fully-resolved JSON
 /// Schema draft-2020-12 document.  The node types are deliberately *very*
 /// close to the JSON Schema specification so that higher-level crates (e.g.
@@ -1300,11 +1362,12 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
         enumeration: Option<Vec<Value>>,
     },
     Array {
+        prefix_items: Vec<Node>,
         items: Node,
         min_items: Option<u64>,
         max_items: Option<u64>,
-        contains: Option<Node>,
-        min_contains: Option<u64>,
+        contains: Option<ArrayContains<Node>>,
+        unique_items: bool,
         enumeration: Option<Vec<Value>>,
     },
 
@@ -1958,22 +2021,18 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
 }
 
 fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
+    let mut prefix_items = parse_schema_array(obj.get("prefixItems"))?;
     let items_node = match obj.get("items") {
         None => MutableSchemaNode::any(),
         Some(Value::Bool(true)) => MutableSchemaNode::any(),
         Some(Value::Bool(false)) => MutableSchemaNode::bool_schema(false),
         Some(Value::Array(arr)) => {
-            if arr.is_empty() {
-                MutableSchemaNode::any()
-            } else if arr.len() == 1 {
-                build_schema_ast_from_value(&arr[0])?
-            } else {
-                let subnodes = arr
-                    .iter()
+            prefix_items.extend(
+                arr.iter()
                     .map(build_schema_ast_from_value)
-                    .collect::<Result<Vec<MutableSchemaNode>>>()?;
-                MutableSchemaNode::new(SchemaNodeKind::AllOf(subnodes))
-            }
+                    .collect::<Result<Vec<_>>>()?,
+            );
+            MutableSchemaNode::any()
         }
         Some(other) => build_schema_ast_from_value(other)?,
     };
@@ -1987,28 +2046,40 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
         }
     });
     let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
+    let unique_items = obj
+        .get("uniqueItems")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
-    let contains_node = match obj.get("contains") {
-        None => None,
-        Some(v) => Some(build_schema_ast_from_value(v)?),
-    };
-    let min_contains = if contains_node.is_some() {
-        obj.get("minContains")
-            .and_then(|value| value.as_u64())
-            .or(Some(1))
-    } else {
-        None
-    };
+    let contains = obj
+        .get("contains")
+        .map(|contains| -> Result<ArrayContains<MutableSchemaNode>> {
+            Ok(ArrayContains {
+                schema: build_schema_ast_from_value(contains)?,
+                min_contains: obj.get("minContains").and_then(Value::as_u64).unwrap_or(1),
+                max_contains: obj.get("maxContains").and_then(Value::as_u64),
+            })
+        })
+        .transpose()?;
 
     Ok(MutableSchemaNode::new(SchemaNodeKind::Array {
+        prefix_items,
         items: items_node,
         min_items,
         max_items,
-        contains: contains_node,
-        min_contains,
+        contains,
+        unique_items,
         enumeration,
     }))
+}
+
+fn parse_schema_array(items: Option<&Value>) -> Result<Vec<MutableSchemaNode>> {
+    let Some(Value::Array(items)) = items else {
+        return Ok(Vec::new());
+    };
+
+    items.iter().map(build_schema_ast_from_value).collect()
 }
 
 fn resolve_refs_from_canonical_root(
@@ -2214,38 +2285,52 @@ fn resolve_refs_internal(
         return Ok(());
     }
     if matches!(&*node.borrow(), SchemaNodeKind::Array { .. }) {
-        let (mut items, min_items, max_items, mut contains, min_contains, enumeration) = {
+        let (
+            mut prefix_items,
+            mut items,
+            min_items,
+            max_items,
+            mut contains,
+            unique_items,
+            enumeration,
+        ) = {
             let guard = node.borrow();
             match &*guard {
                 SchemaNodeKind::Array {
+                    prefix_items,
                     items,
                     min_items,
                     max_items,
                     contains,
-                    min_contains,
+                    unique_items,
                     enumeration,
                 } => (
+                    prefix_items.clone(),
                     items.clone(),
                     *min_items,
                     *max_items,
                     contains.clone(),
-                    *min_contains,
+                    *unique_items,
                     enumeration.clone(),
                 ),
                 _ => unreachable!("node kind checked above"),
             }
         };
 
-        resolve_refs_internal(&mut items, root_json, stack, cache)?;
-        if let Some(child) = &mut contains {
+        for child in &mut prefix_items {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        resolve_refs_internal(&mut items, root_json, stack, cache)?;
+        if let Some(contains) = &mut contains {
+            resolve_refs_internal(&mut contains.schema, root_json, stack, cache)?;
+        }
         *node.borrow_mut() = SchemaNodeKind::Array {
+            prefix_items,
             items,
             min_items,
             max_items,
             contains,
-            min_contains,
+            unique_items,
             enumeration,
         };
         return Ok(());

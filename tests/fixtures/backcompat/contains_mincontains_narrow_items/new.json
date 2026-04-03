@@ -1,0 +1,7 @@
+{
+  "type": "array",
+  "items": {
+    "type": "integer"
+  },
+  "minItems": 2
+}

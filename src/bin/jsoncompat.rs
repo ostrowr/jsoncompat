@@ -607,7 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn ci_grade_does_not_report_identical_when_only_ast_equal_keywords_changed() {
+    fn ci_grade_reports_incompatible_when_unique_items_is_relaxed_for_serializer() {
         let old = GoldenEntry {
             mode: RoleCli::Serializer,
             schema: serde_json::json!({
@@ -627,6 +627,6 @@ mod tests {
 
         let grade = grade_entry(Some(&old), Some(&new));
 
-        assert!(matches!(grade.status, Status::Ok));
+        assert!(matches!(grade.status, Status::Incompatible { .. }));
     }
 }

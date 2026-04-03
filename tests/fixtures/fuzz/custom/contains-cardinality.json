@@ -70,5 +70,34 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "minContains=0 and maxContains=0 forbid every matching item",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {
+        "const": 1
+      },
+      "minContains": 0,
+      "maxContains": 0
+    },
+    "tests": [
+      {
+        "description": "no matching values is valid",
+        "data": [
+          0,
+          {}
+        ],
+        "valid": true
+      },
+      {
+        "description": "a matching value violates maxContains=0",
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
   }
 ]

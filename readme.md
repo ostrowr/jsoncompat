@@ -90,6 +90,7 @@ Most JSON Schema Draft 2020-12 keywords are supported. Notable partial support:
 - **`format`**: Support for `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`,
   `hostname`, `idn-hostname`.
 - **`pattern`** (regex): Best-effort string generation from regex patterns. Complex patterns (e.g. backreferences) may not produce matching strings.
+- **Array constraints**: `prefixItems`, `contains`, `minContains`, `maxContains`, and `uniqueItems` are represented in the AST used for compatibility checks and example generation.
 - When `format` or `pattern` is used, `minLength`/`maxLength` constraints are ignored during example generation.
 
 ## Validation and canonicalization

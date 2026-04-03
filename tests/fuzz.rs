@@ -48,8 +48,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         [12, 16].iter().cloned().collect(),
     );
 
-    map.insert("items.json".to_string(), [3, 7].iter().cloned().collect());
-
     map.insert("properties.json".to_string(), [1].iter().cloned().collect());
 
     map.insert(

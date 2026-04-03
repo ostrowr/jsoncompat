@@ -1,0 +1,9 @@
+{
+  "type": "array",
+  "prefixItems": [
+    {
+      "type": "string"
+    }
+  ],
+  "minItems": 1
+}

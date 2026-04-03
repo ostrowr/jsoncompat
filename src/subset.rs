@@ -1,5 +1,5 @@
 use crate::SchemaNode;
-use json_schema_ast::{JSONSchema, SchemaNodeId, SchemaNodeKind, compile};
+use json_schema_ast::{ArrayContains, JSONSchema, SchemaNodeId, SchemaNodeKind, compile};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -149,27 +149,33 @@ impl SubschemaCheckContext {
                     })
             }),
             SchemaNodeKind::Array {
+                prefix_items,
                 items,
                 min_items,
                 max_items,
                 contains,
-                min_contains,
+                unique_items,
                 enumeration,
             } => value.as_array().is_some_and(|value_array| {
                 enum_contains_value(enumeration.as_deref(), value)
                     && min_items.is_none_or(|minimum| value_array.len() as u64 >= minimum)
                     && max_items.is_none_or(|maximum| value_array.len() as u64 <= maximum)
-                    && value_array
-                        .iter()
-                        .all(|item| self.superset_contains_value_inner(items, item, active))
-                    && contains.as_ref().is_none_or(|contains_schema| {
+                    && (!unique_items || array_values_are_unique(value_array))
+                    && value_array.iter().enumerate().all(|(index, item)| {
+                        let item_schema = prefix_items.get(index).unwrap_or(items);
+                        self.superset_contains_value_inner(item_schema, item, active)
+                    })
+                    && contains.as_ref().is_none_or(|contains| {
                         let matching_items = value_array
                             .iter()
                             .filter(|item| {
-                                self.superset_contains_value_inner(contains_schema, item, active)
+                                self.superset_contains_value_inner(&contains.schema, item, active)
                             })
                             .count() as u64;
-                        matching_items >= min_contains.unwrap_or(1)
+                        matching_items >= contains.min_contains
+                            && contains
+                                .max_contains
+                                .is_none_or(|maximum| matching_items <= maximum)
                     })
             }),
             SchemaNodeKind::Defs(_) => true,
@@ -550,18 +556,22 @@ fn type_constraints_subsumed_with_context(
 
         (
             Array {
+                prefix_items: s_prefix_items,
                 items: sitems,
                 min_items: smin,
                 max_items: smax,
+                contains: s_contains,
+                unique_items: s_unique_items,
                 enumeration: s_en,
-                ..
             },
             Array {
+                prefix_items: p_prefix_items,
                 items: pitems,
                 min_items: pmin,
                 max_items: pmax,
+                contains: p_contains,
+                unique_items: p_unique_items,
                 enumeration: p_en,
-                ..
             },
         ) => {
             if let Some(pm) = pmin
@@ -574,7 +584,28 @@ fn type_constraints_subsumed_with_context(
             {
                 return false;
             }
-            if !is_subschema_of_with_context(&sitems, &pitems, context) {
+            if p_unique_items && !s_unique_items && smax.unwrap_or(u64::MAX) > 1 {
+                return false;
+            }
+            if !array_item_constraints_subsumed(
+                &s_prefix_items,
+                &sitems,
+                smax,
+                &p_prefix_items,
+                &pitems,
+                context,
+            ) {
+                return false;
+            }
+            if !array_contains_constraints_subsumed(
+                &s_prefix_items,
+                &sitems,
+                smin,
+                smax,
+                s_contains.as_ref(),
+                p_contains.as_ref(),
+                context,
+            ) {
                 return false;
             }
             if !check_enum_inclusion(s_en.as_deref(), p_en.as_deref()) {
@@ -611,6 +642,118 @@ fn check_numeric_inclusion(
     } else {
         subv <= supv
     }
+}
+
+fn array_item_constraints_subsumed(
+    sub_prefix_items: &[SchemaNode],
+    sub_items: &SchemaNode,
+    sub_max_items: Option<u64>,
+    sup_prefix_items: &[SchemaNode],
+    sup_items: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let checked_prefix_len = sub_prefix_items.len().max(sup_prefix_items.len());
+    for index in 0..checked_prefix_len {
+        if !array_index_can_exist(sub_max_items, index) {
+            return true;
+        }
+
+        let sub_item = sub_prefix_items.get(index).unwrap_or(sub_items);
+        let sup_item = sup_prefix_items.get(index).unwrap_or(sup_items);
+        if !is_subschema_of_with_context(sub_item, sup_item, context) {
+            return false;
+        }
+    }
+
+    !array_index_can_exist(sub_max_items, checked_prefix_len)
+        || is_subschema_of_with_context(sub_items, sup_items, context)
+}
+
+fn array_contains_constraints_subsumed(
+    sub_prefix_items: &[SchemaNode],
+    sub_items: &SchemaNode,
+    sub_min_items: Option<u64>,
+    sub_max_items: Option<u64>,
+    sub_contains: Option<&ArrayContains<SchemaNode>>,
+    sup_contains: Option<&ArrayContains<SchemaNode>>,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let Some(sup_contains) = sup_contains else {
+        return true;
+    };
+
+    let lower_bound_ok = sup_contains.min_contains == 0
+        || sub_contains.is_some_and(|sub_contains| {
+            sub_contains.min_contains >= sup_contains.min_contains
+                && is_subschema_of_with_context(&sub_contains.schema, &sup_contains.schema, context)
+        })
+        || (sub_min_items.unwrap_or(0) >= sup_contains.min_contains
+            && all_array_item_schemas_subsumed_by(
+                sub_prefix_items,
+                sub_items,
+                sub_max_items,
+                &sup_contains.schema,
+                context,
+            ));
+
+    if !lower_bound_ok {
+        return false;
+    }
+
+    let Some(sup_max_contains) = sup_contains.max_contains else {
+        return true;
+    };
+
+    sub_contains
+        .filter(|sub_contains| {
+            sub_contains
+                .max_contains
+                .is_some_and(|sub_max_contains| sub_max_contains <= sup_max_contains)
+                && is_subschema_of_with_context(&sup_contains.schema, &sub_contains.schema, context)
+        })
+        .is_some()
+        || (sub_max_items.is_some_and(|sub_max_items| sub_max_items <= sup_max_contains)
+            && all_array_item_schemas_subsumed_by(
+                sub_prefix_items,
+                sub_items,
+                sub_max_items,
+                &sup_contains.schema,
+                context,
+            ))
+}
+
+fn all_array_item_schemas_subsumed_by(
+    prefix_items: &[SchemaNode],
+    items: &SchemaNode,
+    max_items: Option<u64>,
+    sup_schema: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    for (index, prefix_item) in prefix_items.iter().enumerate() {
+        if !array_index_can_exist(max_items, index) {
+            return true;
+        }
+        if !is_subschema_of_with_context(prefix_item, sup_schema, context) {
+            return false;
+        }
+    }
+
+    !array_index_can_exist(max_items, prefix_items.len())
+        || is_subschema_of_with_context(items, sup_schema, context)
+}
+
+fn array_index_can_exist(max_items: Option<u64>, index: usize) -> bool {
+    let Ok(index) = u64::try_from(index) else {
+        return false;
+    };
+    max_items.is_none_or(|max_items| index < max_items)
+}
+
+fn array_values_are_unique(values: &[Value]) -> bool {
+    values
+        .iter()
+        .enumerate()
+        .all(|(index, value)| values[..index].iter().all(|seen| seen != value))
 }
 
 fn string_length_in_range(value: &str, minimum: Option<u64>, maximum: Option<u64>) -> bool {
@@ -778,9 +921,15 @@ fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
             .chain(std::iter::once(property_names.clone()))
             .collect(),
         Array {
-            items, contains, ..
-        } => std::iter::once(items.clone())
-            .chain(contains.iter().cloned())
+            prefix_items,
+            items,
+            contains,
+            ..
+        } => prefix_items
+            .iter()
+            .cloned()
+            .chain(std::iter::once(items.clone()))
+            .chain(contains.iter().map(|contains| contains.schema.clone()))
             .collect(),
         Defs(map) => map.values().cloned().collect(),
         _ => Vec::new(),
@@ -986,5 +1135,59 @@ mod tests {
         .unwrap();
 
         assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn array_contains_lower_bound_must_hold_for_every_subset_instance() {
+        let old = build_and_resolve_schema(&json!({
+            "type": "array",
+            "contains": { "type": "string" },
+            "minContains": 2
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn array_items_can_witness_contains_lower_bound_when_every_item_matches() {
+        let old = build_and_resolve_schema(&json!({
+            "type": "array",
+            "contains": { "type": "string" },
+            "minContains": 1
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2
+        }))
+        .unwrap();
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn prefix_items_are_checked_positionally() {
+        let old = build_and_resolve_schema(&json!({
+            "type": "array",
+            "prefixItems": [{ "type": "string" }],
+            "minItems": 1
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+            "type": "array",
+            "prefixItems": [{ "type": "integer" }],
+            "minItems": 1
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&new, &old));
     }
 }

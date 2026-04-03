@@ -6,7 +6,9 @@ mod canonicalize;
 
 mod schema_metadata;
 
-pub use ast::{AstError, SchemaNode, SchemaNodeId, SchemaNodeKind, build_and_resolve_schema};
+pub use ast::{
+    ArrayContains, AstError, SchemaNode, SchemaNodeId, SchemaNodeKind, build_and_resolve_schema,
+};
 pub use canonicalize::CanonicalizeError as SchemaError;
 
 #[cfg(test)]
