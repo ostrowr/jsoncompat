@@ -290,7 +290,7 @@ fn validate_known_keyword_dialects(
                 for (name, child) in entries {
                     validate_schema_dialects_at_pointer(
                         child,
-                        &join_pointer(pointer, &escape_pointer_token(name)),
+                        &join_pointer(pointer, name),
                         local_ref_targets,
                     )?;
                 }
@@ -474,11 +474,7 @@ fn canonicalize_keyword_value(
             for (name, child) in entries {
                 canonical.insert(
                     name.clone(),
-                    canonicalize_schema_value(
-                        child,
-                        &join_pointer(pointer, &escape_pointer_token(name)),
-                        options,
-                    )?,
+                    canonicalize_schema_value(child, &join_pointer(pointer, name), options)?,
                 );
             }
             Ok(Value::Object(sorted_object(canonical)))
@@ -506,14 +502,14 @@ fn canonicalize_keyword_value(
             for (name, deps) in entries {
                 let deps = deps.as_array().ok_or_else(|| {
                     invalid_keyword_type(
-                        &join_pointer(pointer, &escape_pointer_token(name)),
+                        &join_pointer(pointer, name),
                         "dependentRequired",
                         "an array of strings",
                         deps,
                     )
                 })?;
                 let mut sorted_deps = BTreeSet::new();
-                let dep_pointer = join_pointer(pointer, &escape_pointer_token(name));
+                let dep_pointer = join_pointer(pointer, name);
                 for (index, dep) in deps.iter().enumerate() {
                     let Some(dep) = dep.as_str() else {
                         return Err(invalid_keyword_entry_type(

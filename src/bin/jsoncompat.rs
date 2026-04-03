@@ -312,7 +312,7 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
-                    if old_schema == new_schema {
+                    if old.mode == new.mode && old.schema == new.schema {
                         return Grade {
                             id: new.stable_id.clone(),
                             mode: old.mode,
@@ -604,5 +604,29 @@ mod tests {
         fs::remove_file(old_path).unwrap();
         fs::remove_file(new_path).unwrap();
         result.unwrap();
+    }
+
+    #[test]
+    fn ci_grade_does_not_report_identical_when_only_ast_equal_keywords_changed() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "array",
+                "uniqueItems": true
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "array",
+                "uniqueItems": false
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert!(matches!(grade.status, Status::Ok));
     }
 }

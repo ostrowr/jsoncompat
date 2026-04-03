@@ -103,6 +103,53 @@ fn resolve_local_ref() {
 }
 
 #[test]
+fn resolve_local_ref_through_escaped_map_keys() {
+    let raw = json!({
+        "$defs": {
+            "a/b": {
+                "properties": {
+                    "x~y": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "$ref": "#/$defs/a~1b/properties/x~0y"
+    });
+
+    let ast = build_and_resolve_schema(&raw).unwrap();
+
+    assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
+}
+
+#[test]
+fn resolve_local_ref_preserves_escaped_property_names_under_recursive_object() {
+    let raw = json!({
+        "$defs": {
+            "node/root": {
+                "type": "object",
+                "properties": {
+                    "next~node": {
+                        "$ref": "#/$defs/node~1root"
+                    }
+                }
+            }
+        },
+        "$ref": "#/$defs/node~1root"
+    });
+
+    let ast = build_and_resolve_schema(&raw).unwrap();
+
+    let guard = ast.kind();
+    if let SchemaNodeKind::Object { properties, .. } = guard {
+        let next = properties.get("next~node").expect("escaped property");
+        assert!(next.ptr_eq(&ast));
+    } else {
+        panic!("expected object schema");
+    }
+}
+
+#[test]
 fn resolve_recursive_ref() {
     let raw = json!({
         "$defs": {

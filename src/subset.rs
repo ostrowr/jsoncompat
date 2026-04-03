@@ -1,7 +1,14 @@
 use crate::SchemaNode;
 use json_schema_ast::{JSONSchema, SchemaNodeId, SchemaNodeKind, compile};
-use std::collections::HashMap;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct RecursiveValidationFrame {
+    schema_id: SchemaNodeId,
+    value_address: usize,
+}
 
 #[derive(Default)]
 struct SubschemaCheckContext {
@@ -23,6 +30,200 @@ impl SubschemaCheckContext {
         self.compiled_sup_validators
             .insert(node_id, validator.clone());
         validator
+    }
+
+    fn superset_contains_value(&mut self, sup: &SchemaNode, value: &Value) -> bool {
+        self.superset_contains_value_inner(sup, value, &mut HashSet::new())
+    }
+
+    fn superset_contains_value_set(&mut self, sup: &SchemaNode, values: &[Value]) -> bool {
+        values
+            .iter()
+            .all(|value| self.superset_contains_value(sup, value))
+    }
+
+    fn superset_contains_value_inner(
+        &mut self,
+        sup: &SchemaNode,
+        value: &Value,
+        active: &mut HashSet<RecursiveValidationFrame>,
+    ) -> bool {
+        if let Some(validator) = self.compile_sup_validator(sup) {
+            return validator.is_valid(value);
+        }
+
+        let frame = RecursiveValidationFrame {
+            schema_id: sup.id(),
+            value_address: std::ptr::from_ref(value) as usize,
+        };
+        if !active.insert(frame) {
+            // Re-entering the exact same schema node on the exact same JSON value
+            // is a non-productive cycle (`A = anyOf(integer, A)` on `"x"`). Fail
+            // closed here; productive recursion over object/array children uses
+            // distinct `Value` addresses and therefore continues to descend.
+            return false;
+        }
+
+        let is_valid = match sup.kind() {
+            SchemaNodeKind::BoolSchema(valid) => *valid,
+            SchemaNodeKind::Any => true,
+            SchemaNodeKind::String {
+                min_length,
+                max_length,
+                enumeration,
+                ..
+            } => value.as_str().is_some_and(|value| {
+                string_length_in_range(value, *min_length, *max_length)
+                    && enum_contains_value(enumeration.as_deref(), &Value::String(value.to_owned()))
+            }),
+            SchemaNodeKind::Number {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                multiple_of,
+                enumeration,
+            } => value.as_f64().is_some_and(|value_number| {
+                check_numeric_value(
+                    value_number,
+                    *minimum,
+                    *exclusive_minimum,
+                    *maximum,
+                    *exclusive_maximum,
+                ) && value_is_multiple_of(value_number, *multiple_of)
+                    && enum_contains_numeric_value(enumeration.as_deref(), value_number)
+            }),
+            SchemaNodeKind::Integer {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                multiple_of,
+                enumeration,
+            } => value.as_f64().is_some_and(|value_number| {
+                value_number.fract() == 0.0
+                    && check_numeric_value(
+                        value_number,
+                        minimum.map(|bound| bound as f64),
+                        *exclusive_minimum,
+                        maximum.map(|bound| bound as f64),
+                        *exclusive_maximum,
+                    )
+                    && value_is_multiple_of(value_number, *multiple_of)
+                    && enum_contains_numeric_value(enumeration.as_deref(), value_number)
+            }),
+            SchemaNodeKind::Boolean { enumeration } => value
+                .as_bool()
+                .is_some_and(|_| enum_contains_value(enumeration.as_deref(), value)),
+            SchemaNodeKind::Null { enumeration } => {
+                value.is_null() && enum_contains_value(enumeration.as_deref(), value)
+            }
+            SchemaNodeKind::Object {
+                properties,
+                required,
+                additional,
+                property_names,
+                min_properties,
+                max_properties,
+                dependent_required,
+                enumeration,
+            } => value.as_object().is_some_and(|value_object| {
+                enum_contains_value(enumeration.as_deref(), value)
+                    && min_properties.is_none_or(|minimum| value_object.len() >= minimum)
+                    && max_properties.is_none_or(|maximum| value_object.len() <= maximum)
+                    && required.iter().all(|name| value_object.contains_key(name))
+                    && dependent_required.iter().all(|(trigger, dependencies)| {
+                        !value_object.contains_key(trigger)
+                            || dependencies
+                                .iter()
+                                .all(|dependency| value_object.contains_key(dependency))
+                    })
+                    && value_object.iter().all(|(name, property_value)| {
+                        let property_name = Value::String(name.clone());
+                        self.superset_contains_value_inner(property_names, &property_name, active)
+                            && self.superset_contains_value_inner(
+                                properties.get(name).unwrap_or(additional),
+                                property_value,
+                                active,
+                            )
+                    })
+            }),
+            SchemaNodeKind::Array {
+                items,
+                min_items,
+                max_items,
+                contains,
+                min_contains,
+                enumeration,
+            } => value.as_array().is_some_and(|value_array| {
+                enum_contains_value(enumeration.as_deref(), value)
+                    && min_items.is_none_or(|minimum| value_array.len() as u64 >= minimum)
+                    && max_items.is_none_or(|maximum| value_array.len() as u64 <= maximum)
+                    && value_array
+                        .iter()
+                        .all(|item| self.superset_contains_value_inner(items, item, active))
+                    && contains.as_ref().is_none_or(|contains_schema| {
+                        let matching_items = value_array
+                            .iter()
+                            .filter(|item| {
+                                self.superset_contains_value_inner(contains_schema, item, active)
+                            })
+                            .count() as u64;
+                        matching_items >= min_contains.unwrap_or(1)
+                    })
+            }),
+            SchemaNodeKind::Defs(_) => true,
+            SchemaNodeKind::AllOf(children) => children
+                .iter()
+                .all(|child| self.superset_contains_value_inner(child, value, active)),
+            SchemaNodeKind::AnyOf(children) => children
+                .iter()
+                .any(|child| self.superset_contains_value_inner(child, value, active)),
+            SchemaNodeKind::OneOf(children) => {
+                children
+                    .iter()
+                    .filter(|child| self.superset_contains_value_inner(child, value, active))
+                    .count()
+                    == 1
+            }
+            SchemaNodeKind::Not(child) => !self.superset_contains_value_inner(child, value, active),
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => {
+                if self.superset_contains_value_inner(if_schema, value, active) {
+                    then_schema.as_ref().is_none_or(|then_schema| {
+                        self.superset_contains_value_inner(then_schema, value, active)
+                    })
+                } else {
+                    else_schema.as_ref().is_none_or(|else_schema| {
+                        self.superset_contains_value_inner(else_schema, value, active)
+                    })
+                }
+            }
+            SchemaNodeKind::Const(expected) => value == expected,
+            SchemaNodeKind::Enum(values) => values.contains(value),
+            SchemaNodeKind::Type(_)
+            | SchemaNodeKind::Minimum(_)
+            | SchemaNodeKind::Maximum(_)
+            | SchemaNodeKind::Required(_)
+            | SchemaNodeKind::AdditionalProperties(_)
+            | SchemaNodeKind::Format(_)
+            | SchemaNodeKind::ContentEncoding(_)
+            | SchemaNodeKind::ContentMediaType(_)
+            | SchemaNodeKind::Title(_)
+            | SchemaNodeKind::Description(_)
+            | SchemaNodeKind::Default(_)
+            | SchemaNodeKind::Examples(_)
+            | SchemaNodeKind::ReadOnly(_)
+            | SchemaNodeKind::WriteOnly(_)
+            | SchemaNodeKind::Ref(_)
+            | _ => false,
+        };
+
+        active.remove(&frame);
+        is_valid
     }
 }
 
@@ -62,6 +263,12 @@ fn is_subschema_of_with_context(
             .iter()
             .all(|schema| is_subschema_of_with_context(schema, sup, context)),
 
+        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
+        (Enum(sub_e), _) => context.superset_contains_value_set(sup, sub_e),
+
+        (Const(s_val), Const(p_val)) => s_val == p_val,
+        (Const(s_val), _) => context.superset_contains_value(sup, s_val),
+
         (_, AnyOf(sups)) | (_, OneOf(sups)) => sups
             .iter()
             .any(|branch| is_subschema_of_with_context(sub, branch, context)),
@@ -69,11 +276,6 @@ fn is_subschema_of_with_context(
             .iter()
             .all(|schema| is_subschema_of_with_context(sub, schema, context)),
 
-        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
-        (Enum(sub_e), _) => context
-            .compile_sup_validator(sup)
-            .map(|compiled| sub_e.iter().all(|value| compiled.is_valid(value)))
-            .unwrap_or(false),
         (_, Enum(_)) => false,
 
         (Not(subn), _) => match subn.kind() {
@@ -96,13 +298,6 @@ fn is_subschema_of_with_context(
         | (Array { .. }, Array { .. }) => type_constraints_subsumed_with_context(sub, sup, context),
 
         (Integer { .. }, Number { .. }) => integer_constraints_subsumed_by_number(sub, sup),
-
-        (Const(s_val), Const(p_val)) => s_val == p_val,
-
-        (Const(s_val), _) => context
-            .compile_sup_validator(sup)
-            .map(|compiled| compiled.is_valid(s_val))
-            .unwrap_or(false),
 
         (_, Const(_)) => false,
 
@@ -418,6 +613,44 @@ fn check_numeric_inclusion(
     }
 }
 
+fn string_length_in_range(value: &str, minimum: Option<u64>, maximum: Option<u64>) -> bool {
+    let length = value.chars().count() as u64;
+    minimum.is_none_or(|minimum| length >= minimum)
+        && maximum.is_none_or(|maximum| length <= maximum)
+}
+
+fn check_numeric_value(
+    value: f64,
+    minimum: Option<f64>,
+    exclusive_minimum: bool,
+    maximum: Option<f64>,
+    exclusive_maximum: bool,
+) -> bool {
+    let above_minimum = match minimum {
+        None => true,
+        Some(minimum) if exclusive_minimum => value > minimum,
+        Some(minimum) => value >= minimum,
+    };
+    let below_maximum = match maximum {
+        None => true,
+        Some(maximum) if exclusive_maximum => value < maximum,
+        Some(maximum) => value <= maximum,
+    };
+    above_minimum && below_maximum
+}
+
+fn enum_contains_value(enumeration: Option<&[Value]>, value: &Value) -> bool {
+    enumeration.is_none_or(|enumeration| enumeration.contains(value))
+}
+
+fn enum_contains_numeric_value(enumeration: Option<&[Value]>, value: f64) -> bool {
+    enumeration.is_none_or(|enumeration| {
+        enumeration
+            .iter()
+            .any(|expected| expected.as_f64().is_some_and(|expected| expected == value))
+    })
+}
+
 fn check_multiple_of_inclusion(sub_multiple_of: Option<f64>, sup_multiple_of: Option<f64>) -> bool {
     let Some(sup_multiple_of) = sup_multiple_of else {
         return true;
@@ -429,14 +662,45 @@ fn check_multiple_of_inclusion(sub_multiple_of: Option<f64>, sup_multiple_of: Op
         return false;
     }
 
+    if let (Some(sub_multiple_of), Some(sup_multiple_of)) = (
+        exact_positive_integer(sub_multiple_of),
+        exact_positive_integer(sup_multiple_of),
+    ) {
+        return sub_multiple_of % sup_multiple_of == 0;
+    }
+
     let ratio = sub_multiple_of / sup_multiple_of;
     (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
 }
 
-fn check_enum_inclusion(
-    sub_enum: Option<&[serde_json::Value]>,
-    sup_enum: Option<&[serde_json::Value]>,
-) -> bool {
+fn value_is_multiple_of(value: f64, multiple_of: Option<f64>) -> bool {
+    let Some(multiple_of) = multiple_of else {
+        return true;
+    };
+    if multiple_of <= 0.0 {
+        return false;
+    }
+    if let (Some(value), Some(multiple_of)) = (
+        exact_positive_integer(value.abs()),
+        exact_positive_integer(multiple_of),
+    ) {
+        return value % multiple_of == 0;
+    }
+
+    let ratio = value / multiple_of;
+    (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
+}
+
+fn exact_positive_integer(value: f64) -> Option<u64> {
+    if !value.is_finite() || value <= 0.0 || value.fract() != 0.0 || value > u64::MAX as f64 {
+        return None;
+    }
+
+    let integer = value as u64;
+    ((integer as f64) == value).then_some(integer)
+}
+
+fn check_enum_inclusion(sub_enum: Option<&[Value]>, sup_enum: Option<&[Value]>) -> bool {
     match (sub_enum, sup_enum) {
         (_, None) => true,
         (Some(sub_enum), Some(sup_enum)) => sub_enum.iter().all(|value| sup_enum.contains(value)),
@@ -596,6 +860,22 @@ mod tests {
     }
 
     #[test]
+    fn huge_integer_multiple_of_ratio_must_be_exactly_divisible() {
+        let old = build_and_resolve_schema(&json!({
+                "type": "integer",
+                "multipleOf": 3
+        }))
+        .unwrap();
+        let new = build_and_resolve_schema(&json!({
+                "type": "integer",
+                "multipleOf": 9_007_199_254_740_994_f64
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
     fn integer_schema_without_enum_is_not_subsumed_by_old_number_enum() {
         let old = build_and_resolve_schema(&json!({
                 "type": "number",
@@ -629,6 +909,79 @@ mod tests {
         .unwrap();
         let sub = build_and_resolve_schema(&json!({
             "enum": [1]
+        }))
+        .unwrap();
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn enum_values_are_checked_against_recursive_sup_schema_structurally() {
+        let sup = build_and_resolve_schema(&json!({
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "next": { "$ref": "#/$defs/Node" }
+                    }
+                }
+            },
+            "$ref": "#/$defs/Node"
+        }))
+        .unwrap();
+        let sub = build_and_resolve_schema(&json!({
+            "enum": [{ "next": {} }]
+        }))
+        .unwrap();
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn const_values_are_checked_against_recursive_sup_schema_structurally() {
+        let sup = build_and_resolve_schema(&json!({
+            "$defs": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "value": { "type": "integer" },
+                        "next": { "$ref": "#/$defs/Node" }
+                    },
+                    "required": ["value"]
+                }
+            },
+            "$ref": "#/$defs/Node"
+        }))
+        .unwrap();
+        let sub = build_and_resolve_schema(&json!({
+            "const": {
+                "value": 1,
+                "next": {
+                    "value": 2
+                }
+            }
+        }))
+        .unwrap();
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn const_values_reject_non_productive_recursive_sup_anyof() {
+        let sup = build_and_resolve_schema(&json!({
+            "$defs": {
+                "A": {
+                    "anyOf": [
+                        { "type": "integer" },
+                        { "$ref": "#/$defs/A" }
+                    ]
+                }
+            },
+            "$ref": "#/$defs/A"
+        }))
+        .unwrap();
+        let sub = build_and_resolve_schema(&json!({
+            "const": "x"
         }))
         .unwrap();
 
