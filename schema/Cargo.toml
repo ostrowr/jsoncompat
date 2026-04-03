@@ -17,4 +17,4 @@ percent-encoding = "2.3.1"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "../fuzz" }
-rand = "0.8.5"
+rand = "0.10"

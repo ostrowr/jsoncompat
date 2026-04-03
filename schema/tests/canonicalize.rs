@@ -740,6 +740,36 @@ fn canonicalize_routes_nested_string_constraints_to_only_the_string_branch() {
 }
 
 #[test]
+fn canonicalize_routes_nested_format_constraints_to_only_the_string_branch() {
+    assert_eq!(
+        canonicalize_schema(&json!({
+            "type": "object",
+            "properties": {
+                "email": { "format": "email" }
+            }
+        }))
+        .unwrap()
+        .into_value(),
+        json!({
+            "minProperties": 0,
+            "properties": {
+                "email": {
+                    "anyOf": [
+                        { "enum": [null] },
+                        { "enum": [false, true] },
+                        { "minProperties": 0, "properties": {}, "type": "object" },
+                        { "items": true, "minItems": 0, "type": "array" },
+                        { "format": "email", "minLength": 0, "type": "string" },
+                        { "type": "number" }
+                    ]
+                }
+            },
+            "type": "object"
+        })
+    );
+}
+
+#[test]
 fn canonicalize_preserves_unknown_keywords_if_they_are_local_ref_targets() {
     let canonical = canonicalize_schema(&json!({
         "unknown-keyword": {

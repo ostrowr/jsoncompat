@@ -1099,7 +1099,18 @@ fn normalize_type_specific_keywords(schema: &mut Map<String, Value>) {
     };
 
     let allowed = match type_name {
-        "string" => Some(["type", "enum", "const", "minLength", "maxLength", "pattern"].as_slice()),
+        "string" => Some(
+            [
+                "type",
+                "enum",
+                "const",
+                "minLength",
+                "maxLength",
+                "pattern",
+                "format",
+            ]
+            .as_slice(),
+        ),
         "number" | "integer" => Some(
             [
                 "type",
@@ -1702,7 +1713,6 @@ fn should_strip_keyword(key: &str) -> bool {
             | "deprecated"
             | "readOnly"
             | "writeOnly"
-            | "format"
             | "contentEncoding"
             | "contentMediaType"
             | "contentSchema"
@@ -1754,6 +1764,7 @@ fn is_known_keyword(key: &str) -> bool {
             | "minLength"
             | "maxLength"
             | "pattern"
+            | "format"
             | "minimum"
             | "maximum"
             | "exclusiveMinimum"

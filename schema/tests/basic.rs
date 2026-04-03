@@ -151,6 +151,37 @@ fn const_with_pattern_uses_string_schema_shape() {
 }
 
 #[test]
+fn nested_format_only_schema_uses_string_branch_in_implicit_union() {
+    let ast = build_schema(&json!({
+        "type": "object",
+        "properties": {
+            "email": { "format": "email" }
+        }
+    }));
+
+    let guard = ast.borrow();
+    let SchemaNodeKind::Object { properties, .. } = &*guard else {
+        panic!("expected object schema, got {guard:?}");
+    };
+
+    let email = properties.get("email").expect("email property");
+    let email_guard = email.borrow();
+    let SchemaNodeKind::AnyOf(branches) = &*email_guard else {
+        panic!("expected implicit union for email property, got {email_guard:?}");
+    };
+
+    assert!(branches.iter().any(|branch| {
+        matches!(
+            &*branch.borrow(),
+            SchemaNodeKind::String {
+                format: Some(format),
+                ..
+            } if format == "email"
+        )
+    }));
+}
+
+#[test]
 fn bare_multiple_of_under_conditional_gets_the_same_implicit_union_as_root() {
     let ast = build_schema(&json!({
         "if": { "type": "boolean" },

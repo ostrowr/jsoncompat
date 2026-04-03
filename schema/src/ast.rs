@@ -70,6 +70,7 @@ impl SchemaNode {
                 min_length,
                 max_length,
                 pattern,
+                format,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
@@ -82,6 +83,9 @@ impl SchemaNode {
                 }
                 if let Some(p) = pattern {
                     obj.insert("pattern".into(), Value::String(p.clone()));
+                }
+                if let Some(f) = format {
+                    obj.insert("format".into(), Value::String(f.clone()));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -472,15 +476,17 @@ impl PartialEq for SchemaNode {
                         min_length: ax,
                         max_length: ay,
                         pattern: ap,
+                        format: af,
                         enumeration: ae,
                     },
                     String {
                         min_length: bx,
                         max_length: by,
                         pattern: bp,
+                        format: bf,
                         enumeration: be,
                     },
-                ) => ax == bx && ay == by && ap == bp && ae == be,
+                ) => ax == bx && ay == by && ap == bp && af == bf && ae == be,
                 (
                     Number {
                         minimum: amin,
@@ -706,6 +712,7 @@ pub enum SchemaNodeKind {
         min_length: Option<u64>,
         max_length: Option<u64>,
         pattern: Option<String>,
+        format: Option<String>,
         enumeration: Option<Vec<Value>>,
     },
     Number {
@@ -947,7 +954,10 @@ fn object_has_array_keywords(obj: &Map<String, Value>) -> bool {
 }
 
 fn object_has_string_keywords(obj: &Map<String, Value>) -> bool {
-    obj.contains_key("minLength") || obj.contains_key("maxLength") || obj.contains_key("pattern")
+    obj.contains_key("minLength")
+        || obj.contains_key("maxLength")
+        || obj.contains_key("pattern")
+        || obj.contains_key("format")
 }
 
 fn object_has_numeric_enum_keywords(obj: &Map<String, Value>) -> bool {
@@ -1142,12 +1152,17 @@ fn parse_string_schema(obj: &Map<String, Value>) -> Result<SchemaNode> {
         .get("pattern")
         .and_then(|v| v.as_str())
         .map(|s| s.to_owned());
+    let format = obj
+        .get("format")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_owned());
     let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
 
     Ok(SchemaNode::new(SchemaNodeKind::String {
         min_length,
         max_length,
         pattern,
+        format,
         enumeration,
     }))
 }
