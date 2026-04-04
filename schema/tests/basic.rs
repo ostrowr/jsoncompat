@@ -273,6 +273,72 @@ fn resolve_recursive_ref() {
 }
 
 #[test]
+fn reject_root_self_ref_alias_cycle_with_explicit_error() {
+    let raw = json!({
+        "$ref": "#"
+    });
+
+    let error = build_and_resolve_schema(&raw).unwrap_err();
+
+    assert!(matches!(
+        error,
+        AstError::CyclicReferenceAlias { ref_path } if ref_path == "#"
+    ));
+}
+
+#[test]
+fn reject_mutual_ref_alias_cycle_with_explicit_error() {
+    let raw = json!({
+        "$defs": {
+            "A": {
+                "$ref": "#/$defs/B"
+            },
+            "B": {
+                "$ref": "#/$defs/A"
+            }
+        },
+        "$ref": "#/$defs/A"
+    });
+
+    let error = build_and_resolve_schema(&raw).unwrap_err();
+
+    assert!(matches!(
+        error,
+        AstError::CyclicReferenceAlias { ref_path } if ref_path == "#/$defs/A"
+    ));
+}
+
+#[test]
+fn resolve_recursive_object_through_alias_ref_chain() {
+    let raw = json!({
+        "$defs": {
+            "A": {
+                "$ref": "#/$defs/B"
+            },
+            "B": {
+                "type": "object",
+                "properties": {
+                    "next": {
+                        "$ref": "#/$defs/A"
+                    }
+                }
+            }
+        },
+        "$ref": "#/$defs/A"
+    });
+
+    let ast = build_and_resolve_schema(&raw).unwrap();
+
+    let guard = ast.kind();
+    let SchemaNodeKind::Object { properties, .. } = guard else {
+        panic!("expected object schema");
+    };
+
+    let next = properties.get("next").expect("next property");
+    assert!(next.ptr_eq(&ast));
+}
+
+#[test]
 fn resolve_duplicate_refs_share_pointer() {
     let raw = json!({
         "$defs": {
@@ -405,6 +471,17 @@ fn non_array_enum_with_array_keywords_uses_terminal_enum_shape() {
     };
 
     assert_eq!(values, &vec![json!(1)]);
+}
+
+#[test]
+fn unique_items_uses_json_schema_numeric_equality() {
+    let ast = build_schema(&json!({
+        "type": "array",
+        "uniqueItems": true
+    }));
+
+    assert!(!ast.accepts_value(&json!([1, 1.0])));
+    assert!(ast.accepts_value(&json!([1, 2.0])));
 }
 
 #[test]

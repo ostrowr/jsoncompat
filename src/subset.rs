@@ -1,6 +1,8 @@
 use crate::ResolvedNode;
-use fancy_regex::Regex;
-use json_schema_ast::{ArrayContains, IntegerMultipleOf, ResolvedNodeId, ResolvedNodeKind};
+use json_schema_ast::{
+    ArrayContains, IntegerMultipleOf, ResolvedNodeId, ResolvedNodeKind, json_values_equal,
+    property_name_matches_pattern,
+};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -778,70 +780,6 @@ fn object_additional_schema_is_subsumed(
         })
 }
 
-fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
-    Regex::new(pattern)
-        .ok()
-        .and_then(|regex| regex.is_match(property_name).ok())
-        .unwrap_or(false)
-}
-
-fn json_values_equal(expected: &Value, value: &Value) -> bool {
-    match (expected, value) {
-        (Value::Number(_), Value::Number(_)) => numeric_values_equal(expected, value),
-        (Value::Array(expected_items), Value::Array(items)) => {
-            expected_items.len() == items.len()
-                && expected_items
-                    .iter()
-                    .zip(items)
-                    .all(|(expected, value)| json_values_equal(expected, value))
-        }
-        (Value::Object(expected_object), Value::Object(object)) => {
-            expected_object.len() == object.len()
-                && expected_object.iter().all(|(key, expected)| {
-                    object
-                        .get(key)
-                        .is_some_and(|value| json_values_equal(expected, value))
-                })
-        }
-        _ => expected == value,
-    }
-}
-
-fn numeric_values_equal(expected: &Value, value: &Value) -> bool {
-    if let (Some(expected_integer), Some(value_integer)) = (
-        integer_value_from_json(expected),
-        integer_value_from_json(value),
-    ) {
-        return expected_integer == value_integer;
-    }
-
-    if let (Some(expected_number), Some(actual_number)) = (expected.as_f64(), value.as_f64()) {
-        return expected_number == actual_number;
-    }
-    false
-}
-
-fn integer_value_from_json(value: &Value) -> Option<i128> {
-    let Value::Number(number) = value else {
-        return None;
-    };
-
-    number
-        .as_i64()
-        .map(i128::from)
-        .or_else(|| number.as_u64().map(i128::from))
-        .or_else(|| number.as_f64().and_then(integer_value_from_f64))
-}
-
-fn integer_value_from_f64(value: f64) -> Option<i128> {
-    if !value.is_finite() || value.fract() != 0.0 {
-        return None;
-    }
-
-    let integer = value as i128;
-    ((integer as f64) == value).then_some(integer)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,6 +836,18 @@ mod tests {
         }));
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn enum_inclusion_uses_json_schema_numeric_equality() {
+        let old = resolve(json!({
+            "enum": [1.0, 2]
+        }));
+        let new = resolve(json!({
+            "enum": [1, 2.0]
+        }));
+
+        assert!(is_subschema_of(&new, &old));
     }
 
     #[test]

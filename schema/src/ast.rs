@@ -1,7 +1,9 @@
 use crate::canonicalize::{canonicalize_schema, validate_schema_dialects};
+use crate::json_semantics::{
+    integer_value_from_json, json_values_equal, numeric_values_equal, property_name_matches_pattern,
+};
 use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
 use crate::{CompileError, JSONSchema, SchemaError, compile};
-use fancy_regex::Regex;
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
 use std::cell::{OnceCell, Ref, RefCell, RefMut};
@@ -29,6 +31,8 @@ pub enum AstError {
     },
     #[error("local $ref '{ref_path}' does not resolve to a schema node in the current document")]
     UnresolvedReference { ref_path: String },
+    #[error("local $ref '{ref_path}' forms an alias-only cycle with no concrete schema node")]
+    CyclicReferenceAlias { ref_path: String },
     #[error(
         "unsupported reference '{ref_path}': only local JSON Pointer $ref targets of the form '#/...'"
     )]
@@ -874,42 +878,6 @@ fn enum_contains_numeric_value(enumeration: Option<&[Value]>, value: &Value) -> 
     })
 }
 
-fn json_values_equal(expected: &Value, value: &Value) -> bool {
-    match (expected, value) {
-        (Value::Number(_), Value::Number(_)) => numeric_values_equal(expected, value),
-        (Value::Array(expected_items), Value::Array(items)) => {
-            expected_items.len() == items.len()
-                && expected_items
-                    .iter()
-                    .zip(items)
-                    .all(|(expected, value)| json_values_equal(expected, value))
-        }
-        (Value::Object(expected_object), Value::Object(object)) => {
-            expected_object.len() == object.len()
-                && expected_object.iter().all(|(key, expected)| {
-                    object
-                        .get(key)
-                        .is_some_and(|value| json_values_equal(expected, value))
-                })
-        }
-        _ => expected == value,
-    }
-}
-
-fn numeric_values_equal(expected: &Value, value: &Value) -> bool {
-    if let (Some(expected_integer), Some(value_integer)) = (
-        integer_value_from_json(expected),
-        integer_value_from_json(value),
-    ) {
-        return expected_integer == value_integer;
-    }
-
-    expected
-        .as_f64()
-        .zip(value.as_f64())
-        .is_some_and(|(expected_number, actual_number)| expected_number == actual_number)
-}
-
 fn value_is_multiple_of(value: f64, multiple_of: Option<f64>) -> bool {
     let Some(multiple_of) = multiple_of else {
         return true;
@@ -936,27 +904,6 @@ fn integer_value_is_multiple_of(value: i128, multiple_of: Option<IntegerMultiple
         return value_is_multiple_of(value as f64, Some(multiple_of.as_f64()));
     };
     value.rem_euclid(divisor) == 0
-}
-
-fn integer_value_from_json(value: &Value) -> Option<i128> {
-    let Value::Number(number) = value else {
-        return None;
-    };
-
-    number
-        .as_i64()
-        .map(i128::from)
-        .or_else(|| number.as_u64().map(i128::from))
-        .or_else(|| number.as_f64().and_then(integer_value_from_f64))
-}
-
-fn integer_value_from_f64(value: f64) -> Option<i128> {
-    if !value.is_finite() || value.fract() != 0.0 {
-        return None;
-    }
-
-    let integer = value as i128;
-    ((integer as f64) == value).then_some(integer)
 }
 
 fn parse_integer_value(value: Option<&Value>) -> Option<i64> {
@@ -1051,17 +998,11 @@ fn exact_positive_integer(value: f64) -> Option<u64> {
 }
 
 fn array_values_are_unique(values: &[Value]) -> bool {
-    values
-        .iter()
-        .enumerate()
-        .all(|(index, value)| values[..index].iter().all(|seen| seen != value))
-}
-
-fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
-    Regex::new(pattern)
-        .ok()
-        .and_then(|regex| regex.is_match(property_name).ok())
-        .unwrap_or(false)
+    values.iter().enumerate().all(|(index, value)| {
+        values[..index]
+            .iter()
+            .all(|seen| !json_values_equal(seen, value))
+    })
 }
 
 #[derive(Clone)]
@@ -2721,8 +2662,8 @@ fn resolve_refs_internal(
     };
 
     if let Some(path) = ref_path {
-        if let Some(existing) = cache.get(&path) {
-            *node = existing.clone();
+        if let Some(existing) = cache.get(&path).cloned() {
+            *node = resolve_cached_ref_alias(&path, existing, stack, cache)?;
             return Ok(());
         }
 
@@ -2978,6 +2919,51 @@ fn resolve_refs_internal(
     }
 
     Ok(())
+}
+
+fn resolve_cached_ref_alias(
+    ref_path: &str,
+    cached_node: MutableSchemaNode,
+    stack: &[String],
+    cache: &HashMap<String, MutableSchemaNode>,
+) -> Result<MutableSchemaNode> {
+    if !stack.iter().any(|active_path| active_path == ref_path) {
+        return Ok(cached_node);
+    }
+
+    let mut current_path = ref_path.to_owned();
+    let mut visited_paths = HashSet::new();
+
+    while let Some(current_node) = cache.get(&current_path).cloned() {
+        if !stack.iter().any(|active_path| active_path == &current_path) {
+            return Ok(current_node);
+        }
+
+        let next_path = {
+            let guard = current_node.borrow();
+            match &*guard {
+                SchemaNodeKind::Ref(next_path) => Some(next_path.clone()),
+                _ => None,
+            }
+        };
+        let Some(next_path) = next_path else {
+            return Ok(current_node);
+        };
+
+        if !visited_paths.insert(current_path.clone()) {
+            // Every ref target observed in this active chain is still a
+            // parser-only `Ref`, so this is an alias-only cycle
+            // (`A -> B -> A` or `{"$ref":"#"}`), not productive recursion
+            // through a concrete schema wrapper.
+            return Err(AstError::CyclicReferenceAlias {
+                ref_path: ref_path.to_owned(),
+            });
+        }
+
+        current_path = next_path;
+    }
+
+    Ok(cached_node)
 }
 
 fn resolve_json_pointer_child<'a>(current: &'a Value, token: &str) -> Option<&'a Value> {

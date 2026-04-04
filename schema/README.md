@@ -1,6 +1,6 @@
 # json_schema_ast
 
-JSON Schema AST and reference resolver.
+JSON Schema AST and reference resolver for Draft 2020-12.
 
 [![crates.io](https://img.shields.io/crates/v/json_schema_ast)](https://crates.io/crates/json_schema_ast) [![docs.rs](https://docs.rs/json_schema_ast/badge.svg)](https://docs.rs/json_schema_ast) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
@@ -41,6 +41,10 @@ assert!(validator.is_valid(&json!({ "id": 42 })));
 If a schema document sets `$schema`, it must be exactly Draft 2020-12
 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing
 `#`). Omitting `$schema` is allowed and is interpreted as Draft 2020-12.
+
+Same-document refs to `"#"` and `"#/..."` are supported, including recursive
+graphs. Pure alias cycles, remote refs, plain-name fragments, and dynamic refs
+are rejected with typed resolver errors.
 
 ## License
 

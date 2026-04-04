@@ -3,6 +3,7 @@
 
 mod ast;
 mod canonicalize;
+mod json_semantics;
 
 mod schema_metadata;
 
@@ -11,6 +12,7 @@ pub use ast::{
     ResolvedSchema, SchemaBuildError, SchemaNode, SchemaNodeId, build_and_resolve_schema,
 };
 pub use canonicalize::CanonicalizeError as SchemaError;
+pub use json_semantics::{json_values_equal, property_name_matches_pattern};
 
 #[cfg(test)]
 use canonicalize::CanonicalSchema;
