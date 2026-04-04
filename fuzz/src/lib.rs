@@ -1,6 +1,7 @@
 mod format_gen;
 mod regex_gen;
 
+use fancy_regex::Regex;
 use json_schema_ast::{ArrayContains, JSONSchema, SchemaNode, SchemaNodeKind, compile};
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
@@ -140,6 +141,7 @@ impl ValueGenerator {
             }
             SchemaNodeKind::Object {
                 properties,
+                pattern_properties,
                 required,
                 additional,
                 property_names,
@@ -164,8 +166,11 @@ impl ValueGenerator {
                             property_names,
                             &property_name_value,
                             active,
-                        ) && self.schema_accepts_value_inner(
-                            properties.get(property_name).unwrap_or(additional),
+                        ) && self.object_property_accepts_value(
+                            properties,
+                            pattern_properties,
+                            additional,
+                            property_name,
                             property_value,
                             active,
                         )
@@ -254,6 +259,104 @@ impl ValueGenerator {
         active.remove(&frame);
         is_valid
     }
+
+    fn object_property_accepts_value(
+        &mut self,
+        properties: &HashMap<String, SchemaNode>,
+        pattern_properties: &HashMap<String, SchemaNode>,
+        additional: &SchemaNode,
+        property_name: &str,
+        property_value: &Value,
+        active: &mut HashSet<RecursiveValidationFrame>,
+    ) -> bool {
+        let mut matched = false;
+
+        if let Some(property_schema) = properties.get(property_name) {
+            matched = true;
+            if !self.schema_accepts_value_inner(property_schema, property_value, active) {
+                return false;
+            }
+        }
+
+        for (pattern, pattern_schema) in pattern_properties {
+            if !property_name_matches_pattern(pattern, property_name) {
+                continue;
+            }
+            matched = true;
+            if !self.schema_accepts_value_inner(pattern_schema, property_value, active) {
+                return false;
+            }
+        }
+
+        matched || self.schema_accepts_value_inner(additional, property_value, active)
+    }
+
+    fn generate_property_value(
+        &mut self,
+        property_name: &str,
+        property_schema: &SchemaNode,
+        pattern_properties: &HashMap<String, SchemaNode>,
+        rng: &mut impl Rng,
+        depth: u8,
+    ) -> Value {
+        if !property_matches_any_pattern(pattern_properties, property_name) {
+            return self.generate_value(property_schema, rng, depth);
+        }
+
+        for _ in 0..32 {
+            let candidate = self.generate_value(property_schema, rng, depth);
+            if pattern_property_schemas_accept_value(
+                self,
+                pattern_properties,
+                property_name,
+                &candidate,
+            ) {
+                return candidate;
+            }
+        }
+
+        for pattern_schema in matching_pattern_property_schemas(pattern_properties, property_name) {
+            let candidate = self.generate_value(pattern_schema, rng, depth);
+            if self.schema_accepts_value(property_schema, &candidate)
+                && pattern_property_schemas_accept_value(
+                    self,
+                    pattern_properties,
+                    property_name,
+                    &candidate,
+                )
+            {
+                return candidate;
+            }
+        }
+
+        self.generate_value(property_schema, rng, depth)
+    }
+
+    fn generate_additional_property_value(
+        &mut self,
+        property_name: &str,
+        pattern_properties: &HashMap<String, SchemaNode>,
+        additional: &SchemaNode,
+        rng: &mut impl Rng,
+        depth: u8,
+    ) -> Value {
+        let matching_schemas = matching_pattern_property_schemas(pattern_properties, property_name);
+        let Some(first_pattern_schema) = matching_schemas.first() else {
+            return self.generate_value(additional, rng, depth);
+        };
+
+        for _ in 0..32 {
+            let candidate = self.generate_value(first_pattern_schema, rng, depth);
+            if matching_schemas
+                .iter()
+                .all(|schema| self.schema_accepts_value(schema, &candidate))
+            {
+                return candidate;
+            }
+        }
+
+        self.generate_value(first_pattern_schema, rng, depth)
+    }
 }
 
 /// Generate a random JSON value *intended* to satisfy `schema`.
@@ -315,6 +418,7 @@ fn generate_value_with_context(
                     for sub in object_subschemas {
                         if let Object {
                             properties,
+                            pattern_properties,
                             required,
                             additional,
                             min_properties,
@@ -327,6 +431,7 @@ fn generate_value_with_context(
                                 if required.contains(&k)
                                     || !matches!(additional.kind(), BoolSchema(true) | Any)
                                     || properties.contains_key(&k)
+                                    || property_matches_any_pattern(pattern_properties, &k)
                                     || min_properties
                                         .is_some_and(|minimum| minimum > required.len())
                                 {
@@ -423,7 +528,7 @@ fn generate_value_with_context(
             random_any(rng, depth)
         }
 
-        Not(_) => random_any(rng, depth),
+        Not(negated) => generate_not_value(schema, negated, rng, depth, generator),
 
         String {
             min_length,
@@ -577,6 +682,7 @@ fn generate_value_with_context(
 
         Object {
             properties,
+            pattern_properties,
             required,
             additional,
             property_names,
@@ -622,7 +728,13 @@ fn generate_value_with_context(
                     !matches!(prop_schema.kind(), BoolSchema(true) | Any) && rng.random_bool(0.7)
                 };
                 if include {
-                    let val = generator.generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    let val = generator.generate_property_value(
+                        k,
+                        prop_schema,
+                        pattern_properties,
+                        rng,
+                        depth.saturating_sub(1),
+                    );
                     map.insert(k.clone(), val);
                 }
             }
@@ -641,7 +753,16 @@ fn generate_value_with_context(
                     if map.contains_key(&key) {
                         continue;
                     }
-                    let val = generator.generate_value(additional, rng, depth.saturating_sub(1));
+                    if properties.contains_key(&key) {
+                        continue;
+                    }
+                    let val = generator.generate_additional_property_value(
+                        &key,
+                        pattern_properties,
+                        additional,
+                        rng,
+                        depth.saturating_sub(1),
+                    );
                     map.insert(key, val);
                 }
 
@@ -657,8 +778,17 @@ fn generate_value_with_context(
                             attempts += 1;
                             continue;
                         }
-                        let val =
-                            generator.generate_value(additional, rng, depth.saturating_sub(1));
+                        if properties.contains_key(&key) {
+                            attempts += 1;
+                            continue;
+                        }
+                        let val = generator.generate_additional_property_value(
+                            &key,
+                            pattern_properties,
+                            additional,
+                            rng,
+                            depth.saturating_sub(1),
+                        );
                         map.insert(key, val);
                         attempts += 1;
                     }
@@ -673,7 +803,13 @@ fn generate_value_with_context(
                     if map.contains_key(k) {
                         continue;
                     }
-                    let val = generator.generate_value(prop_schema, rng, depth.saturating_sub(1));
+                    let val = generator.generate_property_value(
+                        k,
+                        prop_schema,
+                        pattern_properties,
+                        rng,
+                        depth.saturating_sub(1),
+                    );
                     map.insert(k.clone(), val);
                     if map.len() >= min_p {
                         break;
@@ -689,7 +825,13 @@ fn generate_value_with_context(
                     .find(|(name, _)| property_name_allows(property_names, name, generator))
                     .or_else(|| properties.iter().next())
             {
-                let val = generator.generate_value(schema, rng, depth.saturating_sub(1));
+                let val = generator.generate_property_value(
+                    k,
+                    schema,
+                    pattern_properties,
+                    rng,
+                    depth.saturating_sub(1),
+                );
                 map.insert(k.clone(), val);
             }
 
@@ -832,6 +974,108 @@ fn object_schema_branch(schema: &SchemaNode) -> Option<SchemaNode> {
     }
 }
 
+fn generate_not_value(
+    schema: &SchemaNode,
+    negated: &SchemaNode,
+    rng: &mut impl Rng,
+    depth: u8,
+    generator: &mut ValueGenerator,
+) -> Value {
+    if let Some(candidate) = negated_schema_counterexample(negated, rng, depth, generator)
+        && generator.schema_accepts_value(schema, &candidate)
+    {
+        return candidate;
+    }
+
+    for candidate in fixed_not_candidates() {
+        if generator.schema_accepts_value(schema, &candidate) {
+            return candidate;
+        }
+    }
+
+    let forbidden = generator.generate_value(negated, rng, depth.saturating_sub(1));
+    let candidate = value_type_mismatch(&forbidden);
+    if generator.schema_accepts_value(schema, &candidate) {
+        return candidate;
+    }
+
+    random_any(rng, depth)
+}
+
+fn negated_schema_counterexample(
+    negated: &SchemaNode,
+    rng: &mut impl Rng,
+    depth: u8,
+    generator: &mut ValueGenerator,
+) -> Option<Value> {
+    use SchemaNodeKind::*;
+
+    Some(match negated.kind() {
+        BoolSchema(false) => random_any(rng, depth),
+        BoolSchema(true) | Any => return None,
+        String { .. } => Value::Number(0.into()),
+        Number { .. } | Integer { .. } => Value::String(std::string::String::new()),
+        Boolean { .. } => Value::Null,
+        Null { .. } => Value::Bool(false),
+        Object { .. } => Value::Array(Vec::new()),
+        Array { .. } => Value::Object(Map::new()),
+        Const(value) => value_type_mismatch(value),
+        Enum(values) => values
+            .first()
+            .map(value_type_mismatch)
+            .unwrap_or_else(|| random_any(rng, depth)),
+        AllOf(children) => children
+            .first()
+            .and_then(|child| negated_schema_counterexample(child, rng, depth, generator))
+            .unwrap_or_else(|| random_any(rng, depth)),
+        AnyOf(_) | OneOf(_) | Not(_) | IfThenElse { .. } | Ref(_) | Defs(_) => {
+            generator.generate_value(negated, rng, depth.saturating_sub(1))
+        }
+        Type(_)
+        | Minimum(_)
+        | Maximum(_)
+        | Required(_)
+        | AdditionalProperties(_)
+        | Format(_)
+        | ContentEncoding(_)
+        | ContentMediaType(_)
+        | Title(_)
+        | Description(_)
+        | Default(_)
+        | Examples(_)
+        | ReadOnly(_)
+        | WriteOnly(_)
+        | _ => random_any(rng, depth),
+    })
+}
+
+fn fixed_not_candidates() -> [Value; 8] {
+    [
+        Value::Null,
+        Value::Bool(false),
+        Value::Bool(true),
+        Value::Number(0.into()),
+        Value::String(String::new()),
+        Value::Array(Vec::new()),
+        Value::Object(Map::new()),
+        Value::Object(Map::from_iter([(
+            "bar".to_owned(),
+            Value::Number(1.into()),
+        )])),
+    ]
+}
+
+fn value_type_mismatch(value: &Value) -> Value {
+    match value {
+        Value::Null => Value::Bool(false),
+        Value::Bool(_) => Value::Null,
+        Value::Number(_) => Value::String(String::new()),
+        Value::String(_) => Value::Number(0.into()),
+        Value::Array(_) => Value::Object(Map::new()),
+        Value::Object(_) => Value::Array(Vec::new()),
+    }
+}
+
 /// Generate a *random JSON Schema* (subset) for fuzzing the value‑generator
 /// itself.  The result is raw JSON so it can immediately be passed into the
 /// authoritative validator for cross‑checking.
@@ -932,12 +1176,14 @@ fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
             .collect(),
         Object {
             properties,
+            pattern_properties,
             additional,
             property_names,
             ..
         } => properties
             .values()
             .cloned()
+            .chain(pattern_properties.values().cloned())
             .chain(std::iter::once(additional.clone()))
             .chain(std::iter::once(property_names.clone()))
             .collect(),
@@ -963,6 +1209,45 @@ fn property_name_allows(
     generator: &mut ValueGenerator,
 ) -> bool {
     generator.schema_accepts_value(property_names, &Value::String(candidate.to_owned()))
+}
+
+fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
+    Regex::new(pattern)
+        .ok()
+        .and_then(|regex| regex.is_match(property_name).ok())
+        .unwrap_or(false)
+}
+
+fn property_matches_any_pattern(
+    pattern_properties: &HashMap<String, SchemaNode>,
+    property_name: &str,
+) -> bool {
+    pattern_properties
+        .keys()
+        .any(|pattern| property_name_matches_pattern(pattern, property_name))
+}
+
+fn matching_pattern_property_schemas<'a>(
+    pattern_properties: &'a HashMap<String, SchemaNode>,
+    property_name: &str,
+) -> Vec<&'a SchemaNode> {
+    pattern_properties
+        .iter()
+        .filter_map(|(pattern, schema)| {
+            property_name_matches_pattern(pattern, property_name).then_some(schema)
+        })
+        .collect()
+}
+
+fn pattern_property_schemas_accept_value(
+    generator: &mut ValueGenerator,
+    pattern_properties: &HashMap<String, SchemaNode>,
+    property_name: &str,
+    property_value: &Value,
+) -> bool {
+    matching_pattern_property_schemas(pattern_properties, property_name)
+        .into_iter()
+        .all(|schema| generator.schema_accepts_value(schema, property_value))
 }
 
 fn generate_property_key(

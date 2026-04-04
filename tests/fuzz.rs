@@ -2,7 +2,7 @@
 
 use json_schema_ast::{AstError, SchemaError, compile};
 use json_schema_fuzz::ValueGenerator;
-use jsoncompat::build_and_resolve_schema;
+use jsoncompat::{SchemaNodeKind, build_and_resolve_schema};
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -24,21 +24,7 @@ const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
-    // Remaining failing schemas in allOf.json – indices 4 and 5 correspond
-    // to `[true, false]` and `[false, false]` where no valid instance exists.
-    // TODO – we need to handle the impossible case more elegantly
-    map.insert("allOf.json".to_string(), [4, 5].iter().cloned().collect());
-    // Remaining tricky `oneOf` schemas – currently only #7 (boolean schemas)
-    // is impossible to satisfy generically.
-    map.insert(
-        "oneOf.json".to_string(),
-        [2, 4, 5].iter().cloned().collect(),
-    );
-    map.insert(
-        "not.json".to_string(),
-        [2, 4, 5, 8].iter().cloned().collect(),
-    );
+    map.insert("not.json".to_string(), [8].iter().cloned().collect());
     map.insert(
         "unevaluatedItems.json".to_string(),
         [12, 18].iter().cloned().collect(),
@@ -47,8 +33,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         "unevaluatedProperties.json".to_string(),
         [12, 16].iter().cloned().collect(),
     );
-
-    map.insert("properties.json".to_string(), [1].iter().cloned().collect());
 
     map.insert(
         "anchor.json".to_string(),
@@ -73,12 +57,11 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 
     map.insert(
         "dynamicRef.json".to_string(),
-        [3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
+        [3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17]
             .iter()
             .cloned()
             .collect(),
     );
-    map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
     map.insert(
         "ref.json".to_string(),
         [6, 10, 17, 19, 27, 28, 29, 30, 31]
@@ -87,14 +70,9 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
             .collect(),
     );
 
-    map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
     map.insert(
         "refRemote.json".to_string(),
         [0, 1, 2, 3, 8, 9, 11, 12, 13, 14].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
     );
     map.insert("defs.json".to_string(), [0].iter().cloned().collect());
 
@@ -154,6 +132,15 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(error) => return Err(error.into()),
         };
+        if matches!(ast.kind(), SchemaNodeKind::BoolSchema(false))
+            && !fixture_schema
+                .tests
+                .iter()
+                .any(|fixture_test| fixture_test.valid)
+        {
+            continue;
+        }
+
         let compiled = compile(schema_json)?;
         let mut generator = ValueGenerator::new();
 

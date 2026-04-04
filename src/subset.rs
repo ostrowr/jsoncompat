@@ -1,4 +1,5 @@
 use crate::SchemaNode;
+use fancy_regex::Regex;
 use json_schema_ast::{ArrayContains, JSONSchema, SchemaNodeId, SchemaNodeKind, compile};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -120,6 +121,7 @@ impl SubschemaCheckContext {
             }
             SchemaNodeKind::Object {
                 properties,
+                pattern_properties,
                 required,
                 additional,
                 property_names,
@@ -141,8 +143,11 @@ impl SubschemaCheckContext {
                     && value_object.iter().all(|(name, property_value)| {
                         let property_name = Value::String(name.clone());
                         self.superset_contains_value_inner(property_names, &property_name, active)
-                            && self.superset_contains_value_inner(
-                                properties.get(name).unwrap_or(additional),
+                            && self.object_property_contains_value(
+                                properties,
+                                pattern_properties,
+                                additional,
+                                name,
                                 property_value,
                                 active,
                             )
@@ -230,6 +235,37 @@ impl SubschemaCheckContext {
 
         active.remove(&frame);
         is_valid
+    }
+
+    fn object_property_contains_value(
+        &mut self,
+        properties: &HashMap<String, SchemaNode>,
+        pattern_properties: &HashMap<String, SchemaNode>,
+        additional: &SchemaNode,
+        property_name: &str,
+        property_value: &Value,
+        active: &mut HashSet<RecursiveValidationFrame>,
+    ) -> bool {
+        let mut matched = false;
+
+        if let Some(property_schema) = properties.get(property_name) {
+            matched = true;
+            if !self.superset_contains_value_inner(property_schema, property_value, active) {
+                return false;
+            }
+        }
+
+        for (pattern, pattern_schema) in pattern_properties {
+            if !property_name_matches_pattern(pattern, property_name) {
+                continue;
+            }
+            matched = true;
+            if !self.superset_contains_value_inner(pattern_schema, property_value, active) {
+                return false;
+            }
+        }
+
+        matched || self.superset_contains_value_inner(additional, property_value, active)
     }
 }
 
@@ -473,6 +509,7 @@ fn type_constraints_subsumed_with_context(
         (
             Object {
                 properties: sprops,
+                pattern_properties: s_pattern_props,
                 required: sreq,
                 additional: s_addl,
                 property_names: s_prop_names,
@@ -483,6 +520,7 @@ fn type_constraints_subsumed_with_context(
             },
             Object {
                 properties: pprops,
+                pattern_properties: p_pattern_props,
                 required: preq,
                 additional: p_addl,
                 property_names: p_prop_names,
@@ -512,23 +550,24 @@ fn type_constraints_subsumed_with_context(
             }
 
             for (key, s_schema) in &sprops {
-                if let Some(p_schema) = pprops.get(key) {
-                    if !is_subschema_of_with_context(s_schema, p_schema, context) {
-                        return false;
-                    }
-                } else {
-                    // The new schema permits an additional property that the
-                    // previous map did not list explicitly.  We must ensure the
-                    // "additional" schema of the superset accepts whatever the
-                    // subset would have produced (or, if `additionalProperties`
-                    // was `false`, reject immediately).
-                    let additional_allows =
-                        !matches!(s_addl.kind(), SchemaNodeKind::BoolSchema(false));
-                    if !additional_allows
-                        || !is_subschema_of_with_context(s_schema, &p_addl, context)
-                    {
-                        return false;
-                    }
+                if !object_property_schema_is_subsumed(
+                    key,
+                    s_schema,
+                    pprops.get(key),
+                    &p_pattern_props,
+                    &p_addl,
+                    context,
+                ) {
+                    return false;
+                }
+            }
+
+            for (pattern, s_schema) in &s_pattern_props {
+                let Some(p_schema) = p_pattern_props.get(pattern) else {
+                    return false;
+                };
+                if !is_subschema_of_with_context(s_schema, p_schema, context) {
+                    return false;
                 }
             }
 
@@ -911,12 +950,14 @@ fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
             .collect(),
         Object {
             properties,
+            pattern_properties,
             additional,
             property_names,
             ..
         } => properties
             .values()
             .cloned()
+            .chain(pattern_properties.values().cloned())
             .chain(std::iter::once(additional.clone()))
             .chain(std::iter::once(property_names.clone()))
             .collect(),
@@ -934,6 +975,48 @@ fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
         Defs(map) => map.values().cloned().collect(),
         _ => Vec::new(),
     }
+}
+
+fn object_property_schema_is_subsumed(
+    property_name: &str,
+    sub_schema: &SchemaNode,
+    sup_property_schema: Option<&SchemaNode>,
+    sup_pattern_properties: &HashMap<String, SchemaNode>,
+    sup_additional: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let mut matched = false;
+
+    if let Some(sup_property_schema) = sup_property_schema {
+        matched = true;
+        if !is_subschema_of_with_context(sub_schema, sup_property_schema, context) {
+            return false;
+        }
+    }
+
+    for (pattern, sup_pattern_schema) in sup_pattern_properties {
+        if !property_name_matches_pattern(pattern, property_name) {
+            continue;
+        }
+        matched = true;
+        if !is_subschema_of_with_context(sub_schema, sup_pattern_schema, context) {
+            return false;
+        }
+    }
+
+    if matched {
+        true
+    } else {
+        !matches!(sup_additional.kind(), SchemaNodeKind::BoolSchema(false))
+            && is_subschema_of_with_context(sub_schema, sup_additional, context)
+    }
+}
+
+fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
+    Regex::new(pattern)
+        .ok()
+        .and_then(|regex| regex.is_match(property_name).ok())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

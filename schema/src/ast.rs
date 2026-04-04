@@ -88,12 +88,14 @@ impl SchemaNode {
                     }
                     Object {
                         properties,
+                        pattern_properties,
                         additional,
                         property_names,
                         ..
                     } => properties
                         .values()
                         .cloned()
+                        .chain(pattern_properties.values().cloned())
                         .chain(std::iter::once(additional.clone()))
                         .chain(std::iter::once(property_names.clone()))
                         .collect(),
@@ -374,6 +376,7 @@ impl SchemaNode {
 
             Object {
                 properties,
+                pattern_properties,
                 required,
                 additional,
                 property_names,
@@ -391,6 +394,14 @@ impl SchemaNode {
                         props_map.insert(k.clone(), v.to_json());
                     }
                     obj.insert("properties".into(), Value::Object(props_map));
+                }
+
+                if !pattern_properties.is_empty() {
+                    let mut props_map = serde_json::Map::new();
+                    for (k, v) in pattern_properties {
+                        props_map.insert(k.clone(), v.to_json());
+                    }
+                    obj.insert("patternProperties".into(), Value::Object(props_map));
                 }
 
                 if !required.is_empty() {
@@ -686,6 +697,7 @@ impl PartialEq for MutableSchemaNode {
                 (
                     Object {
                         properties: aprops,
+                        pattern_properties: a_pattern_props,
                         required: areq,
                         additional: aaddl,
                         property_names: apropnames,
@@ -696,6 +708,7 @@ impl PartialEq for MutableSchemaNode {
                     },
                     Object {
                         properties: bprops,
+                        pattern_properties: b_pattern_props,
                         required: breq,
                         additional: baddl,
                         property_names: bpropnames,
@@ -712,11 +725,20 @@ impl PartialEq for MutableSchemaNode {
                         || aenum != benum
                         || !eq_inner(apropnames, bpropnames, seen)
                         || aprops.len() != bprops.len()
+                        || a_pattern_props.len() != b_pattern_props.len()
                     {
                         return false;
                     }
                     for (k, aval) in aprops {
                         let Some(bval) = bprops.get(k) else {
+                            return false;
+                        };
+                        if !eq_inner(aval, bval, seen) {
+                            return false;
+                        }
+                    }
+                    for (k, aval) in a_pattern_props {
+                        let Some(bval) = b_pattern_props.get(k) else {
                             return false;
                         };
                         if !eq_inner(aval, bval, seen) {
@@ -932,6 +954,7 @@ fn freeze_schema_node_kind(
         Null { enumeration } => Null { enumeration },
         Object {
             properties,
+            pattern_properties,
             required,
             additional,
             property_names,
@@ -943,6 +966,10 @@ fn freeze_schema_node_kind(
             properties: properties
                 .into_iter()
                 .map(|(name, child)| (name, freeze_schema_node(&child, cache)))
+                .collect(),
+            pattern_properties: pattern_properties
+                .into_iter()
+                .map(|(pattern, child)| (pattern, freeze_schema_node(&child, cache)))
                 .collect(),
             required,
             additional: freeze_schema_node(&additional, cache),
@@ -1131,6 +1158,7 @@ impl PartialEq for SchemaNode {
                 (
                     Object {
                         properties: aprops,
+                        pattern_properties: a_pattern_props,
                         required: areq,
                         additional: aaddl,
                         property_names: apropnames,
@@ -1141,6 +1169,7 @@ impl PartialEq for SchemaNode {
                     },
                     Object {
                         properties: bprops,
+                        pattern_properties: b_pattern_props,
                         required: breq,
                         additional: baddl,
                         property_names: bpropnames,
@@ -1157,11 +1186,20 @@ impl PartialEq for SchemaNode {
                         || aenum != benum
                         || !eq_inner(apropnames, bpropnames, seen)
                         || aprops.len() != bprops.len()
+                        || a_pattern_props.len() != b_pattern_props.len()
                     {
                         return false;
                     }
                     for (k, aval) in aprops {
                         let Some(bval) = bprops.get(k) else {
+                            return false;
+                        };
+                        if !eq_inner(aval, bval, seen) {
+                            return false;
+                        }
+                    }
+                    for (k, aval) in a_pattern_props {
+                        let Some(bval) = b_pattern_props.get(k) else {
                             return false;
                         };
                         if !eq_inner(aval, bval, seen) {
@@ -1353,6 +1391,7 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
 
     Object {
         properties: HashMap<String, Node>,
+        pattern_properties: HashMap<String, Node>,
         required: HashSet<String>,
         additional: Node,
         property_names: Node,
@@ -1949,6 +1988,12 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
             properties.insert(k.clone(), build_schema_ast_from_value(v)?);
         }
     }
+    let mut pattern_properties = HashMap::new();
+    if let Some(Value::Object(props)) = obj.get("patternProperties") {
+        for (pattern, schema) in props {
+            pattern_properties.insert(pattern.clone(), build_schema_ast_from_value(schema)?);
+        }
+    }
     let required: HashSet<String> = obj
         .get("required")
         .and_then(|v| v.as_array())
@@ -2010,6 +2055,7 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
 
     Ok(MutableSchemaNode::new(SchemaNodeKind::Object {
         properties,
+        pattern_properties,
         required,
         additional,
         property_names,
@@ -2234,6 +2280,7 @@ fn resolve_refs_internal(
     if matches!(&*node.borrow(), SchemaNodeKind::Object { .. }) {
         let (
             mut properties,
+            mut pattern_properties,
             required,
             mut additional,
             mut property_names,
@@ -2246,6 +2293,7 @@ fn resolve_refs_internal(
             match &*guard {
                 SchemaNodeKind::Object {
                     properties,
+                    pattern_properties,
                     required,
                     additional,
                     property_names,
@@ -2255,6 +2303,7 @@ fn resolve_refs_internal(
                     enumeration,
                 } => (
                     properties.clone(),
+                    pattern_properties.clone(),
                     required.clone(),
                     additional.clone(),
                     property_names.clone(),
@@ -2270,10 +2319,14 @@ fn resolve_refs_internal(
         for child in properties.values_mut() {
             resolve_refs_internal(child, root_json, stack, cache)?;
         }
+        for child in pattern_properties.values_mut() {
+            resolve_refs_internal(child, root_json, stack, cache)?;
+        }
         resolve_refs_internal(&mut additional, root_json, stack, cache)?;
         resolve_refs_internal(&mut property_names, root_json, stack, cache)?;
         *node.borrow_mut() = SchemaNodeKind::Object {
             properties,
+            pattern_properties,
             required,
             additional,
             property_names,
@@ -2399,8 +2452,15 @@ fn normalize_resolved_node(node: &mut MutableSchemaNode) {
                     .or(Some(SchemaNodeKind::AnyOf(children)))
             }
         }
-        SchemaNodeKind::OneOf(children) => {
-            collapse_applicator_children(&children, false).or(Some(SchemaNodeKind::OneOf(children)))
+        SchemaNodeKind::OneOf(mut children) => {
+            let any_branch_count = children.iter().filter(|child| is_any_schema(child)).count();
+            if any_branch_count > 1 {
+                Some(SchemaNodeKind::BoolSchema(false))
+            } else {
+                children.retain(|child| !is_any_schema(child) && !is_false_schema(child));
+                children = dedupe_mutable_schema_nodes(children);
+                collapse_one_of_children(children, any_branch_count == 1)
+            }
         }
         SchemaNodeKind::Not(sub) => {
             if is_false_schema(&sub) {
@@ -2452,6 +2512,24 @@ fn collapse_applicator_children(
         }),
         1 => Some(children[0].borrow().clone()),
         _ => None,
+    }
+}
+
+fn collapse_one_of_children(
+    mut children: Vec<MutableSchemaNode>,
+    has_always_valid_branch: bool,
+) -> Option<MutableSchemaNodeKind> {
+    if !has_always_valid_branch {
+        return collapse_applicator_children(&children, false)
+            .or(Some(SchemaNodeKind::OneOf(children)));
+    }
+
+    match children.len() {
+        0 => Some(SchemaNodeKind::Any),
+        1 => Some(SchemaNodeKind::Not(children.remove(0))),
+        _ => Some(SchemaNodeKind::Not(MutableSchemaNode::new(
+            SchemaNodeKind::AnyOf(children),
+        ))),
     }
 }
 

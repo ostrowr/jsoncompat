@@ -29,6 +29,7 @@ owo-colors = "3.5"
 json_schema_ast = { path = "schema", version = "0.2.6" }
 json_schema_fuzz = { path = "fuzz", version = "0.2.6" }
 console = "0.16.0"
+fancy-regex = "0.12"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }
