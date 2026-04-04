@@ -1048,260 +1048,610 @@ impl fmt::Debug for MutableSchemaNode {
     }
 }
 
+trait SchemaNodeGraph: Sized {
+    fn graph_ptr_id(&self) -> usize;
+
+    fn with_graph_kind<R, F>(&self, read_kind: F) -> R
+    where
+        F: FnOnce(SchemaNodeKindView<'_, Self>) -> R;
+}
+
+#[derive(Clone, Copy)]
+enum SchemaNodeKindView<'a, Node> {
+    BoolSchema(bool),
+    Any,
+    String {
+        min_length: Option<u64>,
+        max_length: Option<u64>,
+        pattern: &'a Option<String>,
+        format: &'a Option<String>,
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Number {
+        minimum: Option<f64>,
+        maximum: Option<f64>,
+        exclusive_minimum: bool,
+        exclusive_maximum: bool,
+        multiple_of: Option<f64>,
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Integer {
+        minimum: Option<i64>,
+        maximum: Option<i64>,
+        exclusive_minimum: bool,
+        exclusive_maximum: bool,
+        multiple_of: Option<IntegerMultipleOf>,
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Boolean {
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Null {
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Object {
+        properties: &'a HashMap<String, Node>,
+        pattern_properties: &'a HashMap<String, Node>,
+        required: &'a HashSet<String>,
+        additional: &'a Node,
+        property_names: &'a Node,
+        min_properties: Option<usize>,
+        max_properties: Option<usize>,
+        dependent_required: &'a HashMap<String, Vec<String>>,
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Array {
+        prefix_items: &'a [Node],
+        items: &'a Node,
+        min_items: Option<u64>,
+        max_items: Option<u64>,
+        contains: Option<&'a ArrayContains<Node>>,
+        unique_items: bool,
+        enumeration: &'a Option<Vec<Value>>,
+    },
+    Defs(&'a HashMap<String, Node>),
+    AllOf(&'a [Node]),
+    AnyOf(&'a [Node]),
+    OneOf(&'a [Node]),
+    Not(&'a Node),
+    IfThenElse {
+        if_schema: &'a Node,
+        then_schema: Option<&'a Node>,
+        else_schema: Option<&'a Node>,
+    },
+    Const(&'a Value),
+    Enum(&'a [Value]),
+    Ref(&'a str),
+}
+
+impl SchemaNodeGraph for MutableSchemaNode {
+    fn graph_ptr_id(&self) -> usize {
+        MutableSchemaNode::ptr_id(self)
+    }
+
+    fn with_graph_kind<R, F>(&self, read_kind: F) -> R
+    where
+        F: FnOnce(SchemaNodeKindView<'_, Self>) -> R,
+    {
+        let kind = self.borrow();
+        read_kind((&*kind).into())
+    }
+}
+
+impl SchemaNodeGraph for SchemaNode {
+    fn graph_ptr_id(&self) -> usize {
+        SchemaNode::ptr_id(self)
+    }
+
+    fn with_graph_kind<R, F>(&self, read_kind: F) -> R
+    where
+        F: FnOnce(SchemaNodeKindView<'_, Self>) -> R,
+    {
+        read_kind(self.kind().into())
+    }
+}
+
+impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchemaNode> {
+    fn from(kind: &'a MutableSchemaNodeKind) -> Self {
+        match kind {
+            SchemaNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
+            SchemaNodeKind::Any => Self::Any,
+            SchemaNodeKind::String {
+                min_length,
+                max_length,
+                pattern,
+                format,
+                enumeration,
+            } => Self::String {
+                min_length: *min_length,
+                max_length: *max_length,
+                pattern,
+                format,
+                enumeration,
+            },
+            SchemaNodeKind::Number {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                multiple_of,
+                enumeration,
+            } => Self::Number {
+                minimum: *minimum,
+                maximum: *maximum,
+                exclusive_minimum: *exclusive_minimum,
+                exclusive_maximum: *exclusive_maximum,
+                multiple_of: *multiple_of,
+                enumeration,
+            },
+            SchemaNodeKind::Integer {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                multiple_of,
+                enumeration,
+            } => Self::Integer {
+                minimum: *minimum,
+                maximum: *maximum,
+                exclusive_minimum: *exclusive_minimum,
+                exclusive_maximum: *exclusive_maximum,
+                multiple_of: *multiple_of,
+                enumeration,
+            },
+            SchemaNodeKind::Boolean { enumeration } => Self::Boolean { enumeration },
+            SchemaNodeKind::Null { enumeration } => Self::Null { enumeration },
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                min_properties,
+                max_properties,
+                dependent_required,
+                enumeration,
+            } => Self::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                min_properties: *min_properties,
+                max_properties: *max_properties,
+                dependent_required,
+                enumeration,
+            },
+            SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                min_items,
+                max_items,
+                contains,
+                unique_items,
+                enumeration,
+            } => Self::Array {
+                prefix_items,
+                items,
+                min_items: *min_items,
+                max_items: *max_items,
+                contains: contains.as_ref(),
+                unique_items: *unique_items,
+                enumeration,
+            },
+            SchemaNodeKind::Defs(defs) => Self::Defs(defs),
+            SchemaNodeKind::AllOf(children) => Self::AllOf(children),
+            SchemaNodeKind::AnyOf(children) => Self::AnyOf(children),
+            SchemaNodeKind::OneOf(children) => Self::OneOf(children),
+            SchemaNodeKind::Not(child) => Self::Not(child),
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => Self::IfThenElse {
+                if_schema,
+                then_schema: then_schema.as_ref(),
+                else_schema: else_schema.as_ref(),
+            },
+            SchemaNodeKind::Const(value) => Self::Const(value),
+            SchemaNodeKind::Enum(values) => Self::Enum(values),
+            SchemaNodeKind::Ref(ref_path) => Self::Ref(ref_path),
+        }
+    }
+}
+
+impl<'a, Node> From<&'a ResolvedNodeKind<Node>> for SchemaNodeKindView<'a, Node> {
+    fn from(kind: &'a ResolvedNodeKind<Node>) -> Self {
+        match kind {
+            ResolvedNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
+            ResolvedNodeKind::Any => Self::Any,
+            ResolvedNodeKind::String {
+                min_length,
+                max_length,
+                pattern,
+                format,
+                enumeration,
+            } => Self::String {
+                min_length: *min_length,
+                max_length: *max_length,
+                pattern,
+                format,
+                enumeration,
+            },
+            ResolvedNodeKind::Number {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                multiple_of,
+                enumeration,
+            } => Self::Number {
+                minimum: *minimum,
+                maximum: *maximum,
+                exclusive_minimum: *exclusive_minimum,
+                exclusive_maximum: *exclusive_maximum,
+                multiple_of: *multiple_of,
+                enumeration,
+            },
+            ResolvedNodeKind::Integer {
+                minimum,
+                maximum,
+                exclusive_minimum,
+                exclusive_maximum,
+                multiple_of,
+                enumeration,
+            } => Self::Integer {
+                minimum: *minimum,
+                maximum: *maximum,
+                exclusive_minimum: *exclusive_minimum,
+                exclusive_maximum: *exclusive_maximum,
+                multiple_of: *multiple_of,
+                enumeration,
+            },
+            ResolvedNodeKind::Boolean { enumeration } => Self::Boolean { enumeration },
+            ResolvedNodeKind::Null { enumeration } => Self::Null { enumeration },
+            ResolvedNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                min_properties,
+                max_properties,
+                dependent_required,
+                enumeration,
+            } => Self::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                min_properties: *min_properties,
+                max_properties: *max_properties,
+                dependent_required,
+                enumeration,
+            },
+            ResolvedNodeKind::Array {
+                prefix_items,
+                items,
+                min_items,
+                max_items,
+                contains,
+                unique_items,
+                enumeration,
+            } => Self::Array {
+                prefix_items,
+                items,
+                min_items: *min_items,
+                max_items: *max_items,
+                contains: contains.as_ref(),
+                unique_items: *unique_items,
+                enumeration,
+            },
+            ResolvedNodeKind::AllOf(children) => Self::AllOf(children),
+            ResolvedNodeKind::AnyOf(children) => Self::AnyOf(children),
+            ResolvedNodeKind::OneOf(children) => Self::OneOf(children),
+            ResolvedNodeKind::Not(child) => Self::Not(child),
+            ResolvedNodeKind::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => Self::IfThenElse {
+                if_schema,
+                then_schema: then_schema.as_ref(),
+                else_schema: else_schema.as_ref(),
+            },
+            ResolvedNodeKind::Const(value) => Self::Const(value),
+            ResolvedNodeKind::Enum(values) => Self::Enum(values),
+        }
+    }
+}
+
+fn schema_node_graphs_are_equal<Node: SchemaNodeGraph>(
+    left: &Node,
+    right: &Node,
+    seen: &mut HashSet<(usize, usize)>,
+) -> bool {
+    let key = (left.graph_ptr_id(), right.graph_ptr_id());
+    if !seen.insert(key) {
+        return true;
+    }
+
+    let mut children_are_equal =
+        |left: &Node, right: &Node| schema_node_graphs_are_equal(left, right, seen);
+
+    left.with_graph_kind(|left_kind| {
+        right.with_graph_kind(|right_kind| {
+            schema_node_kind_views_are_equal(left_kind, right_kind, &mut children_are_equal)
+        })
+    })
+}
+
+fn schema_node_kind_views_are_equal<Node>(
+    left: SchemaNodeKindView<'_, Node>,
+    right: SchemaNodeKindView<'_, Node>,
+    children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
+) -> bool {
+    use SchemaNodeKindView::*;
+
+    match (left, right) {
+        (BoolSchema(left), BoolSchema(right)) => left == right,
+        (Any, Any) => true,
+        (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
+        (
+            String {
+                min_length: left_min_length,
+                max_length: left_max_length,
+                pattern: left_pattern,
+                format: left_format,
+                enumeration: left_enumeration,
+            },
+            String {
+                min_length: right_min_length,
+                max_length: right_max_length,
+                pattern: right_pattern,
+                format: right_format,
+                enumeration: right_enumeration,
+            },
+        ) => {
+            left_min_length == right_min_length
+                && left_max_length == right_max_length
+                && left_pattern == right_pattern
+                && left_format == right_format
+                && left_enumeration == right_enumeration
+        }
+        (
+            Number {
+                minimum: left_minimum,
+                maximum: left_maximum,
+                exclusive_minimum: left_exclusive_minimum,
+                exclusive_maximum: left_exclusive_maximum,
+                multiple_of: left_multiple_of,
+                enumeration: left_enumeration,
+            },
+            Number {
+                minimum: right_minimum,
+                maximum: right_maximum,
+                exclusive_minimum: right_exclusive_minimum,
+                exclusive_maximum: right_exclusive_maximum,
+                multiple_of: right_multiple_of,
+                enumeration: right_enumeration,
+            },
+        ) => {
+            left_minimum == right_minimum
+                && left_maximum == right_maximum
+                && left_exclusive_minimum == right_exclusive_minimum
+                && left_exclusive_maximum == right_exclusive_maximum
+                && left_multiple_of == right_multiple_of
+                && left_enumeration == right_enumeration
+        }
+        (
+            Integer {
+                minimum: left_minimum,
+                maximum: left_maximum,
+                exclusive_minimum: left_exclusive_minimum,
+                exclusive_maximum: left_exclusive_maximum,
+                multiple_of: left_multiple_of,
+                enumeration: left_enumeration,
+            },
+            Integer {
+                minimum: right_minimum,
+                maximum: right_maximum,
+                exclusive_minimum: right_exclusive_minimum,
+                exclusive_maximum: right_exclusive_maximum,
+                multiple_of: right_multiple_of,
+                enumeration: right_enumeration,
+            },
+        ) => {
+            left_minimum == right_minimum
+                && left_maximum == right_maximum
+                && left_exclusive_minimum == right_exclusive_minimum
+                && left_exclusive_maximum == right_exclusive_maximum
+                && left_multiple_of == right_multiple_of
+                && left_enumeration == right_enumeration
+        }
+        (
+            Boolean {
+                enumeration: left_enumeration,
+            },
+            Boolean {
+                enumeration: right_enumeration,
+            },
+        )
+        | (
+            Null {
+                enumeration: left_enumeration,
+            },
+            Null {
+                enumeration: right_enumeration,
+            },
+        ) => left_enumeration == right_enumeration,
+        (
+            Object {
+                properties: left_properties,
+                pattern_properties: left_pattern_properties,
+                required: left_required,
+                additional: left_additional,
+                property_names: left_property_names,
+                min_properties: left_min_properties,
+                max_properties: left_max_properties,
+                dependent_required: left_dependent_required,
+                enumeration: left_enumeration,
+            },
+            Object {
+                properties: right_properties,
+                pattern_properties: right_pattern_properties,
+                required: right_required,
+                additional: right_additional,
+                property_names: right_property_names,
+                min_properties: right_min_properties,
+                max_properties: right_max_properties,
+                dependent_required: right_dependent_required,
+                enumeration: right_enumeration,
+            },
+        ) => {
+            left_required == right_required
+                && left_min_properties == right_min_properties
+                && left_max_properties == right_max_properties
+                && left_dependent_required == right_dependent_required
+                && left_enumeration == right_enumeration
+                && children_are_equal(left_additional, right_additional)
+                && children_are_equal(left_property_names, right_property_names)
+                && schema_node_maps_are_equal(left_properties, right_properties, children_are_equal)
+                && schema_node_maps_are_equal(
+                    left_pattern_properties,
+                    right_pattern_properties,
+                    children_are_equal,
+                )
+        }
+        (
+            Array {
+                prefix_items: left_prefix_items,
+                items: left_items,
+                min_items: left_min_items,
+                max_items: left_max_items,
+                contains: left_contains,
+                unique_items: left_unique_items,
+                enumeration: left_enumeration,
+            },
+            Array {
+                prefix_items: right_prefix_items,
+                items: right_items,
+                min_items: right_min_items,
+                max_items: right_max_items,
+                contains: right_contains,
+                unique_items: right_unique_items,
+                enumeration: right_enumeration,
+            },
+        ) => {
+            left_min_items == right_min_items
+                && left_max_items == right_max_items
+                && left_unique_items == right_unique_items
+                && left_enumeration == right_enumeration
+                && schema_node_slices_are_equal(
+                    left_prefix_items,
+                    right_prefix_items,
+                    children_are_equal,
+                )
+                && children_are_equal(left_items, right_items)
+                && array_contains_are_equal(left_contains, right_contains, children_are_equal)
+        }
+        (Defs(left_children), Defs(right_children)) => {
+            schema_node_maps_are_equal(left_children, right_children, children_are_equal)
+        }
+        (AllOf(left_children), AllOf(right_children))
+        | (AnyOf(left_children), AnyOf(right_children))
+        | (OneOf(left_children), OneOf(right_children)) => {
+            schema_node_slices_are_equal(left_children, right_children, children_are_equal)
+        }
+        (Not(left_child), Not(right_child)) => children_are_equal(left_child, right_child),
+        (
+            IfThenElse {
+                if_schema: left_if_schema,
+                then_schema: left_then_schema,
+                else_schema: left_else_schema,
+            },
+            IfThenElse {
+                if_schema: right_if_schema,
+                then_schema: right_then_schema,
+                else_schema: right_else_schema,
+            },
+        ) => {
+            children_are_equal(left_if_schema, right_if_schema)
+                && optional_schema_nodes_are_equal(
+                    left_then_schema,
+                    right_then_schema,
+                    children_are_equal,
+                )
+                && optional_schema_nodes_are_equal(
+                    left_else_schema,
+                    right_else_schema,
+                    children_are_equal,
+                )
+        }
+        (Const(left), Const(right)) => left == right,
+        (Enum(left), Enum(right)) => left == right,
+        (Ref(left), Ref(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn schema_node_maps_are_equal<Node>(
+    left: &HashMap<String, Node>,
+    right: &HashMap<String, Node>,
+    children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
+) -> bool {
+    left.len() == right.len()
+        && left.iter().all(|(key, left_node)| {
+            right
+                .get(key)
+                .is_some_and(|right_node| children_are_equal(left_node, right_node))
+        })
+}
+
+fn schema_node_slices_are_equal<Node>(
+    left: &[Node],
+    right: &[Node],
+    children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
+) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(left_node, right_node)| children_are_equal(left_node, right_node))
+}
+
+fn optional_schema_nodes_are_equal<Node>(
+    left: Option<&Node>,
+    right: Option<&Node>,
+    children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => children_are_equal(left, right),
+        _ => false,
+    }
+}
+
+fn array_contains_are_equal<Node>(
+    left: Option<&ArrayContains<Node>>,
+    right: Option<&ArrayContains<Node>>,
+    children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            left.min_contains == right.min_contains
+                && left.max_contains == right.max_contains
+                && children_are_equal(&left.schema, &right.schema)
+        }
+        _ => false,
+    }
+}
+
 impl PartialEq for MutableSchemaNode {
     fn eq(&self, other: &Self) -> bool {
-        fn eq_inner(
-            a: &MutableSchemaNode,
-            b: &MutableSchemaNode,
-            seen: &mut HashSet<(usize, usize)>,
-        ) -> bool {
-            use SchemaNodeKind::*;
-
-            let key = (a.ptr_id(), b.ptr_id());
-            if !seen.insert(key) {
-                return true;
-            }
-
-            let a_kind = a.borrow();
-            let b_kind = b.borrow();
-
-            match (&*a_kind, &*b_kind) {
-                (BoolSchema(ax), BoolSchema(bx)) => ax == bx,
-                (Any, Any) => true,
-                (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
-                (
-                    String {
-                        min_length: ax,
-                        max_length: ay,
-                        pattern: ap,
-                        format: af,
-                        enumeration: ae,
-                    },
-                    String {
-                        min_length: bx,
-                        max_length: by,
-                        pattern: bp,
-                        format: bf,
-                        enumeration: be,
-                    },
-                ) => ax == bx && ay == by && ap == bp && af == bf && ae == be,
-                (
-                    Number {
-                        minimum: amin,
-                        maximum: amax,
-                        exclusive_minimum: aexmin,
-                        exclusive_maximum: aexmax,
-                        multiple_of: amul,
-                        enumeration: aenum,
-                    },
-                    Number {
-                        minimum: bmin,
-                        maximum: bmax,
-                        exclusive_minimum: bexmin,
-                        exclusive_maximum: bexmax,
-                        multiple_of: bmul,
-                        enumeration: benum,
-                    },
-                ) => {
-                    amin == bmin
-                        && amax == bmax
-                        && aexmin == bexmin
-                        && aexmax == bexmax
-                        && amul == bmul
-                        && aenum == benum
-                }
-                (
-                    Integer {
-                        minimum: amin,
-                        maximum: amax,
-                        exclusive_minimum: aexmin,
-                        exclusive_maximum: aexmax,
-                        multiple_of: amul,
-                        enumeration: aenum,
-                    },
-                    Integer {
-                        minimum: bmin,
-                        maximum: bmax,
-                        exclusive_minimum: bexmin,
-                        exclusive_maximum: bexmax,
-                        multiple_of: bmul,
-                        enumeration: benum,
-                    },
-                ) => {
-                    amin == bmin
-                        && amax == bmax
-                        && aexmin == bexmin
-                        && aexmax == bexmax
-                        && amul == bmul
-                        && aenum == benum
-                }
-                (Boolean { enumeration: ae }, Boolean { enumeration: be }) => ae == be,
-                (Null { enumeration: ae }, Null { enumeration: be }) => ae == be,
-                (
-                    Object {
-                        properties: aprops,
-                        pattern_properties: a_pattern_props,
-                        required: areq,
-                        additional: aaddl,
-                        property_names: apropnames,
-                        min_properties: amin,
-                        max_properties: amax,
-                        dependent_required: adep,
-                        enumeration: aenum,
-                    },
-                    Object {
-                        properties: bprops,
-                        pattern_properties: b_pattern_props,
-                        required: breq,
-                        additional: baddl,
-                        property_names: bpropnames,
-                        min_properties: bmin,
-                        max_properties: bmax,
-                        dependent_required: bdep,
-                        enumeration: benum,
-                    },
-                ) => {
-                    if areq != breq
-                        || amin != bmin
-                        || amax != bmax
-                        || adep != bdep
-                        || aenum != benum
-                        || !eq_inner(apropnames, bpropnames, seen)
-                        || aprops.len() != bprops.len()
-                        || a_pattern_props.len() != b_pattern_props.len()
-                    {
-                        return false;
-                    }
-                    for (k, aval) in aprops {
-                        let Some(bval) = bprops.get(k) else {
-                            return false;
-                        };
-                        if !eq_inner(aval, bval, seen) {
-                            return false;
-                        }
-                    }
-                    for (k, aval) in a_pattern_props {
-                        let Some(bval) = b_pattern_props.get(k) else {
-                            return false;
-                        };
-                        if !eq_inner(aval, bval, seen) {
-                            return false;
-                        }
-                    }
-                    eq_inner(aaddl, baddl, seen)
-                }
-                (
-                    Array {
-                        prefix_items: aprefix_items,
-                        items: aitems,
-                        min_items: amin,
-                        max_items: amax,
-                        contains: acontains,
-                        unique_items: a_unique_items,
-                        enumeration: aenum,
-                    },
-                    Array {
-                        prefix_items: bprefix_items,
-                        items: bitems,
-                        min_items: bmin,
-                        max_items: bmax,
-                        contains: bcontains,
-                        unique_items: b_unique_items,
-                        enumeration: benum,
-                    },
-                ) => {
-                    if amin != bmin
-                        || amax != bmax
-                        || a_unique_items != b_unique_items
-                        || aenum != benum
-                        || aprefix_items.len() != bprefix_items.len()
-                    {
-                        return false;
-                    }
-                    for (a_prefix_item, b_prefix_item) in
-                        aprefix_items.iter().zip(bprefix_items.iter())
-                    {
-                        if !eq_inner(a_prefix_item, b_prefix_item, seen) {
-                            return false;
-                        }
-                    }
-                    if !eq_inner(aitems, bitems, seen) {
-                        return false;
-                    }
-                    match (acontains, bcontains) {
-                        (None, None) => true,
-                        (Some(av), Some(bv)) => {
-                            av.min_contains == bv.min_contains
-                                && av.max_contains == bv.max_contains
-                                && eq_inner(&av.schema, &bv.schema, seen)
-                        }
-                        _ => false,
-                    }
-                }
-                (Defs(a), Defs(b)) => {
-                    if a.len() != b.len() {
-                        return false;
-                    }
-                    for (k, aval) in a {
-                        let Some(bval) = b.get(k) else {
-                            return false;
-                        };
-                        if !eq_inner(aval, bval, seen) {
-                            return false;
-                        }
-                    }
-                    true
-                }
-                (AllOf(a), AllOf(b)) | (AnyOf(a), AnyOf(b)) | (OneOf(a), OneOf(b)) => {
-                    if a.len() != b.len() {
-                        return false;
-                    }
-                    for (av, bv) in a.iter().zip(b.iter()) {
-                        if !eq_inner(av, bv, seen) {
-                            return false;
-                        }
-                    }
-                    true
-                }
-                (Not(a), Not(b)) => eq_inner(a, b, seen),
-                (
-                    IfThenElse {
-                        if_schema: a_if,
-                        then_schema: a_then,
-                        else_schema: a_else,
-                    },
-                    IfThenElse {
-                        if_schema: b_if,
-                        then_schema: b_then,
-                        else_schema: b_else,
-                    },
-                ) => {
-                    if !eq_inner(a_if, b_if, seen) {
-                        return false;
-                    }
-                    match (a_then, b_then) {
-                        (None, None) => {}
-                        (Some(av), Some(bv)) => {
-                            if !eq_inner(av, bv, seen) {
-                                return false;
-                            }
-                        }
-                        _ => return false,
-                    }
-                    match (a_else, b_else) {
-                        (None, None) => true,
-                        (Some(av), Some(bv)) => eq_inner(av, bv, seen),
-                        _ => false,
-                    }
-                }
-                (Const(a), Const(b)) => a == b,
-                (Enum(a), Enum(b)) => a == b,
-                (Ref(a), Ref(b)) => a == b,
-                _ => false,
-            }
-        }
-
-        eq_inner(self, other, &mut HashSet::new())
+        schema_node_graphs_are_equal(self, other, &mut HashSet::new())
     }
 }
 
@@ -1483,239 +1833,7 @@ impl std::borrow::Borrow<ResolvedNodeKind> for SchemaNode {
 
 impl PartialEq for SchemaNode {
     fn eq(&self, other: &Self) -> bool {
-        fn eq_inner(a: &SchemaNode, b: &SchemaNode, seen: &mut HashSet<(usize, usize)>) -> bool {
-            use ResolvedNodeKind::*;
-
-            let key = (a.ptr_id(), b.ptr_id());
-            if !seen.insert(key) {
-                return true;
-            }
-
-            let a_kind = a.kind();
-            let b_kind = b.kind();
-
-            match (a_kind, b_kind) {
-                (BoolSchema(ax), BoolSchema(bx)) => ax == bx,
-                (Any, Any) => true,
-                (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
-                (
-                    String {
-                        min_length: ax,
-                        max_length: ay,
-                        pattern: ap,
-                        format: af,
-                        enumeration: ae,
-                    },
-                    String {
-                        min_length: bx,
-                        max_length: by,
-                        pattern: bp,
-                        format: bf,
-                        enumeration: be,
-                    },
-                ) => ax == bx && ay == by && ap == bp && af == bf && ae == be,
-                (
-                    Number {
-                        minimum: amin,
-                        maximum: amax,
-                        exclusive_minimum: aexmin,
-                        exclusive_maximum: aexmax,
-                        multiple_of: amul,
-                        enumeration: aenum,
-                    },
-                    Number {
-                        minimum: bmin,
-                        maximum: bmax,
-                        exclusive_minimum: bexmin,
-                        exclusive_maximum: bexmax,
-                        multiple_of: bmul,
-                        enumeration: benum,
-                    },
-                ) => {
-                    amin == bmin
-                        && amax == bmax
-                        && aexmin == bexmin
-                        && aexmax == bexmax
-                        && amul == bmul
-                        && aenum == benum
-                }
-                (
-                    Integer {
-                        minimum: amin,
-                        maximum: amax,
-                        exclusive_minimum: aexmin,
-                        exclusive_maximum: aexmax,
-                        multiple_of: amul,
-                        enumeration: aenum,
-                    },
-                    Integer {
-                        minimum: bmin,
-                        maximum: bmax,
-                        exclusive_minimum: bexmin,
-                        exclusive_maximum: bexmax,
-                        multiple_of: bmul,
-                        enumeration: benum,
-                    },
-                ) => {
-                    amin == bmin
-                        && amax == bmax
-                        && aexmin == bexmin
-                        && aexmax == bexmax
-                        && amul == bmul
-                        && aenum == benum
-                }
-                (Boolean { enumeration: ae }, Boolean { enumeration: be }) => ae == be,
-                (Null { enumeration: ae }, Null { enumeration: be }) => ae == be,
-                (
-                    Object {
-                        properties: aprops,
-                        pattern_properties: a_pattern_props,
-                        required: areq,
-                        additional: aaddl,
-                        property_names: apropnames,
-                        min_properties: amin,
-                        max_properties: amax,
-                        dependent_required: adep,
-                        enumeration: aenum,
-                    },
-                    Object {
-                        properties: bprops,
-                        pattern_properties: b_pattern_props,
-                        required: breq,
-                        additional: baddl,
-                        property_names: bpropnames,
-                        min_properties: bmin,
-                        max_properties: bmax,
-                        dependent_required: bdep,
-                        enumeration: benum,
-                    },
-                ) => {
-                    if areq != breq
-                        || amin != bmin
-                        || amax != bmax
-                        || adep != bdep
-                        || aenum != benum
-                        || !eq_inner(apropnames, bpropnames, seen)
-                        || aprops.len() != bprops.len()
-                        || a_pattern_props.len() != b_pattern_props.len()
-                    {
-                        return false;
-                    }
-                    for (k, aval) in aprops {
-                        let Some(bval) = bprops.get(k) else {
-                            return false;
-                        };
-                        if !eq_inner(aval, bval, seen) {
-                            return false;
-                        }
-                    }
-                    for (k, aval) in a_pattern_props {
-                        let Some(bval) = b_pattern_props.get(k) else {
-                            return false;
-                        };
-                        if !eq_inner(aval, bval, seen) {
-                            return false;
-                        }
-                    }
-                    eq_inner(aaddl, baddl, seen)
-                }
-                (
-                    Array {
-                        prefix_items: aprefix_items,
-                        items: aitems,
-                        min_items: amin,
-                        max_items: amax,
-                        contains: acontains,
-                        unique_items: a_unique_items,
-                        enumeration: aenum,
-                    },
-                    Array {
-                        prefix_items: bprefix_items,
-                        items: bitems,
-                        min_items: bmin,
-                        max_items: bmax,
-                        contains: bcontains,
-                        unique_items: b_unique_items,
-                        enumeration: benum,
-                    },
-                ) => {
-                    if amin != bmin
-                        || amax != bmax
-                        || a_unique_items != b_unique_items
-                        || aenum != benum
-                        || aprefix_items.len() != bprefix_items.len()
-                    {
-                        return false;
-                    }
-                    for (a_prefix_item, b_prefix_item) in
-                        aprefix_items.iter().zip(bprefix_items.iter())
-                    {
-                        if !eq_inner(a_prefix_item, b_prefix_item, seen) {
-                            return false;
-                        }
-                    }
-                    if !eq_inner(aitems, bitems, seen) {
-                        return false;
-                    }
-                    match (acontains, bcontains) {
-                        (None, None) => true,
-                        (Some(av), Some(bv)) => {
-                            av.min_contains == bv.min_contains
-                                && av.max_contains == bv.max_contains
-                                && eq_inner(&av.schema, &bv.schema, seen)
-                        }
-                        _ => false,
-                    }
-                }
-                (AllOf(a), AllOf(b)) | (AnyOf(a), AnyOf(b)) | (OneOf(a), OneOf(b)) => {
-                    if a.len() != b.len() {
-                        return false;
-                    }
-                    for (av, bv) in a.iter().zip(b.iter()) {
-                        if !eq_inner(av, bv, seen) {
-                            return false;
-                        }
-                    }
-                    true
-                }
-                (Not(a), Not(b)) => eq_inner(a, b, seen),
-                (
-                    IfThenElse {
-                        if_schema: a_if,
-                        then_schema: a_then,
-                        else_schema: a_else,
-                    },
-                    IfThenElse {
-                        if_schema: b_if,
-                        then_schema: b_then,
-                        else_schema: b_else,
-                    },
-                ) => {
-                    if !eq_inner(a_if, b_if, seen) {
-                        return false;
-                    }
-                    match (a_then, b_then) {
-                        (None, None) => {}
-                        (Some(av), Some(bv)) => {
-                            if !eq_inner(av, bv, seen) {
-                                return false;
-                            }
-                        }
-                        _ => return false,
-                    }
-                    match (a_else, b_else) {
-                        (None, None) => true,
-                        (Some(av), Some(bv)) => eq_inner(av, bv, seen),
-                        _ => false,
-                    }
-                }
-                (Const(a), Const(b)) => a == b,
-                (Enum(a), Enum(b)) => a == b,
-                _ => false,
-            }
-        }
-
-        eq_inner(self, other, &mut HashSet::new())
+        schema_node_graphs_are_equal(self, other, &mut HashSet::new())
     }
 }
 
