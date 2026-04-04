@@ -3,7 +3,8 @@ mod regex_gen;
 
 use fancy_regex::Regex;
 use json_schema_ast::{
-    ArrayContains, ResolvedNode, ResolvedNodeKind, ResolvedSchema, SchemaBuildError,
+    ArrayContains, IntegerMultipleOf, ResolvedNode, ResolvedNodeKind, ResolvedSchema,
+    SchemaBuildError,
 };
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
@@ -451,18 +452,15 @@ fn generate_candidate_with_context(
             let high = maximum.unwrap_or(1000).min(1_000_000);
             let mut val = rng.random_range(low..=high);
 
-            if let Some(mo_f) = multiple_of
-                && *mo_f > 0.0
+            if let Some(mo) = multiple_of
+                && let Some(mo) = integer_multiple_of_divisor(*mo)
             {
-                let mo = (*mo_f).round() as i64;
-                if mo != 0 {
-                    val = (val / mo) * mo;
-                    if val < low {
-                        val += mo;
-                    }
-                    if val > high {
-                        val -= mo;
-                    }
+                val = (val / mo) * mo;
+                if val < low {
+                    val += mo;
+                }
+                if val > high {
+                    val -= mo;
                 }
             }
 
@@ -760,6 +758,12 @@ fn generate_candidate_with_context(
         Enum(_) => Value::Null,
         _ => random_any(rng, depth),
     }
+}
+
+fn integer_multiple_of_divisor(multiple_of: IntegerMultipleOf) -> Option<i64> {
+    multiple_of
+        .integer_divisor()
+        .and_then(|divisor| i64::try_from(divisor).ok())
 }
 
 fn object_schema_branch(schema: &ResolvedNode) -> Option<ResolvedNode> {

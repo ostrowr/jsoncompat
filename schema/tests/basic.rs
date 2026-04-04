@@ -785,6 +785,101 @@ fn raw_validation_does_not_force_canonicalization_or_resolution() {
 }
 
 #[test]
+fn resolved_integer_schema_preserves_exact_enum_and_bounds_above_f64_safe_integer_range() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "type": "integer",
+        "minimum": 9_007_199_254_740_993_i64,
+        "maximum": 9_007_199_254_740_995_i64,
+        "enum": [
+            9_007_199_254_740_993_i64,
+            9_007_199_254_740_995_i64
+        ]
+    }))
+    .unwrap();
+    let root = schema.root().unwrap();
+
+    assert!(root.accepts_value(&json!(9_007_199_254_740_993_i64)));
+    assert!(root.accepts_value(&json!(9_007_199_254_740_995_i64)));
+    assert!(!root.accepts_value(&json!(9_007_199_254_740_992_i64)));
+    assert!(!root.accepts_value(&json!(9_007_199_254_740_994_i64)));
+}
+
+#[test]
+fn resolved_integer_schema_checks_large_multiple_of_exactly() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "type": "integer",
+        "minimum": 0,
+        "multipleOf": 9_007_199_254_740_993_i64
+    }))
+    .unwrap();
+    let root = schema.root().unwrap();
+
+    assert!(root.accepts_value(&json!(9_007_199_254_740_993_i64)));
+    assert!(root.accepts_value(&json!(18_014_398_509_481_986_i64)));
+    assert!(!root.accepts_value(&json!(9_007_199_254_740_992_i64)));
+    assert!(!root.accepts_value(&json!(18_014_398_509_481_985_i64)));
+}
+
+#[test]
+fn resolved_number_schema_compares_large_integral_enum_values_exactly() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "type": "number",
+        "minimum": 0,
+        "enum": [
+            9_007_199_254_740_993_i64,
+            9_007_199_254_740_995_i64
+        ]
+    }))
+    .unwrap();
+    let root = schema.root().unwrap();
+
+    assert!(root.accepts_value(&json!(9_007_199_254_740_993_i64)));
+    assert!(!root.accepts_value(&json!(9_007_199_254_740_992_i64)));
+}
+
+#[test]
+fn resolved_integer_schema_preserves_fractional_multiple_of_constraints() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "type": "integer",
+        "multipleOf": 1.5
+    }))
+    .unwrap();
+    let root = schema.root().unwrap();
+
+    assert!(root.accepts_value(&json!(0)));
+    assert!(root.accepts_value(&json!(3)));
+    assert!(root.accepts_value(&json!(-6)));
+    assert!(!root.accepts_value(&json!(1)));
+    assert!(!root.accepts_value(&json!(2)));
+}
+
+#[test]
+fn resolved_number_schema_matches_float_form_integral_enum_above_f64_safe_integer_range() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "type": "number",
+        "minimum": 0,
+        "enum": [9_007_199_254_740_994.0_f64]
+    }))
+    .unwrap();
+    let root = schema.root().unwrap();
+
+    assert!(root.accepts_value(&json!(9_007_199_254_740_994_i64)));
+    assert!(!root.accepts_value(&json!(9_007_199_254_740_992_i64)));
+}
+
+#[test]
+fn resolved_const_schema_matches_float_form_integral_values_above_f64_safe_integer_range() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "const": 9_007_199_254_740_994_i64
+    }))
+    .unwrap();
+    let root = schema.root().unwrap();
+
+    assert!(root.accepts_value(&json!(9_007_199_254_740_994.0_f64)));
+    assert!(!root.accepts_value(&json!(9_007_199_254_740_992.0_f64)));
+}
+
+#[test]
 fn rejects_missing_local_ref_with_explicit_unresolved_reference_error() {
     let schema = ResolvedSchema::from_json(&json!({
         "$ref": "#/$defs/Missing"

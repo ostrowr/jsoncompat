@@ -1,6 +1,6 @@
 use crate::ResolvedNode;
 use fancy_regex::Regex;
-use json_schema_ast::{ArrayContains, ResolvedNodeId, ResolvedNodeKind};
+use json_schema_ast::{ArrayContains, IntegerMultipleOf, ResolvedNodeId, ResolvedNodeKind};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -62,10 +62,14 @@ fn is_subschema_of_with_context(
             .iter()
             .all(|schema| is_subschema_of_with_context(schema, sup, context)),
 
-        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|v| sup_e.contains(v)),
+        (Enum(sub_e), Enum(sup_e)) => sub_e.iter().all(|value| {
+            sup_e
+                .iter()
+                .any(|expected| json_values_equal(expected, value))
+        }),
         (Enum(sub_e), _) => context.superset_contains_value_set(sup, sub_e),
 
-        (Const(s_val), Const(p_val)) => s_val == p_val,
+        (Const(s_val), Const(p_val)) => json_values_equal(s_val, p_val),
         (Const(s_val), _) => context.superset_contains_value(sup, s_val),
 
         (_, AnyOf(sups)) | (_, OneOf(sups)) => sups
@@ -74,6 +78,14 @@ fn is_subschema_of_with_context(
         (_, AllOf(sups)) => sups
             .iter()
             .all(|schema| is_subschema_of_with_context(sub, schema, context)),
+
+        (
+            Number {
+                enumeration: Some(sub_enum),
+                ..
+            },
+            Enum(_),
+        ) => context.superset_contains_value_set(sup, sub_enum),
 
         (_, Enum(_)) => false,
 
@@ -97,6 +109,13 @@ fn is_subschema_of_with_context(
         | (Array { .. }, Array { .. }) => type_constraints_subsumed_with_context(sub, sup, context),
 
         (Integer { .. }, Number { .. }) => integer_constraints_subsumed_by_number(sub, sup),
+        (
+            Number {
+                enumeration: Some(sub_enum),
+                ..
+            },
+            Integer { .. } | Const(_),
+        ) => context.superset_contains_value_set(sup, sub_enum),
 
         (_, Const(_)) => false,
 
@@ -143,7 +162,7 @@ fn integer_constraints_subsumed_by_number(sub: &ResolvedNode, sup: &ResolvedNode
     if !check_numeric_inclusion(smax.map(|value| value as f64), sexmax, pmax, pexmax, false) {
         return false;
     }
-    if !check_multiple_of_inclusion(smul, pmul) {
+    if !check_integer_multiple_of_inclusion_by_number(smul, pmul) {
         return false;
     }
     check_enum_inclusion(s_en.as_deref(), p_en.as_deref())
@@ -255,7 +274,7 @@ fn type_constraints_subsumed_with_context(
             if !check_int_inclusion(smax, sexmax, pmax, pexmax, false) {
                 return false;
             }
-            if !check_multiple_of_inclusion(smul, pmul) {
+            if !check_integer_multiple_of_inclusion(smul, pmul) {
                 return false;
             }
             check_enum_inclusion(s_en.as_deref(), p_en.as_deref())
@@ -343,8 +362,12 @@ fn type_constraints_subsumed_with_context(
                 // If the superset requires extra keys whenever `trigger` exists,
                 // then the subset may only allow `trigger` when those keys are
                 // unconditionally present.
-                let trigger_allowed = sprops.contains_key(trigger)
-                    || !matches!(s_addl.kind(), ResolvedNodeKind::BoolSchema(false));
+                let trigger_allowed = object_property_name_can_be_present(
+                    trigger,
+                    &sprops,
+                    &s_pattern_props,
+                    &s_addl,
+                );
                 if trigger_allowed && !deps.iter().all(|d| sreq.contains(d)) {
                     return false;
                 }
@@ -570,6 +593,53 @@ fn check_multiple_of_inclusion(sub_multiple_of: Option<f64>, sup_multiple_of: Op
     (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
 }
 
+fn check_integer_multiple_of_inclusion(
+    sub_multiple_of: Option<IntegerMultipleOf>,
+    sup_multiple_of: Option<IntegerMultipleOf>,
+) -> bool {
+    let Some(sup_multiple_of) = sup_multiple_of else {
+        return true;
+    };
+    let Some(sub_multiple_of) = sub_multiple_of else {
+        return false;
+    };
+
+    if let (Some(sub_divisor), Some(sup_divisor)) = (
+        sub_multiple_of.integer_divisor(),
+        sup_multiple_of.integer_divisor(),
+    ) {
+        return sub_divisor.rem_euclid(sup_divisor) == 0;
+    }
+
+    let ratio = sub_multiple_of.as_f64() / sup_multiple_of.as_f64();
+    (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
+}
+
+fn check_integer_multiple_of_inclusion_by_number(
+    sub_multiple_of: Option<IntegerMultipleOf>,
+    sup_multiple_of: Option<f64>,
+) -> bool {
+    let Some(sup_multiple_of) = sup_multiple_of else {
+        return true;
+    };
+    let Some(sub_multiple_of) = sub_multiple_of else {
+        return false;
+    };
+    if sup_multiple_of <= 0.0 {
+        return false;
+    }
+
+    if let Some(sup_multiple_of) = exact_positive_integer(sup_multiple_of)
+        && let Ok(sup_multiple_of) = i64::try_from(sup_multiple_of)
+        && let Some(sub_multiple_of) = sub_multiple_of.integer_divisor()
+    {
+        return sub_multiple_of.rem_euclid(i128::from(sup_multiple_of)) == 0;
+    }
+
+    let ratio = sub_multiple_of.as_f64() / sup_multiple_of;
+    (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
+}
+
 fn exact_positive_integer(value: f64) -> Option<u64> {
     if !value.is_finite() || value <= 0.0 || value.fract() != 0.0 || value > u64::MAX as f64 {
         return None;
@@ -582,7 +652,11 @@ fn exact_positive_integer(value: f64) -> Option<u64> {
 fn check_enum_inclusion(sub_enum: Option<&[Value]>, sup_enum: Option<&[Value]>) -> bool {
     match (sub_enum, sup_enum) {
         (_, None) => true,
-        (Some(sub_enum), Some(sup_enum)) => sub_enum.iter().all(|value| sup_enum.contains(value)),
+        (Some(sub_enum), Some(sup_enum)) => sub_enum.iter().all(|value| {
+            sup_enum
+                .iter()
+                .any(|expected| json_values_equal(expected, value))
+        }),
         (None, Some(_)) => false,
     }
 }
@@ -648,11 +722,96 @@ fn object_property_schema_is_subsumed(
     }
 }
 
+fn object_property_name_can_be_present(
+    property_name: &str,
+    properties: &HashMap<String, ResolvedNode>,
+    pattern_properties: &HashMap<String, ResolvedNode>,
+    additional: &ResolvedNode,
+) -> bool {
+    let mut matched = false;
+
+    if let Some(schema) = properties.get(property_name) {
+        matched = true;
+        if matches!(schema.kind(), ResolvedNodeKind::BoolSchema(false)) {
+            return false;
+        }
+    }
+
+    for (pattern, schema) in pattern_properties {
+        if !property_name_matches_pattern(pattern, property_name) {
+            continue;
+        }
+        matched = true;
+        if matches!(schema.kind(), ResolvedNodeKind::BoolSchema(false)) {
+            return false;
+        }
+    }
+
+    matched || !matches!(additional.kind(), ResolvedNodeKind::BoolSchema(false))
+}
+
 fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
     Regex::new(pattern)
         .ok()
         .and_then(|regex| regex.is_match(property_name).ok())
         .unwrap_or(false)
+}
+
+fn json_values_equal(expected: &Value, value: &Value) -> bool {
+    match (expected, value) {
+        (Value::Number(_), Value::Number(_)) => numeric_values_equal(expected, value),
+        (Value::Array(expected_items), Value::Array(items)) => {
+            expected_items.len() == items.len()
+                && expected_items
+                    .iter()
+                    .zip(items)
+                    .all(|(expected, value)| json_values_equal(expected, value))
+        }
+        (Value::Object(expected_object), Value::Object(object)) => {
+            expected_object.len() == object.len()
+                && expected_object.iter().all(|(key, expected)| {
+                    object
+                        .get(key)
+                        .is_some_and(|value| json_values_equal(expected, value))
+                })
+        }
+        _ => expected == value,
+    }
+}
+
+fn numeric_values_equal(expected: &Value, value: &Value) -> bool {
+    if let (Some(expected_integer), Some(value_integer)) = (
+        integer_value_from_json(expected),
+        integer_value_from_json(value),
+    ) {
+        return expected_integer == value_integer;
+    }
+
+    if let (Some(expected_number), Some(actual_number)) = (expected.as_f64(), value.as_f64()) {
+        return expected_number == actual_number;
+    }
+    false
+}
+
+fn integer_value_from_json(value: &Value) -> Option<i128> {
+    let Value::Number(number) = value else {
+        return None;
+    };
+
+    number
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| number.as_u64().map(i128::from))
+        .or_else(|| number.as_f64().and_then(integer_value_from_f64))
+}
+
+fn integer_value_from_f64(value: f64) -> Option<i128> {
+    if !value.is_finite() || value.fract() != 0.0 {
+        return None;
+    }
+
+    let integer = value as i128;
+    ((integer as f64) == value).then_some(integer)
 }
 
 #[cfg(test)]
@@ -890,5 +1049,68 @@ mod tests {
         }));
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn dependent_required_trigger_can_be_admitted_by_subset_pattern_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x$": true
+            },
+            "dependentRequired": {
+                "x": ["y"]
+            },
+            "additionalProperties": false
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x$": true
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn number_enum_with_float_form_integer_values_can_be_subsumed_by_integer_const() {
+        let sub = resolve(json!({
+            "type": "number",
+            "minimum": 0,
+            "enum": [9_007_199_254_740_994.0_f64]
+        }));
+        let sup = resolve(json!({
+            "const": 9_007_199_254_740_994_i64
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn numeric_const_subset_uses_json_schema_number_equality() {
+        let int_const = resolve(json!({
+            "const": 1
+        }));
+        let float_const = resolve(json!({
+            "const": 1.0
+        }));
+
+        assert!(is_subschema_of(&int_const, &float_const));
+        assert!(is_subschema_of(&float_const, &int_const));
+    }
+
+    #[test]
+    fn numeric_enum_subset_uses_json_schema_number_equality() {
+        let int_enum = resolve(json!({
+            "enum": [1]
+        }));
+        let float_enum = resolve(json!({
+            "enum": [1.0]
+        }));
+
+        assert!(is_subschema_of(&int_enum, &float_enum));
+        assert!(is_subschema_of(&float_enum, &int_enum));
     }
 }

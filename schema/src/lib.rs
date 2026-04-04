@@ -7,8 +7,8 @@ mod canonicalize;
 mod schema_metadata;
 
 pub use ast::{
-    ArrayContains, AstError, ResolvedNode, ResolvedNodeId, ResolvedNodeKind, ResolvedSchema,
-    SchemaBuildError, SchemaNode, SchemaNodeId, build_and_resolve_schema,
+    ArrayContains, AstError, IntegerMultipleOf, ResolvedNode, ResolvedNodeId, ResolvedNodeKind,
+    ResolvedSchema, SchemaBuildError, SchemaNode, SchemaNodeId, build_and_resolve_schema,
 };
 pub use canonicalize::CanonicalizeError as SchemaError;
 

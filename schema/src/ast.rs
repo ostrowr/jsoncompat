@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 use std::cell::{OnceCell, Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::num::NonZeroI64;
 use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, AstError>;
@@ -232,7 +233,7 @@ impl SchemaNode {
                     *maximum,
                     *exclusive_maximum,
                 ) && value_is_multiple_of(number_value, *multiple_of)
-                    && enum_contains_numeric_value(enumeration.as_deref(), number_value)
+                    && enum_contains_numeric_value(enumeration.as_deref(), value)
             }),
             ResolvedNodeKind::Integer {
                 minimum,
@@ -241,18 +242,35 @@ impl SchemaNode {
                 exclusive_maximum,
                 multiple_of,
                 enumeration,
-            } => value.as_f64().is_some_and(|number_value| {
-                number_value.fract() == 0.0
-                    && numeric_value_in_range(
-                        number_value,
-                        minimum.map(|bound| bound as f64),
+            } => integer_value_from_json(value).map_or_else(
+                || {
+                    value.as_f64().is_some_and(|number_value| {
+                        number_value.fract() == 0.0
+                            && numeric_value_in_range(
+                                number_value,
+                                minimum.map(|bound| bound as f64),
+                                *exclusive_minimum,
+                                maximum.map(|bound| bound as f64),
+                                *exclusive_maximum,
+                            )
+                            && value_is_multiple_of(
+                                number_value,
+                                multiple_of.map(IntegerMultipleOf::as_f64),
+                            )
+                            && enum_contains_numeric_value(enumeration.as_deref(), value)
+                    })
+                },
+                |integer_value| {
+                    integer_value_in_range(
+                        integer_value,
+                        *minimum,
                         *exclusive_minimum,
-                        maximum.map(|bound| bound as f64),
+                        *maximum,
                         *exclusive_maximum,
-                    )
-                    && value_is_multiple_of(number_value, *multiple_of)
-                    && enum_contains_numeric_value(enumeration.as_deref(), number_value)
-            }),
+                    ) && integer_value_is_multiple_of(integer_value, *multiple_of)
+                        && enum_contains_numeric_value(enumeration.as_deref(), value)
+                },
+            ),
             ResolvedNodeKind::Boolean { enumeration } => value
                 .as_bool()
                 .is_some_and(|_| enum_contains_value(enumeration.as_deref(), value)),
@@ -350,8 +368,10 @@ impl SchemaNode {
                         .is_none_or(|else_schema| else_schema.accepts_value_inner(value, active))
                 }
             }
-            ResolvedNodeKind::Const(expected) => value == expected,
-            ResolvedNodeKind::Enum(values) => values.contains(value),
+            ResolvedNodeKind::Const(expected) => json_values_equal(expected, value),
+            ResolvedNodeKind::Enum(values) => values
+                .iter()
+                .any(|expected| json_values_equal(expected, value)),
         };
 
         active.remove(&frame);
@@ -554,10 +574,7 @@ impl SchemaNode {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
                 if let Some(mo) = multiple_of {
-                    obj.insert(
-                        "multipleOf".into(),
-                        Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
-                    );
+                    obj.insert("multipleOf".into(), Value::Number(mo.to_json_number()));
                 }
                 Value::Object(obj)
             }
@@ -821,16 +838,76 @@ fn numeric_value_in_range(
     above_minimum && below_maximum
 }
 
-fn enum_contains_value(enumeration: Option<&[Value]>, value: &Value) -> bool {
-    enumeration.is_none_or(|enumeration| enumeration.contains(value))
+fn integer_value_in_range(
+    value: i128,
+    minimum: Option<i64>,
+    exclusive_minimum: bool,
+    maximum: Option<i64>,
+    exclusive_maximum: bool,
+) -> bool {
+    let above_minimum = match minimum.map(i128::from) {
+        None => true,
+        Some(minimum) if exclusive_minimum => value > minimum,
+        Some(minimum) => value >= minimum,
+    };
+    let below_maximum = match maximum.map(i128::from) {
+        None => true,
+        Some(maximum) if exclusive_maximum => value < maximum,
+        Some(maximum) => value <= maximum,
+    };
+    above_minimum && below_maximum
 }
 
-fn enum_contains_numeric_value(enumeration: Option<&[Value]>, value: f64) -> bool {
+fn enum_contains_value(enumeration: Option<&[Value]>, value: &Value) -> bool {
     enumeration.is_none_or(|enumeration| {
         enumeration
             .iter()
-            .any(|expected| expected.as_f64().is_some_and(|expected| expected == value))
+            .any(|expected| json_values_equal(expected, value))
     })
+}
+
+fn enum_contains_numeric_value(enumeration: Option<&[Value]>, value: &Value) -> bool {
+    enumeration.is_none_or(|enumeration| {
+        enumeration
+            .iter()
+            .any(|expected| numeric_values_equal(expected, value))
+    })
+}
+
+fn json_values_equal(expected: &Value, value: &Value) -> bool {
+    match (expected, value) {
+        (Value::Number(_), Value::Number(_)) => numeric_values_equal(expected, value),
+        (Value::Array(expected_items), Value::Array(items)) => {
+            expected_items.len() == items.len()
+                && expected_items
+                    .iter()
+                    .zip(items)
+                    .all(|(expected, value)| json_values_equal(expected, value))
+        }
+        (Value::Object(expected_object), Value::Object(object)) => {
+            expected_object.len() == object.len()
+                && expected_object.iter().all(|(key, expected)| {
+                    object
+                        .get(key)
+                        .is_some_and(|value| json_values_equal(expected, value))
+                })
+        }
+        _ => expected == value,
+    }
+}
+
+fn numeric_values_equal(expected: &Value, value: &Value) -> bool {
+    if let (Some(expected_integer), Some(value_integer)) = (
+        integer_value_from_json(expected),
+        integer_value_from_json(value),
+    ) {
+        return expected_integer == value_integer;
+    }
+
+    expected
+        .as_f64()
+        .zip(value.as_f64())
+        .is_some_and(|(expected_number, actual_number)| expected_number == actual_number)
 }
 
 fn value_is_multiple_of(value: f64, multiple_of: Option<f64>) -> bool {
@@ -849,6 +926,119 @@ fn value_is_multiple_of(value: f64, multiple_of: Option<f64>) -> bool {
 
     let ratio = value / multiple_of;
     (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
+}
+
+fn integer_value_is_multiple_of(value: i128, multiple_of: Option<IntegerMultipleOf>) -> bool {
+    let Some(multiple_of) = multiple_of else {
+        return true;
+    };
+    let Some(divisor) = multiple_of.integer_divisor() else {
+        return value_is_multiple_of(value as f64, Some(multiple_of.as_f64()));
+    };
+    value.rem_euclid(divisor) == 0
+}
+
+fn integer_value_from_json(value: &Value) -> Option<i128> {
+    let Value::Number(number) = value else {
+        return None;
+    };
+
+    number
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| number.as_u64().map(i128::from))
+        .or_else(|| number.as_f64().and_then(integer_value_from_f64))
+}
+
+fn integer_value_from_f64(value: f64) -> Option<i128> {
+    if !value.is_finite() || value.fract() != 0.0 {
+        return None;
+    }
+
+    let integer = value as i128;
+    ((integer as f64) == value).then_some(integer)
+}
+
+fn parse_integer_value(value: Option<&Value>) -> Option<i64> {
+    value
+        .and_then(integer_value_from_json)
+        .and_then(|integer| i64::try_from(integer).ok())
+}
+
+fn parse_integer_multiple_of(value: Option<&Value>) -> Option<IntegerMultipleOf> {
+    let value = value?;
+    if let Some(integer) = parse_integer_value(Some(value)) {
+        return IntegerMultipleOf::from_integer(integer);
+    }
+
+    IntegerMultipleOf::from_number(value.as_f64()?)
+}
+
+fn decimal_number_integer_divisor(value: f64) -> Option<i128> {
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+
+    let text = value.to_string();
+    let (mantissa, exponent) = if let Some((mantissa, exponent)) = text.split_once(['e', 'E']) {
+        (mantissa, exponent.parse::<i32>().ok()?)
+    } else {
+        (text.as_str(), 0)
+    };
+
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if whole.starts_with('-')
+        || whole.starts_with('+')
+        || !whole.chars().all(|character| character.is_ascii_digit())
+        || !fraction.chars().all(|character| character.is_ascii_digit())
+    {
+        return None;
+    }
+
+    let mut numerator = parse_decimal_digits(whole)?;
+    numerator = fraction.chars().try_fold(numerator, |numerator, digit| {
+        numerator
+            .checked_mul(10)?
+            .checked_add(i128::from(digit.to_digit(10)?))
+    })?;
+
+    if numerator == 0 {
+        return None;
+    }
+
+    let scale = i32::try_from(fraction.len()).ok()?.checked_sub(exponent)?;
+
+    if scale <= 0 {
+        return numerator.checked_mul(checked_pow10(scale.unsigned_abs())?);
+    }
+
+    let denominator = checked_pow10(scale.unsigned_abs())?;
+    Some(numerator / gcd_i128(numerator, denominator))
+}
+
+fn parse_decimal_digits(value: &str) -> Option<i128> {
+    if value.is_empty() {
+        return Some(0);
+    }
+
+    value.chars().try_fold(0_i128, |accumulator, digit| {
+        accumulator
+            .checked_mul(10)?
+            .checked_add(i128::from(digit.to_digit(10)?))
+    })
+}
+
+fn checked_pow10(exponent: u32) -> Option<i128> {
+    (0..exponent).try_fold(1_i128, |value, _| value.checked_mul(10))
+}
+
+fn gcd_i128(mut left: i128, mut right: i128) -> i128 {
+    while right != 0 {
+        let remainder = left.rem_euclid(right);
+        left = right;
+        right = remainder;
+    }
+    left
 }
 
 fn exact_positive_integer(value: f64) -> Option<u64> {
@@ -1595,6 +1785,58 @@ pub struct ArrayContains<Node = SchemaNode> {
     pub max_contains: Option<u64>,
 }
 
+/// Positive `multipleOf` constraint stored on integer schemas.
+///
+/// Integer-valued factors are preserved exactly. Fractional factors are stored as
+/// finite positive `f64`s and projected to their implied integer divisor when
+/// checking integer instances (`1.5` only admits multiples of `3`, `0.5` admits
+/// all integers).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IntegerMultipleOf(IntegerMultipleOfKind);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum IntegerMultipleOfKind {
+    Integer(NonZeroI64),
+    Number(f64),
+}
+
+impl IntegerMultipleOf {
+    fn from_integer(value: i64) -> Option<Self> {
+        NonZeroI64::new(value)
+            .filter(|value| value.get() > 0)
+            .map(|value| Self(IntegerMultipleOfKind::Integer(value)))
+    }
+
+    fn from_number(value: f64) -> Option<Self> {
+        (value.is_finite() && value > 0.0).then_some(Self(IntegerMultipleOfKind::Number(value)))
+    }
+
+    #[must_use]
+    pub fn as_f64(self) -> f64 {
+        match self.0 {
+            IntegerMultipleOfKind::Integer(value) => value.get() as f64,
+            IntegerMultipleOfKind::Number(value) => value,
+        }
+    }
+
+    #[must_use]
+    pub fn integer_divisor(self) -> Option<i128> {
+        match self.0 {
+            IntegerMultipleOfKind::Integer(value) => Some(i128::from(value.get())),
+            IntegerMultipleOfKind::Number(value) => decimal_number_integer_divisor(value),
+        }
+    }
+
+    fn to_json_number(self) -> serde_json::Number {
+        match self.0 {
+            IntegerMultipleOfKind::Integer(value) => value.get().into(),
+            IntegerMultipleOfKind::Number(value) => {
+                serde_json::Number::from_f64(value).expect("finite positive multipleOf")
+            }
+        }
+    }
+}
+
 /// A resolved, executable JSON Schema node.
 ///
 /// This enum intentionally excludes parser-only states (`$ref`) and
@@ -1627,7 +1869,7 @@ pub enum ResolvedNodeKind<Node = SchemaNode> {
         maximum: Option<i64>,
         exclusive_minimum: bool,
         exclusive_maximum: bool,
-        multiple_of: Option<f64>,
+        multiple_of: Option<IntegerMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
     Boolean {
@@ -1700,7 +1942,7 @@ enum SchemaNodeKind<Node = MutableSchemaNode> {
         maximum: Option<i64>,
         exclusive_minimum: bool,
         exclusive_maximum: bool,
-        multiple_of: Option<f64>,
+        multiple_of: Option<IntegerMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
     Boolean {
@@ -2240,6 +2482,39 @@ fn dedupe_mutable_schema_nodes(nodes: Vec<MutableSchemaNode>) -> Vec<MutableSche
 }
 
 fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> MutableSchemaNode {
+    if integer {
+        let mut minimum = parse_integer_value(obj.get("minimum"));
+        let mut maximum = parse_integer_value(obj.get("maximum"));
+
+        let exclusive_minimum =
+            if let Some(bound) = parse_integer_value(obj.get("exclusiveMinimum")) {
+                minimum = Some(bound);
+                true
+            } else {
+                false
+            };
+
+        let exclusive_maximum =
+            if let Some(bound) = parse_integer_value(obj.get("exclusiveMaximum")) {
+                maximum = Some(bound);
+                true
+            } else {
+                false
+            };
+
+        let multiple_of = parse_integer_multiple_of(obj.get("multipleOf"))
+            .or_else(|| IntegerMultipleOf::from_integer(1));
+
+        return MutableSchemaNode::new(SchemaNodeKind::Integer {
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            multiple_of,
+            enumeration: obj.get("enum").and_then(|v| v.as_array()).cloned(),
+        });
+    }
+
     let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
     let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
 
@@ -2261,30 +2536,16 @@ fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> MutableSchema
     let multiple_of = obj
         .get("multipleOf")
         .and_then(|v| v.as_f64())
-        .filter(|m| *m > 0.0)
-        .or_else(|| integer.then_some(1.0));
+        .filter(|m| *m > 0.0);
 
-    if integer {
-        let min_i = minimum.map(|m| m as i64);
-        let max_i = maximum.map(|m| m as i64);
-        MutableSchemaNode::new(SchemaNodeKind::Integer {
-            minimum: min_i,
-            maximum: max_i,
-            exclusive_minimum,
-            exclusive_maximum,
-            multiple_of,
-            enumeration,
-        })
-    } else {
-        MutableSchemaNode::new(SchemaNodeKind::Number {
-            minimum,
-            maximum,
-            exclusive_minimum,
-            exclusive_maximum,
-            multiple_of,
-            enumeration,
-        })
-    }
+    MutableSchemaNode::new(SchemaNodeKind::Number {
+        minimum,
+        maximum,
+        exclusive_minimum,
+        exclusive_maximum,
+        multiple_of,
+        enumeration,
+    })
 }
 
 fn parse_boolean_schema(obj: &Map<String, Value>) -> MutableSchemaNode {

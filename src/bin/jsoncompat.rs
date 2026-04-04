@@ -16,6 +16,8 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use json_schema_fuzz::GenerateError;
+
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
 struct SchemaDoc {
@@ -40,8 +42,12 @@ impl SchemaDoc {
         Ok(self.schema.is_valid(v)?)
     }
 
-    fn gen_value<R: Rng>(&self, rng: &mut R, depth: u8) -> Result<Value> {
-        Ok(json_schema_fuzz::generate_value(&self.schema, rng, depth)?)
+    fn gen_value<R: Rng>(
+        &self,
+        rng: &mut R,
+        depth: u8,
+    ) -> std::result::Result<Value, GenerateError> {
+        json_schema_fuzz::generate_value(&self.schema, rng, depth)
     }
 }
 
@@ -67,7 +73,11 @@ fn sample_incompat<R: Rng>(
 ) -> Result<Option<Value>> {
     let mut try_once = |src: &SchemaDoc, dst: &SchemaDoc| -> Result<Option<Value>> {
         for _ in 0..attempts {
-            let v = src.gen_value(rng, depth)?;
+            let v = match src.gen_value(rng, depth) {
+                Ok(value) => value,
+                Err(GenerateError::ExhaustedAttempts { .. }) => return Ok(None),
+                Err(error) => return Err(error.into()),
+            };
             if src.is_valid(&v)? && !dst.is_valid(&v)? {
                 return Ok(Some(v));
             }
@@ -698,6 +708,29 @@ mod tests {
             error
                 .to_string()
                 .contains("failed to generate a value accepted by the raw schema")
+        );
+    }
+
+    #[test]
+    fn sample_incompat_with_role_both_continues_after_exhausting_the_first_direction() {
+        let old = SchemaDoc {
+            schema: backcompat::ResolvedSchema::from_json(&json!({})).unwrap(),
+        };
+        let new = SchemaDoc {
+            schema: backcompat::ResolvedSchema::from_json(&json!(false)).unwrap(),
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        let offender = sample_incompat(&old, &new, backcompat::Role::Both, 3, 4, &mut rng).unwrap();
+
+        let offender = offender.expect("expected a deserializer counterexample");
+        assert!(
+            old.is_valid(&offender).unwrap(),
+            "old schema must accept {offender}"
+        );
+        assert!(
+            !new.is_valid(&offender).unwrap(),
+            "new schema must reject {offender}"
         );
     }
 }
