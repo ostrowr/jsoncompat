@@ -72,9 +72,10 @@ fn is_subschema_of_with_context(
         (Const(s_val), Const(p_val)) => json_values_equal(s_val, p_val),
         (Const(s_val), _) => context.superset_contains_value(sup, s_val),
 
-        (_, AnyOf(sups)) | (_, OneOf(sups)) => sups
+        (_, AnyOf(sups)) => sups
             .iter()
             .any(|branch| is_subschema_of_with_context(sub, branch, context)),
+        (_, OneOf(_)) => false,
         (_, AllOf(sups)) => sups
             .iter()
             .all(|schema| is_subschema_of_with_context(sub, schema, context)),
@@ -342,15 +343,23 @@ fn type_constraints_subsumed_with_context(
             }
 
             for (pattern, s_schema) in &s_pattern_props {
-                let Some(p_schema) = p_pattern_props.get(pattern) else {
-                    return false;
+                let p_schema = match p_pattern_props.get(pattern) {
+                    Some(p_schema) => p_schema,
+                    None if p_pattern_props.is_empty() => &p_addl,
+                    None => return false,
                 };
                 if !is_subschema_of_with_context(s_schema, p_schema, context) {
                     return false;
                 }
             }
 
-            if !is_subschema_of_with_context(&s_addl, &p_addl, context) {
+            if !object_additional_schema_is_subsumed(
+                &s_addl,
+                &s_pattern_props,
+                &p_pattern_props,
+                &p_addl,
+                context,
+            ) {
                 return false;
             }
 
@@ -750,6 +759,25 @@ fn object_property_name_can_be_present(
     matched || !matches!(additional.kind(), ResolvedNodeKind::BoolSchema(false))
 }
 
+fn object_additional_schema_is_subsumed(
+    sub_additional: &ResolvedNode,
+    sub_pattern_properties: &HashMap<String, ResolvedNode>,
+    sup_pattern_properties: &HashMap<String, ResolvedNode>,
+    sup_additional: &ResolvedNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if !is_subschema_of_with_context(sub_additional, sup_additional, context) {
+        return false;
+    }
+
+    sup_pattern_properties
+        .iter()
+        .filter(|(pattern, _)| !sub_pattern_properties.contains_key(*pattern))
+        .all(|(_, sup_pattern_schema)| {
+            is_subschema_of_with_context(sub_additional, sup_pattern_schema, context)
+        })
+}
+
 fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
     Regex::new(pattern)
         .ok()
@@ -1036,6 +1064,21 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_oneof_branches_are_not_a_deserializer_superset_of_the_branch_schema() {
+        let old = resolve(json!({
+            "type": "string"
+        }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "type": "string" },
+                { "type": "string" }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&old, &new));
+    }
+
+    #[test]
     fn prefix_items_are_checked_positionally() {
         let old = resolve(json!({
             "type": "array",
@@ -1072,6 +1115,42 @@ mod tests {
         }));
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_pattern_properties_can_fall_back_to_superset_additional_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x$": {
+                    "type": "integer"
+                }
+            }
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_additional_properties_must_satisfy_unmatched_superset_pattern_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x$": {
+                    "type": "integer"
+                }
+            }
+        }));
+
+        assert!(!is_subschema_of(&old, &new));
     }
 
     #[test]

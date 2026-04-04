@@ -1686,53 +1686,101 @@ fn lower_type_array_to_any_of(schema: &mut Map<String, Value>, pointer: &str) ->
 }
 
 fn contains_local_schema_refs(schema: &Map<String, Value>) -> bool {
-    schema
-        .iter()
-        .any(|(key, value)| value_contains_local_schema_refs(key, value))
-}
-
-fn value_contains_local_schema_refs(key: &str, value: &Value) -> bool {
-    if matches!(key, "$ref" | "$dynamicRef")
-        && let Some(reference) = value.as_str()
-    {
-        return reference.starts_with('#');
-    }
-
-    match value {
-        Value::Object(obj) => contains_local_schema_refs(obj),
-        Value::Array(items) => items
-            .iter()
-            .any(|item| value_contains_local_schema_refs("", item)),
-        _ => false,
-    }
+    let mut refs = BTreeSet::new();
+    collect_local_schema_refs_in_schema_object(schema, &mut refs);
+    !refs.is_empty()
 }
 
 fn collect_local_schema_refs(schema: &Value) -> BTreeSet<String> {
     let mut refs = BTreeSet::new();
-    collect_local_schema_refs_in_value("", schema, &mut refs);
+    collect_local_schema_refs_in_schema_value(schema, &mut refs);
     refs
 }
 
-fn collect_local_schema_refs_in_value(key: &str, value: &Value, refs: &mut BTreeSet<String>) {
-    if matches!(key, "$ref" | "$dynamicRef")
-        && let Some(reference) = value.as_str()
-        && let Some(reference) = normalize_local_ref_target(reference)
-    {
-        refs.insert(reference);
+fn collect_local_schema_refs_in_schema_value(schema: &Value, refs: &mut BTreeSet<String>) {
+    if let Value::Object(obj) = schema {
+        collect_local_schema_refs_in_schema_object(obj, refs);
     }
+}
 
+fn collect_local_schema_refs_in_schema_object(
+    schema: &Map<String, Value>,
+    refs: &mut BTreeSet<String>,
+) {
+    for (key, value) in schema {
+        if matches!(key.as_str(), "$ref" | "$dynamicRef")
+            && let Some(reference) = value.as_str()
+            && let Some(reference) = normalize_local_ref_target(reference)
+        {
+            refs.insert(reference);
+        }
+
+        collect_local_schema_refs_in_keyword_value(key, value, refs);
+    }
+}
+
+fn collect_local_schema_refs_in_keyword_value(
+    key: &str,
+    value: &Value,
+    refs: &mut BTreeSet<String>,
+) {
+    match key {
+        "$schema"
+        | "$ref"
+        | "$dynamicRef"
+        | "required"
+        | "dependentRequired"
+        | "enum"
+        | "type"
+        | "const"
+        | "default"
+        | "examples"
+        | JSONCOMPAT_METADATA_KEY => {}
+        "not"
+        | "if"
+        | "then"
+        | "else"
+        | "contains"
+        | "additionalProperties"
+        | "propertyNames"
+        | "unevaluatedItems"
+        | "unevaluatedProperties"
+        | "contentSchema" => collect_local_schema_refs_in_schema_value(value, refs),
+        "items" => match value {
+            Value::Array(items) => {
+                for item in items {
+                    collect_local_schema_refs_in_schema_value(item, refs);
+                }
+            }
+            _ => collect_local_schema_refs_in_schema_value(value, refs),
+        },
+        "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+            if let Value::Array(items) = value {
+                for item in items {
+                    collect_local_schema_refs_in_schema_value(item, refs);
+                }
+            }
+        }
+        "properties" | "patternProperties" | "$defs" | "definitions" | "dependentSchemas" => {
+            if let Value::Object(entries) = value {
+                for child in entries.values() {
+                    collect_local_schema_refs_in_schema_value(child, refs);
+                }
+            }
+        }
+        _ => collect_local_schema_refs_in_unknown_keyword_value(value, refs),
+    }
+}
+
+fn collect_local_schema_refs_in_unknown_keyword_value(value: &Value, refs: &mut BTreeSet<String>) {
     match value {
-        Value::Object(obj) => {
-            for (key, child) in obj {
-                collect_local_schema_refs_in_value(key, child, refs);
-            }
-        }
+        Value::Object(_) | Value::Bool(_) => collect_local_schema_refs_in_schema_value(value, refs),
         Value::Array(items) => {
-            for child in items {
-                collect_local_schema_refs_in_value("", child, refs);
+            for item in items {
+                collect_local_schema_refs_in_unknown_keyword_value(item, refs);
             }
         }
-        _ => {}
+        Value::Null | Value::Number(_) | Value::String(_) => {}
     }
 }
 

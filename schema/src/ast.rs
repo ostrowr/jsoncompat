@@ -3020,7 +3020,8 @@ fn normalize_resolved_node(node: &mut MutableSchemaNode) {
                 Some(SchemaNodeKind::BoolSchema(false))
             } else {
                 children.retain(|child| !is_any_schema(child) && !is_false_schema(child));
-                children = dedupe_mutable_schema_nodes(children);
+                // Keep duplicates: `oneOf: [A, A]` matches `A` twice, so it is
+                // unsatisfiable and must not collapse to `A`.
                 collapse_one_of_children(children, any_branch_count == 1)
             }
         }

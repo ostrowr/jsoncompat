@@ -118,6 +118,42 @@ fn compile_does_not_treat_schema_keys_inside_const_values_as_nested_dialects() {
 }
 
 #[test]
+fn compile_does_not_treat_ref_shaped_const_payloads_as_local_refs() {
+    let raw = json!({
+        "const": {
+            "$ref": "#/x"
+        },
+        "x": {
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+    });
+
+    let compiled = compile(&raw).unwrap();
+
+    assert!(compiled.is_valid(&json!({ "$ref": "#/x" })));
+    assert!(!compiled.is_valid(&json!({ "$ref": "#/y" })));
+}
+
+#[test]
+fn compile_does_not_treat_ref_shaped_enum_payloads_as_local_refs() {
+    let raw = json!({
+        "enum": [
+            {
+                "$ref": "#/x"
+            }
+        ],
+        "x": {
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        }
+    });
+
+    let compiled = compile(&raw).unwrap();
+
+    assert!(compiled.is_valid(&json!({ "$ref": "#/x" })));
+    assert!(!compiled.is_valid(&json!({ "$ref": "#/y" })));
+}
+
+#[test]
 fn compile_error_is_owned_after_input_schema_is_dropped() {
     let error = {
         let raw = json!({
@@ -165,6 +201,21 @@ fn resolve_local_ref_through_escaped_map_keys() {
     let ast = build_and_resolve_schema(&raw).unwrap();
 
     assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
+}
+
+#[test]
+fn duplicate_oneof_branches_remain_unsatisfiable_after_ast_resolution() {
+    let raw = json!({
+        "oneOf": [
+            { "type": "string" },
+            { "type": "string" }
+        ]
+    });
+
+    let ast = build_and_resolve_schema(&raw).unwrap();
+
+    assert!(!ast.accepts_value(&json!("x")));
+    assert!(!ast.accepts_value(&json!(1)));
 }
 
 #[test]

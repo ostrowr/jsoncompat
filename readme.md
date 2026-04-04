@@ -140,7 +140,7 @@ Important global caveats:
 | `properties` | ✅ | ✅ | Property schemas are compared recursively and generated directly. |
 | `required` | ✅ | ✅ | Missing required properties are synthesized before generation returns a candidate. |
 | `additionalProperties` | ✅ | ✅ | Checker support is subject to the serializer assumption above; the fuzzer generates additional keys only when this schema is not `false`. |
-| `patternProperties` | 🟡 | 🟡 | Exact same regex keys are compared structurally, and property values are checked against every matching pattern schema. The checker does not prove regex-language inclusion between different patterns, and the fuzzer does not synthesize property names from regexes. |
+| `patternProperties` | 🟡 | 🟡 | Exact same regex keys are compared structurally, and property values are checked against every matching pattern schema. If the superset has no `patternProperties`, subset patterns fall back to `additionalProperties`; otherwise the checker does not prove regex-language inclusion between different patterns. The fuzzer does not synthesize property names from regexes. |
 | `propertyNames` | 🟡 | 🟡 | Checker support depends on subset reasoning for the property-name schema itself, so regex/format caveats still apply. The fuzzer can generate keys from string/enum schemas and otherwise falls back to random names plus acceptance checks. |
 | `minProperties` | ✅ | ✅ | Canonicalization raises `minProperties` to at least the number of required keys. |
 | `maxProperties` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
