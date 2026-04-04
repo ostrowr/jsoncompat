@@ -1,8 +1,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use ::jsoncompat::{ResolvedSchema, Role, check_compat};
-use json_schema_fuzz::{GenerateError, generate_value};
+use ::jsoncompat::{Role, SchemaDocument, check_compat};
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 use serde_json::Value as JsonValue;
 
@@ -46,19 +46,13 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
 
-    let old_schema = ResolvedSchema::from_json(&old_raw)
+    let old_schema = SchemaDocument::from_json(&old_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid old schema: {e}")))?;
-    let new_schema = ResolvedSchema::from_json(&new_raw)
+    let new_schema = SchemaDocument::from_json(&new_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
 
-    let old_root = old_schema
-        .root()
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid old schema: {e}")))?;
-    let new_root = new_schema
-        .root()
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
-
-    Ok(check_compat(old_root, new_root, role_e))
+    check_compat(&old_schema, &new_schema, role_e)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))
 }
 
 /// Generate a JSON value intended to satisfy the provided schema.
@@ -78,17 +72,21 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
 #[pyo3(signature = (schema_json, depth=5), name = "generate_value")]
 fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let raw = parse_json(schema_json)?;
-    let schema = ResolvedSchema::from_json(&raw)
+    let schema = SchemaDocument::from_json(&raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
 
     let mut rng = rand::rng();
-    let value = generate_value(&schema, &mut rng, depth).map_err(|error| match error {
-        GenerateError::Schema(error) => {
-            PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
-        }
-        GenerateError::ExhaustedAttempts { .. } => PyErr::new::<PyValueError, _>(error.to_string()),
-        _ => PyErr::new::<PyValueError, _>(error.to_string()),
-    })?;
+    let value = ValueGenerator::generate(&schema, GenerationConfig::new(depth), &mut rng).map_err(
+        |error| match error {
+            GenerateError::Schema(error) => {
+                PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
+            }
+            GenerateError::ExhaustedAttempts { .. } => {
+                PyErr::new::<PyValueError, _>(error.to_string())
+            }
+            _ => PyErr::new::<PyValueError, _>(error.to_string()),
+        },
+    )?;
 
     serde_json::to_string(&value).map_err(|e| {
         PyErr::new::<PyValueError, _>(format!("Failed to serialize generated value: {e}"))

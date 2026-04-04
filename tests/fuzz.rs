@@ -1,8 +1,8 @@
 //! Fuzzer tests.
 
 use json_schema_ast::{AstError, SchemaError};
-use json_schema_fuzz::{GenerateError, ValueGenerator};
-use jsoncompat::{ResolvedNodeKind, ResolvedSchema};
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
+use jsoncompat::{NodeId, PatternSupport, SchemaDocument, SchemaNode, SchemaNodeKind};
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -69,7 +69,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 
-        let schema = match ResolvedSchema::from_json(schema_json) {
+        let schema = match SchemaDocument::from_json(schema_json) {
             Ok(schema) => schema,
             Err(error)
                 if !validate_fixture_tests
@@ -118,7 +118,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => return Err(error.into()),
         };
 
-        if matches!(root.kind(), ResolvedNodeKind::BoolSchema(false))
+        if matches!(root.kind(), SchemaNodeKind::BoolSchema(false))
             && !fixture_schema
                 .tests
                 .iter()
@@ -127,7 +127,9 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let mut generator = ValueGenerator::new();
+        let generation_config = GenerationConfig::new(6);
+        let evaluator_should_be_exact =
+            internal_evaluator_should_be_exact(root, schema.canonical_schema_json()?);
 
         if validate_fixture_tests {
             for fixture_test in &fixture_schema.tests {
@@ -154,12 +156,24 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::to_string_pretty(schema_json)?,
                     serde_json::to_string_pretty(&fixture_test.data)?,
                 );
+                if evaluator_should_be_exact {
+                    assert_eq!(
+                        root.accepts_value(&fixture_test.data),
+                        canonicalized_valid,
+                        "{} schema #{idx} ({}) fixture test {:?} is handled differently by the internal evaluator\n\nCanonicalized schema:\n{}\n\nInstance:\n{}",
+                        rel_str,
+                        fixture_schema.description,
+                        fixture_test.description,
+                        serde_json::to_string_pretty(schema.canonical_schema_json()?)?,
+                        serde_json::to_string_pretty(&fixture_test.data)?,
+                    );
+                }
             }
         }
 
         let mut success = true;
         for _ in 0..N_ITERATIONS {
-            let candidate = match generator.generate_value(&schema, &mut rng, 6) {
+            let candidate = match ValueGenerator::generate(&schema, generation_config, &mut rng) {
                 Ok(candidate) => candidate,
                 Err(GenerateError::ExhaustedAttempts { .. }) => {
                     if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
@@ -195,6 +209,15 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 "generator returned a value rejected by the raw schema for {rel_str} schema #{idx}: {}",
                 serde_json::to_string_pretty(&candidate)?,
             );
+            if evaluator_should_be_exact {
+                assert_eq!(
+                    root.accepts_value(&candidate),
+                    canonicalized_valid,
+                    "{rel_str} schema #{idx} generated candidate is handled differently by the internal evaluator\n\nCanonicalized schema:\n{}\n\nInstance:\n{}",
+                    serde_json::to_string_pretty(schema.canonical_schema_json()?)?,
+                    serde_json::to_string_pretty(&candidate)?,
+                );
+            }
         }
 
         match (success, is_whitelisted) {
@@ -293,6 +316,105 @@ fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
             object.values().any(schema_declares_unsupported_schema_uri)
         }
         Value::Array(items) => items.iter().any(schema_declares_unsupported_schema_uri),
+        _ => false,
+    }
+}
+
+fn internal_evaluator_should_be_exact(schema: &SchemaNode, canonical_schema: &Value) -> bool {
+    canonical_keywords_are_supported_by_internal_evaluator(canonical_schema)
+        && schema_is_supported_by_internal_evaluator(schema, &mut HashSet::new())
+}
+
+fn canonical_keywords_are_supported_by_internal_evaluator(schema: &Value) -> bool {
+    let Value::Object(object) = schema else {
+        return true;
+    };
+
+    if object.contains_key("unevaluatedItems")
+        || object.contains_key("unevaluatedProperties")
+        || object.contains_key("dependentSchemas")
+    {
+        return false;
+    }
+
+    object.values().all(|value| match value {
+        Value::Array(values) => values
+            .iter()
+            .all(canonical_keywords_are_supported_by_internal_evaluator),
+        Value::Object(_) => canonical_keywords_are_supported_by_internal_evaluator(value),
+        _ => true,
+    })
+}
+
+fn schema_is_supported_by_internal_evaluator(
+    schema: &SchemaNode,
+    seen: &mut HashSet<NodeId>,
+) -> bool {
+    if !seen.insert(schema.id()) {
+        return true;
+    }
+
+    use SchemaNodeKind::*;
+
+    match schema.kind() {
+        BoolSchema(_) | Any | Boolean { .. } | Null { .. } | Const(_) | Enum(_) => true,
+        String {
+            pattern, format, ..
+        } => {
+            format.is_none()
+                && pattern
+                    .as_ref()
+                    .is_none_or(|pattern| pattern.support() == PatternSupport::Supported)
+        }
+        Number { .. } | Integer { .. } => true,
+        Object {
+            properties,
+            pattern_properties,
+            additional,
+            property_names,
+            ..
+        } => {
+            properties
+                .values()
+                .all(|schema| schema_is_supported_by_internal_evaluator(schema, seen))
+                && pattern_properties.values().all(|pattern_property| {
+                    pattern_property.pattern.support() == PatternSupport::Supported
+                        && schema_is_supported_by_internal_evaluator(&pattern_property.schema, seen)
+                })
+                && schema_is_supported_by_internal_evaluator(additional, seen)
+                && schema_is_supported_by_internal_evaluator(property_names, seen)
+        }
+        Array {
+            prefix_items,
+            items,
+            contains,
+            ..
+        } => {
+            prefix_items
+                .iter()
+                .all(|schema| schema_is_supported_by_internal_evaluator(schema, seen))
+                && schema_is_supported_by_internal_evaluator(items, seen)
+                && contains.as_ref().is_none_or(|contains| {
+                    schema_is_supported_by_internal_evaluator(&contains.schema, seen)
+                })
+        }
+        AllOf(children) | AnyOf(children) | OneOf(children) => children
+            .iter()
+            .all(|schema| schema_is_supported_by_internal_evaluator(schema, seen)),
+        Not(schema) => schema_is_supported_by_internal_evaluator(schema, seen),
+        IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
+            schema_is_supported_by_internal_evaluator(if_schema, seen)
+                && then_schema
+                    .as_ref()
+                    .is_none_or(|schema| schema_is_supported_by_internal_evaluator(schema, seen))
+                && else_schema
+                    .as_ref()
+                    .is_none_or(|schema| schema_is_supported_by_internal_evaluator(schema, seen))
+        }
         _ => false,
     }
 }

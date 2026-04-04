@@ -1,13 +1,13 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use json_schema_ast::{ResolvedSchema, build_and_resolve_schema};
-use json_schema_fuzz::ValueGenerator;
-use jsoncompat::is_subschema_of;
+use json_schema_ast::SchemaDocument;
+use json_schema_fuzz::{GenerationConfig, ValueGenerator};
+use jsoncompat::{Role, check_compat};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::{Value, json};
 
 fn bench_generate_value_with_raw_validation(c: &mut Criterion) {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "allOf": [
             {
                 "type": "object",
@@ -48,13 +48,13 @@ fn bench_generate_value_with_raw_validation(c: &mut Criterion) {
     let _ = schema.is_valid(&json!({})).unwrap();
 
     c.bench_function("generate_value/raw_validated", |b| {
-        let mut generator = ValueGenerator::new();
+        let config = GenerationConfig::new(6);
         let mut rng = StdRng::seed_from_u64(42);
         b.iter(|| {
-            black_box(generator.generate_value(
+            black_box(ValueGenerator::generate(
                 black_box(&schema),
+                black_box(config),
                 black_box(&mut rng),
-                black_box(6),
             ))
             .unwrap()
         });
@@ -66,8 +66,8 @@ fn bench_is_subschema_of_with_cached_sup_validator(c: &mut Criterion) {
         .map(|value| json!({ "enum": [{ "kind": "entry", "value": value }] }))
         .collect::<Vec<Value>>();
 
-    let sub = build_and_resolve_schema(&json!({ "anyOf": enum_branches })).unwrap();
-    let sup = build_and_resolve_schema(&json!({
+    let sub = SchemaDocument::from_json(&json!({ "anyOf": enum_branches })).unwrap();
+    let sup = SchemaDocument::from_json(&json!({
         "type": "object",
         "properties": {
             "kind": { "const": "entry" },
@@ -79,7 +79,14 @@ fn bench_is_subschema_of_with_cached_sup_validator(c: &mut Criterion) {
     .unwrap();
 
     c.bench_function("is_subschema_of/cached_sup_validator", |b| {
-        b.iter(|| black_box(is_subschema_of(black_box(&sub), black_box(&sup))));
+        b.iter(|| {
+            black_box(check_compat(
+                black_box(&sup),
+                black_box(&sub),
+                black_box(Role::Serializer),
+            ))
+            .unwrap()
+        });
     });
 }
 

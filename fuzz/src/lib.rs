@@ -1,10 +1,15 @@
+//! Value generation and random schema generation for the resolved schema IR.
+//!
+//! The generator walks the canonicalized `SchemaNode` graph to produce
+//! candidates, then validates them with `SchemaDocument::is_valid()` so raw
+//! backend validation remains the source of truth.
+
 mod format_gen;
 mod regex_gen;
 
-use fancy_regex::Regex;
 use json_schema_ast::{
-    ArrayContains, IntegerMultipleOf, ResolvedNode, ResolvedNodeKind, ResolvedSchema,
-    SchemaBuildError,
+    ContainsConstraint, IntegerBounds, IntegerMultipleOf, NumberBound, NumberBounds,
+    PatternProperty, PatternSupport, SchemaBuildError, SchemaDocument, SchemaNode, SchemaNodeKind,
 };
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
@@ -12,6 +17,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
 const DEFAULT_MAX_GENERATION_ATTEMPTS: usize = 100;
+const DEFAULT_GENERATION_DEPTH: u8 = 5;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -28,6 +34,39 @@ pub struct ValueGenerator {
     max_generation_attempts: NonZeroUsize,
 }
 
+/// Explicit generation controls used by the document-level fuzzer API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenerationConfig {
+    pub depth: u8,
+    pub max_generation_attempts: NonZeroUsize,
+}
+
+impl Default for GenerationConfig {
+    fn default() -> Self {
+        Self {
+            depth: DEFAULT_GENERATION_DEPTH,
+            max_generation_attempts: NonZeroUsize::new(DEFAULT_MAX_GENERATION_ATTEMPTS)
+                .expect("default generation attempt limit must be non-zero"),
+        }
+    }
+}
+
+impl GenerationConfig {
+    #[must_use]
+    pub fn new(depth: u8) -> Self {
+        Self {
+            depth,
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub fn with_max_generation_attempts(mut self, max_generation_attempts: NonZeroUsize) -> Self {
+        self.max_generation_attempts = max_generation_attempts;
+        self
+    }
+}
+
 impl Default for ValueGenerator {
     fn default() -> Self {
         Self {
@@ -39,9 +78,9 @@ impl Default for ValueGenerator {
 
 #[derive(Clone, Copy)]
 struct ArrayGenerationSchema<'a> {
-    prefix_items: &'a [ResolvedNode],
-    items: &'a ResolvedNode,
-    contains: Option<&'a ArrayContains<ResolvedNode>>,
+    prefix_items: &'a [SchemaNode],
+    items: &'a SchemaNode,
+    contains: Option<&'a ContainsConstraint<SchemaNode>>,
     unique_items: bool,
 }
 
@@ -58,16 +97,25 @@ impl ValueGenerator {
         }
     }
 
+    pub fn generate(
+        schema: &SchemaDocument,
+        config: GenerationConfig,
+        rng: &mut impl Rng,
+    ) -> Result<Value, GenerateError> {
+        let mut generator = Self::with_max_generation_attempts(config.max_generation_attempts);
+        generator.generate_from_document(schema, rng, config.depth)
+    }
+
     /// Generate a random JSON value that satisfies `schema` according to the
     /// raw-schema validator backend.
     ///
-    /// Internally this walks the canonicalized `ResolvedNode` graph to produce
-    /// candidate values, but only returns once `ResolvedSchema::is_valid()`
+    /// Internally this walks the canonicalized `SchemaNode` graph to produce
+    /// candidate values, but only returns once `SchemaDocument::is_valid()`
     /// accepts the candidate.
     /// We limit recursion with `depth`.
-    pub fn generate_value(
+    fn generate_from_document(
         &mut self,
-        schema: &ResolvedSchema,
+        schema: &SchemaDocument,
         rng: &mut impl Rng,
         depth: u8,
     ) -> Result<Value, GenerateError> {
@@ -84,23 +132,18 @@ impl ValueGenerator {
         })
     }
 
-    fn generate_candidate(
-        &mut self,
-        schema: &ResolvedNode,
-        rng: &mut impl Rng,
-        depth: u8,
-    ) -> Value {
+    fn generate_candidate(&mut self, schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
         generate_candidate_with_context(schema, rng, depth, self)
     }
-    fn schema_accepts_value(&mut self, schema: &ResolvedNode, value: &Value) -> bool {
+    fn schema_accepts_value(&mut self, schema: &SchemaNode, value: &Value) -> bool {
         schema.accepts_value(value)
     }
 
     fn generate_property_value(
         &mut self,
         property_name: &str,
-        property_schema: &ResolvedNode,
-        pattern_properties: &HashMap<String, ResolvedNode>,
+        property_schema: &SchemaNode,
+        pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
         rng: &mut impl Rng,
         depth: u8,
     ) -> Value {
@@ -140,8 +183,8 @@ impl ValueGenerator {
     fn generate_additional_property_value(
         &mut self,
         property_name: &str,
-        pattern_properties: &HashMap<String, ResolvedNode>,
-        additional: &ResolvedNode,
+        pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
+        additional: &SchemaNode,
         rng: &mut impl Rng,
         depth: u8,
     ) -> Value {
@@ -164,19 +207,8 @@ impl ValueGenerator {
     }
 }
 
-/// Generate a random JSON value that satisfies `schema` according to the
-/// raw-schema validator backend.
-/// We limit recursion with `depth`.
-pub fn generate_value(
-    schema: &ResolvedSchema,
-    rng: &mut impl Rng,
-    depth: u8,
-) -> Result<Value, GenerateError> {
-    ValueGenerator::new().generate_value(schema, rng, depth)
-}
-
 fn generate_candidate_with_context(
-    schema: &ResolvedNode,
+    schema: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -185,7 +217,7 @@ fn generate_candidate_with_context(
         return Value::Null;
     }
 
-    use ResolvedNodeKind::*;
+    use SchemaNodeKind::*;
 
     match schema.kind() {
         BoolSchema(false) => Value::Null,
@@ -231,7 +263,7 @@ fn generate_candidate_with_context(
                             pattern_properties,
                             required,
                             additional,
-                            min_properties,
+                            property_count,
                             ..
                         } = sub.kind()
                             && let Value::Object(obj) =
@@ -242,8 +274,7 @@ fn generate_candidate_with_context(
                                     || !matches!(additional.kind(), BoolSchema(true) | Any)
                                     || properties.contains_key(&k)
                                     || property_matches_any_pattern(pattern_properties, &k)
-                                    || min_properties
-                                        .is_some_and(|minimum| minimum > required.len())
+                                    || property_count.min() > required.len()
                                 {
                                     combined.insert(k, v);
                                 }
@@ -256,7 +287,7 @@ fn generate_candidate_with_context(
                     // possible that the fast generation above skipped an optional
                     // property that later turned out to be required by another
                     // branch.  We deterministically fill any such gaps here.
-                    let mut missing: HashMap<std::string::String, Option<ResolvedNode>> =
+                    let mut missing: HashMap<std::string::String, Option<SchemaNode>> =
                         HashMap::new();
                     for sub in object_subschemas {
                         if let Object {
@@ -341,8 +372,7 @@ fn generate_candidate_with_context(
         Not(negated) => generate_not_value(schema, negated, rng, depth, generator),
 
         String {
-            min_length,
-            max_length,
+            length,
             pattern,
             format,
             enumeration,
@@ -354,10 +384,21 @@ fn generate_candidate_with_context(
                 return e[idx].clone();
             }
             if let Some(pattern) = pattern
-                && let Some(candidate) = literal_from_simple_pattern(pattern)
-                && candidate.len() as u64 >= min_length.unwrap_or(0)
-                && max_length.is_none_or(|limit| (candidate.len() as u64) <= limit)
+                && pattern.support() == PatternSupport::Supported
+                && let Some(candidate) = literal_from_simple_pattern(pattern.as_str())
+                && length.contains(candidate.chars().count() as u64)
             {
+                return Value::String(candidate);
+            }
+
+            if let Some(pattern) = pattern
+                && pattern.support() == PatternSupport::Unsupported
+                && let Some(candidate) = literal_from_control_escape_pattern(pattern.as_str())
+                && length.contains(candidate.chars().count() as u64)
+            {
+                // We cannot run the pattern through Rust's regex engine, but a
+                // direct literal fallback still handles common ECMA control
+                // escape patterns such as `^\cC$`.
                 return Value::String(candidate);
             }
 
@@ -369,14 +410,15 @@ fn generate_candidate_with_context(
             }
 
             if let Some(pat) = pattern
-                && let Some(s) = regex_gen::generate_matching_string(pat, rng)
+                && pat.support() == PatternSupport::Supported
+                && let Some(s) = regex_gen::generate_matching_string(pat.as_str(), rng)
             {
                 // min_length/max_length constraints are ignored when pattern is used.
                 return Value::String(s);
             }
 
-            let len_min = min_length.unwrap_or(0);
-            let len_max = max_length.unwrap_or(len_min + 5).max(len_min);
+            let len_min = length.min();
+            let len_max = length.max().unwrap_or(len_min + 5).max(len_min);
             let length = if len_min <= len_max {
                 rng.random_range(len_min..=len_max.min(len_min + 10))
             } else {
@@ -390,8 +432,7 @@ fn generate_candidate_with_context(
 
         Number {
             enumeration,
-            minimum,
-            maximum,
+            bounds,
             multiple_of,
             ..
         } => {
@@ -402,15 +443,13 @@ fn generate_candidate_with_context(
                 return e[idx].clone();
             }
             if multiple_of.is_some() {
-                let low = minimum.unwrap_or(f64::NEG_INFINITY);
-                let high = maximum.unwrap_or(f64::INFINITY);
+                let (low, high) = number_generation_range(*bounds);
                 if low <= 0.0 && 0.0 <= high {
                     return Value::Number(serde_json::Number::from_f64(0.0).unwrap());
                 }
             }
 
-            let low = minimum.unwrap_or(0.0).max(-1_000_000.0);
-            let high = maximum.unwrap_or(1_000_000.0).min(1_000_000.0);
+            let (low, high) = number_generation_range(*bounds);
             let mut val = rng.random_range(low..=high);
 
             if let Some(mo) = multiple_of
@@ -429,8 +468,7 @@ fn generate_candidate_with_context(
 
         Integer {
             enumeration,
-            minimum,
-            maximum,
+            bounds,
             multiple_of,
             ..
         } => {
@@ -441,15 +479,13 @@ fn generate_candidate_with_context(
                 return e[idx].clone();
             }
             if multiple_of.is_some() {
-                let low = minimum.unwrap_or(i64::MIN);
-                let high = maximum.unwrap_or(i64::MAX);
+                let (low, high) = integer_generation_range(*bounds);
                 if low <= 0 && 0 <= high {
                     return Value::Number(0.into());
                 }
             }
 
-            let low = minimum.unwrap_or(-1000).max(-1_000_000);
-            let high = maximum.unwrap_or(1000).min(1_000_000);
+            let (low, high) = integer_generation_range(*bounds);
             let mut val = rng.random_range(low..=high);
 
             if let Some(mo) = multiple_of
@@ -493,8 +529,7 @@ fn generate_candidate_with_context(
             required,
             additional,
             property_names,
-            min_properties,
-            max_properties,
+            property_count,
             enumeration,
             ..
         } => {
@@ -505,22 +540,22 @@ fn generate_candidate_with_context(
                 return e[idx].clone();
             }
 
-            let min_p: usize = min_properties.unwrap_or(0);
+            let min_p: usize = property_count.min();
             if min_p == 0
                 && properties.is_empty()
                 && matches!(
                     additional.kind(),
-                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
                 )
                 && matches!(
                     property_names.kind(),
-                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
                 )
             {
                 return Value::Object(Map::new());
             }
 
-            let max_p: usize = max_properties.unwrap_or(usize::MAX);
+            let max_p: usize = property_count.max().unwrap_or(usize::MAX);
 
             for _ in 0..32 {
                 let mut map = Map::new();
@@ -661,8 +696,7 @@ fn generate_candidate_with_context(
         Array {
             prefix_items,
             items,
-            min_items,
-            max_items,
+            item_count,
             contains,
             unique_items,
             enumeration,
@@ -676,9 +710,9 @@ fn generate_candidate_with_context(
 
             let min_contains = contains
                 .as_ref()
-                .map_or(0, |contains| contains.min_contains);
-            let base_min = min_items.unwrap_or(0).max(min_contains);
-            let mut max_i = max_items.unwrap_or(base_min.saturating_add(5));
+                .map_or(0, |contains| contains.count().min());
+            let base_min = item_count.min().max(min_contains);
+            let mut max_i = item_count.max().unwrap_or(base_min.saturating_add(5));
             if matches!(items.kind(), BoolSchema(false)) {
                 max_i = max_i.min(prefix_items.len() as u64);
             }
@@ -697,7 +731,7 @@ fn generate_candidate_with_context(
             if base_min == 0
                 && contains
                     .as_ref()
-                    .is_some_and(|contains| contains.max_contains == Some(0))
+                    .is_some_and(|contains| contains.count().max() == Some(0))
             {
                 let empty = Value::Array(Vec::new());
                 if generator.schema_accepts_value(schema, &empty) {
@@ -766,8 +800,41 @@ fn integer_multiple_of_divisor(multiple_of: IntegerMultipleOf) -> Option<i64> {
         .and_then(|divisor| i64::try_from(divisor).ok())
 }
 
-fn object_schema_branch(schema: &ResolvedNode) -> Option<ResolvedNode> {
-    use ResolvedNodeKind::*;
+fn number_generation_range(bounds: NumberBounds) -> (f64, f64) {
+    let low = match bounds.lower() {
+        NumberBound::Unbounded => 0.0,
+        NumberBound::Inclusive(value) => value,
+        NumberBound::Exclusive(value) => value + f64::EPSILON * value.abs().max(1.0) * 4.0,
+    }
+    .max(-1_000_000.0);
+
+    let high = match bounds.upper() {
+        NumberBound::Unbounded => 1_000_000.0,
+        NumberBound::Inclusive(value) => value,
+        NumberBound::Exclusive(value) => value - f64::EPSILON * value.abs().max(1.0) * 4.0,
+    }
+    .min(1_000_000.0);
+
+    if low <= high {
+        (low, high)
+    } else {
+        (high, low)
+    }
+}
+
+fn integer_generation_range(bounds: IntegerBounds) -> (i64, i64) {
+    let low = bounds.lower().unwrap_or(-1000).max(-1_000_000);
+    let high = bounds.upper().unwrap_or(1000).min(1_000_000);
+
+    if low <= high {
+        (low, high)
+    } else {
+        (high, low)
+    }
+}
+
+fn object_schema_branch(schema: &SchemaNode) -> Option<SchemaNode> {
+    use SchemaNodeKind::*;
 
     match schema.kind() {
         Object { .. } => Some(schema.clone()),
@@ -784,9 +851,21 @@ fn object_schema_branch(schema: &ResolvedNode) -> Option<ResolvedNode> {
     }
 }
 
+fn literal_from_control_escape_pattern(pattern: &str) -> Option<String> {
+    let body = pattern.strip_prefix('^')?.strip_suffix('$')?;
+    let control_name = body.strip_prefix(r"\c")?;
+    let mut chars = control_name.chars();
+    let control = chars.next()?;
+    if chars.next().is_some() || !control.is_ascii_alphabetic() {
+        return None;
+    }
+
+    Some((((control.to_ascii_uppercase() as u8) & 0x1f) as char).to_string())
+}
+
 fn generate_not_value(
-    schema: &ResolvedNode,
-    negated: &ResolvedNode,
+    schema: &SchemaNode,
+    negated: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -813,12 +892,12 @@ fn generate_not_value(
 }
 
 fn negated_schema_counterexample(
-    negated: &ResolvedNode,
+    negated: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
 ) -> Option<Value> {
-    use ResolvedNodeKind::*;
+    use SchemaNodeKind::*;
 
     Some(match negated.kind() {
         BoolSchema(false) => random_any(rng, depth),
@@ -939,44 +1018,40 @@ fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
 }
 
 fn property_name_allows(
-    property_names: &ResolvedNode,
+    property_names: &SchemaNode,
     candidate: &str,
     generator: &mut ValueGenerator,
 ) -> bool {
     generator.schema_accepts_value(property_names, &Value::String(candidate.to_owned()))
 }
 
-fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
-    Regex::new(pattern)
-        .ok()
-        .and_then(|regex| regex.is_match(property_name).ok())
-        .unwrap_or(false)
-}
-
 fn property_matches_any_pattern(
-    pattern_properties: &HashMap<String, ResolvedNode>,
+    pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
     property_name: &str,
 ) -> bool {
-    pattern_properties
-        .keys()
-        .any(|pattern| property_name_matches_pattern(pattern, property_name))
+    pattern_properties.values().any(|pattern_property| {
+        pattern_property.pattern.support() == PatternSupport::Supported
+            && pattern_property.pattern.is_match(property_name)
+    })
 }
 
 fn matching_pattern_property_schemas<'a>(
-    pattern_properties: &'a HashMap<String, ResolvedNode>,
+    pattern_properties: &'a HashMap<String, PatternProperty<SchemaNode>>,
     property_name: &str,
-) -> Vec<&'a ResolvedNode> {
+) -> Vec<&'a SchemaNode> {
     pattern_properties
-        .iter()
-        .filter_map(|(pattern, schema)| {
-            property_name_matches_pattern(pattern, property_name).then_some(schema)
+        .values()
+        .filter_map(|pattern_property| {
+            (pattern_property.pattern.support() == PatternSupport::Supported
+                && pattern_property.pattern.is_match(property_name))
+            .then_some(&pattern_property.schema)
         })
         .collect()
 }
 
 fn pattern_property_schemas_accept_value(
     generator: &mut ValueGenerator,
-    pattern_properties: &HashMap<String, ResolvedNode>,
+    pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
     property_name: &str,
     property_value: &Value,
 ) -> bool {
@@ -986,27 +1061,27 @@ fn pattern_property_schemas_accept_value(
 }
 
 fn generate_property_key(
-    property_names: &ResolvedNode,
+    property_names: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
 ) -> Option<String> {
     if matches!(
         property_names.kind(),
-        ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
+        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
     ) {
         return Some(random_key(rng));
     }
 
     for _ in 0..32 {
         let candidate = match property_names.kind() {
-            ResolvedNodeKind::String { .. } => {
+            SchemaNodeKind::String { .. } => {
                 match generator.generate_candidate(property_names, rng, depth.saturating_sub(1)) {
                     Value::String(s) => s,
                     _ => random_key(rng),
                 }
             }
-            ResolvedNodeKind::Enum(values) => values
+            SchemaNodeKind::Enum(values) => values
                 .iter()
                 .find_map(|v| v.as_str().map(|s| s.to_owned()))
                 .unwrap_or_else(|| random_key(rng)),
@@ -1066,7 +1141,7 @@ fn generate_array_candidate(
             if values.iter().any(|existing| existing == &value)
                 && matches!(
                     item_schema.kind(),
-                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
                 )
             {
                 value = unique_fallback_value(index);
@@ -1085,8 +1160,8 @@ fn generate_array_candidate(
 }
 
 fn generate_array_item(
-    item_schema: &ResolvedNode,
-    contains: Option<&ArrayContains<ResolvedNode>>,
+    item_schema: &SchemaNode,
+    contains: Option<&ContainsConstraint<SchemaNode>>,
     matching_items: u64,
     remaining_slots: usize,
     rng: &mut impl Rng,
@@ -1096,10 +1171,11 @@ fn generate_array_item(
     match contains {
         None => generator.generate_candidate(item_schema, rng, depth.saturating_sub(1)),
         Some(contains) => {
-            let remaining_required = contains.min_contains.saturating_sub(matching_items);
+            let remaining_required = contains.count().min().saturating_sub(matching_items);
             let must_match = remaining_required >= remaining_slots as u64;
             let can_match = contains
-                .max_contains
+                .count()
+                .max()
                 .is_none_or(|maximum| matching_items < maximum);
 
             if must_match {
@@ -1126,8 +1202,8 @@ fn generate_array_item(
 }
 
 fn generate_array_item_matching_contains(
-    item_schema: &ResolvedNode,
-    contains_schema: &ResolvedNode,
+    item_schema: &SchemaNode,
+    contains_schema: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -1151,8 +1227,8 @@ fn generate_array_item_matching_contains(
 }
 
 fn generate_array_item_avoiding_contains(
-    item_schema: &ResolvedNode,
-    contains_schema: &ResolvedNode,
+    item_schema: &SchemaNode,
+    contains_schema: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -1243,12 +1319,12 @@ fn literal_from_simple_pattern(pattern: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use json_schema_ast::ResolvedSchema;
+    use json_schema_ast::SchemaDocument;
     use rand::{SeedableRng, rngs::StdRng};
     use serde_json::json;
 
-    fn resolve(raw: Value) -> ResolvedSchema {
-        ResolvedSchema::from_json(&raw).unwrap()
+    fn resolve(raw: Value) -> SchemaDocument {
+        SchemaDocument::from_json(&raw).unwrap()
     }
 
     #[test]
@@ -1256,7 +1332,8 @@ mod tests {
         let schema = build_required_object_schema();
         let mut rng = StdRng::seed_from_u64(42);
         for _ in 0..50 {
-            let value = generate_value(&schema, &mut rng, 5).unwrap();
+            let value =
+                ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng).unwrap();
             let obj = value.as_object().expect("expected object");
             assert!(obj.contains_key("class"));
             assert!(
@@ -1287,7 +1364,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
         assert!(matches!(
-            generate_value(&schema, &mut rng, 5),
+            ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng),
             Err(GenerateError::ExhaustedAttempts { .. })
         ));
     }
@@ -1309,7 +1386,7 @@ mod tests {
         }));
 
         let mut rng = StdRng::seed_from_u64(7);
-        let _ = generate_value(&schema, &mut rng, 5).unwrap();
+        let _ = ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng).unwrap();
     }
 
     #[test]
@@ -1329,7 +1406,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(99);
         for _ in 0..50 {
-            let value = generate_value(&schema, &mut rng, 8).unwrap();
+            let value =
+                ValueGenerator::generate(&schema, GenerationConfig::new(8), &mut rng).unwrap();
             assert_eq!(value, json!([]), "generated invalid value: {value}");
         }
     }
@@ -1350,7 +1428,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(12);
         for _ in 0..20 {
-            let value = generate_value(&schema, &mut rng, 5).unwrap();
+            let value =
+                ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng).unwrap();
             assert!(
                 schema.is_valid(&value).unwrap(),
                 "generated invalid value: {value}"
@@ -1358,7 +1437,7 @@ mod tests {
         }
     }
 
-    fn build_required_object_schema() -> ResolvedSchema {
+    fn build_required_object_schema() -> SchemaDocument {
         let raw = json!({
             "type": "object",
             "properties": {

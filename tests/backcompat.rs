@@ -1,5 +1,5 @@
-use json_schema_ast::ResolvedSchema;
-use json_schema_fuzz::ValueGenerator;
+use json_schema_ast::SchemaDocument;
+use json_schema_fuzz::{GenerationConfig, ValueGenerator};
 use jsoncompat::{Role, check_compat};
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
@@ -39,12 +39,12 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let expect: Expectation = serde_json::from_slice(&fs::read(expect_file)?)?;
 
     // Build ASTs
-    let old_schema = ResolvedSchema::from_json(&old_raw)?;
-    let new_schema = ResolvedSchema::from_json(&new_raw)?;
+    let old_schema = SchemaDocument::from_json(&old_raw)?;
+    let new_schema = SchemaDocument::from_json(&new_raw)?;
 
     // Core compat result
-    let ser = check_compat(old_schema.root()?, new_schema.root()?, Role::Serializer);
-    let de = check_compat(old_schema.root()?, new_schema.root()?, Role::Deserializer);
+    let ser = check_compat(&old_schema, &new_schema, Role::Serializer)?;
+    let de = check_compat(&old_schema, &new_schema, Role::Deserializer)?;
 
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
@@ -88,12 +88,11 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Quick fuzz confirmation (10 samples each direction)
-    let mut old_generator = ValueGenerator::new();
-    let mut new_generator = ValueGenerator::new();
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
+    let config = GenerationConfig::new(4);
 
     for _ in 0..100 {
-        let v_new = new_generator.generate_value(&new_schema, &mut rng, 4)?;
+        let v_new = ValueGenerator::generate(&new_schema, config, &mut rng)?;
         if expect.serializer {
             assert!(
                 old_schema.is_valid(&v_new)?,
@@ -101,7 +100,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        let v_old = old_generator.generate_value(&old_schema, &mut rng, 4)?;
+        let v_old = ValueGenerator::generate(&old_schema, config, &mut rng)?;
         if expect.deserializer {
             assert!(
                 new_schema.is_valid(&v_old)?,

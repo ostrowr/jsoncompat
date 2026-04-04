@@ -1,4 +1,9 @@
-use fancy_regex::Regex;
+//! JSON Schema equality helpers.
+//!
+//! Draft 2020-12 treats numeric values with the same mathematical value as
+//! equal even if one is encoded as `1` and the other as `1.0`.  These helpers
+//! centralize that rule so enum/const checks and `uniqueItems` do not drift.
+
 use serde_json::Value;
 
 #[must_use]
@@ -22,14 +27,6 @@ pub fn json_values_equal(expected: &Value, value: &Value) -> bool {
         }
         _ => expected == value,
     }
-}
-
-#[must_use]
-pub fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
-    Regex::new(pattern)
-        .ok()
-        .and_then(|regex| regex.is_match(property_name).ok())
-        .unwrap_or(false)
 }
 
 pub(crate) fn numeric_values_equal(expected: &Value, value: &Value) -> bool {

@@ -19,6 +19,11 @@ bench-check:
   @echo "[just] smoke-checking Rust benchmarks …"
   cargo bench --benches -- --test
 
+# ---- End-to-end CLI demo/smoke test ----
+
+demo *args="":
+  @bash ./scripts/demo.sh {{args}}
+
 # ---- Basic python smoke test ----
 
 python-demo:

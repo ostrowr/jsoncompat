@@ -100,7 +100,7 @@ Legend:
 
 Important global caveats:
 
-- `jsoncompat::check_compat` is a structural subset checker over the resolved AST. It can return
+- `jsoncompat::check_compat` is a document-level structural subset checker over the resolved AST. It can return
   false negatives for conservative subset proofs and false positives for string-language
   constraints that are currently ignored when both sides are open string schemas.
 - For serializer compatibility, the checker assumes serializers do not emit undeclared extra
@@ -127,7 +127,7 @@ Important global caveats:
 | `multipleOf` | ✅ | ✅ | Exact integer divisibility is used when both sides are integer-valued. Fractional integer divisors are preserved and projected to their implied integer divisor for integer instances; non-integer numeric checks use `f64` ratios. |
 | `minLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
 | `maxLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
-| `pattern` | 🟡 | 🟡 | `ResolvedNode::accepts_value()` enforces regexes for finite-value checks, but `check_compat` does not prove regex-language inclusion between open string schemas. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
+| `pattern` | 🟡 | 🟡 | `SchemaNode::accepts_value()` enforces regexes for finite-value checks using a cached matcher per pattern, but `check_compat` does not prove regex-language inclusion between open string schemas. Unsupported ECMAScript regex constructs are preserved as source text but treated as non-matching by the internal evaluator. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
 | `format` | 🟡 | 🟡 | The checker does not prove format-language inclusion between open string schemas. The fuzzer only synthesizes `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`, `hostname`, and `idn-hostname`; unknown formats fall back to generic strings. |
 | `contentEncoding` | ⚪ | ⚪ | Canonicalized for syntax, then stripped from the semantic IR. |
 | `contentMediaType` | ⚪ | ⚪ | Canonicalized for syntax, then stripped from the semantic IR. |
@@ -145,7 +145,7 @@ Important global caveats:
 | `minProperties` | ✅ | ✅ | Canonicalization raises `minProperties` to at least the number of required keys. |
 | `maxProperties` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
 | `dependentRequired` | ✅ | 🟡 | The checker accounts for trigger keys admitted by `properties`, `patternProperties`, or `additionalProperties`. The fuzzer does not proactively synthesize dependencies, but invalid candidates are rejected by the final validator pass. |
-| `dependentSchemas` | ⚪ | ⚪ | Nested schemas are canonicalized for dialect/ref validation, but `ResolvedNodeKind::Object` does not store `dependentSchemas`, so checker/fuzzer semantics are absent. |
+| `dependentSchemas` | ⚪ | ⚪ | Nested schemas are canonicalized for dialect/ref validation, but `SchemaNodeKind::Object` does not store `dependentSchemas`, so checker/fuzzer semantics are absent. |
 | `unevaluatedProperties` | ⚪ | ⚪ | Canonicalized recursively but not represented with evaluated-location bookkeeping in the resolved IR. |
 | `dependencies` | ⚪ | ⚪ | Legacy keyword accepted by the parser but not represented in the resolved IR; use `dependentRequired` / `dependentSchemas` for Draft 2020-12 semantics. |
 
@@ -172,7 +172,7 @@ Important global caveats:
 | `anyOf` | 🟡 | 🟡 | The checker requires every `sub` branch to fit `sup`, and for `sup anyOf` it looks for one branch containing all of `sub`; that is conservative and can miss valid disjunctive proofs. The fuzzer samples one branch and retries. |
 | `oneOf` | 🟡 | 🟡 | Canonicalization rewrites provably disjoint `oneOf` branches to `anyOf`. Outside that case, checker reasoning is conservative and does not symbolically prove exact-one exclusivity, and the fuzzer uses retry-based witness counting. |
 | `not` | 🟡 | 🟡 | The checker only handles shallow boolean/`Any` cases symbolically; other `not` proofs fall back to conservative `false`. The fuzzer generates type-mismatch and fixed candidate witnesses, then retries against the full schema. |
-| `if` | 🟡 | 🟡 | `ResolvedNode::accepts_value()` evaluates the condition and the fuzzer samples branches, but the subset checker has no dedicated symbolic rule for conditional implication beyond exact-node equality and finite `const`/`enum` probes. |
+| `if` | 🟡 | 🟡 | `SchemaNode::accepts_value()` evaluates the condition and the fuzzer samples branches, but the subset checker has no dedicated symbolic rule for conditional implication beyond exact-node equality and finite `const`/`enum` probes. |
 | `then` | 🟡 | 🟡 | Stored and evaluated only as part of `if` / `then` / `else`; checker reasoning inherits the same conditional caveat as `if`. |
 | `else` | 🟡 | 🟡 | Stored and evaluated only as part of `if` / `then` / `else`; checker reasoning inherits the same conditional caveat as `if`. |
 
@@ -212,13 +212,14 @@ The Rust code is split into five crates and one CLI binary. The website under `w
 The two core schema APIs are:
 
 - `json_schema_ast::compile(&raw_schema)`, which compiles the original schema document directly with the `jsonschema` validator backend. Before compilation, this crate rejects any `$schema` declaration other than Draft 2020-12 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing `#`).
-- `json_schema_ast::ResolvedSchema::from_json(&raw_schema)`, which eagerly stores the original raw schema JSON, eagerly canonicalizes and validates the schema document once, and then lazily materializes the resolved graph and compiled validators on first use:
-  - `ResolvedSchema::is_valid(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the original raw schema document.
-  - `ResolvedSchema::is_valid_canonicalized(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the already-canonicalized JSON, and exists to test/debug whether canonicalization preserved semantics.
-  - `ResolvedSchema::root() -> Result<&ResolvedNode, SchemaBuildError>` lazily resolves local refs from the already-canonicalized JSON, and exposes the immutable canonicalized graph used by compatibility analysis and fuzzing/codegen.
-  - `ResolvedSchema::raw_schema_json()` returns the original raw schema document.
-  - `ResolvedSchema::canonical_schema_json() -> Result<&Value, SchemaBuildError>` returns the cached canonicalized schema document as JSON so humans can inspect the rewrite directly.
-    `ResolvedNodeKind` only contains post-resolution semantic variants; parser-only `$ref` and declaration metadata variants are private implementation details.
+- `json_schema_ast::SchemaDocument::from_json(&raw_schema)` (alias: `SchemaDocument::from_json`), which eagerly stores the original raw schema JSON, eagerly canonicalizes and validates the schema document once, and then lazily materializes the resolved graph and compiled validators on first use:
+  - `SchemaDocument::is_valid(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the original raw schema document.
+  - `SchemaDocument::is_valid_canonicalized(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the already-canonicalized JSON, and exists to test/debug whether canonicalization preserved semantics.
+  - `SchemaDocument::root() -> Result<&SchemaNode, SchemaBuildError>` lazily resolves local refs from the already-canonicalized JSON, and exposes the immutable canonicalized graph used by compatibility analysis and fuzzing/codegen. Each `SchemaNode` has an opaque `NodeId` for cycle-safe identity.
+  - `SchemaDocument::raw_schema_json()` returns the original raw schema document.
+  - `SchemaDocument::canonical_schema_json() -> Result<&Value, SchemaBuildError>` returns the cached canonicalized schema document as JSON so humans can inspect the rewrite directly.
+    `SchemaNodeKind` only contains post-resolution semantic variants; parser-only `$ref` and declaration metadata variants are private implementation details. Scalar/object/array constraints are represented with normalized typed domains (`IntegerBounds`, `NumberBounds`, `CountRange`, `ContainsConstraint`, `PatternConstraint`) instead of loose keyword pairs, and regex support is explicit via `PatternSupport`.
+- `json_schema_fuzz::ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng) -> Result<Value, GenerateError>`, which is the Rust generation API.
 
 At a high level, the runtime flow is:
 
@@ -226,15 +227,15 @@ At a high level, the runtime flow is:
 flowchart TD
     raw["Raw JSON Schema document"]
     compile_raw["json_schema_ast::compile(raw)\nlazily compile raw validator"]
-    validate_raw["ResolvedSchema::is_valid(value)\nvalidate against raw schema"]
+    validate_raw["SchemaDocument::is_valid(value)\nvalidate against raw schema"]
     canonicalize["schema/src/canonicalize.rs\neagerly canonicalize syntax, validate keyword shapes,\nand fill implicit constraints"]
-    canonical_json["ResolvedSchema::canonical_schema_json()\ndebug canonical JSON output"]
+    canonical_json["SchemaDocument::canonical_schema_json()\ndebug canonical JSON output"]
     compile_canonical["compile(canonicalized)\nparity/debug validator"]
-    validate_canonical["ResolvedSchema::is_valid_canonicalized(value)\nvalidate canonicalized schema"]
-    parse["schema/src/ast.rs\nparse canonical JSON into a private mutable graph"]
-    resolve["schema/src/ast.rs\nresolve local # / #/... refs and freeze to ResolvedNodeKind"]
-    compat["src/subset.rs\njsoncompat::check_compat(old_root, new_root, role)"]
-    fuzz["fuzz/src/lib.rs\njson_schema_fuzz::generate_value(&ResolvedSchema)"]
+    validate_canonical["SchemaDocument::is_valid_canonicalized(value)\nvalidate canonicalized schema"]
+    parse["schema/src/ast.rs\nparse canonical JSON into a private arena-backed graph"]
+    resolve["schema/src/ast.rs\nresolve local # / #/... refs by node ID and freeze to SchemaNodeKind"]
+    compat["src/subset.rs + src/subset/*.rs\njsoncompat::check_compat(old_doc, new_doc, role)"]
+    fuzz["fuzz/src/lib.rs\njson_schema_fuzz::ValueGenerator::generate(&SchemaDocument, ...)"]
 
     raw --> compile_raw --> validate_raw
     raw --> canonicalize --> parse --> resolve
@@ -246,15 +247,15 @@ flowchart TD
 
 ### What each crate owns
 
-- `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately and canonicalizes it once inside `ResolvedSchema::from_json()` so keyword-shape validation happens at schema construction without maintaining a second validator path. The resolved graph is still built lazily by parsing that cached canonical JSON into a private mutable parse graph, resolving local recursive references, and freezing it into `ResolvedNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `ResolvedSchema::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `ResolvedSchema::raw_schema_json()` preserves the original input schema for debugging and comparisons. `ResolvedNode::accepts_value()` is the internal evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics. `ResolvedNode::to_json()` remains a debug/test helper and should not be used as a production semantic bridge.
-- `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role` and `check_compat`, and `src/subset.rs` implements the actual inclusion relation (`sub ⊆ sup`) over `ResolvedNode`. The checker now uses `ResolvedNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
-- `json_schema_fuzz` is the value-generation engine. Its public APIs take `ResolvedSchema` and only return values accepted by `ResolvedSchema::is_valid()`; if the internal candidate generator cannot find such a value within its retry budget, generation returns a typed `GenerateError::ExhaustedAttempts`. Internally it walks the canonicalized `ResolvedNode` graph and uses `ResolvedNode::accepts_value()` only as a pruning heuristic for recursive subgraphs.
+- `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately and canonicalizes it once inside `SchemaDocument::from_json()` so keyword-shape validation happens at schema construction without maintaining a second validator path. The resolved graph is still built lazily by parsing that cached canonical JSON into a private arena-backed graph, resolving local recursive references, normalizing applicators, and freezing it into `SchemaNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `SchemaDocument::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `SchemaDocument::raw_schema_json()` preserves the original input schema for debugging and comparisons. `SchemaNode::accepts_value()` is the internal evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics. `SchemaNode::to_json()` remains a debug/test helper and should not be used as a production semantic bridge.
+- `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role` and document-level `check_compat`, and `src/subset.rs` plus `src/subset/{scalar,object,array}.rs` implement the actual inclusion relation (`sub ⊆ sup`) over `SchemaNode`. The checker uses `SchemaNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
+- `json_schema_fuzz` is the value-generation engine. Its preferred public API is `ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng)` and it only returns values accepted by `SchemaDocument::is_valid()`; if the internal candidate generator cannot find such a value within its retry budget, generation returns a typed `GenerateError::ExhaustedAttempts`. Internally it walks the canonicalized `SchemaNode` graph and uses `SchemaNode::accepts_value()` only as a pruning heuristic for recursive subgraphs.
 - `jsoncompat_py` and `jsoncompat_wasm` are thin adapters. They parse JSON strings, call the Rust core crates, and map Rust errors/results into Python or JavaScript types.
 
 ### Test strategy
 
 - `tests/backcompat.rs` checks expected serializer/deserializer compatibility outcomes for hand-authored old/new schema pairs, then fuzzes each direction to look for concrete counterexamples.
-- `tests/fuzz.rs` runs the JSON-Schema-Test-Suite fixture corpus through `ResolvedSchema::from_json`, asks `json_schema_fuzz::ValueGenerator` for raw-valid examples, and asserts that `ResolvedSchema::is_valid_canonicalized()` returns the same answer on those instances. Fixtures that rely on unsupported reference-resource features are skipped when schema build returns a typed resolver error, and known generation gaps are tracked by explicit `GenerateError::ExhaustedAttempts` whitelist entries.
+- `tests/fuzz.rs` runs the JSON-Schema-Test-Suite fixture corpus through `SchemaDocument::from_json`, asks `json_schema_fuzz::ValueGenerator` for raw-valid examples, asserts that `SchemaDocument::is_valid_canonicalized()` returns the same answer on those instances, and additionally checks `SchemaNode::accepts_value()` against the canonicalized validator on schemas that stay within the internal evaluator's supported subset. Fixtures that rely on unsupported reference-resource features are skipped when schema build returns a typed resolver error, and known generation gaps are tracked by explicit `GenerateError::ExhaustedAttempts` whitelist entries.
 - `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` test canonicalization and AST round-tripping directly.
 
 ## Debugging canonicalization
@@ -265,7 +266,7 @@ To inspect the canonicalized schema document that backs compatibility checks and
 jsoncompat canonicalize schema.json --pretty
 ```
 
-For programmatic checks, compare `ResolvedSchema::raw_schema_json()` with `ResolvedSchema::canonical_schema_json()`, and compare `ResolvedSchema::is_valid(value)` with `ResolvedSchema::is_valid_canonicalized(value)` on representative instances.
+For programmatic checks, compare `SchemaDocument::raw_schema_json()` with `SchemaDocument::canonical_schema_json()`, and compare `SchemaDocument::is_valid(value)` with `SchemaDocument::is_valid_canonicalized(value)` on representative instances.
 
 ## Development
 
@@ -277,6 +278,18 @@ Run tests:
 
 ```bash
 just check
+```
+
+Run the end-to-end CLI demo/smoke test:
+
+```bash
+just demo
+```
+
+By default the demo pauses before each step. For CI/non-interactive runs, pass:
+
+```bash
+just demo -- --noninteractive
 ```
 
 Run the performance benchmark harnesses:

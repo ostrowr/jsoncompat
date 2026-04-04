@@ -1,8 +1,8 @@
 use json_schema_ast as schema;
 
 use schema::{
-    AstError, CompileError, ResolvedNodeKind as SchemaNodeKind, ResolvedSchema, SchemaError,
-    SchemaNode, build_and_resolve_schema, compile,
+    AstError, CompileError, CountRange, IntegerBounds, NumberBound, NumberBounds, PatternSupport,
+    SchemaDocument, SchemaError, SchemaNode, SchemaNodeKind, build_and_resolve_schema, compile,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -44,7 +44,7 @@ fn resolved_schema_validates_with_raw_backend_and_exposes_canonicalized_debug_js
         }
     });
 
-    let schema = ResolvedSchema::from_json(&raw).unwrap();
+    let schema = SchemaDocument::from_json(&raw).unwrap();
     assert_eq!(schema.raw_schema_json(), &raw);
 
     let canonical = schema.canonical_schema_json().unwrap();
@@ -216,7 +216,7 @@ fn resolved_schema_from_json_rejects_invalid_keyword_shapes_before_root_resoluti
 
 #[test]
 fn resolved_schema_from_json_accepts_float_form_integer_keyword_values() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "type": "string",
         "maxLength": 1.0
     }))
@@ -243,6 +243,102 @@ fn resolved_schema_from_json_rejects_non_positive_multiple_of() {
         }),
         "keyword 'multipleOf' at '#/multipleOf' must be a positive number, got number",
     );
+}
+
+#[test]
+fn bounds_and_count_ranges_reject_contradictory_intervals() {
+    assert_eq!(
+        NumberBounds::new(NumberBound::Exclusive(3.0), NumberBound::Exclusive(3.0)),
+        None
+    );
+    assert_eq!(
+        NumberBounds::new(NumberBound::Inclusive(f64::NAN), NumberBound::Unbounded),
+        None
+    );
+    assert_eq!(IntegerBounds::new(Some(4), Some(3)), None);
+    assert_eq!(CountRange::new(5_u64, Some(4)), None);
+
+    let point = IntegerBounds::new(Some(3), Some(3)).unwrap();
+    assert!(point.contains_i64(3));
+    assert!(!point.contains_i64(2));
+
+    let count = CountRange::new(2_usize, Some(4)).unwrap();
+    assert!(count.contains(3));
+    assert!(!count.contains(5));
+}
+
+#[test]
+fn integer_bounds_canonicalize_exclusive_endpoints_to_closed_intervals() {
+    let ast = build_schema(&json!({
+        "type": "integer",
+        "exclusiveMinimum": 2,
+        "exclusiveMaximum": 5
+    }));
+
+    let guard = ast.kind();
+    let SchemaNodeKind::Integer { bounds, .. } = guard else {
+        panic!("expected integer schema, got {guard:?}");
+    };
+
+    assert_eq!(bounds.lower(), Some(3));
+    assert_eq!(bounds.upper(), Some(4));
+    assert!(bounds.contains_i64(3));
+    assert!(bounds.contains_i64(4));
+    assert!(!bounds.contains_i64(2));
+    assert!(!bounds.contains_i64(5));
+}
+
+#[test]
+fn contradictory_size_constraints_are_lowered_to_false_schemas() {
+    let string_schema = build_schema(&json!({
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 1
+    }));
+    assert!(matches!(
+        string_schema.kind(),
+        SchemaNodeKind::BoolSchema(false)
+    ));
+
+    let object_schema = build_schema(&json!({
+        "type": "object",
+        "minProperties": 3,
+        "maxProperties": 2
+    }));
+    assert!(matches!(
+        object_schema.kind(),
+        SchemaNodeKind::BoolSchema(false)
+    ));
+
+    let array_schema = build_schema(&json!({
+        "type": "array",
+        "contains": true,
+        "minContains": 2,
+        "maxContains": 1
+    }));
+    assert!(matches!(
+        array_schema.kind(),
+        SchemaNodeKind::BoolSchema(false)
+    ));
+}
+
+#[test]
+fn unsupported_ecmascript_pattern_is_preserved_but_never_matches() {
+    let schema = build_schema(&json!({
+        "type": "string",
+        "pattern": "^\\cC$"
+    }));
+
+    let guard = schema.kind();
+    let SchemaNodeKind::String { pattern, .. } = guard else {
+        panic!("expected string schema, got {guard:?}");
+    };
+
+    let pattern = pattern.as_ref().expect("pattern");
+    assert_eq!(pattern.as_str(), "^\\cC$");
+    assert_eq!(pattern.support(), PatternSupport::Unsupported);
+    assert!(!schema.accepts_value(&json!("")));
+    assert!(!schema.accepts_value(&json!("\u{3}")));
 }
 
 #[test]
@@ -486,7 +582,7 @@ fn enum_with_minimum_uses_number_schema_shape() {
 
     let guard = ast.kind();
     let SchemaNodeKind::Number {
-        minimum,
+        bounds,
         enumeration,
         ..
     } = guard
@@ -494,7 +590,7 @@ fn enum_with_minimum_uses_number_schema_shape() {
         panic!("expected number schema, got {guard:?}");
     };
 
-    assert_eq!(*minimum, Some(1.0));
+    assert_eq!(bounds.lower(), NumberBound::Inclusive(1.0));
     assert_eq!(enumeration.as_ref().unwrap(), &vec![json!(0), json!(1)]);
 }
 
@@ -588,7 +684,7 @@ fn const_with_pattern_uses_string_schema_shape() {
         panic!("expected string schema, got {guard:?}");
     };
 
-    assert_eq!(pattern.as_deref(), Some("^a"));
+    assert_eq!(pattern.as_ref().map(|pattern| pattern.as_str()), Some("^a"));
     assert_eq!(enumeration.as_ref().unwrap(), &vec![json!("abc")]);
 }
 
@@ -875,7 +971,7 @@ fn preserves_referenced_defs_when_false_schema_is_canonicalized() {
 
 #[test]
 fn resolved_schema_contains_only_public_node_variants_for_recursive_local_refs() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "$defs": {
             "Node": {
                 "type": "object",
@@ -913,7 +1009,7 @@ fn resolved_schema_contains_only_public_node_variants_for_recursive_local_refs()
 
 #[test]
 fn object_property_names_pattern_is_enforced_by_resolved_schema_evaluator() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "propertyNames": {
             "pattern": "^a+$"
         }
@@ -935,7 +1031,7 @@ fn object_property_names_pattern_is_enforced_by_resolved_schema_evaluator() {
 
 #[test]
 fn rejects_non_local_ref_with_explicit_unsupported_reference_error() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "$ref": "https://example.com/schemas/other.json"
     }))
     .unwrap();
@@ -963,7 +1059,7 @@ fn rejects_anchor_and_dynamic_ref_keywords_with_explicit_unsupported_reference_e
             "type": "string"
         }),
     ] {
-        let schema = ResolvedSchema::from_json(&raw).unwrap();
+        let schema = SchemaDocument::from_json(&raw).unwrap();
         let error = schema.root().unwrap_err();
         assert!(matches!(error, AstError::UnsupportedReference { .. }));
     }
@@ -971,7 +1067,7 @@ fn rejects_anchor_and_dynamic_ref_keywords_with_explicit_unsupported_reference_e
 
 #[test]
 fn raw_validation_does_not_force_resolution_or_canonicalized_validator_compilation() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "$id": "https://example.com/schemas/node.json",
         "type": "string"
     }))
@@ -986,7 +1082,7 @@ fn raw_validation_does_not_force_resolution_or_canonicalized_validator_compilati
 
 #[test]
 fn resolved_integer_schema_preserves_exact_enum_and_bounds_above_f64_safe_integer_range() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "type": "integer",
         "minimum": 9_007_199_254_740_993_i64,
         "maximum": 9_007_199_254_740_995_i64,
@@ -1006,7 +1102,7 @@ fn resolved_integer_schema_preserves_exact_enum_and_bounds_above_f64_safe_intege
 
 #[test]
 fn resolved_integer_schema_checks_large_multiple_of_exactly() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "type": "integer",
         "minimum": 0,
         "multipleOf": 9_007_199_254_740_993_i64
@@ -1022,7 +1118,7 @@ fn resolved_integer_schema_checks_large_multiple_of_exactly() {
 
 #[test]
 fn resolved_number_schema_compares_large_integral_enum_values_exactly() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "type": "number",
         "minimum": 0,
         "enum": [
@@ -1039,7 +1135,7 @@ fn resolved_number_schema_compares_large_integral_enum_values_exactly() {
 
 #[test]
 fn resolved_integer_schema_preserves_fractional_multiple_of_constraints() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "type": "integer",
         "multipleOf": 1.5
     }))
@@ -1055,7 +1151,7 @@ fn resolved_integer_schema_preserves_fractional_multiple_of_constraints() {
 
 #[test]
 fn resolved_number_schema_matches_float_form_integral_enum_above_f64_safe_integer_range() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "type": "number",
         "minimum": 0,
         "enum": [9_007_199_254_740_994.0_f64]
@@ -1069,7 +1165,7 @@ fn resolved_number_schema_matches_float_form_integral_enum_above_f64_safe_intege
 
 #[test]
 fn resolved_const_schema_matches_float_form_integral_values_above_f64_safe_integer_range() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "const": 9_007_199_254_740_994_i64
     }))
     .unwrap();
@@ -1081,7 +1177,7 @@ fn resolved_const_schema_matches_float_form_integral_values_above_f64_safe_integ
 
 #[test]
 fn rejects_missing_local_ref_with_explicit_unresolved_reference_error() {
-    let schema = ResolvedSchema::from_json(&json!({
+    let schema = SchemaDocument::from_json(&json!({
         "$ref": "#/$defs/Missing"
     }))
     .unwrap();
@@ -1095,7 +1191,7 @@ fn rejects_missing_local_ref_with_explicit_unresolved_reference_error() {
 }
 
 fn build_schema(raw: &Value) -> SchemaNode {
-    ResolvedSchema::from_json(raw)
+    SchemaDocument::from_json(raw)
         .unwrap()
         .root()
         .unwrap()
@@ -1107,13 +1203,13 @@ fn compile_ast(ast: &SchemaNode) -> schema::JSONSchema {
 }
 
 fn assert_schema_build_error(raw: &Value, expected: &str) {
-    let error = ResolvedSchema::from_json(raw).unwrap_err().to_string();
+    let error = SchemaDocument::from_json(raw).unwrap_err().to_string();
     assert_eq!(error, expected);
 }
 
 fn assert_resolved_graph_is_public(
     node: &SchemaNode,
-    seen: &mut std::collections::HashSet<schema::ResolvedNodeId>,
+    seen: &mut std::collections::HashSet<schema::NodeId>,
 ) {
     if !seen.insert(node.id()) {
         return;
@@ -1136,12 +1232,13 @@ fn assert_resolved_graph_is_public(
             property_names,
             ..
         } => {
-            for child in properties
-                .values()
-                .chain(pattern_properties.values())
-                .chain(std::iter::once(additional))
-                .chain(std::iter::once(property_names))
-            {
+            for child in properties.values() {
+                assert_resolved_graph_is_public(child, seen);
+            }
+            for pattern_property in pattern_properties.values() {
+                assert_resolved_graph_is_public(&pattern_property.schema, seen);
+            }
+            for child in [additional, property_names] {
                 assert_resolved_graph_is_public(child, seen);
             }
         }

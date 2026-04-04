@@ -3,16 +3,21 @@
 
 mod ast;
 mod canonicalize;
+mod constraints;
 mod json_semantics;
 
 mod schema_metadata;
 
 pub use ast::{
-    ArrayContains, AstError, IntegerMultipleOf, ResolvedNode, ResolvedNodeId, ResolvedNodeKind,
-    ResolvedSchema, SchemaBuildError, SchemaNode, SchemaNodeId, build_and_resolve_schema,
+    AstError, IntegerMultipleOf, NodeId, SchemaBuildError, SchemaDocument, SchemaNode,
+    SchemaNodeKind, build_and_resolve_schema,
 };
 pub use canonicalize::CanonicalizeError as SchemaError;
-pub use json_semantics::{json_values_equal, property_name_matches_pattern};
+pub use constraints::{
+    ContainsConstraint, CountRange, IntegerBounds, NumberBound, NumberBounds, PatternConstraint,
+    PatternProperty, PatternSupport,
+};
+pub use json_semantics::json_values_equal;
 
 #[cfg(test)]
 use canonicalize::CanonicalSchema;

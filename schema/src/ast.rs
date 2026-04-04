@@ -1,14 +1,24 @@
+//! Resolved JSON Schema document and typed semantic IR.
+//!
+//! This module owns the canonicalized schema graph consumed by compatibility
+//! checks and fuzz generation.  The parser still uses a private mutable graph
+//! while resolving local `$ref`s, but the public `SchemaNodeKind` IR only
+//! exposes post-resolution semantic variants with normalized constraint types.
+
 use crate::canonicalize::{canonicalize_schema, json_type_name};
-use crate::json_semantics::{
-    integer_value_from_json, json_values_equal, numeric_values_equal, property_name_matches_pattern,
+use crate::constraints::{
+    ContainsConstraint, CountRange, IntegerBounds, NumberBound, NumberBounds, PatternConstraint,
+    PatternProperty,
 };
+use crate::json_semantics::{integer_value_from_json, json_values_equal, numeric_values_equal};
 use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
 use crate::{CompileError, JSONSchema, SchemaError, compile};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
-use std::cell::{OnceCell, Ref, RefCell, RefMut};
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::hash::Hash;
 use std::num::NonZeroI64;
 use std::rc::Rc;
 
@@ -40,7 +50,7 @@ pub enum AstError {
 }
 
 /// Fully resolved JSON Schema document.
-pub struct ResolvedSchema {
+pub struct SchemaDocument {
     raw: Value,
     root: OnceCell<SchemaNode>,
     canonical: OnceCell<Value>,
@@ -48,7 +58,7 @@ pub struct ResolvedSchema {
     canonical_validator: OnceCell<JSONSchema>,
 }
 
-impl ResolvedSchema {
+impl SchemaDocument {
     /// Build a resolved schema document from raw JSON Schema.
     ///
     /// The resolved graph is built from the canonicalized schema so
@@ -74,9 +84,16 @@ impl ResolvedSchema {
     pub fn root(&self) -> Result<&SchemaNode> {
         get_or_try_init(&self.root, || {
             let canonical = self.canonical_schema_json()?;
-            let mut root = build_schema_ast_from_value(canonical)?;
-            resolve_refs_internal(&mut root, canonical, &mut Vec::new(), &mut HashMap::new())?;
-            Ok(freeze_schema_node(&root, &mut HashMap::new()))
+            let mut graph = MutableSchemaGraph::default();
+            let root = build_schema_ast_from_value(canonical, &mut graph)?;
+            let root = resolve_refs_internal(
+                root,
+                &mut graph,
+                canonical,
+                &mut Vec::new(),
+                &mut HashMap::new(),
+            )?;
+            Ok(freeze_schema_node(root, &graph, &mut HashMap::new()))
         })
     }
 
@@ -129,9 +146,9 @@ fn get_or_try_init<T>(cell: &OnceCell<T>, init: impl FnOnce() -> Result<T>) -> R
         .expect("lazy schema field must be initialized before returning"))
 }
 
-impl fmt::Debug for ResolvedSchema {
+impl fmt::Debug for SchemaDocument {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResolvedSchema")
+        f.debug_struct("SchemaDocument")
             .field("raw", &self.raw)
             .field("canonical", &self.canonical.get())
             .field("root", &self.root.get())
@@ -144,23 +161,17 @@ impl fmt::Debug for ResolvedSchema {
 /// Reference counting allows multiple parents to point to the same node, which
 /// is required to faithfully model schemas containing recursive `$ref`s.
 #[derive(Clone)]
-pub struct SchemaNode(Rc<OnceCell<ResolvedNodeKind>>);
+pub struct SchemaNode(Rc<OnceCell<SchemaNodeKind>>);
 
 /// Stable identity for one in-memory schema node within the lifetime of the AST.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SchemaNodeId(usize);
+pub struct NodeId(usize);
 
-/// Public resolved-node type name for the post-resolution IR.
-pub use SchemaNode as ResolvedNode;
-
-/// Public resolved-node identity name for the post-resolution IR.
-pub use SchemaNodeId as ResolvedNodeId;
-
-/// Public schema-build error name used by `ResolvedSchema::from_json`.
+/// Public schema-build error name used by `SchemaDocument::from_json`.
 pub type SchemaBuildError = AstError;
 
 impl SchemaNode {
-    pub fn kind(&self) -> &ResolvedNodeKind {
+    pub fn kind(&self) -> &SchemaNodeKind {
         self.0
             .get()
             .expect("resolved SchemaNode must be initialized before use")
@@ -171,8 +182,8 @@ impl SchemaNode {
     }
 
     #[must_use]
-    pub fn id(&self) -> SchemaNodeId {
-        SchemaNodeId(self.ptr_id())
+    pub fn id(&self) -> NodeId {
+        NodeId(self.ptr_id())
     }
 
     pub fn ptr_eq(&self, other: &SchemaNode) -> bool {
@@ -183,7 +194,7 @@ impl SchemaNode {
     ///
     /// This is an internal heuristic/evaluator for resolved subgraphs used by
     /// compatibility and generation code. User-visible validation should go
-    /// through `ResolvedSchema::is_valid()`, which uses the `jsonschema`
+    /// through `SchemaDocument::is_valid()`, which uses the `jsonschema`
     /// backend compiled from the original raw schema document.
     #[must_use]
     pub fn accepts_value(&self, value: &Value) -> bool {
@@ -208,59 +219,41 @@ impl SchemaNode {
         }
 
         let is_valid = match self.kind() {
-            ResolvedNodeKind::BoolSchema(valid) => *valid,
-            ResolvedNodeKind::Any => true,
-            ResolvedNodeKind::String {
-                min_length,
-                max_length,
+            SchemaNodeKind::BoolSchema(valid) => *valid,
+            SchemaNodeKind::Any => true,
+            SchemaNodeKind::String {
+                length,
                 pattern,
                 enumeration,
                 ..
             } => value.as_str().is_some_and(|string_value| {
-                string_length_in_range(string_value, *min_length, *max_length)
+                string_length_in_range(string_value, *length)
                     && pattern
                         .as_ref()
-                        .is_none_or(|pattern| property_name_matches_pattern(pattern, string_value))
+                        .is_none_or(|pattern| pattern.is_match(string_value))
                     && enum_contains_value(
                         enumeration.as_deref(),
                         &Value::String(string_value.to_owned()),
                     )
             }),
-            ResolvedNodeKind::Number {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
+            SchemaNodeKind::Number {
+                bounds,
                 multiple_of,
                 enumeration,
             } => value.as_f64().is_some_and(|number_value| {
-                numeric_value_in_range(
-                    number_value,
-                    *minimum,
-                    *exclusive_minimum,
-                    *maximum,
-                    *exclusive_maximum,
-                ) && value_is_multiple_of(number_value, *multiple_of)
+                bounds.contains(number_value)
+                    && value_is_multiple_of(number_value, *multiple_of)
                     && enum_contains_numeric_value(enumeration.as_deref(), value)
             }),
-            ResolvedNodeKind::Integer {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
+            SchemaNodeKind::Integer {
+                bounds,
                 multiple_of,
                 enumeration,
             } => integer_value_from_json(value).map_or_else(
                 || {
                     value.as_f64().is_some_and(|number_value| {
                         number_value.fract() == 0.0
-                            && numeric_value_in_range(
-                                number_value,
-                                minimum.map(|bound| bound as f64),
-                                *exclusive_minimum,
-                                maximum.map(|bound| bound as f64),
-                                *exclusive_maximum,
-                            )
+                            && bounds.as_number_bounds().contains(number_value)
                             && value_is_multiple_of(
                                 number_value,
                                 multiple_of.map(IntegerMultipleOf::as_f64),
@@ -269,36 +262,29 @@ impl SchemaNode {
                     })
                 },
                 |integer_value| {
-                    integer_value_in_range(
-                        integer_value,
-                        *minimum,
-                        *exclusive_minimum,
-                        *maximum,
-                        *exclusive_maximum,
-                    ) && integer_value_is_multiple_of(integer_value, *multiple_of)
+                    bounds.contains_i128(integer_value)
+                        && integer_value_is_multiple_of(integer_value, *multiple_of)
                         && enum_contains_numeric_value(enumeration.as_deref(), value)
                 },
             ),
-            ResolvedNodeKind::Boolean { enumeration } => value
+            SchemaNodeKind::Boolean { enumeration } => value
                 .as_bool()
                 .is_some_and(|_| enum_contains_value(enumeration.as_deref(), value)),
-            ResolvedNodeKind::Null { enumeration } => {
+            SchemaNodeKind::Null { enumeration } => {
                 value.is_null() && enum_contains_value(enumeration.as_deref(), value)
             }
-            ResolvedNodeKind::Object {
+            SchemaNodeKind::Object {
                 properties,
                 pattern_properties,
                 required,
                 additional,
                 property_names,
-                min_properties,
-                max_properties,
+                property_count,
                 dependent_required,
                 enumeration,
             } => value.as_object().is_some_and(|object_value| {
                 enum_contains_value(enumeration.as_deref(), value)
-                    && min_properties.is_none_or(|minimum| object_value.len() >= minimum)
-                    && max_properties.is_none_or(|maximum| object_value.len() <= maximum)
+                    && property_count.contains(object_value.len())
                     && required.iter().all(|name| object_value.contains_key(name))
                     && dependent_required.iter().all(|(trigger, dependencies)| {
                         !object_value.contains_key(trigger)
@@ -319,18 +305,16 @@ impl SchemaNode {
                             )
                     })
             }),
-            ResolvedNodeKind::Array {
+            SchemaNodeKind::Array {
                 prefix_items,
                 items,
-                min_items,
-                max_items,
+                item_count,
                 contains,
                 unique_items,
                 enumeration,
             } => value.as_array().is_some_and(|array_value| {
                 enum_contains_value(enumeration.as_deref(), value)
-                    && min_items.is_none_or(|minimum| array_value.len() as u64 >= minimum)
-                    && max_items.is_none_or(|maximum| array_value.len() as u64 <= maximum)
+                    && item_count.contains(array_value.len() as u64)
                     && (!unique_items || array_values_are_unique(array_value))
                     && array_value.iter().enumerate().all(|(index, item)| {
                         let item_schema = prefix_items.get(index).unwrap_or(items);
@@ -341,27 +325,24 @@ impl SchemaNode {
                             .iter()
                             .filter(|item| contains.schema.accepts_value_inner(item, active))
                             .count() as u64;
-                        matching_items >= contains.min_contains
-                            && contains
-                                .max_contains
-                                .is_none_or(|maximum| matching_items <= maximum)
+                        contains.count().contains(matching_items)
                     })
             }),
-            ResolvedNodeKind::AllOf(children) => children
+            SchemaNodeKind::AllOf(children) => children
                 .iter()
                 .all(|child| child.accepts_value_inner(value, active)),
-            ResolvedNodeKind::AnyOf(children) => children
+            SchemaNodeKind::AnyOf(children) => children
                 .iter()
                 .any(|child| child.accepts_value_inner(value, active)),
-            ResolvedNodeKind::OneOf(children) => {
+            SchemaNodeKind::OneOf(children) => {
                 children
                     .iter()
                     .filter(|child| child.accepts_value_inner(value, active))
                     .count()
                     == 1
             }
-            ResolvedNodeKind::Not(child) => !child.accepts_value_inner(value, active),
-            ResolvedNodeKind::IfThenElse {
+            SchemaNodeKind::Not(child) => !child.accepts_value_inner(value, active),
+            SchemaNodeKind::IfThenElse {
                 if_schema,
                 then_schema,
                 else_schema,
@@ -376,8 +357,8 @@ impl SchemaNode {
                         .is_none_or(|else_schema| else_schema.accepts_value_inner(value, active))
                 }
             }
-            ResolvedNodeKind::Const(expected) => json_values_equal(expected, value),
-            ResolvedNodeKind::Enum(values) => values
+            SchemaNodeKind::Const(expected) => json_values_equal(expected, value),
+            SchemaNodeKind::Enum(values) => values
                 .iter()
                 .any(|expected| json_values_equal(expected, value)),
         };
@@ -403,7 +384,7 @@ impl SchemaNode {
 
             active.insert(id);
             let children = {
-                use ResolvedNodeKind::*;
+                use SchemaNodeKind::*;
 
                 match node.kind() {
                     AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
@@ -431,7 +412,11 @@ impl SchemaNode {
                     } => properties
                         .values()
                         .cloned()
-                        .chain(pattern_properties.values().cloned())
+                        .chain(
+                            pattern_properties
+                                .values()
+                                .map(|pattern_property| pattern_property.schema.clone()),
+                        )
                         .chain(std::iter::once(additional.clone()))
                         .chain(std::iter::once(property_names.clone()))
                         .collect(),
@@ -471,7 +456,7 @@ impl SchemaNode {
     /// tests and fuzz harness (which only relies on the subset of keywords we
     /// explicitly generate).
     pub fn to_json(&self) -> Value {
-        use ResolvedNodeKind::*;
+        use SchemaNodeKind::*;
 
         match self.kind() {
             BoolSchema(b) => Value::Bool(*b),
@@ -484,22 +469,21 @@ impl SchemaNode {
             }
 
             String {
-                min_length,
-                max_length,
+                length,
                 pattern,
                 format,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("string".into()));
-                if let Some(m) = min_length {
-                    obj.insert("minLength".into(), Value::Number((*m).into()));
+                if length.min() != 0 {
+                    obj.insert("minLength".into(), Value::Number(length.min().into()));
                 }
-                if let Some(m) = max_length {
-                    obj.insert("maxLength".into(), Value::Number((*m).into()));
+                if let Some(m) = length.max() {
+                    obj.insert("maxLength".into(), Value::Number(m.into()));
                 }
                 if let Some(p) = pattern {
-                    obj.insert("pattern".into(), Value::String(p.clone()));
+                    obj.insert("pattern".into(), Value::String(p.as_str().to_owned()));
                 }
                 if let Some(f) = format {
                     obj.insert("format".into(), Value::String(f.clone()));
@@ -511,39 +495,13 @@ impl SchemaNode {
             }
 
             Number {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
+                bounds,
                 multiple_of,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("number".into()));
-                if let Some(m) = minimum {
-                    obj.insert(
-                        "minimum".into(),
-                        Value::Number(serde_json::Number::from_f64(*m).unwrap()),
-                    );
-                }
-                if let Some(m) = maximum {
-                    obj.insert(
-                        "maximum".into(),
-                        Value::Number(serde_json::Number::from_f64(*m).unwrap()),
-                    );
-                }
-                if *exclusive_minimum && let Some(m) = minimum {
-                    obj.insert(
-                        "exclusiveMinimum".into(),
-                        Value::Number(serde_json::Number::from_f64(*m).unwrap()),
-                    );
-                }
-                if *exclusive_maximum && let Some(m) = maximum {
-                    obj.insert(
-                        "exclusiveMaximum".into(),
-                        Value::Number(serde_json::Number::from_f64(*m).unwrap()),
-                    );
-                }
+                write_number_bounds(&mut obj, *bounds);
                 if let Some(mo) = multiple_of {
                     obj.insert(
                         "multipleOf".into(),
@@ -557,27 +515,13 @@ impl SchemaNode {
             }
 
             Integer {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
+                bounds,
                 multiple_of,
                 enumeration,
             } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("type".into(), Value::String("integer".into()));
-                if let Some(m) = minimum {
-                    obj.insert("minimum".into(), Value::Number((*m).into()));
-                }
-                if let Some(m) = maximum {
-                    obj.insert("maximum".into(), Value::Number((*m).into()));
-                }
-                if *exclusive_minimum && let Some(m) = minimum {
-                    obj.insert("exclusiveMinimum".into(), Value::Number((*m).into()));
-                }
-                if *exclusive_maximum && let Some(m) = maximum {
-                    obj.insert("exclusiveMaximum".into(), Value::Number((*m).into()));
-                }
+                write_integer_bounds(&mut obj, *bounds);
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
                 }
@@ -647,8 +591,7 @@ impl SchemaNode {
             Array {
                 prefix_items,
                 items,
-                min_items,
-                max_items,
+                item_count,
                 contains,
                 unique_items,
                 enumeration,
@@ -661,24 +604,24 @@ impl SchemaNode {
                         Value::Array(prefix_items.iter().map(SchemaNode::to_json).collect()),
                     );
                 }
-                if !matches!(items.kind(), ResolvedNodeKind::Any) {
+                if !matches!(items.kind(), SchemaNodeKind::Any) {
                     obj.insert("items".into(), items.to_json());
                 }
-                if let Some(mi) = min_items {
-                    obj.insert("minItems".into(), Value::Number((*mi).into()));
+                if item_count.min() != 0 {
+                    obj.insert("minItems".into(), Value::Number(item_count.min().into()));
                 }
-                if let Some(ma) = max_items {
-                    obj.insert("maxItems".into(), Value::Number((*ma).into()));
+                if let Some(ma) = item_count.max() {
+                    obj.insert("maxItems".into(), Value::Number(ma.into()));
                 }
                 if let Some(contains) = contains {
                     obj.insert("contains".into(), contains.schema.to_json());
-                    if contains.min_contains != 1 {
+                    if contains.count().min() != 1 {
                         obj.insert(
                             "minContains".into(),
-                            Value::Number(contains.min_contains.into()),
+                            Value::Number(contains.count().min().into()),
                         );
                     }
-                    if let Some(max_contains) = contains.max_contains {
+                    if let Some(max_contains) = contains.count().max() {
                         obj.insert("maxContains".into(), Value::Number(max_contains.into()));
                     }
                 }
@@ -697,8 +640,7 @@ impl SchemaNode {
                 required,
                 additional,
                 property_names,
-                min_properties,
-                max_properties,
+                property_count,
                 dependent_required,
                 enumeration,
             } => {
@@ -715,8 +657,8 @@ impl SchemaNode {
 
                 if !pattern_properties.is_empty() {
                     let mut props_map = serde_json::Map::new();
-                    for (k, v) in pattern_properties {
-                        props_map.insert(k.clone(), v.to_json());
+                    for (pattern, pattern_property) in pattern_properties {
+                        props_map.insert(pattern.clone(), pattern_property.schema.to_json());
                     }
                     obj.insert("patternProperties".into(), Value::Object(props_map));
                 }
@@ -731,8 +673,8 @@ impl SchemaNode {
                 }
 
                 match additional.kind() {
-                    ResolvedNodeKind::Any => {}
-                    ResolvedNodeKind::BoolSchema(b) => {
+                    SchemaNodeKind::Any => {}
+                    SchemaNodeKind::BoolSchema(b) => {
                         obj.insert("additionalProperties".into(), Value::Bool(*b));
                     }
                     _ => {
@@ -741,8 +683,8 @@ impl SchemaNode {
                 }
 
                 match property_names.kind() {
-                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true) => {}
-                    ResolvedNodeKind::BoolSchema(b) => {
+                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => {}
+                    SchemaNodeKind::BoolSchema(b) => {
                         obj.insert("propertyNames".into(), Value::Bool(*b));
                     }
                     _ => {
@@ -750,11 +692,14 @@ impl SchemaNode {
                     }
                 }
 
-                if let Some(mp) = min_properties {
-                    obj.insert("minProperties".into(), Value::Number((*mp).into()));
+                if property_count.min() != required.len() {
+                    obj.insert(
+                        "minProperties".into(),
+                        Value::Number(property_count.min().into()),
+                    );
                 }
-                if let Some(mp) = max_properties {
-                    obj.insert("maxProperties".into(), Value::Number((*mp).into()));
+                if let Some(mp) = property_count.max() {
+                    obj.insert("maxProperties".into(), Value::Number(mp.into()));
                 }
 
                 if !dependent_required.is_empty() {
@@ -786,13 +731,13 @@ impl SchemaNode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct RecursiveValidationFrame {
-    schema_id: SchemaNodeId,
+    schema_id: NodeId,
     value_address: usize,
 }
 
 fn object_property_is_valid(
     properties: &HashMap<String, SchemaNode>,
-    pattern_properties: &HashMap<String, SchemaNode>,
+    pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
     additional: &SchemaNode,
     property_name: &str,
     property_value: &Value,
@@ -807,12 +752,15 @@ fn object_property_is_valid(
         }
     }
 
-    for (pattern, pattern_schema) in pattern_properties {
-        if !property_name_matches_pattern(pattern, property_name) {
+    for pattern_property in pattern_properties.values() {
+        if !pattern_property.pattern.is_match(property_name) {
             continue;
         }
         matched = true;
-        if !pattern_schema.accepts_value_inner(property_value, active) {
+        if !pattern_property
+            .schema
+            .accepts_value_inner(property_value, active)
+        {
             return false;
         }
     }
@@ -820,50 +768,61 @@ fn object_property_is_valid(
     matched || additional.accepts_value_inner(property_value, active)
 }
 
-fn string_length_in_range(value: &str, minimum: Option<u64>, maximum: Option<u64>) -> bool {
-    let length = value.chars().count() as u64;
-    minimum.is_none_or(|minimum| length >= minimum)
-        && maximum.is_none_or(|maximum| length <= maximum)
+fn string_length_in_range(value: &str, length: CountRange<u64>) -> bool {
+    let character_count = value.chars().count() as u64;
+    length.contains(character_count)
 }
 
-fn numeric_value_in_range(
-    value: f64,
-    minimum: Option<f64>,
-    exclusive_minimum: bool,
-    maximum: Option<f64>,
-    exclusive_maximum: bool,
-) -> bool {
-    let above_minimum = match minimum {
-        None => true,
-        Some(minimum) if exclusive_minimum => value > minimum,
-        Some(minimum) => value >= minimum,
-    };
-    let below_maximum = match maximum {
-        None => true,
-        Some(maximum) if exclusive_maximum => value < maximum,
-        Some(maximum) => value <= maximum,
-    };
-    above_minimum && below_maximum
+fn write_number_bounds(obj: &mut Map<String, Value>, bounds: NumberBounds) {
+    match bounds.lower() {
+        NumberBound::Unbounded => {}
+        NumberBound::Inclusive(value) => {
+            obj.insert(
+                "minimum".into(),
+                Value::Number(
+                    serde_json::Number::from_f64(value).expect("finite lower bound number"),
+                ),
+            );
+        }
+        NumberBound::Exclusive(value) => {
+            obj.insert(
+                "exclusiveMinimum".into(),
+                Value::Number(
+                    serde_json::Number::from_f64(value).expect("finite lower bound number"),
+                ),
+            );
+        }
+    }
+
+    match bounds.upper() {
+        NumberBound::Unbounded => {}
+        NumberBound::Inclusive(value) => {
+            obj.insert(
+                "maximum".into(),
+                Value::Number(
+                    serde_json::Number::from_f64(value).expect("finite upper bound number"),
+                ),
+            );
+        }
+        NumberBound::Exclusive(value) => {
+            obj.insert(
+                "exclusiveMaximum".into(),
+                Value::Number(
+                    serde_json::Number::from_f64(value).expect("finite upper bound number"),
+                ),
+            );
+        }
+    }
 }
 
-fn integer_value_in_range(
-    value: i128,
-    minimum: Option<i64>,
-    exclusive_minimum: bool,
-    maximum: Option<i64>,
-    exclusive_maximum: bool,
-) -> bool {
-    let above_minimum = match minimum.map(i128::from) {
-        None => true,
-        Some(minimum) if exclusive_minimum => value > minimum,
-        Some(minimum) => value >= minimum,
-    };
-    let below_maximum = match maximum.map(i128::from) {
-        None => true,
-        Some(maximum) if exclusive_maximum => value < maximum,
-        Some(maximum) => value <= maximum,
-    };
-    above_minimum && below_maximum
+fn write_integer_bounds(obj: &mut Map<String, Value>, bounds: IntegerBounds) {
+    if let Some(value) = bounds.lower() {
+        obj.insert("minimum".into(), Value::Number(value.into()));
+    }
+
+    if let Some(value) = bounds.upper() {
+        obj.insert("maximum".into(), Value::Number(value.into()));
+    }
 }
 
 fn enum_contains_value(enumeration: Option<&[Value]>, value: &Value) -> bool {
@@ -1009,42 +968,35 @@ fn array_values_are_unique(values: &[Value]) -> bool {
     })
 }
 
-#[derive(Clone)]
-struct MutableSchemaNode(Rc<RefCell<MutableSchemaNodeKind>>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct MutableSchemaNode(usize);
 
-type MutableSchemaNodeKind = SchemaNodeKind<MutableSchemaNode>;
-
-impl MutableSchemaNode {
-    fn new(kind: MutableSchemaNodeKind) -> Self {
-        Self(Rc::new(RefCell::new(kind)))
-    }
-
-    fn bool_schema(value: bool) -> Self {
-        Self::new(SchemaNodeKind::BoolSchema(value))
-    }
-
-    fn any() -> Self {
-        Self::new(SchemaNodeKind::Any)
-    }
-
-    fn borrow(&self) -> Ref<'_, MutableSchemaNodeKind> {
-        self.0.borrow()
-    }
-
-    fn borrow_mut(&self) -> RefMut<'_, MutableSchemaNodeKind> {
-        self.0.borrow_mut()
-    }
-
-    fn ptr_id(&self) -> usize {
-        Rc::as_ptr(&self.0) as usize
-    }
+#[derive(Debug, Default)]
+struct MutableSchemaGraph {
+    nodes: Vec<MutableSchemaNodeKind>,
 }
 
-impl fmt::Debug for MutableSchemaNode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MutableSchemaNode")
-            .field("id", &self.ptr_id())
-            .finish()
+impl MutableSchemaGraph {
+    fn push(&mut self, kind: MutableSchemaNodeKind) -> MutableSchemaNode {
+        let node = MutableSchemaNode(self.nodes.len());
+        self.nodes.push(kind);
+        node
+    }
+
+    fn bool_schema(&mut self, value: bool) -> MutableSchemaNode {
+        self.push(MutableSchemaNodeKind::BoolSchema(value))
+    }
+
+    fn any(&mut self) -> MutableSchemaNode {
+        self.push(MutableSchemaNodeKind::Any)
+    }
+
+    fn kind(&self, node: MutableSchemaNode) -> &MutableSchemaNodeKind {
+        &self.nodes[node.0]
+    }
+
+    fn set_kind(&mut self, node: MutableSchemaNode, kind: MutableSchemaNodeKind) {
+        self.nodes[node.0] = kind;
     }
 }
 
@@ -1061,25 +1013,18 @@ enum SchemaNodeKindView<'a, Node> {
     BoolSchema(bool),
     Any,
     String {
-        min_length: Option<u64>,
-        max_length: Option<u64>,
-        pattern: &'a Option<String>,
+        length: CountRange<u64>,
+        pattern: &'a Option<PatternConstraint>,
         format: &'a Option<String>,
         enumeration: &'a Option<Vec<Value>>,
     },
     Number {
-        minimum: Option<f64>,
-        maximum: Option<f64>,
-        exclusive_minimum: bool,
-        exclusive_maximum: bool,
+        bounds: NumberBounds,
         multiple_of: Option<f64>,
         enumeration: &'a Option<Vec<Value>>,
     },
     Integer {
-        minimum: Option<i64>,
-        maximum: Option<i64>,
-        exclusive_minimum: bool,
-        exclusive_maximum: bool,
+        bounds: IntegerBounds,
         multiple_of: Option<IntegerMultipleOf>,
         enumeration: &'a Option<Vec<Value>>,
     },
@@ -1091,25 +1036,22 @@ enum SchemaNodeKindView<'a, Node> {
     },
     Object {
         properties: &'a HashMap<String, Node>,
-        pattern_properties: &'a HashMap<String, Node>,
+        pattern_properties: &'a HashMap<String, PatternProperty<Node>>,
         required: &'a HashSet<String>,
         additional: &'a Node,
         property_names: &'a Node,
-        min_properties: Option<usize>,
-        max_properties: Option<usize>,
+        property_count: CountRange<usize>,
         dependent_required: &'a HashMap<String, Vec<String>>,
         enumeration: &'a Option<Vec<Value>>,
     },
     Array {
         prefix_items: &'a [Node],
         items: &'a Node,
-        min_items: Option<u64>,
-        max_items: Option<u64>,
-        contains: Option<&'a ArrayContains<Node>>,
+        item_count: CountRange<u64>,
+        contains: Option<&'a ContainsConstraint<Node>>,
         unique_items: bool,
         enumeration: &'a Option<Vec<Value>>,
     },
-    Defs(&'a HashMap<String, Node>),
     AllOf(&'a [Node]),
     AnyOf(&'a [Node]),
     OneOf(&'a [Node]),
@@ -1122,20 +1064,6 @@ enum SchemaNodeKindView<'a, Node> {
     Const(&'a Value),
     Enum(&'a [Value]),
     Ref(&'a str),
-}
-
-impl SchemaNodeGraph for MutableSchemaNode {
-    fn graph_ptr_id(&self) -> usize {
-        MutableSchemaNode::ptr_id(self)
-    }
-
-    fn with_graph_kind<R, F>(&self, read_kind: F) -> R
-    where
-        F: FnOnce(SchemaNodeKindView<'_, Self>) -> R,
-    {
-        let kind = self.borrow();
-        read_kind((&*kind).into())
-    }
 }
 
 impl SchemaNodeGraph for SchemaNode {
@@ -1154,48 +1082,124 @@ impl SchemaNodeGraph for SchemaNode {
 impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchemaNode> {
     fn from(kind: &'a MutableSchemaNodeKind) -> Self {
         match kind {
-            SchemaNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
-            SchemaNodeKind::Any => Self::Any,
-            SchemaNodeKind::String {
-                min_length,
-                max_length,
+            MutableSchemaNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
+            MutableSchemaNodeKind::Any => Self::Any,
+            MutableSchemaNodeKind::String {
+                length,
                 pattern,
                 format,
                 enumeration,
             } => Self::String {
-                min_length: *min_length,
-                max_length: *max_length,
+                length: *length,
+                pattern,
+                format,
+                enumeration,
+            },
+            MutableSchemaNodeKind::Number {
+                bounds,
+                multiple_of,
+                enumeration,
+            } => Self::Number {
+                bounds: *bounds,
+                multiple_of: *multiple_of,
+                enumeration,
+            },
+            MutableSchemaNodeKind::Integer {
+                bounds,
+                multiple_of,
+                enumeration,
+            } => Self::Integer {
+                bounds: *bounds,
+                multiple_of: *multiple_of,
+                enumeration,
+            },
+            MutableSchemaNodeKind::Boolean { enumeration } => Self::Boolean { enumeration },
+            MutableSchemaNodeKind::Null { enumeration } => Self::Null { enumeration },
+            MutableSchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => Self::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count: *property_count,
+                dependent_required,
+                enumeration,
+            },
+            MutableSchemaNodeKind::Array {
+                prefix_items,
+                items,
+                item_count,
+                contains,
+                unique_items,
+                enumeration,
+            } => Self::Array {
+                prefix_items,
+                items,
+                item_count: *item_count,
+                contains: contains.as_ref(),
+                unique_items: *unique_items,
+                enumeration,
+            },
+            MutableSchemaNodeKind::AllOf(children) => Self::AllOf(children),
+            MutableSchemaNodeKind::AnyOf(children) => Self::AnyOf(children),
+            MutableSchemaNodeKind::OneOf(children) => Self::OneOf(children),
+            MutableSchemaNodeKind::Not(child) => Self::Not(child),
+            MutableSchemaNodeKind::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => Self::IfThenElse {
+                if_schema,
+                then_schema: then_schema.as_ref(),
+                else_schema: else_schema.as_ref(),
+            },
+            MutableSchemaNodeKind::Const(value) => Self::Const(value),
+            MutableSchemaNodeKind::Enum(values) => Self::Enum(values),
+            MutableSchemaNodeKind::Ref(ref_path) => Self::Ref(ref_path),
+        }
+    }
+}
+
+impl<'a, Node> From<&'a SchemaNodeKind<Node>> for SchemaNodeKindView<'a, Node> {
+    fn from(kind: &'a SchemaNodeKind<Node>) -> Self {
+        match kind {
+            SchemaNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
+            SchemaNodeKind::Any => Self::Any,
+            SchemaNodeKind::String {
+                length,
+                pattern,
+                format,
+                enumeration,
+            } => Self::String {
+                length: *length,
                 pattern,
                 format,
                 enumeration,
             },
             SchemaNodeKind::Number {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
+                bounds,
                 multiple_of,
                 enumeration,
             } => Self::Number {
-                minimum: *minimum,
-                maximum: *maximum,
-                exclusive_minimum: *exclusive_minimum,
-                exclusive_maximum: *exclusive_maximum,
+                bounds: *bounds,
                 multiple_of: *multiple_of,
                 enumeration,
             },
             SchemaNodeKind::Integer {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
+                bounds,
                 multiple_of,
                 enumeration,
             } => Self::Integer {
-                minimum: *minimum,
-                maximum: *maximum,
-                exclusive_minimum: *exclusive_minimum,
-                exclusive_maximum: *exclusive_maximum,
+                bounds: *bounds,
                 multiple_of: *multiple_of,
                 enumeration,
             },
@@ -1207,8 +1211,7 @@ impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchem
                 required,
                 additional,
                 property_names,
-                min_properties,
-                max_properties,
+                property_count,
                 dependent_required,
                 enumeration,
             } => Self::Object {
@@ -1217,29 +1220,25 @@ impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchem
                 required,
                 additional,
                 property_names,
-                min_properties: *min_properties,
-                max_properties: *max_properties,
+                property_count: *property_count,
                 dependent_required,
                 enumeration,
             },
             SchemaNodeKind::Array {
                 prefix_items,
                 items,
-                min_items,
-                max_items,
+                item_count,
                 contains,
                 unique_items,
                 enumeration,
             } => Self::Array {
                 prefix_items,
                 items,
-                min_items: *min_items,
-                max_items: *max_items,
+                item_count: *item_count,
                 contains: contains.as_ref(),
                 unique_items: *unique_items,
                 enumeration,
             },
-            SchemaNodeKind::Defs(defs) => Self::Defs(defs),
             SchemaNodeKind::AllOf(children) => Self::AllOf(children),
             SchemaNodeKind::AnyOf(children) => Self::AnyOf(children),
             SchemaNodeKind::OneOf(children) => Self::OneOf(children),
@@ -1255,114 +1254,6 @@ impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchem
             },
             SchemaNodeKind::Const(value) => Self::Const(value),
             SchemaNodeKind::Enum(values) => Self::Enum(values),
-            SchemaNodeKind::Ref(ref_path) => Self::Ref(ref_path),
-        }
-    }
-}
-
-impl<'a, Node> From<&'a ResolvedNodeKind<Node>> for SchemaNodeKindView<'a, Node> {
-    fn from(kind: &'a ResolvedNodeKind<Node>) -> Self {
-        match kind {
-            ResolvedNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
-            ResolvedNodeKind::Any => Self::Any,
-            ResolvedNodeKind::String {
-                min_length,
-                max_length,
-                pattern,
-                format,
-                enumeration,
-            } => Self::String {
-                min_length: *min_length,
-                max_length: *max_length,
-                pattern,
-                format,
-                enumeration,
-            },
-            ResolvedNodeKind::Number {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
-                multiple_of,
-                enumeration,
-            } => Self::Number {
-                minimum: *minimum,
-                maximum: *maximum,
-                exclusive_minimum: *exclusive_minimum,
-                exclusive_maximum: *exclusive_maximum,
-                multiple_of: *multiple_of,
-                enumeration,
-            },
-            ResolvedNodeKind::Integer {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
-                multiple_of,
-                enumeration,
-            } => Self::Integer {
-                minimum: *minimum,
-                maximum: *maximum,
-                exclusive_minimum: *exclusive_minimum,
-                exclusive_maximum: *exclusive_maximum,
-                multiple_of: *multiple_of,
-                enumeration,
-            },
-            ResolvedNodeKind::Boolean { enumeration } => Self::Boolean { enumeration },
-            ResolvedNodeKind::Null { enumeration } => Self::Null { enumeration },
-            ResolvedNodeKind::Object {
-                properties,
-                pattern_properties,
-                required,
-                additional,
-                property_names,
-                min_properties,
-                max_properties,
-                dependent_required,
-                enumeration,
-            } => Self::Object {
-                properties,
-                pattern_properties,
-                required,
-                additional,
-                property_names,
-                min_properties: *min_properties,
-                max_properties: *max_properties,
-                dependent_required,
-                enumeration,
-            },
-            ResolvedNodeKind::Array {
-                prefix_items,
-                items,
-                min_items,
-                max_items,
-                contains,
-                unique_items,
-                enumeration,
-            } => Self::Array {
-                prefix_items,
-                items,
-                min_items: *min_items,
-                max_items: *max_items,
-                contains: contains.as_ref(),
-                unique_items: *unique_items,
-                enumeration,
-            },
-            ResolvedNodeKind::AllOf(children) => Self::AllOf(children),
-            ResolvedNodeKind::AnyOf(children) => Self::AnyOf(children),
-            ResolvedNodeKind::OneOf(children) => Self::OneOf(children),
-            ResolvedNodeKind::Not(child) => Self::Not(child),
-            ResolvedNodeKind::IfThenElse {
-                if_schema,
-                then_schema,
-                else_schema,
-            } => Self::IfThenElse {
-                if_schema,
-                then_schema: then_schema.as_ref(),
-                else_schema: else_schema.as_ref(),
-            },
-            ResolvedNodeKind::Const(value) => Self::Const(value),
-            ResolvedNodeKind::Enum(values) => Self::Enum(values),
         }
     }
 }
@@ -1400,73 +1291,52 @@ fn schema_node_kind_views_are_equal<Node>(
         (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
         (
             String {
-                min_length: left_min_length,
-                max_length: left_max_length,
+                length: left_length,
                 pattern: left_pattern,
                 format: left_format,
                 enumeration: left_enumeration,
             },
             String {
-                min_length: right_min_length,
-                max_length: right_max_length,
+                length: right_length,
                 pattern: right_pattern,
                 format: right_format,
                 enumeration: right_enumeration,
             },
         ) => {
-            left_min_length == right_min_length
-                && left_max_length == right_max_length
+            left_length == right_length
                 && left_pattern == right_pattern
                 && left_format == right_format
                 && left_enumeration == right_enumeration
         }
         (
             Number {
-                minimum: left_minimum,
-                maximum: left_maximum,
-                exclusive_minimum: left_exclusive_minimum,
-                exclusive_maximum: left_exclusive_maximum,
+                bounds: left_bounds,
                 multiple_of: left_multiple_of,
                 enumeration: left_enumeration,
             },
             Number {
-                minimum: right_minimum,
-                maximum: right_maximum,
-                exclusive_minimum: right_exclusive_minimum,
-                exclusive_maximum: right_exclusive_maximum,
+                bounds: right_bounds,
                 multiple_of: right_multiple_of,
                 enumeration: right_enumeration,
             },
         ) => {
-            left_minimum == right_minimum
-                && left_maximum == right_maximum
-                && left_exclusive_minimum == right_exclusive_minimum
-                && left_exclusive_maximum == right_exclusive_maximum
+            left_bounds == right_bounds
                 && left_multiple_of == right_multiple_of
                 && left_enumeration == right_enumeration
         }
         (
             Integer {
-                minimum: left_minimum,
-                maximum: left_maximum,
-                exclusive_minimum: left_exclusive_minimum,
-                exclusive_maximum: left_exclusive_maximum,
+                bounds: left_bounds,
                 multiple_of: left_multiple_of,
                 enumeration: left_enumeration,
             },
             Integer {
-                minimum: right_minimum,
-                maximum: right_maximum,
-                exclusive_minimum: right_exclusive_minimum,
-                exclusive_maximum: right_exclusive_maximum,
+                bounds: right_bounds,
                 multiple_of: right_multiple_of,
                 enumeration: right_enumeration,
             },
         ) => {
-            left_minimum == right_minimum
-                && left_maximum == right_maximum
-                && left_exclusive_minimum == right_exclusive_minimum
-                && left_exclusive_maximum == right_exclusive_maximum
+            left_bounds == right_bounds
                 && left_multiple_of == right_multiple_of
                 && left_enumeration == right_enumeration
         }
@@ -1493,8 +1363,7 @@ fn schema_node_kind_views_are_equal<Node>(
                 required: left_required,
                 additional: left_additional,
                 property_names: left_property_names,
-                min_properties: left_min_properties,
-                max_properties: left_max_properties,
+                property_count: left_property_count,
                 dependent_required: left_dependent_required,
                 enumeration: left_enumeration,
             },
@@ -1504,21 +1373,19 @@ fn schema_node_kind_views_are_equal<Node>(
                 required: right_required,
                 additional: right_additional,
                 property_names: right_property_names,
-                min_properties: right_min_properties,
-                max_properties: right_max_properties,
+                property_count: right_property_count,
                 dependent_required: right_dependent_required,
                 enumeration: right_enumeration,
             },
         ) => {
             left_required == right_required
-                && left_min_properties == right_min_properties
-                && left_max_properties == right_max_properties
+                && left_property_count == right_property_count
                 && left_dependent_required == right_dependent_required
                 && left_enumeration == right_enumeration
                 && children_are_equal(left_additional, right_additional)
                 && children_are_equal(left_property_names, right_property_names)
                 && schema_node_maps_are_equal(left_properties, right_properties, children_are_equal)
-                && schema_node_maps_are_equal(
+                && pattern_property_maps_are_equal(
                     left_pattern_properties,
                     right_pattern_properties,
                     children_are_equal,
@@ -1528,8 +1395,7 @@ fn schema_node_kind_views_are_equal<Node>(
             Array {
                 prefix_items: left_prefix_items,
                 items: left_items,
-                min_items: left_min_items,
-                max_items: left_max_items,
+                item_count: left_item_count,
                 contains: left_contains,
                 unique_items: left_unique_items,
                 enumeration: left_enumeration,
@@ -1537,15 +1403,13 @@ fn schema_node_kind_views_are_equal<Node>(
             Array {
                 prefix_items: right_prefix_items,
                 items: right_items,
-                min_items: right_min_items,
-                max_items: right_max_items,
+                item_count: right_item_count,
                 contains: right_contains,
                 unique_items: right_unique_items,
                 enumeration: right_enumeration,
             },
         ) => {
-            left_min_items == right_min_items
-                && left_max_items == right_max_items
+            left_item_count == right_item_count
                 && left_unique_items == right_unique_items
                 && left_enumeration == right_enumeration
                 && schema_node_slices_are_equal(
@@ -1555,9 +1419,6 @@ fn schema_node_kind_views_are_equal<Node>(
                 )
                 && children_are_equal(left_items, right_items)
                 && array_contains_are_equal(left_contains, right_contains, children_are_equal)
-        }
-        (Defs(left_children), Defs(right_children)) => {
-            schema_node_maps_are_equal(left_children, right_children, children_are_equal)
         }
         (AllOf(left_children), AllOf(right_children))
         | (AnyOf(left_children), AnyOf(right_children))
@@ -1596,11 +1457,28 @@ fn schema_node_kind_views_are_equal<Node>(
     }
 }
 
-fn schema_node_maps_are_equal<Node>(
-    left: &HashMap<String, Node>,
-    right: &HashMap<String, Node>,
+fn pattern_property_maps_are_equal<Node>(
+    left: &HashMap<String, PatternProperty<Node>>,
+    right: &HashMap<String, PatternProperty<Node>>,
     children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
 ) -> bool {
+    left.len() == right.len()
+        && left.iter().all(|(pattern, left_property)| {
+            right.get(pattern).is_some_and(|right_property| {
+                left_property.pattern == right_property.pattern
+                    && children_are_equal(&left_property.schema, &right_property.schema)
+            })
+        })
+}
+
+fn schema_node_maps_are_equal<Key, Node>(
+    left: &HashMap<Key, Node>,
+    right: &HashMap<Key, Node>,
+    children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
+) -> bool
+where
+    Key: Eq + Hash,
+{
     left.len() == right.len()
         && left.iter().all(|(key, left_node)| {
             right
@@ -1634,42 +1512,32 @@ fn optional_schema_nodes_are_equal<Node>(
 }
 
 fn array_contains_are_equal<Node>(
-    left: Option<&ArrayContains<Node>>,
-    right: Option<&ArrayContains<Node>>,
+    left: Option<&ContainsConstraint<Node>>,
+    right: Option<&ContainsConstraint<Node>>,
     children_are_equal: &mut impl FnMut(&Node, &Node) -> bool,
 ) -> bool {
     match (left, right) {
         (None, None) => true,
         (Some(left), Some(right)) => {
-            left.min_contains == right.min_contains
-                && left.max_contains == right.max_contains
-                && children_are_equal(&left.schema, &right.schema)
+            left.count() == right.count() && children_are_equal(&left.schema, &right.schema)
         }
         _ => false,
     }
 }
 
-impl PartialEq for MutableSchemaNode {
-    fn eq(&self, other: &Self) -> bool {
-        schema_node_graphs_are_equal(self, other, &mut HashSet::new())
-    }
-}
-
-impl Eq for MutableSchemaNode {}
-
 fn freeze_schema_node(
-    node: &MutableSchemaNode,
-    cache: &mut HashMap<usize, SchemaNode>,
+    node: MutableSchemaNode,
+    graph: &MutableSchemaGraph,
+    cache: &mut HashMap<MutableSchemaNode, SchemaNode>,
 ) -> SchemaNode {
-    let node_id = node.ptr_id();
-    if let Some(existing) = cache.get(&node_id) {
+    if let Some(existing) = cache.get(&node) {
         return existing.clone();
     }
 
     let frozen = SchemaNode(Rc::new(OnceCell::new()));
-    cache.insert(node_id, frozen.clone());
+    cache.insert(node, frozen.clone());
 
-    let kind = freeze_schema_node_kind(node.borrow().clone(), cache);
+    let kind = freeze_schema_node_kind(graph.kind(node).clone(), graph, cache);
     frozen
         .0
         .set(kind)
@@ -1679,139 +1547,132 @@ fn freeze_schema_node(
 
 fn freeze_schema_node_kind(
     kind: MutableSchemaNodeKind,
-    cache: &mut HashMap<usize, SchemaNode>,
-) -> ResolvedNodeKind {
+    graph: &MutableSchemaGraph,
+    cache: &mut HashMap<MutableSchemaNode, SchemaNode>,
+) -> SchemaNodeKind {
     match kind {
-        SchemaNodeKind::BoolSchema(value) => ResolvedNodeKind::BoolSchema(value),
-        SchemaNodeKind::Any => ResolvedNodeKind::Any,
-        SchemaNodeKind::String {
-            min_length,
-            max_length,
+        MutableSchemaNodeKind::BoolSchema(value) => SchemaNodeKind::BoolSchema(value),
+        MutableSchemaNodeKind::Any => SchemaNodeKind::Any,
+        MutableSchemaNodeKind::String {
+            length,
             pattern,
             format,
             enumeration,
-        } => ResolvedNodeKind::String {
-            min_length,
-            max_length,
+        } => SchemaNodeKind::String {
+            length,
             pattern,
             format,
             enumeration,
         },
-        SchemaNodeKind::Number {
-            minimum,
-            maximum,
-            exclusive_minimum,
-            exclusive_maximum,
+        MutableSchemaNodeKind::Number {
+            bounds,
             multiple_of,
             enumeration,
-        } => ResolvedNodeKind::Number {
-            minimum,
-            maximum,
-            exclusive_minimum,
-            exclusive_maximum,
+        } => SchemaNodeKind::Number {
+            bounds,
             multiple_of,
             enumeration,
         },
-        SchemaNodeKind::Integer {
-            minimum,
-            maximum,
-            exclusive_minimum,
-            exclusive_maximum,
+        MutableSchemaNodeKind::Integer {
+            bounds,
             multiple_of,
             enumeration,
-        } => ResolvedNodeKind::Integer {
-            minimum,
-            maximum,
-            exclusive_minimum,
-            exclusive_maximum,
+        } => SchemaNodeKind::Integer {
+            bounds,
             multiple_of,
             enumeration,
         },
-        SchemaNodeKind::Boolean { enumeration } => ResolvedNodeKind::Boolean { enumeration },
-        SchemaNodeKind::Null { enumeration } => ResolvedNodeKind::Null { enumeration },
-        SchemaNodeKind::Object {
+        MutableSchemaNodeKind::Boolean { enumeration } => SchemaNodeKind::Boolean { enumeration },
+        MutableSchemaNodeKind::Null { enumeration } => SchemaNodeKind::Null { enumeration },
+        MutableSchemaNodeKind::Object {
             properties,
             pattern_properties,
             required,
             additional,
             property_names,
-            min_properties,
-            max_properties,
+            property_count,
             dependent_required,
             enumeration,
-        } => ResolvedNodeKind::Object {
+        } => SchemaNodeKind::Object {
             properties: properties
                 .into_iter()
-                .map(|(name, child)| (name, freeze_schema_node(&child, cache)))
+                .map(|(name, child)| (name, freeze_schema_node(child, graph, cache)))
                 .collect(),
             pattern_properties: pattern_properties
                 .into_iter()
-                .map(|(pattern, child)| (pattern, freeze_schema_node(&child, cache)))
+                .map(|(pattern, pattern_property)| {
+                    (
+                        pattern,
+                        PatternProperty::new(
+                            pattern_property.pattern,
+                            freeze_schema_node(pattern_property.schema, graph, cache),
+                        ),
+                    )
+                })
                 .collect(),
             required,
-            additional: freeze_schema_node(&additional, cache),
-            property_names: freeze_schema_node(&property_names, cache),
-            min_properties,
-            max_properties,
+            additional: freeze_schema_node(additional, graph, cache),
+            property_names: freeze_schema_node(property_names, graph, cache),
+            property_count,
             dependent_required,
             enumeration,
         },
-        SchemaNodeKind::Array {
+        MutableSchemaNodeKind::Array {
             prefix_items,
             items,
-            min_items,
-            max_items,
+            item_count,
             contains,
             unique_items,
             enumeration,
-        } => ResolvedNodeKind::Array {
+        } => SchemaNodeKind::Array {
             prefix_items: prefix_items
                 .into_iter()
-                .map(|child| freeze_schema_node(&child, cache))
+                .map(|child| freeze_schema_node(child, graph, cache))
                 .collect(),
-            items: freeze_schema_node(&items, cache),
-            min_items,
-            max_items,
-            contains: contains.map(|contains| ArrayContains {
-                schema: freeze_schema_node(&contains.schema, cache),
-                min_contains: contains.min_contains,
-                max_contains: contains.max_contains,
+            items: freeze_schema_node(items, graph, cache),
+            item_count,
+            contains: contains.map(|contains| {
+                ContainsConstraint::new(
+                    freeze_schema_node(contains.schema, graph, cache),
+                    contains.count(),
+                )
             }),
             unique_items,
             enumeration,
         },
-        SchemaNodeKind::Defs(_) => ResolvedNodeKind::Any,
-        SchemaNodeKind::AllOf(children) => ResolvedNodeKind::AllOf(
+        MutableSchemaNodeKind::AllOf(children) => SchemaNodeKind::AllOf(
             children
                 .iter()
-                .map(|child| freeze_schema_node(child, cache))
+                .map(|child| freeze_schema_node(*child, graph, cache))
                 .collect(),
         ),
-        SchemaNodeKind::AnyOf(children) => ResolvedNodeKind::AnyOf(
+        MutableSchemaNodeKind::AnyOf(children) => SchemaNodeKind::AnyOf(
             children
                 .iter()
-                .map(|child| freeze_schema_node(child, cache))
+                .map(|child| freeze_schema_node(*child, graph, cache))
                 .collect(),
         ),
-        SchemaNodeKind::OneOf(children) => ResolvedNodeKind::OneOf(
+        MutableSchemaNodeKind::OneOf(children) => SchemaNodeKind::OneOf(
             children
                 .iter()
-                .map(|child| freeze_schema_node(child, cache))
+                .map(|child| freeze_schema_node(*child, graph, cache))
                 .collect(),
         ),
-        SchemaNodeKind::Not(child) => ResolvedNodeKind::Not(freeze_schema_node(&child, cache)),
-        SchemaNodeKind::IfThenElse {
+        MutableSchemaNodeKind::Not(child) => {
+            SchemaNodeKind::Not(freeze_schema_node(child, graph, cache))
+        }
+        MutableSchemaNodeKind::IfThenElse {
             if_schema,
             then_schema,
             else_schema,
-        } => ResolvedNodeKind::IfThenElse {
-            if_schema: freeze_schema_node(&if_schema, cache),
-            then_schema: then_schema.map(|child| freeze_schema_node(&child, cache)),
-            else_schema: else_schema.map(|child| freeze_schema_node(&child, cache)),
+        } => SchemaNodeKind::IfThenElse {
+            if_schema: freeze_schema_node(if_schema, graph, cache),
+            then_schema: then_schema.map(|child| freeze_schema_node(child, graph, cache)),
+            else_schema: else_schema.map(|child| freeze_schema_node(child, graph, cache)),
         },
-        SchemaNodeKind::Const(value) => ResolvedNodeKind::Const(value),
-        SchemaNodeKind::Enum(values) => ResolvedNodeKind::Enum(values),
-        SchemaNodeKind::Ref(_) => {
+        MutableSchemaNodeKind::Const(value) => SchemaNodeKind::Const(value),
+        MutableSchemaNodeKind::Enum(values) => SchemaNodeKind::Enum(values),
+        MutableSchemaNodeKind::Ref(_) => {
             unreachable!("parser-only schema node kind remained after reference resolution")
         }
     }
@@ -1825,8 +1686,8 @@ impl fmt::Debug for SchemaNode {
     }
 }
 
-impl std::borrow::Borrow<ResolvedNodeKind> for SchemaNode {
-    fn borrow(&self) -> &ResolvedNodeKind {
+impl std::borrow::Borrow<SchemaNodeKind> for SchemaNode {
+    fn borrow(&self) -> &SchemaNodeKind {
         self.kind()
     }
 }
@@ -1838,15 +1699,6 @@ impl PartialEq for SchemaNode {
 }
 
 impl Eq for SchemaNode {}
-
-/// Array `contains` constraints are stored as a single structured value so the
-/// count bounds cannot drift out of sync with the subschema itself.
-#[derive(Debug, Clone)]
-pub struct ArrayContains<Node = SchemaNode> {
-    pub schema: Node,
-    pub min_contains: u64,
-    pub max_contains: Option<u64>,
-}
 
 /// Positive `multipleOf` constraint stored on integer schemas.
 ///
@@ -1908,30 +1760,23 @@ impl IntegerMultipleOf {
 /// states for downstream crates to reason about.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum ResolvedNodeKind<Node = SchemaNode> {
+pub enum SchemaNodeKind<Node = SchemaNode> {
     BoolSchema(bool),
     Any,
 
     String {
-        min_length: Option<u64>,
-        max_length: Option<u64>,
-        pattern: Option<String>,
+        length: CountRange<u64>,
+        pattern: Option<PatternConstraint>,
         format: Option<String>,
         enumeration: Option<Vec<Value>>,
     },
     Number {
-        minimum: Option<f64>,
-        maximum: Option<f64>,
-        exclusive_minimum: bool,
-        exclusive_maximum: bool,
+        bounds: NumberBounds,
         multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
     },
     Integer {
-        minimum: Option<i64>,
-        maximum: Option<i64>,
-        exclusive_minimum: bool,
-        exclusive_maximum: bool,
+        bounds: IntegerBounds,
         multiple_of: Option<IntegerMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
@@ -1944,21 +1789,19 @@ pub enum ResolvedNodeKind<Node = SchemaNode> {
 
     Object {
         properties: HashMap<String, Node>,
-        pattern_properties: HashMap<String, Node>,
+        pattern_properties: HashMap<String, PatternProperty<Node>>,
         required: HashSet<String>,
         additional: Node,
         property_names: Node,
-        min_properties: Option<usize>,
-        max_properties: Option<usize>,
+        property_count: CountRange<usize>,
         dependent_required: HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
     },
     Array {
         prefix_items: Vec<Node>,
         items: Node,
-        min_items: Option<u64>,
-        max_items: Option<u64>,
-        contains: Option<ArrayContains<Node>>,
+        item_count: CountRange<u64>,
+        contains: Option<ContainsConstraint<Node>>,
         unique_items: bool,
         enumeration: Option<Vec<Value>>,
     },
@@ -1978,33 +1821,26 @@ pub enum ResolvedNodeKind<Node = SchemaNode> {
 }
 
 /// Private parser/resolver graph node that may still contain unresolved refs or
-/// keyword-fragment variants before freezing into `ResolvedNodeKind`.
+/// keyword-fragment variants before freezing into `SchemaNodeKind`.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-enum SchemaNodeKind<Node = MutableSchemaNode> {
+enum MutableSchemaNodeKind<Node = MutableSchemaNode> {
     BoolSchema(bool),
     Any,
 
     String {
-        min_length: Option<u64>,
-        max_length: Option<u64>,
-        pattern: Option<String>,
+        length: CountRange<u64>,
+        pattern: Option<PatternConstraint>,
         format: Option<String>,
         enumeration: Option<Vec<Value>>,
     },
     Number {
-        minimum: Option<f64>,
-        maximum: Option<f64>,
-        exclusive_minimum: bool,
-        exclusive_maximum: bool,
+        bounds: NumberBounds,
         multiple_of: Option<f64>,
         enumeration: Option<Vec<Value>>,
     },
     Integer {
-        minimum: Option<i64>,
-        maximum: Option<i64>,
-        exclusive_minimum: bool,
-        exclusive_maximum: bool,
+        bounds: IntegerBounds,
         multiple_of: Option<IntegerMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
@@ -2017,26 +1853,22 @@ enum SchemaNodeKind<Node = MutableSchemaNode> {
 
     Object {
         properties: HashMap<String, Node>,
-        pattern_properties: HashMap<String, Node>,
+        pattern_properties: HashMap<String, PatternProperty<Node>>,
         required: HashSet<String>,
         additional: Node,
         property_names: Node,
-        min_properties: Option<usize>,
-        max_properties: Option<usize>,
+        property_count: CountRange<usize>,
         dependent_required: HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
     },
     Array {
         prefix_items: Vec<Node>,
         items: Node,
-        min_items: Option<u64>,
-        max_items: Option<u64>,
-        contains: Option<ArrayContains<Node>>,
+        item_count: CountRange<u64>,
+        contains: Option<ContainsConstraint<Node>>,
         unique_items: bool,
         enumeration: Option<Vec<Value>>,
     },
-
-    Defs(HashMap<String, Node>),
 
     AllOf(Vec<Node>),
     AnyOf(Vec<Node>),
@@ -2055,42 +1887,45 @@ enum SchemaNodeKind<Node = MutableSchemaNode> {
 
 /// Build and fully resolve a schema node from a JSON Schema document.
 pub fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
-    Ok(ResolvedSchema::from_json(raw)?.root()?.clone())
+    Ok(SchemaDocument::from_json(raw)?.root()?.clone())
 }
 
-fn build_schema_ast_from_value(raw: &Value) -> Result<MutableSchemaNode> {
+fn build_schema_ast_from_value(
+    raw: &Value,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
     if let Some(b) = raw.as_bool() {
-        return Ok(MutableSchemaNode::bool_schema(b));
+        return Ok(graph.bool_schema(b));
     }
     let Some(obj) = raw.as_object() else {
-        return Ok(MutableSchemaNode::any());
+        return Ok(graph.any());
     };
 
     match SchemaShape::classify(obj) {
-        SchemaShape::Ref(ref_path) => Ok(parse_ref_schema(ref_path)),
-        SchemaShape::Enum(values) => Ok(parse_enum_schema(values)),
+        SchemaShape::Ref(ref_path) => Ok(parse_ref_schema(graph, ref_path)),
+        SchemaShape::Enum(values) => Ok(parse_enum_schema(graph, values)),
         SchemaShape::UnsupportedReference(ref_path) => Err(AstError::UnsupportedReference {
             ref_path: ref_path.to_owned(),
         }),
-        SchemaShape::Const(value) => Ok(parse_const_schema(value)),
+        SchemaShape::Const(value) => Ok(parse_const_schema(graph, value)),
         SchemaShape::Conditional {
             if_schema,
             then_schema,
             else_schema,
-        } => parse_conditional_schema(obj, if_schema, then_schema, else_schema),
-        SchemaShape::AllOf(subschemas) => parse_all_of_schema(obj, subschemas),
-        SchemaShape::AnyOf(subschemas) => parse_any_of_schema(obj, subschemas),
-        SchemaShape::OneOf(subschemas) => parse_one_of_schema(obj, subschemas),
-        SchemaShape::Not(schema) => parse_not_schema(obj, schema),
-        SchemaShape::String => parse_string_schema(obj),
-        SchemaShape::Number => parse_number_schema(obj, false),
-        SchemaShape::Integer => parse_number_schema(obj, true),
-        SchemaShape::Boolean => parse_boolean_schema(obj),
-        SchemaShape::Null => parse_null_schema(obj),
-        SchemaShape::Object => parse_object_schema(obj),
-        SchemaShape::Array => parse_array_schema(obj),
-        SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names),
-        SchemaShape::Any => Ok(MutableSchemaNode::any()),
+        } => parse_conditional_schema(obj, if_schema, then_schema, else_schema, graph),
+        SchemaShape::AllOf(subschemas) => parse_all_of_schema(obj, subschemas, graph),
+        SchemaShape::AnyOf(subschemas) => parse_any_of_schema(obj, subschemas, graph),
+        SchemaShape::OneOf(subschemas) => parse_one_of_schema(obj, subschemas, graph),
+        SchemaShape::Not(schema) => parse_not_schema(obj, schema, graph),
+        SchemaShape::String => parse_string_schema(obj, graph),
+        SchemaShape::Number => parse_number_schema(obj, false, graph),
+        SchemaShape::Integer => parse_number_schema(obj, true, graph),
+        SchemaShape::Boolean => parse_boolean_schema(obj, graph),
+        SchemaShape::Null => parse_null_schema(obj, graph),
+        SchemaShape::Object => parse_object_schema(obj, graph),
+        SchemaShape::Array => parse_array_schema(obj, graph),
+        SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names, graph),
+        SchemaShape::Any => Ok(graph.any()),
     }
 }
 
@@ -2355,16 +2190,16 @@ impl<'a> SchemaKeywords<'a> {
     }
 }
 
-fn parse_ref_schema(ref_path: &str) -> MutableSchemaNode {
-    MutableSchemaNode::new(SchemaNodeKind::Ref(ref_path.to_owned()))
+fn parse_ref_schema(graph: &mut MutableSchemaGraph, ref_path: &str) -> MutableSchemaNode {
+    graph.push(MutableSchemaNodeKind::Ref(ref_path.to_owned()))
 }
 
-fn parse_enum_schema(values: &[Value]) -> MutableSchemaNode {
-    MutableSchemaNode::new(SchemaNodeKind::Enum(values.to_vec()))
+fn parse_enum_schema(graph: &mut MutableSchemaGraph, values: &[Value]) -> MutableSchemaNode {
+    graph.push(MutableSchemaNodeKind::Enum(values.to_vec()))
 }
 
-fn parse_const_schema(value: &Value) -> MutableSchemaNode {
-    MutableSchemaNode::new(SchemaNodeKind::Const(value.clone()))
+fn parse_const_schema(graph: &mut MutableSchemaGraph, value: &Value) -> MutableSchemaNode {
+    graph.push(MutableSchemaNodeKind::Const(value.clone()))
 }
 
 fn parse_conditional_schema(
@@ -2372,29 +2207,31 @@ fn parse_conditional_schema(
     if_schema: Option<&Value>,
     then_schema: Option<&Value>,
     else_schema: Option<&Value>,
+    graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
     let Some(cond) = if_schema else {
         let mut base = obj.clone();
         base.remove("then");
         base.remove("else");
-        return build_schema_ast_from_value(&Value::Object(base));
+        return build_schema_ast_from_value(&Value::Object(base), graph);
     };
 
-    let if_schema = build_schema_ast_from_value(cond)?;
-    let then_schema = then_schema.map(build_schema_ast_from_value).transpose()?;
-    let else_schema = else_schema.map(build_schema_ast_from_value).transpose()?;
+    let if_schema = build_schema_ast_from_value(cond, graph)?;
+    let then_schema = then_schema
+        .map(|schema| build_schema_ast_from_value(schema, graph))
+        .transpose()?;
+    let else_schema = else_schema
+        .map(|schema| build_schema_ast_from_value(schema, graph))
+        .transpose()?;
 
-    let cond_node = MutableSchemaNode::new(SchemaNodeKind::IfThenElse {
+    let cond_node = graph.push(MutableSchemaNodeKind::IfThenElse {
         if_schema,
         then_schema,
         else_schema,
     });
 
-    if let Some(base_schema) = parse_applicator_base_schema(obj, &["if", "then", "else"])? {
-        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
-            base_schema,
-            cond_node,
-        ])));
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["if", "then", "else"], graph)? {
+        return Ok(graph.push(MutableSchemaNodeKind::AllOf(vec![base_schema, cond_node])));
     }
 
     Ok(cond_node)
@@ -2403,36 +2240,32 @@ fn parse_conditional_schema(
 fn parse_all_of_schema(
     obj: &Map<String, Value>,
     subschemas: &[Value],
+    graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
     let mut list = Vec::new();
-    if let Some(base_schema) = parse_applicator_base_schema(obj, &["allOf"])? {
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["allOf"], graph)? {
         list.push(base_schema);
     }
     for schema in subschemas {
-        list.push(build_schema_ast_from_value(schema)?);
+        list.push(build_schema_ast_from_value(schema, graph)?);
     }
 
-    Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(
-        dedupe_mutable_schema_nodes(list),
-    )))
+    Ok(graph.push(MutableSchemaNodeKind::AllOf(list)))
 }
 
 fn parse_any_of_schema(
     obj: &Map<String, Value>,
     subschemas: &[Value],
+    graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
-    let any_of = MutableSchemaNode::new(SchemaNodeKind::AnyOf(dedupe_mutable_schema_nodes(
-        subschemas
-            .iter()
-            .map(build_schema_ast_from_value)
-            .collect::<Result<Vec<_>>>()?,
-    )));
+    let branches = subschemas
+        .iter()
+        .map(|schema| build_schema_ast_from_value(schema, graph))
+        .collect::<Result<Vec<_>>>()?;
+    let any_of = graph.push(MutableSchemaNodeKind::AnyOf(branches));
 
-    if let Some(base_schema) = parse_applicator_base_schema(obj, &["anyOf"])? {
-        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
-            base_schema,
-            any_of,
-        ])));
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["anyOf"], graph)? {
+        return Ok(graph.push(MutableSchemaNodeKind::AllOf(vec![base_schema, any_of])));
     }
 
     Ok(any_of)
@@ -2441,33 +2274,31 @@ fn parse_any_of_schema(
 fn parse_one_of_schema(
     obj: &Map<String, Value>,
     subschemas: &[Value],
+    graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
-    let one_of = MutableSchemaNode::new(SchemaNodeKind::OneOf(
-        subschemas
-            .iter()
-            .map(build_schema_ast_from_value)
-            .collect::<Result<Vec<_>>>()?,
-    ));
+    let branches = subschemas
+        .iter()
+        .map(|schema| build_schema_ast_from_value(schema, graph))
+        .collect::<Result<Vec<_>>>()?;
+    let one_of = graph.push(MutableSchemaNodeKind::OneOf(branches));
 
-    if let Some(base_schema) = parse_applicator_base_schema(obj, &["oneOf"])? {
-        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
-            base_schema,
-            one_of,
-        ])));
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["oneOf"], graph)? {
+        return Ok(graph.push(MutableSchemaNodeKind::AllOf(vec![base_schema, one_of])));
     }
 
     Ok(one_of)
 }
 
-fn parse_not_schema(obj: &Map<String, Value>, schema: &Value) -> Result<MutableSchemaNode> {
-    let not_node =
-        MutableSchemaNode::new(SchemaNodeKind::Not(build_schema_ast_from_value(schema)?));
+fn parse_not_schema(
+    obj: &Map<String, Value>,
+    schema: &Value,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    let child = build_schema_ast_from_value(schema, graph)?;
+    let not_node = graph.push(MutableSchemaNodeKind::Not(child));
 
-    if let Some(base_schema) = parse_applicator_base_schema(obj, &["not"])? {
-        return Ok(MutableSchemaNode::new(SchemaNodeKind::AllOf(vec![
-            base_schema,
-            not_node,
-        ])));
+    if let Some(base_schema) = parse_applicator_base_schema(obj, &["not"], graph)? {
+        return Ok(graph.push(MutableSchemaNodeKind::AllOf(vec![base_schema, not_node])));
     }
 
     Ok(not_node)
@@ -2476,28 +2307,31 @@ fn parse_not_schema(obj: &Map<String, Value>, schema: &Value) -> Result<MutableS
 fn parse_type_union_schema(
     obj: &Map<String, Value>,
     type_names: &[Value],
+    graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
     let mut variants = Vec::new();
     for type_name in type_names {
         if let Some(type_name) = type_name.as_str() {
             let mut typed_obj = obj.clone();
             typed_obj.insert("type".into(), Value::String(type_name.into()));
-            variants.push(build_schema_ast_from_value(&Value::Object(typed_obj))?);
+            variants.push(build_schema_ast_from_value(
+                &Value::Object(typed_obj),
+                graph,
+            )?);
         }
     }
 
     if variants.len() == 1 {
         Ok(variants.remove(0))
     } else {
-        Ok(MutableSchemaNode::new(SchemaNodeKind::AnyOf(
-            dedupe_mutable_schema_nodes(variants),
-        )))
+        Ok(graph.push(MutableSchemaNodeKind::AnyOf(variants)))
     }
 }
 
 fn parse_applicator_base_schema(
     obj: &Map<String, Value>,
     applicator_keys: &[&str],
+    graph: &mut MutableSchemaGraph,
 ) -> Result<Option<MutableSchemaNode>> {
     let mut base = obj.clone();
     for key in applicator_keys {
@@ -2508,209 +2342,227 @@ fn parse_applicator_base_schema(
     if base.is_empty() {
         Ok(None)
     } else {
-        Ok(Some(build_schema_ast_from_value(&Value::Object(base))?))
+        Ok(Some(build_schema_ast_from_value(
+            &Value::Object(base),
+            graph,
+        )?))
     }
 }
 
-fn parse_string_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
-    let min_length = Some(parse_u64_keyword(obj, "minLength")?.unwrap_or(0));
-    let max_length = parse_u64_keyword(obj, "maxLength")?;
-    let pattern = parse_string_keyword(obj, "pattern")?;
+fn parse_string_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    let Some(length) = CountRange::new(
+        parse_u64_keyword(obj, "minLength")?.unwrap_or(0),
+        parse_u64_keyword(obj, "maxLength")?,
+    ) else {
+        return Ok(graph.bool_schema(false));
+    };
+    let pattern = parse_string_keyword(obj, "pattern")?.map(PatternConstraint::new);
     let format = parse_string_keyword(obj, "format")?;
     let enumeration = parse_enum_keyword(obj)?;
 
-    Ok(MutableSchemaNode::new(SchemaNodeKind::String {
-        min_length,
-        max_length,
+    Ok(graph.push(MutableSchemaNodeKind::String {
+        length,
         pattern,
         format,
         enumeration,
     }))
 }
 
-fn dedupe_mutable_schema_nodes(nodes: Vec<MutableSchemaNode>) -> Vec<MutableSchemaNode> {
-    let mut unique = Vec::new();
-    for node in nodes {
-        if unique.iter().all(|existing| existing != &node) {
-            unique.push(node);
-        }
-    }
-    unique
-}
-
-fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> Result<MutableSchemaNode> {
+fn parse_number_schema(
+    obj: &Map<String, Value>,
+    integer: bool,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
     if integer {
-        let mut minimum = parse_i64_keyword(obj, "minimum")?;
-        let mut maximum = parse_i64_keyword(obj, "maximum")?;
-
-        let exclusive_minimum = if let Some(bound) = parse_i64_keyword(obj, "exclusiveMinimum")? {
-            minimum = Some(bound);
-            true
-        } else {
-            false
-        };
-
-        let exclusive_maximum = if let Some(bound) = parse_i64_keyword(obj, "exclusiveMaximum")? {
-            maximum = Some(bound);
-            true
-        } else {
-            false
+        let Some(bounds) = IntegerBounds::from_json_schema_keywords(
+            parse_i64_keyword(obj, "minimum")?,
+            parse_i64_keyword(obj, "exclusiveMinimum")?,
+            parse_i64_keyword(obj, "maximum")?,
+            parse_i64_keyword(obj, "exclusiveMaximum")?,
+        ) else {
+            return Ok(graph.bool_schema(false));
         };
 
         let multiple_of =
             parse_integer_multiple_of_keyword(obj)?.or_else(|| IntegerMultipleOf::from_integer(1));
 
-        return Ok(MutableSchemaNode::new(SchemaNodeKind::Integer {
-            minimum,
-            maximum,
-            exclusive_minimum,
-            exclusive_maximum,
+        return Ok(graph.push(MutableSchemaNodeKind::Integer {
+            bounds,
             multiple_of,
             enumeration: parse_enum_keyword(obj)?,
         }));
     }
 
-    let mut minimum = parse_f64_keyword(obj, "minimum")?;
-    let mut maximum = parse_f64_keyword(obj, "maximum")?;
-
-    let exclusive_minimum = if let Some(bound) = parse_f64_keyword(obj, "exclusiveMinimum")? {
-        minimum = Some(bound);
-        true
+    let lower = if let Some(bound) = parse_f64_keyword(obj, "exclusiveMinimum")? {
+        NumberBound::Exclusive(bound)
+    } else if let Some(bound) = parse_f64_keyword(obj, "minimum")? {
+        NumberBound::Inclusive(bound)
     } else {
-        false
+        NumberBound::Unbounded
     };
 
-    let exclusive_maximum = if let Some(bound) = parse_f64_keyword(obj, "exclusiveMaximum")? {
-        maximum = Some(bound);
-        true
+    let upper = if let Some(bound) = parse_f64_keyword(obj, "exclusiveMaximum")? {
+        NumberBound::Exclusive(bound)
+    } else if let Some(bound) = parse_f64_keyword(obj, "maximum")? {
+        NumberBound::Inclusive(bound)
     } else {
-        false
+        NumberBound::Unbounded
+    };
+    let Some(bounds) = NumberBounds::new(lower, upper) else {
+        return Ok(graph.bool_schema(false));
     };
     let enumeration = parse_enum_keyword(obj)?;
 
     let multiple_of = parse_positive_f64_keyword(obj, "multipleOf")?;
 
-    Ok(MutableSchemaNode::new(SchemaNodeKind::Number {
-        minimum,
-        maximum,
-        exclusive_minimum,
-        exclusive_maximum,
+    Ok(graph.push(MutableSchemaNodeKind::Number {
+        bounds,
         multiple_of,
         enumeration,
     }))
 }
 
-fn parse_boolean_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
-    Ok(MutableSchemaNode::new(SchemaNodeKind::Boolean {
+fn parse_boolean_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    Ok(graph.push(MutableSchemaNodeKind::Boolean {
         enumeration: parse_enum_keyword(obj)?,
     }))
 }
 
-fn parse_null_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
-    Ok(MutableSchemaNode::new(SchemaNodeKind::Null {
+fn parse_null_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    Ok(graph.push(MutableSchemaNodeKind::Null {
         enumeration: parse_enum_keyword(obj)?,
     }))
 }
 
-fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
+fn parse_object_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
     let mut properties = HashMap::new();
     if let Some(value) = obj.get("properties") {
         let props = parse_object_keyword(value, "properties")?;
         for (k, v) in props {
-            properties.insert(k.clone(), build_schema_ast_from_value(v)?);
+            properties.insert(k.clone(), build_schema_ast_from_value(v, graph)?);
         }
     }
     let mut pattern_properties = HashMap::new();
     if let Some(value) = obj.get("patternProperties") {
         let props = parse_object_keyword(value, "patternProperties")?;
         for (pattern, schema) in props {
-            pattern_properties.insert(pattern.clone(), build_schema_ast_from_value(schema)?);
+            pattern_properties.insert(
+                pattern.clone(),
+                PatternProperty::new(
+                    PatternConstraint::new(pattern.clone()),
+                    build_schema_ast_from_value(schema, graph)?,
+                ),
+            );
         }
     }
     let required = parse_string_set_keyword(obj, "required")?;
 
     for name in &required {
         if !properties.contains_key(name) {
-            properties.insert(name.clone(), MutableSchemaNode::any());
+            properties.insert(name.clone(), graph.any());
         }
     }
 
     let additional = match obj.get("additionalProperties") {
-        None => MutableSchemaNode::any(),
-        Some(Value::Bool(b)) => MutableSchemaNode::bool_schema(*b),
-        Some(other) => build_schema_ast_from_value(other)?,
+        None => graph.any(),
+        Some(Value::Bool(b)) => graph.bool_schema(*b),
+        Some(other) => build_schema_ast_from_value(other, graph)?,
     };
 
     let property_names = match obj.get("propertyNames") {
-        None => MutableSchemaNode::any(),
-        Some(Value::Bool(true)) => MutableSchemaNode::any(),
-        Some(Value::Bool(false)) => MutableSchemaNode::bool_schema(false),
-        Some(other) => build_schema_ast_from_value(other)?,
+        None => graph.any(),
+        Some(Value::Bool(true)) => graph.any(),
+        Some(Value::Bool(false)) => graph.bool_schema(false),
+        Some(other) => build_schema_ast_from_value(other, graph)?,
     };
 
-    let min_properties = parse_usize_keyword(obj, "minProperties")?.or(Some(required.len()));
-    let max_properties = parse_usize_keyword(obj, "maxProperties")?;
+    let Some(property_count) = CountRange::new(
+        parse_usize_keyword(obj, "minProperties")?.unwrap_or(required.len()),
+        parse_usize_keyword(obj, "maxProperties")?,
+    ) else {
+        return Ok(graph.bool_schema(false));
+    };
     let dependent_required = parse_dependent_required_keyword(obj)?;
     let enumeration = parse_enum_keyword(obj)?;
 
-    Ok(MutableSchemaNode::new(SchemaNodeKind::Object {
+    Ok(graph.push(MutableSchemaNodeKind::Object {
         properties,
         pattern_properties,
         required,
         additional,
         property_names,
-        min_properties,
-        max_properties,
+        property_count,
         dependent_required,
         enumeration,
     }))
 }
 
-fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
-    let mut prefix_items = parse_schema_array_keyword(obj.get("prefixItems"), "prefixItems")?;
+fn parse_array_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    let mut prefix_items =
+        parse_schema_array_keyword(obj.get("prefixItems"), "prefixItems", graph)?;
     let items_node = match obj.get("items") {
-        None => MutableSchemaNode::any(),
-        Some(Value::Bool(true)) => MutableSchemaNode::any(),
-        Some(Value::Bool(false)) => MutableSchemaNode::bool_schema(false),
+        None => graph.any(),
+        Some(Value::Bool(true)) => graph.any(),
+        Some(Value::Bool(false)) => graph.bool_schema(false),
         Some(Value::Array(arr)) => {
             prefix_items.extend(
                 arr.iter()
-                    .map(build_schema_ast_from_value)
+                    .map(|schema| build_schema_ast_from_value(schema, graph))
                     .collect::<Result<Vec<_>>>()?,
             );
-            MutableSchemaNode::any()
+            graph.any()
         }
-        Some(other) => build_schema_ast_from_value(other)?,
+        Some(other) => build_schema_ast_from_value(other, graph)?,
     };
-    let min_contains = parse_u64_keyword(obj, "minContains")?;
+    let min_contains = parse_u64_keyword(obj, "minContains")?.unwrap_or(1);
     let max_contains = parse_u64_keyword(obj, "maxContains")?;
-    let min_items = parse_u64_keyword(obj, "minItems")?.or_else(|| {
+    let Some(contains_count) = CountRange::new(min_contains, max_contains) else {
+        return Ok(graph.bool_schema(false));
+    };
+    let min_items = parse_u64_keyword(obj, "minItems")?.unwrap_or_else(|| {
         if obj.contains_key("contains") {
-            min_contains.or(Some(1))
+            contains_count.min()
         } else {
-            Some(0)
+            0
         }
     });
-    let max_items = parse_u64_keyword(obj, "maxItems")?;
+    let Some(item_count) = CountRange::new(min_items, parse_u64_keyword(obj, "maxItems")?) else {
+        return Ok(graph.bool_schema(false));
+    };
     let unique_items = parse_bool_keyword(obj, "uniqueItems")?.unwrap_or(false);
     let enumeration = parse_enum_keyword(obj)?;
 
     let contains = obj
         .get("contains")
-        .map(|contains| -> Result<ArrayContains<MutableSchemaNode>> {
-            Ok(ArrayContains {
-                schema: build_schema_ast_from_value(contains)?,
-                min_contains: min_contains.unwrap_or(1),
-                max_contains,
-            })
-        })
+        .map(
+            |contains| -> Result<ContainsConstraint<MutableSchemaNode>> {
+                Ok(ContainsConstraint::new(
+                    build_schema_ast_from_value(contains, graph)?,
+                    contains_count,
+                ))
+            },
+        )
         .transpose()?;
 
-    Ok(MutableSchemaNode::new(SchemaNodeKind::Array {
+    Ok(graph.push(MutableSchemaNodeKind::Array {
         prefix_items,
         items: items_node,
-        min_items,
-        max_items,
+        item_count,
         contains,
         unique_items,
         enumeration,
@@ -2720,6 +2572,7 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
 fn parse_schema_array_keyword(
     items: Option<&Value>,
     keyword: &str,
+    graph: &mut MutableSchemaGraph,
 ) -> Result<Vec<MutableSchemaNode>> {
     let Some(items) = items else {
         return Ok(Vec::new());
@@ -2728,7 +2581,10 @@ fn parse_schema_array_keyword(
         .as_array()
         .ok_or_else(|| invalid_parser_keyword_type(keyword, "an array", items))?;
 
-    items.iter().map(build_schema_ast_from_value).collect()
+    items
+        .iter()
+        .map(|schema| build_schema_ast_from_value(schema, graph))
+        .collect()
 }
 
 fn parse_enum_keyword(obj: &Map<String, Value>) -> Result<Option<Vec<Value>>> {
@@ -2921,283 +2777,176 @@ fn invalid_parser_keyword_entry_type(
 }
 
 fn resolve_refs_internal(
-    node: &mut MutableSchemaNode,
+    node: MutableSchemaNode,
+    graph: &mut MutableSchemaGraph,
     root_json: &Value,
     stack: &mut Vec<String>,
     cache: &mut HashMap<String, MutableSchemaNode>,
-) -> Result<()> {
-    let ref_path = {
-        let guard = node.borrow();
-        if let SchemaNodeKind::Ref(p) = &*guard {
-            Some(p.clone())
-        } else {
-            None
-        }
-    };
+) -> Result<MutableSchemaNode> {
+    match graph.kind(node).clone() {
+        MutableSchemaNodeKind::Ref(path) => {
+            if let Some(existing) = cache.get(&path).copied() {
+                return resolve_cached_ref_alias(&path, existing, graph, stack, cache);
+            }
 
-    if let Some(path) = ref_path {
-        if let Some(existing) = cache.get(&path).cloned() {
-            *node = resolve_cached_ref_alias(&path, existing, stack, cache)?;
-            return Ok(());
-        }
+            if !(path == "#" || path.starts_with("#/")) {
+                return Err(AstError::UnsupportedReference { ref_path: path });
+            }
 
-        if path == "#" || path.starts_with("#/") {
             let mut current = root_json;
             if let Some(stripped) = path.strip_prefix("#/") {
-                let parts: Vec<String> = stripped
-                    .split('/')
-                    .map(|token| {
-                        let mut decoded =
-                            percent_decode_str(token).decode_utf8_lossy().into_owned();
-                        decoded = decoded.replace("~1", "/");
-                        decoded.replace("~0", "~")
-                    })
-                    .collect();
-
-                for p in &parts {
-                    if let Some(next) = resolve_json_pointer_child(current, p) {
-                        current = next;
-                    } else {
-                        return Err(AstError::UnresolvedReference {
+                for token in stripped.split('/').map(decode_ref_token) {
+                    current = resolve_json_pointer_child(current, &token).ok_or_else(|| {
+                        AstError::UnresolvedReference {
                             ref_path: path.clone(),
-                        });
-                    }
+                        }
+                    })?;
                 }
             }
 
-            let mut resolved = build_schema_ast_from_value(current)?;
-            cache.insert(path.clone(), resolved.clone());
+            let resolved = build_schema_ast_from_value(current, graph)?;
+            cache.insert(path.clone(), resolved);
             stack.push(path.clone());
-            resolve_refs_internal(&mut resolved, root_json, stack, cache)?;
+            let resolved = resolve_refs_internal(resolved, graph, root_json, stack, cache)?;
             stack.pop();
-            cache.insert(path.clone(), resolved.clone());
-            *node = resolved;
-        } else {
-            return Err(AstError::UnsupportedReference {
-                ref_path: path.clone(),
-            });
+            cache.insert(path, resolved);
+            Ok(resolved)
         }
-        return Ok(());
-    }
-
-    if matches!(&*node.borrow(), SchemaNodeKind::AllOf(_)) {
-        let mut children = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::AllOf(children) => children.clone(),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-        for child in children.iter_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
+        MutableSchemaNodeKind::AllOf(children) => {
+            let children = children
+                .into_iter()
+                .map(|child| resolve_refs_internal(child, graph, root_json, stack, cache))
+                .collect::<Result<Vec<_>>>()?;
+            graph.set_kind(node, MutableSchemaNodeKind::AllOf(children));
+            normalize_resolved_node(node, graph);
+            Ok(node)
         }
-        *node.borrow_mut() = SchemaNodeKind::AllOf(children);
-        normalize_resolved_node(node);
-        return Ok(());
-    }
-    if matches!(&*node.borrow(), SchemaNodeKind::AnyOf(_)) {
-        let mut children = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::AnyOf(children) => children.clone(),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-        for child in children.iter_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
+        MutableSchemaNodeKind::AnyOf(children) => {
+            let children = children
+                .into_iter()
+                .map(|child| resolve_refs_internal(child, graph, root_json, stack, cache))
+                .collect::<Result<Vec<_>>>()?;
+            graph.set_kind(node, MutableSchemaNodeKind::AnyOf(children));
+            normalize_resolved_node(node, graph);
+            Ok(node)
         }
-        *node.borrow_mut() = SchemaNodeKind::AnyOf(children);
-        normalize_resolved_node(node);
-        return Ok(());
-    }
-    if matches!(&*node.borrow(), SchemaNodeKind::OneOf(_)) {
-        let mut children = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::OneOf(children) => children.clone(),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-        for child in children.iter_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
+        MutableSchemaNodeKind::OneOf(children) => {
+            let children = children
+                .into_iter()
+                .map(|child| resolve_refs_internal(child, graph, root_json, stack, cache))
+                .collect::<Result<Vec<_>>>()?;
+            graph.set_kind(node, MutableSchemaNodeKind::OneOf(children));
+            normalize_resolved_node(node, graph);
+            Ok(node)
         }
-        *node.borrow_mut() = SchemaNodeKind::OneOf(children);
-        normalize_resolved_node(node);
-        return Ok(());
-    }
-    if matches!(&*node.borrow(), SchemaNodeKind::IfThenElse { .. }) {
-        let (mut if_schema, mut then_schema, mut else_schema) = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::IfThenElse {
-                    if_schema,
-                    then_schema,
-                    else_schema,
-                } => (if_schema.clone(), then_schema.clone(), else_schema.clone()),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-
-        resolve_refs_internal(&mut if_schema, root_json, stack, cache)?;
-        if let Some(t) = &mut then_schema {
-            resolve_refs_internal(t, root_json, stack, cache)?;
+        MutableSchemaNodeKind::Not(child) => {
+            let child = resolve_refs_internal(child, graph, root_json, stack, cache)?;
+            graph.set_kind(node, MutableSchemaNodeKind::Not(child));
+            normalize_resolved_node(node, graph);
+            Ok(node)
         }
-        if let Some(e) = &mut else_schema {
-            resolve_refs_internal(e, root_json, stack, cache)?;
-        }
-        *node.borrow_mut() = SchemaNodeKind::IfThenElse {
+        MutableSchemaNodeKind::IfThenElse {
             if_schema,
             then_schema,
             else_schema,
-        };
-        normalize_resolved_node(node);
-        return Ok(());
-    }
-    if matches!(&*node.borrow(), SchemaNodeKind::Not(_)) {
-        let mut sub = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::Not(sub) => sub.clone(),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-        resolve_refs_internal(&mut sub, root_json, stack, cache)?;
-        *node.borrow_mut() = SchemaNodeKind::Not(sub);
-        normalize_resolved_node(node);
-        return Ok(());
-    }
-    if matches!(&*node.borrow(), SchemaNodeKind::Object { .. }) {
-        let (
+        } => {
+            let if_schema = resolve_refs_internal(if_schema, graph, root_json, stack, cache)?;
+            let then_schema = then_schema
+                .map(|child| resolve_refs_internal(child, graph, root_json, stack, cache))
+                .transpose()?;
+            let else_schema = else_schema
+                .map(|child| resolve_refs_internal(child, graph, root_json, stack, cache))
+                .transpose()?;
+            graph.set_kind(
+                node,
+                MutableSchemaNodeKind::IfThenElse {
+                    if_schema,
+                    then_schema,
+                    else_schema,
+                },
+            );
+            normalize_resolved_node(node, graph);
+            Ok(node)
+        }
+        MutableSchemaNodeKind::Object {
             mut properties,
             mut pattern_properties,
             required,
             mut additional,
             mut property_names,
-            min_properties,
-            max_properties,
+            property_count,
             dependent_required,
             enumeration,
-        ) = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::Object {
+        } => {
+            for child in properties.values_mut() {
+                *child = resolve_refs_internal(*child, graph, root_json, stack, cache)?;
+            }
+            for pattern_property in pattern_properties.values_mut() {
+                pattern_property.schema =
+                    resolve_refs_internal(pattern_property.schema, graph, root_json, stack, cache)?;
+            }
+            additional = resolve_refs_internal(additional, graph, root_json, stack, cache)?;
+            property_names = resolve_refs_internal(property_names, graph, root_json, stack, cache)?;
+            graph.set_kind(
+                node,
+                MutableSchemaNodeKind::Object {
                     properties,
                     pattern_properties,
                     required,
                     additional,
                     property_names,
-                    min_properties,
-                    max_properties,
+                    property_count,
                     dependent_required,
                     enumeration,
-                } => (
-                    properties.clone(),
-                    pattern_properties.clone(),
-                    required.clone(),
-                    additional.clone(),
-                    property_names.clone(),
-                    *min_properties,
-                    *max_properties,
-                    dependent_required.clone(),
-                    enumeration.clone(),
-                ),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-
-        for child in properties.values_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
+                },
+            );
+            Ok(node)
         }
-        for child in pattern_properties.values_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        resolve_refs_internal(&mut additional, root_json, stack, cache)?;
-        resolve_refs_internal(&mut property_names, root_json, stack, cache)?;
-        *node.borrow_mut() = SchemaNodeKind::Object {
-            properties,
-            pattern_properties,
-            required,
-            additional,
-            property_names,
-            min_properties,
-            max_properties,
-            dependent_required,
-            enumeration,
-        };
-        return Ok(());
-    }
-    if matches!(&*node.borrow(), SchemaNodeKind::Array { .. }) {
-        let (
+        MutableSchemaNodeKind::Array {
             mut prefix_items,
             mut items,
-            min_items,
-            max_items,
+            item_count,
             mut contains,
             unique_items,
             enumeration,
-        ) = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::Array {
+        } => {
+            for child in &mut prefix_items {
+                *child = resolve_refs_internal(*child, graph, root_json, stack, cache)?;
+            }
+            items = resolve_refs_internal(items, graph, root_json, stack, cache)?;
+            if let Some(contains) = &mut contains {
+                contains.schema =
+                    resolve_refs_internal(contains.schema, graph, root_json, stack, cache)?;
+            }
+            graph.set_kind(
+                node,
+                MutableSchemaNodeKind::Array {
                     prefix_items,
                     items,
-                    min_items,
-                    max_items,
+                    item_count,
                     contains,
                     unique_items,
                     enumeration,
-                } => (
-                    prefix_items.clone(),
-                    items.clone(),
-                    *min_items,
-                    *max_items,
-                    contains.clone(),
-                    *unique_items,
-                    enumeration.clone(),
-                ),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-
-        for child in &mut prefix_items {
-            resolve_refs_internal(child, root_json, stack, cache)?;
+                },
+            );
+            Ok(node)
         }
-        resolve_refs_internal(&mut items, root_json, stack, cache)?;
-        if let Some(contains) = &mut contains {
-            resolve_refs_internal(&mut contains.schema, root_json, stack, cache)?;
-        }
-        *node.borrow_mut() = SchemaNodeKind::Array {
-            prefix_items,
-            items,
-            min_items,
-            max_items,
-            contains,
-            unique_items,
-            enumeration,
-        };
-        return Ok(());
+        MutableSchemaNodeKind::BoolSchema(_)
+        | MutableSchemaNodeKind::Any
+        | MutableSchemaNodeKind::String { .. }
+        | MutableSchemaNodeKind::Number { .. }
+        | MutableSchemaNodeKind::Integer { .. }
+        | MutableSchemaNodeKind::Boolean { .. }
+        | MutableSchemaNodeKind::Null { .. }
+        | MutableSchemaNodeKind::Const(_)
+        | MutableSchemaNodeKind::Enum(_) => Ok(node),
     }
-    if matches!(&*node.borrow(), SchemaNodeKind::Defs(_)) {
-        let mut map = {
-            let guard = node.borrow();
-            match &*guard {
-                SchemaNodeKind::Defs(map) => map.clone(),
-                _ => unreachable!("node kind checked above"),
-            }
-        };
-        for child in map.values_mut() {
-            resolve_refs_internal(child, root_json, stack, cache)?;
-        }
-        *node.borrow_mut() = SchemaNodeKind::Defs(map);
-        return Ok(());
-    }
-
-    Ok(())
 }
 
 fn resolve_cached_ref_alias(
     ref_path: &str,
     cached_node: MutableSchemaNode,
+    graph: &MutableSchemaGraph,
     stack: &[String],
     cache: &HashMap<String, MutableSchemaNode>,
 ) -> Result<MutableSchemaNode> {
@@ -3214,9 +2963,8 @@ fn resolve_cached_ref_alias(
         }
 
         let next_path = {
-            let guard = current_node.borrow();
-            match &*guard {
-                SchemaNodeKind::Ref(next_path) => Some(next_path.clone()),
+            match graph.kind(current_node) {
+                MutableSchemaNodeKind::Ref(next_path) => Some(next_path.clone()),
                 _ => None,
             }
         };
@@ -3251,64 +2999,79 @@ fn resolve_json_pointer_child<'a>(current: &'a Value, token: &str) -> Option<&'a
     }
 }
 
-fn normalize_resolved_node(node: &mut MutableSchemaNode) {
-    let current = node.borrow().clone();
+fn decode_ref_token(token: &str) -> String {
+    let mut decoded = percent_decode_str(token).decode_utf8_lossy().into_owned();
+    decoded = decoded.replace("~1", "/");
+    decoded.replace("~0", "~")
+}
+
+fn normalize_resolved_node(node: MutableSchemaNode, graph: &mut MutableSchemaGraph) {
+    let current = graph.kind(node).clone();
     let replacement = match current {
-        SchemaNodeKind::AllOf(mut children) => {
-            if children.iter().any(is_false_schema) {
-                Some(SchemaNodeKind::BoolSchema(false))
+        MutableSchemaNodeKind::AllOf(mut children) => {
+            if children.iter().any(|child| is_false_schema(*child, graph)) {
+                Some(MutableSchemaNodeKind::BoolSchema(false))
             } else {
-                children.retain(|child| !is_any_schema(child));
-                children = dedupe_mutable_schema_nodes(children);
-                collapse_applicator_children(&children, true)
-                    .or(Some(SchemaNodeKind::AllOf(children)))
+                children.retain(|child| !is_any_schema(*child, graph));
+                collapse_applicator_children(&children, true, graph)
+                    .or(Some(MutableSchemaNodeKind::AllOf(children)))
             }
         }
-        SchemaNodeKind::AnyOf(mut children) => {
-            if children.iter().any(is_any_schema) {
-                Some(SchemaNodeKind::Any)
+        MutableSchemaNodeKind::AnyOf(mut children) => {
+            if children.iter().any(|child| is_any_schema(*child, graph)) {
+                Some(MutableSchemaNodeKind::Any)
             } else {
-                children.retain(|child| !is_false_schema(child));
-                children = dedupe_mutable_schema_nodes(children);
-                collapse_applicator_children(&children, false)
-                    .or(Some(SchemaNodeKind::AnyOf(children)))
+                children.retain(|child| !is_false_schema(*child, graph));
+                collapse_applicator_children(&children, false, graph)
+                    .or(Some(MutableSchemaNodeKind::AnyOf(children)))
             }
         }
-        SchemaNodeKind::OneOf(mut children) => {
-            let any_branch_count = children.iter().filter(|child| is_any_schema(child)).count();
+        MutableSchemaNodeKind::OneOf(mut children) => {
+            let any_branch_count = children
+                .iter()
+                .filter(|child| is_any_schema(**child, graph))
+                .count();
             if any_branch_count > 1 {
-                Some(SchemaNodeKind::BoolSchema(false))
+                Some(MutableSchemaNodeKind::BoolSchema(false))
             } else {
-                children.retain(|child| !is_any_schema(child) && !is_false_schema(child));
+                children.retain(|child| {
+                    !is_any_schema(*child, graph) && !is_false_schema(*child, graph)
+                });
                 // Keep duplicates: `oneOf: [A, A]` matches `A` twice, so it is
                 // unsatisfiable and must not collapse to `A`.
-                collapse_one_of_children(children, any_branch_count == 1)
+                collapse_one_of_children(children, any_branch_count == 1, graph)
             }
         }
-        SchemaNodeKind::Not(sub) => {
-            if is_false_schema(&sub) {
-                Some(SchemaNodeKind::Any)
-            } else if is_any_schema(&sub) {
-                Some(SchemaNodeKind::BoolSchema(false))
+        MutableSchemaNodeKind::Not(sub) => {
+            if is_false_schema(sub, graph) {
+                Some(MutableSchemaNodeKind::Any)
+            } else if is_any_schema(sub, graph) {
+                Some(MutableSchemaNodeKind::BoolSchema(false))
             } else {
-                Some(SchemaNodeKind::Not(sub))
+                Some(MutableSchemaNodeKind::Not(sub))
             }
         }
-        SchemaNodeKind::IfThenElse {
+        MutableSchemaNodeKind::IfThenElse {
             if_schema,
             mut then_schema,
             mut else_schema,
         } => {
-            if then_schema.as_ref().is_some_and(is_any_schema) {
+            if then_schema
+                .as_ref()
+                .is_some_and(|child| is_any_schema(*child, graph))
+            {
                 then_schema = None;
             }
-            if else_schema.as_ref().is_some_and(is_any_schema) {
+            if else_schema
+                .as_ref()
+                .is_some_and(|child| is_any_schema(*child, graph))
+            {
                 else_schema = None;
             }
             if then_schema.is_none() && else_schema.is_none() {
-                Some(SchemaNodeKind::Any)
+                Some(MutableSchemaNodeKind::Any)
             } else {
-                Some(SchemaNodeKind::IfThenElse {
+                Some(MutableSchemaNodeKind::IfThenElse {
                     if_schema,
                     then_schema,
                     else_schema,
@@ -3319,21 +3082,22 @@ fn normalize_resolved_node(node: &mut MutableSchemaNode) {
     };
 
     if let Some(kind) = replacement {
-        *node.borrow_mut() = kind;
+        graph.set_kind(node, kind);
     }
 }
 
 fn collapse_applicator_children(
     children: &[MutableSchemaNode],
     empty_is_any: bool,
+    graph: &MutableSchemaGraph,
 ) -> Option<MutableSchemaNodeKind> {
     match children.len() {
         0 => Some(if empty_is_any {
-            SchemaNodeKind::Any
+            MutableSchemaNodeKind::Any
         } else {
-            SchemaNodeKind::BoolSchema(false)
+            MutableSchemaNodeKind::BoolSchema(false)
         }),
-        1 => Some(children[0].borrow().clone()),
+        1 => Some(graph.kind(children[0]).clone()),
         _ => None,
     }
 }
@@ -3341,28 +3105,29 @@ fn collapse_applicator_children(
 fn collapse_one_of_children(
     mut children: Vec<MutableSchemaNode>,
     has_always_valid_branch: bool,
+    graph: &mut MutableSchemaGraph,
 ) -> Option<MutableSchemaNodeKind> {
     if !has_always_valid_branch {
-        return collapse_applicator_children(&children, false)
-            .or(Some(SchemaNodeKind::OneOf(children)));
+        return collapse_applicator_children(&children, false, graph)
+            .or(Some(MutableSchemaNodeKind::OneOf(children)));
     }
 
     match children.len() {
-        0 => Some(SchemaNodeKind::Any),
-        1 => Some(SchemaNodeKind::Not(children.remove(0))),
-        _ => Some(SchemaNodeKind::Not(MutableSchemaNode::new(
-            SchemaNodeKind::AnyOf(children),
-        ))),
+        0 => Some(MutableSchemaNodeKind::Any),
+        1 => Some(MutableSchemaNodeKind::Not(children.remove(0))),
+        _ => Some(MutableSchemaNodeKind::Not(
+            graph.push(MutableSchemaNodeKind::AnyOf(children)),
+        )),
     }
 }
 
-fn is_any_schema(node: &MutableSchemaNode) -> bool {
+fn is_any_schema(node: MutableSchemaNode, graph: &MutableSchemaGraph) -> bool {
     matches!(
-        &*node.borrow(),
-        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+        graph.kind(node),
+        MutableSchemaNodeKind::Any | MutableSchemaNodeKind::BoolSchema(true)
     )
 }
 
-fn is_false_schema(node: &MutableSchemaNode) -> bool {
-    matches!(&*node.borrow(), SchemaNodeKind::BoolSchema(false))
+fn is_false_schema(node: MutableSchemaNode, graph: &MutableSchemaGraph) -> bool {
+    matches!(graph.kind(node), MutableSchemaNodeKind::BoolSchema(false))
 }

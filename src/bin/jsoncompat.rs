@@ -16,12 +16,12 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use json_schema_fuzz::GenerateError;
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
 struct SchemaDoc {
-    schema: backcompat::ResolvedSchema,
+    schema: backcompat::SchemaDocument,
 }
 
 impl SchemaDoc {
@@ -31,7 +31,7 @@ impl SchemaDoc {
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
 
         // Build the resolved schema and cache its validator backends.
-        let schema = backcompat::ResolvedSchema::from_json(&json)
+        let schema = backcompat::SchemaDocument::from_json(&json)
             .with_context(|| format!("building schema for {path}"))?;
 
         Ok(Self { schema })
@@ -47,7 +47,7 @@ impl SchemaDoc {
         rng: &mut R,
         depth: u8,
     ) -> std::result::Result<Value, GenerateError> {
-        json_schema_fuzz::generate_value(&self.schema, rng, depth)
+        ValueGenerator::generate(&self.schema, GenerationConfig::new(depth), rng)
     }
 }
 
@@ -238,7 +238,7 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
     let role: backcompat::Role = args.role.into();
 
     // 1. Static analysis.
-    let ok_static = backcompat::check_compat(old.schema.root()?, new.schema.root()?, role);
+    let ok_static = backcompat::check_compat(&old.schema, &new.schema, role)?;
 
     // 2. Optional fuzzing (only if requested or static failed).
     let offender = if args.fuzz > 0 && !ok_static {
@@ -342,8 +342,8 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
     match (old, new) {
         (Some(old), Some(new)) => {
             let (old_schema, new_schema) = (
-                backcompat::ResolvedSchema::from_json(&old.schema),
-                backcompat::ResolvedSchema::from_json(&new.schema),
+                backcompat::SchemaDocument::from_json(&old.schema),
+                backcompat::SchemaDocument::from_json(&new.schema),
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
@@ -354,7 +354,8 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                             status: Status::Identical,
                         };
                     }
-                    let (Ok(old_root), Ok(new_root)) = (old_schema.root(), new_schema.root())
+                    let Ok(ok) =
+                        backcompat::check_compat(&old_schema, &new_schema, old.mode.into())
                     else {
                         return Grade {
                             id: new.stable_id.clone(),
@@ -362,7 +363,6 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                             status: Status::Invalid,
                         };
                     };
-                    let ok = backcompat::check_compat(old_root, new_root, old.mode.into());
                     if !ok {
                         let mut rng = rand::rng();
                         let example = match sample_incompat(
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     fn gen_value_retries_until_raw_schema_accepts_the_candidate() {
         let schema = SchemaDoc {
-            schema: backcompat::ResolvedSchema::from_json(&json!({
+            schema: backcompat::SchemaDocument::from_json(&json!({
                 "type": "integer",
                 "minimum": 1
             }))
@@ -734,7 +734,7 @@ mod tests {
     #[test]
     fn gen_value_returns_an_error_when_no_raw_valid_candidate_is_found() {
         let schema = SchemaDoc {
-            schema: backcompat::ResolvedSchema::from_json(&json!(false)).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -750,10 +750,10 @@ mod tests {
     #[test]
     fn sample_incompat_with_role_both_continues_after_exhausting_the_first_direction() {
         let old = SchemaDoc {
-            schema: backcompat::ResolvedSchema::from_json(&json!({})).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&json!({})).unwrap(),
         };
         let new = SchemaDoc {
-            schema: backcompat::ResolvedSchema::from_json(&json!(false)).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
         };
         let mut rng = StdRng::seed_from_u64(7);
 
