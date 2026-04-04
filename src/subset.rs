@@ -377,6 +377,7 @@ fn type_constraints_subsumed_with_context(
                     trigger,
                     &sprops,
                     &s_pattern_props,
+                    &s_prop_names,
                     &s_addl,
                 );
                 if trigger_allowed && !deps.iter().all(|d| sreq.contains(d)) {
@@ -737,8 +738,13 @@ fn object_property_name_can_be_present(
     property_name: &str,
     properties: &HashMap<String, ResolvedNode>,
     pattern_properties: &HashMap<String, ResolvedNode>,
+    property_names: &ResolvedNode,
     additional: &ResolvedNode,
 ) -> bool {
+    if !property_names.accepts_value(&Value::String(property_name.to_owned())) {
+        return false;
+    }
+
     let mut matched = false;
 
     if let Some(schema) = properties.get(property_name) {
@@ -1065,6 +1071,24 @@ mod tests {
         }));
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn dependent_required_trigger_forbidden_by_subset_property_names_is_vacuous() {
+        let old = resolve(json!({
+            "type": "object",
+            "dependentRequired": {
+                "x": ["y"]
+            }
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "propertyNames": {
+                "pattern": "^z$"
+            }
+        }));
+
+        assert!(is_subschema_of(&new, &old));
     }
 
     #[test]

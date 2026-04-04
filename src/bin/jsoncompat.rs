@@ -677,6 +677,42 @@ mod tests {
     }
 
     #[test]
+    fn compat_command_rejects_invalid_old_schema_before_reporting_a_verdict() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir();
+        let old_path = dir.join(format!("jsoncompat-invalid-old-{unique}.json"));
+        let new_path = dir.join(format!("jsoncompat-invalid-new-{unique}.json"));
+
+        fs::write(&old_path, r#"{"type":"string","maxLength":"x"}"#).unwrap();
+        fs::write(&new_path, r#"{"type":"string"}"#).unwrap();
+
+        let error = cmd_compat(CompatArgs {
+            old: old_path.to_string_lossy().into_owned(),
+            new: new_path.to_string_lossy().into_owned(),
+            role: RoleCli::Serializer,
+            fuzz: 0,
+            depth: 8,
+        })
+        .unwrap_err();
+
+        fs::remove_file(old_path).unwrap();
+        fs::remove_file(new_path).unwrap();
+
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("building schema"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("keyword 'maxLength' at '#/maxLength' must be a non-negative integer"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
     fn gen_value_retries_until_raw_schema_accepts_the_candidate() {
         let schema = SchemaDoc {
             schema: backcompat::ResolvedSchema::from_json(&json!({

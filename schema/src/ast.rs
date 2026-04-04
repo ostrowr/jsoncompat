@@ -1,4 +1,4 @@
-use crate::canonicalize::{canonicalize_schema, validate_schema_dialects};
+use crate::canonicalize::{canonicalize_schema, json_type_name};
 use crate::json_semantics::{
     integer_value_from_json, json_values_equal, numeric_values_equal, property_name_matches_pattern,
 };
@@ -56,14 +56,18 @@ impl ResolvedSchema {
     /// while `is_valid()` intentionally validates against a backend compiled
     /// from the original raw schema document.
     pub fn from_json(raw: &Value) -> Result<Self> {
-        validate_schema_dialects(raw)?;
-        Ok(Self {
+        let schema = Self {
             raw: raw.clone(),
             root: OnceCell::new(),
             canonical: OnceCell::new(),
             raw_validator: OnceCell::new(),
             canonical_validator: OnceCell::new(),
-        })
+        };
+        schema
+            .canonical
+            .set(canonicalize_schema(raw)?.as_value().clone())
+            .expect("canonical schema cache should be initialized exactly once");
+        Ok(schema)
     }
 
     /// Return the lazily built resolved root node.
@@ -1960,11 +1964,11 @@ fn build_schema_ast_from_value(raw: &Value) -> Result<MutableSchemaNode> {
         SchemaShape::AnyOf(subschemas) => parse_any_of_schema(obj, subschemas),
         SchemaShape::OneOf(subschemas) => parse_one_of_schema(obj, subschemas),
         SchemaShape::Not(schema) => parse_not_schema(obj, schema),
-        SchemaShape::String => Ok(parse_string_schema(obj)),
-        SchemaShape::Number => Ok(parse_number_schema(obj, false)),
-        SchemaShape::Integer => Ok(parse_number_schema(obj, true)),
-        SchemaShape::Boolean => Ok(parse_boolean_schema(obj)),
-        SchemaShape::Null => Ok(parse_null_schema(obj)),
+        SchemaShape::String => parse_string_schema(obj),
+        SchemaShape::Number => parse_number_schema(obj, false),
+        SchemaShape::Integer => parse_number_schema(obj, true),
+        SchemaShape::Boolean => parse_boolean_schema(obj),
+        SchemaShape::Null => parse_null_schema(obj),
         SchemaShape::Object => parse_object_schema(obj),
         SchemaShape::Array => parse_array_schema(obj),
         SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names),
@@ -2390,26 +2394,20 @@ fn parse_applicator_base_schema(
     }
 }
 
-fn parse_string_schema(obj: &Map<String, Value>) -> MutableSchemaNode {
-    let min_length = Some(obj.get("minLength").and_then(|v| v.as_u64()).unwrap_or(0));
-    let max_length = obj.get("maxLength").and_then(|v| v.as_u64());
-    let pattern = obj
-        .get("pattern")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_owned());
-    let format = obj
-        .get("format")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_owned());
-    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+fn parse_string_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
+    let min_length = Some(parse_u64_keyword(obj, "minLength")?.unwrap_or(0));
+    let max_length = parse_u64_keyword(obj, "maxLength")?;
+    let pattern = parse_string_keyword(obj, "pattern")?;
+    let format = parse_string_keyword(obj, "format")?;
+    let enumeration = parse_enum_keyword(obj)?;
 
-    MutableSchemaNode::new(SchemaNodeKind::String {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::String {
         min_length,
         max_length,
         pattern,
         format,
         enumeration,
-    })
+    }))
 }
 
 fn dedupe_mutable_schema_nodes(nodes: Vec<MutableSchemaNode>) -> Vec<MutableSchemaNode> {
@@ -2422,105 +2420,96 @@ fn dedupe_mutable_schema_nodes(nodes: Vec<MutableSchemaNode>) -> Vec<MutableSche
     unique
 }
 
-fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> MutableSchemaNode {
+fn parse_number_schema(obj: &Map<String, Value>, integer: bool) -> Result<MutableSchemaNode> {
     if integer {
-        let mut minimum = parse_integer_value(obj.get("minimum"));
-        let mut maximum = parse_integer_value(obj.get("maximum"));
+        let mut minimum = parse_i64_keyword(obj, "minimum")?;
+        let mut maximum = parse_i64_keyword(obj, "maximum")?;
 
-        let exclusive_minimum =
-            if let Some(bound) = parse_integer_value(obj.get("exclusiveMinimum")) {
-                minimum = Some(bound);
-                true
-            } else {
-                false
-            };
+        let exclusive_minimum = if let Some(bound) = parse_i64_keyword(obj, "exclusiveMinimum")? {
+            minimum = Some(bound);
+            true
+        } else {
+            false
+        };
 
-        let exclusive_maximum =
-            if let Some(bound) = parse_integer_value(obj.get("exclusiveMaximum")) {
-                maximum = Some(bound);
-                true
-            } else {
-                false
-            };
+        let exclusive_maximum = if let Some(bound) = parse_i64_keyword(obj, "exclusiveMaximum")? {
+            maximum = Some(bound);
+            true
+        } else {
+            false
+        };
 
-        let multiple_of = parse_integer_multiple_of(obj.get("multipleOf"))
-            .or_else(|| IntegerMultipleOf::from_integer(1));
+        let multiple_of =
+            parse_integer_multiple_of_keyword(obj)?.or_else(|| IntegerMultipleOf::from_integer(1));
 
-        return MutableSchemaNode::new(SchemaNodeKind::Integer {
+        return Ok(MutableSchemaNode::new(SchemaNodeKind::Integer {
             minimum,
             maximum,
             exclusive_minimum,
             exclusive_maximum,
             multiple_of,
-            enumeration: obj.get("enum").and_then(|v| v.as_array()).cloned(),
-        });
+            enumeration: parse_enum_keyword(obj)?,
+        }));
     }
 
-    let mut minimum = obj.get("minimum").and_then(|v| v.as_f64());
-    let mut maximum = obj.get("maximum").and_then(|v| v.as_f64());
+    let mut minimum = parse_f64_keyword(obj, "minimum")?;
+    let mut maximum = parse_f64_keyword(obj, "maximum")?;
 
-    let exclusive_minimum = if let Some(Value::Number(n)) = obj.get("exclusiveMinimum") {
-        minimum = n.as_f64();
+    let exclusive_minimum = if let Some(bound) = parse_f64_keyword(obj, "exclusiveMinimum")? {
+        minimum = Some(bound);
         true
     } else {
         false
     };
 
-    let exclusive_maximum = if let Some(Value::Number(n)) = obj.get("exclusiveMaximum") {
-        maximum = n.as_f64();
+    let exclusive_maximum = if let Some(bound) = parse_f64_keyword(obj, "exclusiveMaximum")? {
+        maximum = Some(bound);
         true
     } else {
         false
     };
-    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let enumeration = parse_enum_keyword(obj)?;
 
-    let multiple_of = obj
-        .get("multipleOf")
-        .and_then(|v| v.as_f64())
-        .filter(|m| *m > 0.0);
+    let multiple_of = parse_positive_f64_keyword(obj, "multipleOf")?;
 
-    MutableSchemaNode::new(SchemaNodeKind::Number {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::Number {
         minimum,
         maximum,
         exclusive_minimum,
         exclusive_maximum,
         multiple_of,
         enumeration,
-    })
+    }))
 }
 
-fn parse_boolean_schema(obj: &Map<String, Value>) -> MutableSchemaNode {
-    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    MutableSchemaNode::new(SchemaNodeKind::Boolean { enumeration })
+fn parse_boolean_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::Boolean {
+        enumeration: parse_enum_keyword(obj)?,
+    }))
 }
 
-fn parse_null_schema(obj: &Map<String, Value>) -> MutableSchemaNode {
-    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
-    MutableSchemaNode::new(SchemaNodeKind::Null { enumeration })
+fn parse_null_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
+    Ok(MutableSchemaNode::new(SchemaNodeKind::Null {
+        enumeration: parse_enum_keyword(obj)?,
+    }))
 }
 
 fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
     let mut properties = HashMap::new();
-    if let Some(Value::Object(props)) = obj.get("properties") {
+    if let Some(value) = obj.get("properties") {
+        let props = parse_object_keyword(value, "properties")?;
         for (k, v) in props {
             properties.insert(k.clone(), build_schema_ast_from_value(v)?);
         }
     }
     let mut pattern_properties = HashMap::new();
-    if let Some(Value::Object(props)) = obj.get("patternProperties") {
+    if let Some(value) = obj.get("patternProperties") {
+        let props = parse_object_keyword(value, "patternProperties")?;
         for (pattern, schema) in props {
             pattern_properties.insert(pattern.clone(), build_schema_ast_from_value(schema)?);
         }
     }
-    let required: HashSet<String> = obj
-        .get("required")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let required = parse_string_set_keyword(obj, "required")?;
 
     for name in &required {
         if !properties.contains_key(name) {
@@ -2541,35 +2530,10 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
         Some(other) => build_schema_ast_from_value(other)?,
     };
 
-    let min_properties = obj
-        .get("minProperties")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .or(Some(required.len()));
-    let max_properties = obj
-        .get("maxProperties")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
-    let dependent_required = obj
-        .get("dependentRequired")
-        .and_then(|v| v.as_object())
-        .map(|map| {
-            map.iter()
-                .map(|(k, v)| {
-                    let deps = v
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
-                    (k.clone(), deps)
-                })
-                .collect::<HashMap<_, _>>()
-        })
-        .unwrap_or_default();
-    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let min_properties = parse_usize_keyword(obj, "minProperties")?.or(Some(required.len()));
+    let max_properties = parse_usize_keyword(obj, "maxProperties")?;
+    let dependent_required = parse_dependent_required_keyword(obj)?;
+    let enumeration = parse_enum_keyword(obj)?;
 
     Ok(MutableSchemaNode::new(SchemaNodeKind::Object {
         properties,
@@ -2585,7 +2549,7 @@ fn parse_object_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
 }
 
 fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
-    let mut prefix_items = parse_schema_array(obj.get("prefixItems"))?;
+    let mut prefix_items = parse_schema_array_keyword(obj.get("prefixItems"), "prefixItems")?;
     let items_node = match obj.get("items") {
         None => MutableSchemaNode::any(),
         Some(Value::Bool(true)) => MutableSchemaNode::any(),
@@ -2600,29 +2564,26 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
         }
         Some(other) => build_schema_ast_from_value(other)?,
     };
-    let min_items = obj.get("minItems").and_then(|v| v.as_u64()).or_else(|| {
+    let min_contains = parse_u64_keyword(obj, "minContains")?;
+    let max_contains = parse_u64_keyword(obj, "maxContains")?;
+    let min_items = parse_u64_keyword(obj, "minItems")?.or_else(|| {
         if obj.contains_key("contains") {
-            obj.get("minContains")
-                .and_then(|value| value.as_u64())
-                .or(Some(1))
+            min_contains.or(Some(1))
         } else {
             Some(0)
         }
     });
-    let max_items = obj.get("maxItems").and_then(|v| v.as_u64());
-    let unique_items = obj
-        .get("uniqueItems")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let enumeration = obj.get("enum").and_then(|v| v.as_array()).cloned();
+    let max_items = parse_u64_keyword(obj, "maxItems")?;
+    let unique_items = parse_bool_keyword(obj, "uniqueItems")?.unwrap_or(false);
+    let enumeration = parse_enum_keyword(obj)?;
 
     let contains = obj
         .get("contains")
         .map(|contains| -> Result<ArrayContains<MutableSchemaNode>> {
             Ok(ArrayContains {
                 schema: build_schema_ast_from_value(contains)?,
-                min_contains: obj.get("minContains").and_then(Value::as_u64).unwrap_or(1),
-                max_contains: obj.get("maxContains").and_then(Value::as_u64),
+                min_contains: min_contains.unwrap_or(1),
+                max_contains,
             })
         })
         .transpose()?;
@@ -2638,12 +2599,207 @@ fn parse_array_schema(obj: &Map<String, Value>) -> Result<MutableSchemaNode> {
     }))
 }
 
-fn parse_schema_array(items: Option<&Value>) -> Result<Vec<MutableSchemaNode>> {
-    let Some(Value::Array(items)) = items else {
+fn parse_schema_array_keyword(
+    items: Option<&Value>,
+    keyword: &str,
+) -> Result<Vec<MutableSchemaNode>> {
+    let Some(items) = items else {
         return Ok(Vec::new());
     };
+    let items = items
+        .as_array()
+        .ok_or_else(|| invalid_parser_keyword_type(keyword, "an array", items))?;
 
     items.iter().map(build_schema_ast_from_value).collect()
+}
+
+fn parse_enum_keyword(obj: &Map<String, Value>) -> Result<Option<Vec<Value>>> {
+    obj.get("enum")
+        .map(|value| {
+            value
+                .as_array()
+                .cloned()
+                .ok_or_else(|| invalid_parser_keyword_type("enum", "an array", value))
+        })
+        .transpose()
+}
+
+fn parse_string_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<String>> {
+    obj.get(keyword)
+        .map(|value| {
+            value
+                .as_str()
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| invalid_parser_keyword_type(keyword, "a string", value))
+        })
+        .transpose()
+}
+
+fn parse_bool_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<bool>> {
+    obj.get(keyword)
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| invalid_parser_keyword_type(keyword, "a boolean", value))
+        })
+        .transpose()
+}
+
+fn parse_u64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<u64>> {
+    obj.get(keyword)
+        .map(|value| {
+            integer_value_from_json(value)
+                .and_then(|integer| u64::try_from(integer).ok())
+                .ok_or_else(|| {
+                    invalid_parser_keyword_type(keyword, "a non-negative integer", value)
+                })
+        })
+        .transpose()
+}
+
+fn parse_usize_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<usize>> {
+    parse_u64_keyword(obj, keyword)?
+        .map(|value| {
+            usize::try_from(value).map_err(|_| {
+                AstError::Schema(SchemaError::IntegerKeywordOutOfRange {
+                    pointer: format!("#/{keyword}"),
+                    keyword: keyword.to_owned(),
+                })
+            })
+        })
+        .transpose()
+}
+
+fn parse_f64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<f64>> {
+    obj.get(keyword)
+        .map(|value| {
+            let number = value
+                .as_f64()
+                .ok_or_else(|| invalid_parser_keyword_type(keyword, "a finite number", value))?;
+            if !number.is_finite() {
+                return Err(AstError::Schema(SchemaError::NonFiniteNumericKeyword {
+                    pointer: format!("#/{keyword}"),
+                    keyword: keyword.to_owned(),
+                }));
+            }
+            Ok(number)
+        })
+        .transpose()
+}
+
+fn parse_positive_f64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<f64>> {
+    let Some(value) = parse_f64_keyword(obj, keyword)? else {
+        return Ok(None);
+    };
+    if value <= 0.0 {
+        return Err(invalid_parser_keyword_type(
+            keyword,
+            "a positive number",
+            obj.get(keyword)
+                .expect("present keyword must still be available for parser errors"),
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn parse_i64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<i64>> {
+    obj.get(keyword)
+        .map(|value| {
+            parse_integer_value(Some(value)).ok_or_else(|| {
+                invalid_parser_keyword_type(
+                    keyword,
+                    "an integer in the supported signed 64-bit range",
+                    value,
+                )
+            })
+        })
+        .transpose()
+}
+
+fn parse_integer_multiple_of_keyword(
+    obj: &Map<String, Value>,
+) -> Result<Option<IntegerMultipleOf>> {
+    let Some(value) = obj.get("multipleOf") else {
+        return Ok(None);
+    };
+    let multiple_of = parse_integer_multiple_of(Some(value))
+        .ok_or_else(|| invalid_parser_keyword_type("multipleOf", "a positive number", value))?;
+    Ok(Some(multiple_of))
+}
+
+fn parse_object_keyword<'a>(value: &'a Value, keyword: &str) -> Result<&'a Map<String, Value>> {
+    value
+        .as_object()
+        .ok_or_else(|| invalid_parser_keyword_type(keyword, "an object", value))
+}
+
+fn parse_string_set_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<HashSet<String>> {
+    let Some(value) = obj.get(keyword) else {
+        return Ok(HashSet::new());
+    };
+    let items = value
+        .as_array()
+        .ok_or_else(|| invalid_parser_keyword_type(keyword, "an array of strings", value))?;
+    let mut names = HashSet::new();
+    for (index, item) in items.iter().enumerate() {
+        let name = item
+            .as_str()
+            .ok_or_else(|| invalid_parser_keyword_entry_type(keyword, index, "a string", item))?;
+        names.insert(name.to_owned());
+    }
+    Ok(names)
+}
+
+fn parse_dependent_required_keyword(
+    obj: &Map<String, Value>,
+) -> Result<HashMap<String, Vec<String>>> {
+    let Some(value) = obj.get("dependentRequired") else {
+        return Ok(HashMap::new());
+    };
+    let entries = parse_object_keyword(value, "dependentRequired")?;
+    let mut dependent_required = HashMap::new();
+    for (name, deps) in entries {
+        let deps = deps.as_array().ok_or_else(|| {
+            invalid_parser_keyword_type("dependentRequired", "an object of string arrays", deps)
+        })?;
+        let mut parsed_deps = Vec::with_capacity(deps.len());
+        for (index, dep) in deps.iter().enumerate() {
+            let dep = dep.as_str().ok_or_else(|| {
+                invalid_parser_keyword_entry_type("dependentRequired", index, "a string", dep)
+            })?;
+            parsed_deps.push(dep.to_owned());
+        }
+        dependent_required.insert(name.clone(), parsed_deps);
+    }
+    Ok(dependent_required)
+}
+
+fn invalid_parser_keyword_type(
+    keyword: &str,
+    expected_type: &'static str,
+    value: &Value,
+) -> AstError {
+    AstError::Schema(SchemaError::InvalidKeywordType {
+        pointer: format!("#/{keyword}"),
+        keyword: keyword.to_owned(),
+        expected_type,
+        actual_type: json_type_name(value),
+    })
+}
+
+fn invalid_parser_keyword_entry_type(
+    keyword: &str,
+    index: usize,
+    expected_type: &'static str,
+    value: &Value,
+) -> AstError {
+    AstError::Schema(SchemaError::InvalidKeywordEntryType {
+        pointer: format!("#/{keyword}"),
+        keyword: keyword.to_owned(),
+        index,
+        expected_type,
+        actual_type: json_type_name(value),
+    })
 }
 
 fn resolve_refs_internal(

@@ -174,6 +174,78 @@ fn compile_error_is_owned_after_input_schema_is_dropped() {
 }
 
 #[test]
+fn resolved_schema_from_json_rejects_invalid_keyword_shapes_before_root_resolution() {
+    assert_schema_build_error(
+        &json!({
+            "type": "string",
+            "maxLength": "x"
+        }),
+        "keyword 'maxLength' at '#/maxLength' must be a non-negative integer, got string",
+    );
+    assert_schema_build_error(
+        &json!({
+            "type": "number",
+            "minimum": "x"
+        }),
+        "keyword 'minimum' at '#/minimum' must be a finite number, got string",
+    );
+    assert_schema_build_error(
+        &json!({
+            "type": "array",
+            "minItems": "x"
+        }),
+        "keyword 'minItems' at '#/minItems' must be a non-negative integer, got string",
+    );
+    assert_schema_build_error(
+        &json!({
+            "type": "object",
+            "required": [1]
+        }),
+        "entry 0 of 'required' at '#/required' must be a string, got number",
+    );
+    assert_schema_build_error(
+        &json!({
+            "type": "object",
+            "dependentRequired": {
+                "x": [1]
+            }
+        }),
+        "entry 0 of 'dependentRequired' at '#/dependentRequired/x' must be a string, got number",
+    );
+}
+
+#[test]
+fn resolved_schema_from_json_accepts_float_form_integer_keyword_values() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "type": "string",
+        "maxLength": 1.0
+    }))
+    .unwrap();
+
+    assert_eq!(
+        schema.canonical_schema_json().unwrap(),
+        &json!({
+            "maxLength": 1,
+            "minLength": 0,
+            "type": "string"
+        })
+    );
+    assert!(schema.root().unwrap().accepts_value(&json!("x")));
+    assert!(!schema.root().unwrap().accepts_value(&json!("xy")));
+}
+
+#[test]
+fn resolved_schema_from_json_rejects_non_positive_multiple_of() {
+    assert_schema_build_error(
+        &json!({
+            "type": "number",
+            "multipleOf": 0
+        }),
+        "keyword 'multipleOf' at '#/multipleOf' must be a positive number, got number",
+    );
+}
+
+#[test]
 fn resolve_local_ref() {
     let raw = json!({
         "definitions": {"Int": {"type":"integer"}},
@@ -898,7 +970,7 @@ fn rejects_anchor_and_dynamic_ref_keywords_with_explicit_unsupported_reference_e
 }
 
 #[test]
-fn raw_validation_does_not_force_canonicalization_or_resolution() {
+fn raw_validation_does_not_force_resolution_or_canonicalized_validator_compilation() {
     let schema = ResolvedSchema::from_json(&json!({
         "$id": "https://example.com/schemas/node.json",
         "type": "string"
@@ -1032,6 +1104,11 @@ fn build_schema(raw: &Value) -> SchemaNode {
 
 fn compile_ast(ast: &SchemaNode) -> schema::JSONSchema {
     compile(&ast.to_json()).unwrap()
+}
+
+fn assert_schema_build_error(raw: &Value, expected: &str) {
+    let error = ResolvedSchema::from_json(raw).unwrap_err().to_string();
+    assert_eq!(error, expected);
 }
 
 fn assert_resolved_graph_is_public(

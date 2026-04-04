@@ -593,6 +593,31 @@ fn canonicalize_intersects_const_with_enum() {
         }),
         &json!({ "not": true }),
     );
+
+    assert_canonicalizes_to(
+        &json!({
+            "const": 1.0,
+            "enum": [1]
+        }),
+        &json!({
+            "enum": [1.0]
+        }),
+    );
+}
+
+#[test]
+fn canonicalize_accepts_float_form_integer_keyword_values() {
+    assert_canonicalizes_to(
+        &json!({
+            "type": "string",
+            "maxLength": 1.0
+        }),
+        &json!({
+            "maxLength": 1,
+            "minLength": 0,
+            "type": "string"
+        }),
+    );
 }
 
 #[test]
@@ -1268,6 +1293,22 @@ fn canonicalize_rejects_invalid_schema_shapes_with_precise_pointers() {
     assert_canonicalize_error(
         &json!({ "anyOf": {} }),
         "keyword 'anyOf' at '#/anyOf' must be an array, got object",
+    );
+    assert_canonicalize_error(
+        &json!({ "maxLength": "x" }),
+        "keyword 'maxLength' at '#/maxLength' must be a non-negative integer, got string",
+    );
+    assert_canonicalize_error(
+        &json!({ "minimum": "x" }),
+        "keyword 'minimum' at '#/minimum' must be a finite number, got string",
+    );
+    assert_canonicalize_error(
+        &json!({ "minItems": "x" }),
+        "keyword 'minItems' at '#/minItems' must be a non-negative integer, got string",
+    );
+    assert_canonicalize_error(
+        &json!({ "multipleOf": 0 }),
+        "keyword 'multipleOf' at '#/multipleOf' must be a positive number, got number",
     );
 }
 

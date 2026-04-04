@@ -212,12 +212,12 @@ The Rust code is split into five crates and one CLI binary. The website under `w
 The two core schema APIs are:
 
 - `json_schema_ast::compile(&raw_schema)`, which compiles the original schema document directly with the `jsonschema` validator backend. Before compilation, this crate rejects any `$schema` declaration other than Draft 2020-12 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing `#`).
-- `json_schema_ast::ResolvedSchema::from_json(&raw_schema)`, which eagerly stores the original raw schema JSON and lazily materializes derived views on first use:
+- `json_schema_ast::ResolvedSchema::from_json(&raw_schema)`, which eagerly stores the original raw schema JSON, eagerly canonicalizes and validates the schema document once, and then lazily materializes the resolved graph and compiled validators on first use:
   - `ResolvedSchema::is_valid(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the original raw schema document.
-  - `ResolvedSchema::is_valid_canonicalized(&value) -> Result<bool, SchemaBuildError>` lazily canonicalizes the schema, compiles a validator from the canonicalized JSON, and exists to test/debug whether canonicalization preserved semantics.
-  - `ResolvedSchema::root() -> Result<&ResolvedNode, SchemaBuildError>` lazily canonicalizes the schema, resolves local refs, and exposes the immutable canonicalized graph used by compatibility analysis and fuzzing/codegen.
+  - `ResolvedSchema::is_valid_canonicalized(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the already-canonicalized JSON, and exists to test/debug whether canonicalization preserved semantics.
+  - `ResolvedSchema::root() -> Result<&ResolvedNode, SchemaBuildError>` lazily resolves local refs from the already-canonicalized JSON, and exposes the immutable canonicalized graph used by compatibility analysis and fuzzing/codegen.
   - `ResolvedSchema::raw_schema_json()` returns the original raw schema document.
-  - `ResolvedSchema::canonical_schema_json() -> Result<&Value, SchemaBuildError>` lazily returns the canonicalized schema document as JSON so humans can inspect the rewrite directly.
+  - `ResolvedSchema::canonical_schema_json() -> Result<&Value, SchemaBuildError>` returns the cached canonicalized schema document as JSON so humans can inspect the rewrite directly.
     `ResolvedNodeKind` only contains post-resolution semantic variants; parser-only `$ref` and declaration metadata variants are private implementation details.
 
 At a high level, the runtime flow is:
@@ -227,7 +227,7 @@ flowchart TD
     raw["Raw JSON Schema document"]
     compile_raw["json_schema_ast::compile(raw)\nlazily compile raw validator"]
     validate_raw["ResolvedSchema::is_valid(value)\nvalidate against raw schema"]
-    canonicalize["schema/src/canonicalize.rs\nlazily canonicalize syntax and fill implicit constraints"]
+    canonicalize["schema/src/canonicalize.rs\neagerly canonicalize syntax, validate keyword shapes,\nand fill implicit constraints"]
     canonical_json["ResolvedSchema::canonical_schema_json()\ndebug canonical JSON output"]
     compile_canonical["compile(canonicalized)\nparity/debug validator"]
     validate_canonical["ResolvedSchema::is_valid_canonicalized(value)\nvalidate canonicalized schema"]
@@ -246,7 +246,7 @@ flowchart TD
 
 ### What each crate owns
 
-- `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately, and lazily asks `schema/src/canonicalize.rs` for a deterministic canonical form only when a caller requests `root()`, `canonical_schema_json()`, or `is_valid_canonicalized()`. The resolved graph is then built by parsing that canonical JSON into a private mutable parse graph, resolving local recursive references, and freezing it into `ResolvedNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `ResolvedSchema::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `ResolvedSchema::raw_schema_json()` preserves the original input schema for debugging and comparisons. `ResolvedNode::accepts_value()` is the internal evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics. `ResolvedNode::to_json()` remains a debug/test helper and should not be used as a production semantic bridge.
+- `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately and canonicalizes it once inside `ResolvedSchema::from_json()` so keyword-shape validation happens at schema construction without maintaining a second validator path. The resolved graph is still built lazily by parsing that cached canonical JSON into a private mutable parse graph, resolving local recursive references, and freezing it into `ResolvedNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `ResolvedSchema::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `ResolvedSchema::raw_schema_json()` preserves the original input schema for debugging and comparisons. `ResolvedNode::accepts_value()` is the internal evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics. `ResolvedNode::to_json()` remains a debug/test helper and should not be used as a production semantic bridge.
 - `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role` and `check_compat`, and `src/subset.rs` implements the actual inclusion relation (`sub ⊆ sup`) over `ResolvedNode`. The checker now uses `ResolvedNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
 - `json_schema_fuzz` is the value-generation engine. Its public APIs take `ResolvedSchema` and only return values accepted by `ResolvedSchema::is_valid()`; if the internal candidate generator cannot find such a value within its retry budget, generation returns a typed `GenerateError::ExhaustedAttempts`. Internally it walks the canonicalized `ResolvedNode` graph and uses `ResolvedNode::accepts_value()` only as a pruning heuristic for recursive subgraphs.
 - `jsoncompat_py` and `jsoncompat_wasm` are thin adapters. They parse JSON strings, call the Rust core crates, and map Rust errors/results into Python or JavaScript types.

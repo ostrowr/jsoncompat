@@ -9,6 +9,9 @@ and expose schema structure in the ways `jsoncompat` needs for static
 compatibility checks.
 */
 
+use crate::json_semantics::{
+    integer_value_from_json as semantic_integer_value_from_json, json_values_equal,
+};
 use crate::schema_metadata::{
     JSONCOMPAT_METADATA_KEY, PRESERVED_SCHEMA_METADATA_KEYS, TERMINAL_SCHEMA_METADATA_KEYS,
     is_schema_metadata_key,
@@ -558,6 +561,18 @@ fn canonicalize_keyword_value(
                 value,
             )),
         },
+        "minLength" | "maxLength" | "minItems" | "maxItems" | "minContains" | "maxContains"
+        | "minProperties" | "maxProperties" => {
+            canonicalize_unsigned_integer_keyword(key, value, pointer)
+        }
+        "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum" | "multipleOf" => {
+            canonicalize_numeric_keyword(key, value, pointer)
+        }
+        "pattern" | "format" | "contentEncoding" | "contentMediaType" | "$id" | "$anchor"
+        | "$dynamicRef" | "$dynamicAnchor" | "$ref" => {
+            canonicalize_string_keyword(key, value, pointer)
+        }
+        "uniqueItems" => canonicalize_boolean_keyword("uniqueItems", value, pointer),
         "$schema" => canonicalize_schema_uri(value, pointer),
         "const" | "default" | JSONCOMPAT_METADATA_KEY => Ok(canonicalize_json(value)),
         "examples" => {
@@ -681,6 +696,55 @@ fn canonicalize_schema_uri(value: &Value, pointer: &str) -> Result<Value> {
             actual_uri: uri.to_owned(),
         }),
     }
+}
+
+fn canonicalize_string_keyword(key: &str, value: &Value, pointer: &str) -> Result<Value> {
+    value
+        .as_str()
+        .ok_or_else(|| invalid_keyword_type(pointer, key, "a string", value))?;
+    Ok(value.clone())
+}
+
+fn canonicalize_unsigned_integer_keyword(key: &str, value: &Value, pointer: &str) -> Result<Value> {
+    let Some(integer) =
+        semantic_integer_value_from_json(value).and_then(|integer| u64::try_from(integer).ok())
+    else {
+        return Err(invalid_keyword_type(
+            pointer,
+            key,
+            "a non-negative integer",
+            value,
+        ));
+    };
+    Ok(Value::Number(Number::from(integer)))
+}
+
+fn canonicalize_boolean_keyword(key: &str, value: &Value, pointer: &str) -> Result<Value> {
+    value
+        .as_bool()
+        .ok_or_else(|| invalid_keyword_type(pointer, key, "a boolean", value))?;
+    Ok(value.clone())
+}
+
+fn canonicalize_numeric_keyword(key: &str, value: &Value, pointer: &str) -> Result<Value> {
+    let Some(number) = value.as_f64() else {
+        return Err(invalid_keyword_type(pointer, key, "a finite number", value));
+    };
+    if !number.is_finite() {
+        return Err(CanonicalizeError::NonFiniteNumericKeyword {
+            pointer: pointer.to_owned(),
+            keyword: key.to_owned(),
+        });
+    }
+    if key == "multipleOf" && number <= 0.0 {
+        return Err(invalid_keyword_type(
+            pointer,
+            key,
+            "a positive number",
+            value,
+        ));
+    }
+    Ok(value.clone())
 }
 
 fn remove_not_false(
@@ -990,7 +1054,7 @@ fn value_type_name(value: &Value) -> Option<PrimitiveType> {
     }
 }
 
-fn json_type_name(value: &Value) -> &'static str {
+pub(crate) fn json_type_name(value: &Value) -> &'static str {
     match value {
         Value::Null => "null",
         Value::Bool(_) => "boolean",
@@ -1547,7 +1611,10 @@ fn lower_const_to_enum(schema: &mut Map<String, Value>) -> Option<Value> {
     let value = canonicalize_json(&value);
 
     if let Some(Value::Array(values)) = schema.get("enum") {
-        if !values.contains(&value) {
+        if !values
+            .iter()
+            .any(|enum_value| json_values_equal(enum_value, &value))
+        {
             return Some(Value::Object(unsatisfiable_object(schema)));
         }
         schema.insert("enum".to_owned(), Value::Array(vec![value]));
