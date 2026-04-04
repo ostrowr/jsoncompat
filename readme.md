@@ -6,6 +6,9 @@
 
 Check compatibility of evolving JSON schemas.
 
+jsoncompat currently supports JSON Schema Draft 2020-12 only. If a schema declares `$schema`, it
+must be `https://json-schema.org/draft/2020-12/schema` with an optional trailing `#`.
+
 > [!WARNING]
 > Docs and examples at [jsoncompat.com](https://jsoncompat.com)
 >
@@ -83,15 +86,116 @@ you'll be unable to deserialize any data that doesn't have a `name` property, wh
 
 If a schema is used by both a serializer and a deserializer, then a change to the schema that can break either should be considered "breaking."
 
-## Supported features
+## Support checklist
 
-Most JSON Schema Draft 2020-12 keywords are supported. Notable partial support:
+Legend:
 
-- **`format`**: Support for `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`,
-  `hostname`, `idn-hostname`.
-- **`pattern`** (regex): Best-effort string generation from regex patterns. Complex patterns (e.g. backreferences) may not produce matching strings.
-- **Array constraints**: `prefixItems`, `contains`, `minContains`, `maxContains`, and `uniqueItems` are represented in the AST used for compatibility checks and example generation.
-- When `format` or `pattern` is used, `minLength`/`maxLength` constraints are ignored during example generation.
+- ✅: the backcompat checker has an explicit subset rule, or the fuzzer has direct
+  schema-guided candidate construction for that keyword.
+- 🟡: the feature is parsed/evaluated, but the checker is conservative or the fuzzer is
+  heuristic/retry-based for that keyword.
+- ⚪: the keyword is accepted or stripped, but it is not represented in the resolved IR and does
+  not contribute checker/fuzzer semantics.
+- ⛔: schema construction fails with a typed error before the checker/fuzzer runs.
+
+Important global caveats:
+
+- `jsoncompat::check_compat` is a structural subset checker over the resolved AST. It can return
+  false negatives for conservative subset proofs and false positives for string-language
+  constraints that are currently ignored when both sides are open string schemas.
+- For serializer compatibility, the checker assumes serializers do not emit undeclared extra
+  properties, even when `additionalProperties: true`.
+- `json_schema_fuzz::generate_value` walks the resolved AST heuristically, then validates every
+  candidate with the raw `jsonschema` backend. If no valid candidate is found within the retry
+  budget, it returns `GenerateError::ExhaustedAttempts`.
+- Boolean schema documents `true` and `false` are supported directly. `false` has no valid
+  instances, so generation returns `ExhaustedAttempts` if no branch can satisfy it.
+- Unknown extension keywords are preserved only when needed to keep local ref targets addressable;
+  otherwise they are ignored by both the checker and the fuzzer.
+
+### Scalar schemas
+
+| Keyword | Compat | Fuzz | Notes |
+| --- | :-: | :-: | --- |
+| `type` | ✅ | ✅ | Supports `null`, `boolean`, `object`, `array`, `string`, `number`, `integer`, and unions of those primitive types. |
+| `enum` | ✅ | ✅ | Numeric equality follows JSON Schema semantics, so `1` and `1.0` are treated as equal. |
+| `const` | ✅ | ✅ | Same semantic numeric equality as `enum`. |
+| `minimum` | ✅ | ✅ | Integer bounds are normalized exactly where possible; number bounds use `f64`. |
+| `maximum` | ✅ | ✅ | Integer bounds are normalized exactly where possible; number bounds use `f64`. |
+| `exclusiveMinimum` | ✅ | 🟡 | Integer exclusives are canonicalized into inclusive integer bounds; number generation may rely on validator retries around open lower bounds. |
+| `exclusiveMaximum` | ✅ | 🟡 | Integer exclusives are canonicalized into inclusive integer bounds; number generation may rely on validator retries around open upper bounds. |
+| `multipleOf` | ✅ | ✅ | Exact integer divisibility is used when both sides are integer-valued. Fractional integer divisors are preserved and projected to their implied integer divisor for integer instances; non-integer numeric checks use `f64` ratios. |
+| `minLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
+| `maxLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
+| `pattern` | 🟡 | 🟡 | `ResolvedNode::accepts_value()` enforces regexes for finite-value checks, but `check_compat` does not prove regex-language inclusion between open string schemas. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
+| `format` | 🟡 | 🟡 | The checker does not prove format-language inclusion between open string schemas. The fuzzer only synthesizes `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`, `hostname`, and `idn-hostname`; unknown formats fall back to generic strings. |
+| `contentEncoding` | ⚪ | ⚪ | Canonicalized for syntax, then stripped from the semantic IR. |
+| `contentMediaType` | ⚪ | ⚪ | Canonicalized for syntax, then stripped from the semantic IR. |
+| `contentSchema` | ⚪ | ⚪ | Nested schemas are canonicalized and ref-checked, but content decoding/validation is not modeled in the semantic IR. |
+
+### Object schemas
+
+| Keyword | Compat | Fuzz | Notes |
+| --- | :-: | :-: | --- |
+| `properties` | ✅ | ✅ | Property schemas are compared recursively and generated directly. |
+| `required` | ✅ | ✅ | Missing required properties are synthesized before generation returns a candidate. |
+| `additionalProperties` | ✅ | ✅ | Checker support is subject to the serializer assumption above; the fuzzer generates additional keys only when this schema is not `false`. |
+| `patternProperties` | 🟡 | 🟡 | Exact same regex keys are compared structurally, and property values are checked against every matching pattern schema. The checker does not prove regex-language inclusion between different patterns, and the fuzzer does not synthesize property names from regexes. |
+| `propertyNames` | 🟡 | 🟡 | Checker support depends on subset reasoning for the property-name schema itself, so regex/format caveats still apply. The fuzzer can generate keys from string/enum schemas and otherwise falls back to random names plus acceptance checks. |
+| `minProperties` | ✅ | ✅ | Canonicalization raises `minProperties` to at least the number of required keys. |
+| `maxProperties` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
+| `dependentRequired` | ✅ | 🟡 | The checker accounts for trigger keys admitted by `properties`, `patternProperties`, or `additionalProperties`. The fuzzer does not proactively synthesize dependencies, but invalid candidates are rejected by the final validator pass. |
+| `dependentSchemas` | ⚪ | ⚪ | Nested schemas are canonicalized for dialect/ref validation, but `ResolvedNodeKind::Object` does not store `dependentSchemas`, so checker/fuzzer semantics are absent. |
+| `unevaluatedProperties` | ⚪ | ⚪ | Canonicalized recursively but not represented with evaluated-location bookkeeping in the resolved IR. |
+| `dependencies` | ⚪ | ⚪ | Legacy keyword accepted by the parser but not represented in the resolved IR; use `dependentRequired` / `dependentSchemas` for Draft 2020-12 semantics. |
+
+### Array schemas
+
+| Keyword | Compat | Fuzz | Notes |
+| --- | :-: | :-: | --- |
+| `items` | ✅ | ✅ | Schema-form `items` is compared recursively and used for tail-item generation. Legacy tuple-form `items: [...]` is parsed by appending entries into `prefixItems`; use `prefixItems` for explicit Draft 2020-12 tuple schemas. |
+| `prefixItems` | ✅ | ✅ | Compared positionally and generated positionally. |
+| `additionalItems` | ⚪ | ⚪ | Legacy keyword not represented in the resolved array node, so it does not affect compatibility or generation. |
+| `minItems` | ✅ | ✅ | Defaults to `minContains` (or `1`) when `contains` is present, otherwise `0`. |
+| `maxItems` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
+| `contains` | ✅ | 🟡 | Checker reasoning handles item-match count constraints structurally. The fuzzer tries to force or avoid matching items, but this is heuristic and may rely on retries. |
+| `minContains` | ✅ | 🟡 | Participates in structural count reasoning for `contains`; the fuzzer uses best-effort witness construction plus validator retries. |
+| `maxContains` | ✅ | 🟡 | Participates in structural count reasoning for `contains`; the fuzzer uses best-effort witness avoidance plus validator retries. |
+| `uniqueItems` | ✅ | 🟡 | The checker handles the common sound cases; the fuzzer retries and then uses a synthetic fallback object for unconstrained item schemas if duplicates persist. |
+| `unevaluatedItems` | ⚪ | ⚪ | Canonicalized recursively but not represented with evaluated-location bookkeeping in the resolved IR. |
+
+### Applicators and conditionals
+
+| Keyword | Compat | Fuzz | Notes |
+| --- | :-: | :-: | --- |
+| `allOf` | 🟡 | 🟡 | Canonicalization simplifies trivial boolean branches. The checker is branch-local and can miss proofs such as `allOf[A, B] <= A` when only one branch is inspected. The fuzzer merges object branches heuristically and otherwise picks one non-trivial branch. |
+| `anyOf` | 🟡 | 🟡 | The checker requires every `sub` branch to fit `sup`, and for `sup anyOf` it looks for one branch containing all of `sub`; that is conservative and can miss valid disjunctive proofs. The fuzzer samples one branch and retries. |
+| `oneOf` | 🟡 | 🟡 | Canonicalization rewrites provably disjoint `oneOf` branches to `anyOf`. Outside that case, checker reasoning is conservative and does not symbolically prove exact-one exclusivity, and the fuzzer uses retry-based witness counting. |
+| `not` | 🟡 | 🟡 | The checker only handles shallow boolean/`Any` cases symbolically; other `not` proofs fall back to conservative `false`. The fuzzer generates type-mismatch and fixed candidate witnesses, then retries against the full schema. |
+| `if` | 🟡 | 🟡 | `ResolvedNode::accepts_value()` evaluates the condition and the fuzzer samples branches, but the subset checker has no dedicated symbolic rule for conditional implication beyond exact-node equality and finite `const`/`enum` probes. |
+| `then` | 🟡 | 🟡 | Stored and evaluated only as part of `if` / `then` / `else`; checker reasoning inherits the same conditional caveat as `if`. |
+| `else` | 🟡 | 🟡 | Stored and evaluated only as part of `if` / `then` / `else`; checker reasoning inherits the same conditional caveat as `if`. |
+
+### Document shape, references, and metadata
+
+| Keyword | Compat | Fuzz | Notes |
+| --- | :-: | :-: | --- |
+| `$ref` | ✅ | 🟡 | Same-document refs to `"#"` and `"#/..."` are supported, including recursive graphs with a cycle guard. Remote refs and plain-name fragments are rejected. Generation is depth-limited. |
+| `$anchor` | ⛔ | ⛔ | Plain-name fragment anchors are rejected; only JSON Pointer refs are supported today. |
+| `$dynamicRef` | ⛔ | ⛔ | Dynamic refs are rejected during schema resolution. |
+| `$dynamicAnchor` | ⛔ | ⛔ | Dynamic anchors are rejected during schema resolution. |
+| `$id` | ⛔ | ⛔ | Resource-scope identifiers are rejected because reference resolution is currently same-document only. |
+| `$defs` | ✅ | 🟡 | Acts as a local ref target container; nested schemas are canonicalized and resolved, but `$defs` is not a semantic node by itself. |
+| `definitions` | ✅ | 🟡 | Legacy ref target container with the same caveat as `$defs`. |
+| `title` | ⚪ | ⚪ | Preserved as metadata in canonical JSON, but not used by checker/fuzzer semantics. |
+| `$comment` | ⚪ | ⚪ | Stripped or preserved only as metadata; no compatibility or generation semantics. |
+| `description` | ⚪ | ⚪ | Stripped or preserved only as metadata; no compatibility or generation semantics. |
+| `default` | ⚪ | ⚪ | Stripped or preserved only as metadata; default values are not synthesized or used for compatibility. |
+| `examples` | ⚪ | ⚪ | Stripped or preserved only as metadata; examples do not guide fuzzing. |
+| `deprecated` | ⚪ | ⚪ | Annotation only; ignored by checker and fuzzer semantics. |
+| `readOnly` | ⚪ | ⚪ | Annotation only; ignored by checker and fuzzer semantics. |
+| `writeOnly` | ⚪ | ⚪ | Annotation only; ignored by checker and fuzzer semantics. |
+| `$vocabulary` | ⚪ | ⚪ | Annotation only; no dialect negotiation semantics are modeled. |
 
 ## Rust workspace architecture
 
@@ -153,58 +257,6 @@ flowchart TD
 - `tests/fuzz.rs` runs the JSON-Schema-Test-Suite fixture corpus through `ResolvedSchema::from_json`, asks `json_schema_fuzz::ValueGenerator` for raw-valid examples, and asserts that `ResolvedSchema::is_valid_canonicalized()` returns the same answer on those instances. Fixtures that rely on unsupported reference-resource features are skipped when schema build returns a typed resolver error, and known generation gaps are tracked by explicit `GenerateError::ExhaustedAttempts` whitelist entries.
 - `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` test canonicalization and AST round-tripping directly.
 
-## What is still missing for “complete” Draft 2020-12 support?
-
-This crate should not be described as a complete JSON Schema implementation yet. The current architecture is useful, but there are still explicit semantic gaps in the resolver, AST, generator, and subset checker.
-
-### 1. Full schema resource and reference resolution
-
-Current behavior:
-
-- Local JSON Pointer references of the form `"#"` and `"#/..."` are resolved.
-- Recursive local `$ref` graphs are supported by representing schemas as shared `Rc` nodes.
-- Non-local `$ref`s, `$id`, `$anchor`, `$dynamicRef`, and `$dynamicAnchor` are rejected with typed `UnsupportedReference` errors. Missing local pointers return `UnresolvedReference`.
-
-Missing for completeness:
-
-- `$id`-scoped base URI handling across nested schema resources.
-- `$anchor` resolution for plain fragment references such as `"#foo"`.
-- `$dynamicRef` / `$dynamicAnchor` dynamic-scope resolution.
-- Remote reference loading and a resource-store abstraction for multi-document schemas.
-- Cross-draft reference handling. Today, only Draft 2020-12 is accepted.
-
-### 2. Annotation-aware keywords and evaluation bookkeeping
-
-Current AST support includes `properties`, `patternProperties`, `required`, `additionalProperties`, `propertyNames`, `dependentRequired`, `prefixItems`, `items`, `contains`, `minContains`, `maxContains`, and `uniqueItems`.
-
-Missing or only partially represented:
-
-- `dependentSchemas` is canonicalized but not represented in `ResolvedNodeKind::Object`, so the checker and generator do not enforce it.
-- `unevaluatedProperties` and `unevaluatedItems` are canonicalized but not represented with the evaluated-location bookkeeping required by the spec.
-- Keywords whose behavior depends on annotation collection through applicators (`$ref`, `allOf`, `anyOf`, `oneOf`, `if`/`then`/`else`, `not`) are not modeled with an explicit annotation/evaluation layer.
-- Content keywords and most annotation keywords are intentionally stripped during canonicalization, so they are not preserved as part of the semantic IR.
-
-### 3. Complete set-inclusion reasoning over the AST
-
-`check_compat` is implemented as a structural subset check over `ResolvedNodeKind`, with evaluator-backed membership checks for finite examples and a recursive pair guard for cyclic proofs. That is practical, but not a complete decision procedure for all represented schemas.
-
-Known incompleteness:
-
-- Arbitrary `not` reasoning is shallow. The checker only handles a few boolean/`Any` cases and otherwise returns `false` rather than proving inclusion through complement logic.
-- Union/intersection reasoning is branch-local and conservative. For example, `sub ⊆ (anyOf [...])` currently requires finding one branch that contains all of `sub`, which can miss valid proofs that require splitting `sub` across multiple branches.
-- String-language inclusion is incomplete. `pattern` and `format` are represented on string nodes, but the subset checker does not currently prove regex-language or format-language containment.
-- `patternProperties` containment is conservative and mostly syntactic: matching exact regex keys is handled, but there is no general regex-language inclusion engine.
-
-### 4. A single executable schema semantics layer
-
-There are now three semantics paths:
-
-- `jsonschema` validators compiled from raw JSON, exposed through `json_schema_ast::compile` and `ResolvedSchema::is_valid()`, as the external oracle/backend for actual validation.
-- `jsonschema` validators compiled from canonicalized JSON, exposed through `ResolvedSchema::is_valid_canonicalized()`, as a parity/debug path for canonicalization.
-- `ResolvedNode::accepts_value()` over the frozen canonicalized graph, used by compatibility and generation heuristics.
-
-`src/subset.rs` and the private candidate generator in `fuzz/src/lib.rs` use the resolved-graph evaluator for finite-value checks over the canonicalized IR, while public generation/validation APIs use `ResolvedSchema::is_valid()` as the raw-schema oracle for user-visible results. `ResolvedNode::to_json()` is documented as lossy and serializes a tree-shaped view, not graph backedges, so it is kept for debug/test round-tripping only. The remaining architecture gap is that `schema/src/canonicalize.rs` still performs some semantic simplification (`allOf` / `anyOf` / `oneOf` / `not` folding) that is also implemented on the resolved graph; consolidating those rewrites into one layer is still a worthwhile follow-up.
-
 ## Debugging canonicalization
 
 To inspect the canonicalized schema document that backs compatibility checks and generation:
@@ -214,18 +266,6 @@ jsoncompat canonicalize schema.json --pretty
 ```
 
 For programmatic checks, compare `ResolvedSchema::raw_schema_json()` with `ResolvedSchema::canonical_schema_json()`, and compare `ResolvedSchema::is_valid(value)` with `ResolvedSchema::is_valid_canonicalized(value)` on representative instances.
-
-### 5. Generator completeness
-
-The fuzzer is designed to generate values that usually satisfy a schema, not to enumerate all satisfying values or guarantee uniform coverage.
-
-Current gaps:
-
-- Regex generation is best-effort; complex patterns may not produce matching strings.
-- `format` generation only covers a finite list of common formats.
-- `not`, `oneOf`, and overlapping applicator schemas are handled heuristically.
-- Recursive generation is depth-limited and biased toward simple values.
-
 
 ## Development
 
