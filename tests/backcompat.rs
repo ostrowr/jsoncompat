@@ -1,4 +1,4 @@
-use json_schema_ast::{build_and_resolve_schema, compile};
+use json_schema_ast::ResolvedSchema;
 use json_schema_fuzz::ValueGenerator;
 use jsoncompat::{Role, check_compat};
 use rand::{SeedableRng, rngs::StdRng};
@@ -39,12 +39,12 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let expect: Expectation = serde_json::from_slice(&fs::read(expect_file)?)?;
 
     // Build ASTs
-    let old_ast = build_and_resolve_schema(&old_raw)?;
-    let new_ast = build_and_resolve_schema(&new_raw)?;
+    let old_schema = ResolvedSchema::from_json(&old_raw)?;
+    let new_schema = ResolvedSchema::from_json(&new_raw)?;
 
     // Core compat result
-    let ser = check_compat(&old_ast, &new_ast, Role::Serializer);
-    let de = check_compat(&old_ast, &new_ast, Role::Deserializer);
+    let ser = check_compat(old_schema.root()?, new_schema.root()?, Role::Serializer);
+    let de = check_compat(old_schema.root()?, new_schema.root()?, Role::Deserializer);
 
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
@@ -59,57 +59,52 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let ex_path = dir.join("examples.json");
     if ex_path.exists() {
         let samples: SampleSets = serde_json::from_slice(&fs::read(&ex_path)?)?;
-        let compiled_old = compile(&old_raw)?;
-        let compiled_new = compile(&new_raw)?;
-
         for v in &samples.old_only {
             assert!(
-                compiled_old.is_valid(v),
+                old_schema.is_valid(v)?,
                 "old_only invalid in {dir:?}: {v:?}"
             );
             assert!(
-                !compiled_new.is_valid(v),
+                !new_schema.is_valid(v)?,
                 "old_only accepted by NEW in {dir:?}: {v:?}"
             );
         }
         for v in &samples.new_only {
             assert!(
-                compiled_new.is_valid(v),
+                new_schema.is_valid(v)?,
                 "new_only invalid in {dir:?}: {v:?}"
             );
             assert!(
-                !compiled_old.is_valid(v),
+                !old_schema.is_valid(v)?,
                 "new_only accepted by OLD in {dir:?}: {v:?}"
             );
         }
         for v in &samples.both {
             assert!(
-                compiled_old.is_valid(v) && compiled_new.is_valid(v),
+                old_schema.is_valid(v)? && new_schema.is_valid(v)?,
                 "both sample invalid in {dir:?}: {v:?}"
             );
         }
     }
 
     // Quick fuzz confirmation (10 samples each direction)
-    let compiled_old = compile(&old_raw)?;
-    let compiled_new = compile(&new_raw)?;
     let mut old_generator = ValueGenerator::new();
     let mut new_generator = ValueGenerator::new();
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
 
     for _ in 0..100 {
-        let v_new = new_generator.generate_value(&new_ast, &mut rng, 4);
+        let v_new = new_generator.generate_value(&new_schema, &mut rng, 4)?;
         if expect.serializer {
             assert!(
-                compiled_old.is_valid(&v_new),
+                old_schema.is_valid(&v_new)?,
                 "serializer=true but OLD rejects generated value {v_new:?} in {dir:?}"
             );
         }
 
-        let v_old = old_generator.generate_value(&old_ast, &mut rng, 4);
+        let v_old = old_generator.generate_value(&old_schema, &mut rng, 4)?;
         if expect.deserializer {
             assert!(
-                compiled_new.is_valid(&v_old),
+                new_schema.is_valid(&v_old)?,
                 "deserializer=true but NEW rejects generated value {v_old:?} in {dir:?}"
             );
         }

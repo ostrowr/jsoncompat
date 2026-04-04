@@ -1,8 +1,8 @@
 //! Fuzzer tests.
 
-use json_schema_ast::{AstError, SchemaError, compile};
-use json_schema_fuzz::ValueGenerator;
-use jsoncompat::{SchemaNodeKind, build_and_resolve_schema};
+use json_schema_ast::{AstError, SchemaError};
+use json_schema_fuzz::{GenerateError, ValueGenerator};
+use jsoncompat::{ResolvedNodeKind, ResolvedSchema};
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -31,50 +31,8 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 16].iter().cloned().collect(),
+        [12].iter().cloned().collect(),
     );
-
-    map.insert(
-        "anchor.json".to_string(),
-        [0, 1, 2, 3].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/anchor.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/unknownKeyword.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/id.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-
-    map.insert(
-        "dynamicRef.json".to_string(),
-        [3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-    map.insert(
-        "ref.json".to_string(),
-        [6, 10, 17, 19, 27, 28, 29, 30, 31]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-
-    map.insert(
-        "refRemote.json".to_string(),
-        [0, 1, 2, 3, 8, 9, 11, 12, 13, 14].iter().cloned().collect(),
-    );
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
 
     map
 }
@@ -109,8 +67,10 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let ast = match build_and_resolve_schema(schema_json) {
-            Ok(ast) => ast,
+        let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
+
+        let schema = match ResolvedSchema::from_json(schema_json) {
+            Ok(schema) => schema,
             Err(error)
                 if !validate_fixture_tests
                     && schema_declares_unsupported_schema_uri(schema_json) =>
@@ -130,9 +90,35 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 );
                 continue;
             }
+            Err(
+                error @ (AstError::UnsupportedReference { .. }
+                | AstError::UnresolvedReference { .. }),
+            ) if !validate_fixture_tests => {
+                assert!(
+                    !validate_fixture_tests,
+                    "schema #{idx} in {rel_str} failed with an expected resolver error: {error}"
+                );
+                continue;
+            }
             Err(error) => return Err(error.into()),
         };
-        if matches!(ast.kind(), SchemaNodeKind::BoolSchema(false))
+
+        let root = match schema.root() {
+            Ok(root) => root,
+            Err(
+                error @ (AstError::UnsupportedReference { .. }
+                | AstError::UnresolvedReference { .. }),
+            ) if !validate_fixture_tests => {
+                assert!(
+                    !validate_fixture_tests,
+                    "schema #{idx} in {rel_str} failed with an expected resolver error: {error}"
+                );
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+
+        if matches!(root.kind(), ResolvedNodeKind::BoolSchema(false))
             && !fixture_schema
                 .tests
                 .iter()
@@ -141,13 +127,25 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let compiled = compile(schema_json)?;
         let mut generator = ValueGenerator::new();
 
         if validate_fixture_tests {
             for fixture_test in &fixture_schema.tests {
+                let raw_valid = schema.is_valid(&fixture_test.data)?;
+                let canonicalized_valid = schema.is_valid_canonicalized(&fixture_test.data)?;
                 assert_eq!(
-                    compiled.is_valid(&fixture_test.data),
+                    raw_valid,
+                    canonicalized_valid,
+                    "{} schema #{idx} ({}) fixture test {:?} validates differently after canonicalization\n\nRaw schema:\n{}\n\nCanonicalized schema:\n{}\n\nInstance:\n{}",
+                    rel_str,
+                    fixture_schema.description,
+                    fixture_test.description,
+                    serde_json::to_string_pretty(schema.raw_schema_json())?,
+                    serde_json::to_string_pretty(schema.canonical_schema_json()?)?,
+                    serde_json::to_string_pretty(&fixture_test.data)?,
+                );
+                assert_eq!(
+                    raw_valid,
                     fixture_test.valid,
                     "{} schema #{idx} ({}) fixture test {:?} returned the wrong validation result\n\nSchema:\n{}\n\nInstance:\n{}",
                     rel_str,
@@ -159,26 +157,44 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
-
         let mut success = true;
         for _ in 0..N_ITERATIONS {
-            let candidate = generator.generate_value(&ast, &mut rng, 6);
-            if !compiled.is_valid(&candidate) {
-                if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
-                    panic!(
-                        "{}",
-                        &format!(
-                            "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}\n\nInstance:\n{}",
-                            rel_str,
-                            serde_json::to_string_pretty(schema_json)?,
-                            serde_json::to_string_pretty(&candidate)?
-                        )
-                    );
+            let candidate = match generator.generate_value(&schema, &mut rng, 6) {
+                Ok(candidate) => candidate,
+                Err(GenerateError::ExhaustedAttempts { .. }) => {
+                    if !allowed.map(|set| set.contains(&idx)).unwrap_or(false) {
+                        panic!(
+                            "{}",
+                            &format!(
+                                "Failed to generate a valid instance for schema #{idx} in {}\n\nSchema:\n{}",
+                                rel_str,
+                                serde_json::to_string_pretty(schema_json)?,
+                            )
+                        );
+                    }
+                    success = false;
+                    break;
                 }
-                success = false;
-                break;
-            }
+                Err(GenerateError::Schema(error)) => return Err(error.into()),
+                Err(error) => return Err(error.into()),
+            };
+
+            let raw_valid = schema.is_valid(&candidate)?;
+            let canonicalized_valid = schema.is_valid_canonicalized(&candidate)?;
+            assert_eq!(
+                raw_valid,
+                canonicalized_valid,
+                "{} schema #{idx} generated candidate validates differently after canonicalization\n\nRaw schema:\n{}\n\nCanonicalized schema:\n{}\n\nInstance:\n{}",
+                rel_str,
+                serde_json::to_string_pretty(schema.raw_schema_json())?,
+                serde_json::to_string_pretty(schema.canonical_schema_json()?)?,
+                serde_json::to_string_pretty(&candidate)?,
+            );
+            assert!(
+                raw_valid,
+                "generator returned a value rejected by the raw schema for {rel_str} schema #{idx}: {}",
+                serde_json::to_string_pretty(&candidate)?,
+            );
         }
 
         match (success, is_whitelisted) {

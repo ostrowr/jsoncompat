@@ -10,18 +10,16 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use json_schema_ast::{JSONSchema, compile};
 use jsoncompat as backcompat;
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// In‑memory representation of a schema with a cached validator.
+/// In-memory representation of a parsed schema document.
 #[derive(Debug)]
 struct SchemaDoc {
-    ast: backcompat::SchemaNode,
-    validator: JSONSchema,
+    schema: backcompat::ResolvedSchema,
 }
 
 impl SchemaDoc {
@@ -30,22 +28,20 @@ impl SchemaDoc {
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
 
-        // Build AST and a validator for fast membership checks.
-        let ast = backcompat::build_and_resolve_schema(&json)
-            .with_context(|| format!("building AST for {path}"))?;
-        let validator =
-            compile(&json).with_context(|| format!("compiling validator for {path}"))?;
+        // Build the resolved schema and cache its validator backends.
+        let schema = backcompat::ResolvedSchema::from_json(&json)
+            .with_context(|| format!("building schema for {path}"))?;
 
-        Ok(Self { ast, validator })
+        Ok(Self { schema })
     }
 
     #[inline]
-    fn is_valid(&self, v: &Value) -> bool {
-        self.validator.is_valid(v)
+    fn is_valid(&self, v: &Value) -> Result<bool> {
+        Ok(self.schema.is_valid(v)?)
     }
 
-    fn gen_value<R: Rng>(&self, rng: &mut R, depth: u8) -> Value {
-        json_schema_fuzz::generate_value(&self.ast, rng, depth)
+    fn gen_value<R: Rng>(&self, rng: &mut R, depth: u8) -> Result<Value> {
+        Ok(json_schema_fuzz::generate_value(&self.schema, rng, depth)?)
     }
 }
 
@@ -68,18 +64,24 @@ fn sample_incompat<R: Rng>(
     attempts: usize,
     depth: u8,
     rng: &mut R,
-) -> Option<Value> {
-    let mut try_once = |src: &SchemaDoc, dst: &SchemaDoc| -> Option<Value> {
-        (0..attempts).find_map(|_| {
-            let v = src.gen_value(rng, depth);
-            (src.is_valid(&v) && !dst.is_valid(&v)).then_some(v)
-        })
+) -> Result<Option<Value>> {
+    let mut try_once = |src: &SchemaDoc, dst: &SchemaDoc| -> Result<Option<Value>> {
+        for _ in 0..attempts {
+            let v = src.gen_value(rng, depth)?;
+            if src.is_valid(&v)? && !dst.is_valid(&v)? {
+                return Ok(Some(v));
+            }
+        }
+        Ok(None)
     };
 
     match role {
         backcompat::Role::Serializer => try_once(new, old),
         backcompat::Role::Deserializer => try_once(old, new),
-        backcompat::Role::Both => try_once(new, old).or_else(|| try_once(old, new)),
+        backcompat::Role::Both => try_once(new, old).and_then(|result| match result {
+            Some(value) => Ok(Some(value)),
+            None => try_once(old, new),
+        }),
     }
 }
 
@@ -99,6 +101,8 @@ struct Cli {
 enum Command {
     /// Generate random JSON instances that satisfy a schema.
     Generate(GenerateArgs),
+    /// Canonicalize a schema and print the canonical JSON document.
+    Canonicalize(CanonicalizeArgs),
     /// Check backward‑compatibility between two schema revisions.
     Compat(CompatArgs),
     /// Check compatibility between two golden files.
@@ -116,6 +120,15 @@ struct GenerateArgs {
     #[arg(short, long, default_value_t = 8)]
     depth: u8,
     /// Pretty‑print output (multi‑line).
+    #[arg(short, long)]
+    pretty: bool,
+}
+
+#[derive(Args)]
+struct CanonicalizeArgs {
+    /// Path to the JSON Schema. Use '-' for STDIN.
+    schema: String,
+    /// Pretty-print output (multi-line).
     #[arg(short, long)]
     pretty: bool,
 }
@@ -177,6 +190,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Generate(a) => cmd_generate(a),
+        Command::Canonicalize(a) => cmd_canonicalize(a),
         Command::Compat(a) => cmd_compat(a),
         Command::CI(a) => cmd_ci(a),
     }
@@ -187,12 +201,23 @@ fn cmd_generate(args: GenerateArgs) -> Result<()> {
     let mut rng = rand::rng();
 
     for _ in 0..args.count {
-        let v = schema.gen_value(&mut rng, args.depth);
+        let v = schema.gen_value(&mut rng, args.depth)?;
         if args.pretty {
             println!("{}", serde_json::to_string_pretty(&v)?);
         } else {
             println!("{}", serde_json::to_string(&v)?);
         }
+    }
+    Ok(())
+}
+
+fn cmd_canonicalize(args: CanonicalizeArgs) -> Result<()> {
+    let schema = SchemaDoc::load(&args.schema)?;
+    let canonical_schema = schema.schema.canonical_schema_json()?;
+    if args.pretty {
+        println!("{}", serde_json::to_string_pretty(canonical_schema)?);
+    } else {
+        println!("{}", serde_json::to_string(canonical_schema)?);
     }
     Ok(())
 }
@@ -203,12 +228,12 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
     let role: backcompat::Role = args.role.into();
 
     // 1. Static analysis.
-    let ok_static = backcompat::check_compat(&old.ast, &new.ast, role);
+    let ok_static = backcompat::check_compat(old.schema.root()?, new.schema.root()?, role);
 
     // 2. Optional fuzzing (only if requested or static failed).
     let offender = if args.fuzz > 0 && !ok_static {
         let mut rng = rand::rng();
-        sample_incompat(&old, &new, role, args.fuzz as usize, args.depth, &mut rng)
+        sample_incompat(&old, &new, role, args.fuzz as usize, args.depth, &mut rng)?
     } else {
         None
     };
@@ -233,8 +258,8 @@ fn cmd_compat(args: CompatArgs) -> Result<()> {
         let pretty =
             serde_json::to_string_pretty(&ex).unwrap_or_else(|_| "<unserializable>".into());
         eprintln!("{} Counter-example:\n{}", "•".yellow(), pretty);
-        let old_valid = old.is_valid(&ex);
-        let new_valid = new.is_valid(&ex);
+        let old_valid = old.is_valid(&ex)?;
+        let new_valid = new.is_valid(&ex)?;
         eprintln!(
             "{} Old schema: {}",
             "•".yellow(),
@@ -307,8 +332,8 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
     match (old, new) {
         (Some(old), Some(new)) => {
             let (old_schema, new_schema) = (
-                backcompat::build_and_resolve_schema(&old.schema),
-                backcompat::build_and_resolve_schema(&new.schema),
+                backcompat::ResolvedSchema::from_json(&old.schema),
+                backcompat::ResolvedSchema::from_json(&new.schema),
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
@@ -319,25 +344,34 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                             status: Status::Identical,
                         };
                     }
-                    let ok = backcompat::check_compat(&old_schema, &new_schema, old.mode.into());
+                    let (Ok(old_root), Ok(new_root)) = (old_schema.root(), new_schema.root())
+                    else {
+                        return Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Invalid,
+                        };
+                    };
+                    let ok = backcompat::check_compat(old_root, new_root, old.mode.into());
                     if !ok {
-                        let old_validator = compile(&old.schema).unwrap();
-                        let new_validator = compile(&new.schema).unwrap();
                         let mut rng = rand::rng();
-                        let example = sample_incompat(
-                            &SchemaDoc {
-                                ast: old_schema,
-                                validator: old_validator,
-                            },
-                            &SchemaDoc {
-                                ast: new_schema,
-                                validator: new_validator,
-                            },
+                        let example = match sample_incompat(
+                            &SchemaDoc { schema: old_schema },
+                            &SchemaDoc { schema: new_schema },
                             old.mode.into(),
                             100,
                             8,
                             &mut rng,
-                        );
+                        ) {
+                            Ok(example) => example,
+                            Err(_) => {
+                                return Grade {
+                                    id: new.stable_id.clone(),
+                                    mode: old.mode,
+                                    status: Status::Invalid,
+                                };
+                            }
+                        };
                         Grade {
                             id: new.stable_id.clone(),
                             mode: old.mode,
@@ -562,6 +596,8 @@ fn cmd_ci(args: CiArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{SeedableRng, rngs::StdRng};
+    use serde_json::json;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -628,5 +664,40 @@ mod tests {
         let grade = grade_entry(Some(&old), Some(&new));
 
         assert!(matches!(grade.status, Status::Incompatible { .. }));
+    }
+
+    #[test]
+    fn gen_value_retries_until_raw_schema_accepts_the_candidate() {
+        let schema = SchemaDoc {
+            schema: backcompat::ResolvedSchema::from_json(&json!({
+                "type": "integer",
+                "minimum": 1
+            }))
+            .unwrap(),
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        let value = schema.gen_value(&mut rng, 4).unwrap();
+
+        assert!(
+            schema.is_valid(&value).unwrap(),
+            "generated invalid value: {value}"
+        );
+    }
+
+    #[test]
+    fn gen_value_returns_an_error_when_no_raw_valid_candidate_is_found() {
+        let schema = SchemaDoc {
+            schema: backcompat::ResolvedSchema::from_json(&json!(false)).unwrap(),
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        let error = schema.gen_value(&mut rng, 4).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to generate a value accepted by the raw schema")
+        );
     }
 }

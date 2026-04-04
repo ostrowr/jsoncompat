@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
-use json_schema_fuzz::generate_value;
-use jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use json_schema_fuzz::{GenerateError, generate_value};
+use jsoncompat::{ResolvedSchema, Role, check_compat};
 
 use serde_json::Value as JsonValue;
 
@@ -42,12 +42,19 @@ pub fn check_compat_js(
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
 
-    let old_ast = build_and_resolve_schema(&old_raw)
+    let old_schema = ResolvedSchema::from_json(&old_raw)
         .map_err(|e| JsValue::from_str(&format!("invalid old schema: {e}")))?;
-    let new_ast = build_and_resolve_schema(&new_raw)
+    let new_schema = ResolvedSchema::from_json(&new_raw)
         .map_err(|e| JsValue::from_str(&format!("invalid new schema: {e}")))?;
 
-    Ok(check_compat(&old_ast, &new_ast, role_e))
+    let old_root = old_schema
+        .root()
+        .map_err(|e| JsValue::from_str(&format!("invalid old schema: {e}")))?;
+    let new_root = new_schema
+        .root()
+        .map_err(|e| JsValue::from_str(&format!("invalid new schema: {e}")))?;
+
+    Ok(check_compat(old_root, new_root, role_e))
 }
 
 /// Generate a JSON value (string) that should satisfy the given schema.
@@ -58,10 +65,14 @@ pub fn check_compat_js(
 #[wasm_bindgen(js_name = generate_value)]
 pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue> {
     let raw = parse_json(schema_json)?;
-    let schema_ast = build_and_resolve_schema(&raw)
+    let schema = ResolvedSchema::from_json(&raw)
         .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
 
     let mut rng = rand::rng();
-    let v = generate_value(&schema_ast, &mut rng, depth);
+    let v = generate_value(&schema, &mut rng, depth).map_err(|error| match error {
+        GenerateError::Schema(error) => JsValue::from_str(&format!("invalid schema: {error}")),
+        GenerateError::ExhaustedAttempts { .. } => JsValue::from_str(&error.to_string()),
+        _ => JsValue::from_str(&error.to_string()),
+    })?;
     serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialization failure: {e}")))
 }

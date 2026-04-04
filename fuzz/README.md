@@ -16,10 +16,10 @@ json_schema_fuzz = "0.2.6"
 ## Usage
 
 ```rust
-use json_schema_ast::{build_and_resolve_schema, SchemaNode};
+use json_schema_ast::ResolvedSchema;
 use json_schema_fuzz::ValueGenerator;
-use serde_json::json;
 use rand::thread_rng;
+use serde_json::json;
 
 let raw = json!({
     "type": "object",
@@ -30,20 +30,21 @@ let raw = json!({
     "required": ["flag"]
 });
 
-// Build AST
-let schema_node: SchemaNode = build_and_resolve_schema(&raw).unwrap();
+// Keep the schema document around; it lazily builds the canonicalized graph
+// and raw validator when generation needs them.
+let schema = ResolvedSchema::from_json(&raw).unwrap();
 
 // Generate a random value
 let mut rng = thread_rng();
 let mut generator = ValueGenerator::new();
-let value = generator.generate_value(&schema_node, &mut rng, 4);
+let value = generator.generate_value(&schema, &mut rng, 4).unwrap();
 
 println!("{}", value);
 ```
 
-If you only need a single sample, `generate_value(&schema_node, &mut rng, depth)` is still
-available as a one-shot helper. For repeated generation from the same AST, prefer
-`ValueGenerator` so compiled subvalidators are cached across calls.
+If you only need a single sample, `generate_value(&schema, &mut rng, depth)` is available
+as a one-shot helper. For repeated generation from the same schema, keep the same
+`ResolvedSchema` so its lazy canonical graph and raw validator are reused.
 
 ## License
 

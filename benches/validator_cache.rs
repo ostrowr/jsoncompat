@@ -1,13 +1,13 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use json_schema_ast::build_and_resolve_schema;
+use json_schema_ast::{ResolvedSchema, build_and_resolve_schema};
 use json_schema_fuzz::ValueGenerator;
 use jsoncompat::is_subschema_of;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::{Value, json};
 
-fn bench_generate_value_with_cached_subvalidators(c: &mut Criterion) {
-    let schema = build_and_resolve_schema(&json!({
+fn bench_generate_value_with_raw_validation(c: &mut Criterion) {
+    let schema = ResolvedSchema::from_json(&json!({
         "allOf": [
             {
                 "type": "object",
@@ -44,7 +44,10 @@ fn bench_generate_value_with_cached_subvalidators(c: &mut Criterion) {
     }))
     .unwrap();
 
-    c.bench_function("generate_value/cached_subvalidators", |b| {
+    let _ = schema.root().unwrap();
+    let _ = schema.is_valid(&json!({})).unwrap();
+
+    c.bench_function("generate_value/raw_validated", |b| {
         let mut generator = ValueGenerator::new();
         let mut rng = StdRng::seed_from_u64(42);
         b.iter(|| {
@@ -53,6 +56,7 @@ fn bench_generate_value_with_cached_subvalidators(c: &mut Criterion) {
                 black_box(&mut rng),
                 black_box(6),
             ))
+            .unwrap()
         });
     });
 }
@@ -81,7 +85,7 @@ fn bench_is_subschema_of_with_cached_sup_validator(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_generate_value_with_cached_subvalidators,
+    bench_generate_value_with_raw_validation,
     bench_is_subschema_of_with_cached_sup_validator
 );
 criterion_main!(benches);

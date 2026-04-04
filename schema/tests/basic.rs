@@ -1,7 +1,8 @@
 use json_schema_ast as schema;
 
 use schema::{
-    CompileError, SchemaError, SchemaNode, SchemaNodeKind, build_and_resolve_schema, compile,
+    AstError, CompileError, ResolvedNodeKind as SchemaNodeKind, ResolvedSchema, SchemaError,
+    SchemaNode, build_and_resolve_schema, compile,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -30,6 +31,50 @@ fn compile_validates_original_type_union_schema() {
     assert!(!compiled.is_valid(&json!(1)));
     assert!(!compiled.is_valid(&json!("a")));
     assert!(!compiled.is_valid(&json!(null)));
+}
+
+#[test]
+fn resolved_schema_validates_with_raw_backend_and_exposes_canonicalized_debug_json() {
+    let raw = json!({
+        "type": ["integer", "string"],
+        "minimum": 2,
+        "minLength": 2,
+        "not": {
+            "const": "zz"
+        }
+    });
+
+    let schema = ResolvedSchema::from_json(&raw).unwrap();
+    assert_eq!(schema.raw_schema_json(), &raw);
+
+    let canonical = schema.canonical_schema_json().unwrap();
+    let canonical_compiled = compile(canonical).unwrap();
+
+    for (candidate, expected_valid) in [
+        (json!(2), true),
+        (json!("ab"), true),
+        (json!("zz"), false),
+        (json!(1), false),
+        (json!("a"), false),
+        (json!(null), false),
+    ] {
+        assert_eq!(schema.is_valid(&candidate).unwrap(), expected_valid);
+        assert_eq!(
+            schema.is_valid(&candidate).unwrap(),
+            schema.is_valid_canonicalized(&candidate).unwrap(),
+            "raw and canonicalized validators disagree for {candidate}\n\nRaw schema:\n{}\n\nCanonicalized schema:\n{}",
+            serde_json::to_string_pretty(schema.raw_schema_json()).unwrap(),
+            serde_json::to_string_pretty(schema.canonical_schema_json().unwrap()).unwrap(),
+        );
+        assert_eq!(
+            schema.is_valid_canonicalized(&candidate).unwrap(),
+            canonical_compiled.is_valid(&candidate),
+        );
+        assert_eq!(
+            schema.root().unwrap().accepts_value(&candidate),
+            schema.is_valid_canonicalized(&candidate).unwrap(),
+        );
+    }
 }
 
 #[test]
@@ -411,7 +456,6 @@ fn bare_multiple_of_under_conditional_gets_the_same_implicit_union_as_root() {
 #[test]
 fn metadata_only_enum_wrapper_uses_terminal_enum_shape() {
     let ast = build_schema(&json!({
-        "$id": "https://example.com/enums/answer",
         "title": "Answer",
         "x-jsoncompat": {
             "kind": "declaration",
@@ -629,10 +673,215 @@ fn preserves_referenced_defs_when_false_schema_is_canonicalized() {
     assert!(matches!(ast.kind(), SchemaNodeKind::String { .. }));
 }
 
+#[test]
+fn resolved_schema_contains_only_public_node_variants_for_recursive_local_refs() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "value": { "type": "integer" },
+                    "next": { "$ref": "#/$defs/Node" }
+                },
+                "required": ["value"]
+            }
+        },
+        "allOf": [
+            { "$ref": "#/$defs/Node" },
+            {
+                "if": {
+                    "properties": {
+                        "next": { "type": "object" }
+                    },
+                    "required": ["next"]
+                },
+                "then": {
+                    "properties": {
+                        "value": { "minimum": 0 }
+                    }
+                }
+            }
+        ]
+    }))
+    .unwrap();
+
+    assert_resolved_graph_is_public(
+        schema.root().unwrap(),
+        &mut std::collections::HashSet::new(),
+    );
+}
+
+#[test]
+fn object_property_names_pattern_is_enforced_by_resolved_schema_evaluator() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "propertyNames": {
+            "pattern": "^a+$"
+        }
+    }))
+    .unwrap();
+
+    assert!(schema.is_valid(&json!({})).unwrap());
+    assert!(schema.root().unwrap().accepts_value(&json!({})));
+    assert!(schema.is_valid(&json!({ "a": {} })).unwrap());
+    assert!(schema.root().unwrap().accepts_value(&json!({ "a": {} })));
+    assert!(!schema.is_valid(&json!({ "9DsHx": {} })).unwrap());
+    assert!(
+        !schema
+            .root()
+            .unwrap()
+            .accepts_value(&json!({ "9DsHx": {} }))
+    );
+}
+
+#[test]
+fn rejects_non_local_ref_with_explicit_unsupported_reference_error() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "$ref": "https://example.com/schemas/other.json"
+    }))
+    .unwrap();
+    let error = schema.root().unwrap_err();
+
+    assert!(matches!(
+        error,
+        AstError::UnsupportedReference { ref_path }
+            if ref_path == "https://example.com/schemas/other.json"
+    ));
+}
+
+#[test]
+fn rejects_anchor_and_dynamic_ref_keywords_with_explicit_unsupported_reference_error() {
+    for raw in [
+        json!({
+            "$anchor": "node",
+            "type": "string"
+        }),
+        json!({
+            "$dynamicRef": "#node"
+        }),
+        json!({
+            "$id": "https://example.com/schemas/node.json",
+            "type": "string"
+        }),
+    ] {
+        let schema = ResolvedSchema::from_json(&raw).unwrap();
+        let error = schema.root().unwrap_err();
+        assert!(matches!(error, AstError::UnsupportedReference { .. }));
+    }
+}
+
+#[test]
+fn raw_validation_does_not_force_canonicalization_or_resolution() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "$id": "https://example.com/schemas/node.json",
+        "type": "string"
+    }))
+    .unwrap();
+
+    assert!(schema.is_valid(&json!("value")).unwrap());
+    assert!(!schema.is_valid(&json!(123)).unwrap());
+
+    let error = schema.root().unwrap_err();
+    assert!(matches!(error, AstError::UnsupportedReference { .. }));
+}
+
+#[test]
+fn rejects_missing_local_ref_with_explicit_unresolved_reference_error() {
+    let schema = ResolvedSchema::from_json(&json!({
+        "$ref": "#/$defs/Missing"
+    }))
+    .unwrap();
+    let error = schema.root().unwrap_err();
+
+    assert!(matches!(
+        error,
+        AstError::UnresolvedReference { ref_path }
+            if ref_path == "#/$defs/Missing"
+    ));
+}
+
 fn build_schema(raw: &Value) -> SchemaNode {
-    build_and_resolve_schema(raw).unwrap()
+    ResolvedSchema::from_json(raw)
+        .unwrap()
+        .root()
+        .unwrap()
+        .clone()
 }
 
 fn compile_ast(ast: &SchemaNode) -> schema::JSONSchema {
     compile(&ast.to_json()).unwrap()
+}
+
+fn assert_resolved_graph_is_public(
+    node: &SchemaNode,
+    seen: &mut std::collections::HashSet<schema::ResolvedNodeId>,
+) {
+    if !seen.insert(node.id()) {
+        return;
+    }
+
+    match node.kind() {
+        SchemaNodeKind::BoolSchema(_)
+        | SchemaNodeKind::Any
+        | SchemaNodeKind::String { .. }
+        | SchemaNodeKind::Number { .. }
+        | SchemaNodeKind::Integer { .. }
+        | SchemaNodeKind::Boolean { .. }
+        | SchemaNodeKind::Null { .. }
+        | SchemaNodeKind::Const(_)
+        | SchemaNodeKind::Enum(_) => {}
+        SchemaNodeKind::Object {
+            properties,
+            pattern_properties,
+            additional,
+            property_names,
+            ..
+        } => {
+            for child in properties
+                .values()
+                .chain(pattern_properties.values())
+                .chain(std::iter::once(additional))
+                .chain(std::iter::once(property_names))
+            {
+                assert_resolved_graph_is_public(child, seen);
+            }
+        }
+        SchemaNodeKind::Array {
+            prefix_items,
+            items,
+            contains,
+            ..
+        } => {
+            for child in prefix_items {
+                assert_resolved_graph_is_public(child, seen);
+            }
+            assert_resolved_graph_is_public(items, seen);
+            if let Some(contains) = contains {
+                assert_resolved_graph_is_public(&contains.schema, seen);
+            }
+        }
+        SchemaNodeKind::AllOf(children)
+        | SchemaNodeKind::AnyOf(children)
+        | SchemaNodeKind::OneOf(children) => {
+            for child in children {
+                assert_resolved_graph_is_public(child, seen);
+            }
+        }
+        SchemaNodeKind::Not(child) => {
+            assert_resolved_graph_is_public(child, seen);
+        }
+        SchemaNodeKind::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } => {
+            assert_resolved_graph_is_public(if_schema, seen);
+            if let Some(child) = then_schema {
+                assert_resolved_graph_is_public(child, seen);
+            }
+            if let Some(child) = else_schema {
+                assert_resolved_graph_is_public(child, seen);
+            }
+        }
+        other => panic!("unexpected unresolved node kind in public graph: {other:?}"),
+    }
 }

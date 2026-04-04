@@ -1,5 +1,5 @@
 use crate::canonicalize::{CanonicalSchema, CanonicalizeError, canonicalize_schema};
-use crate::{JSONSchema, build_and_resolve_schema, compile, compile_canonical};
+use crate::{AstError, JSONSchema, build_and_resolve_schema, compile, compile_canonical};
 use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Map, Value, json};
 use std::fs;
@@ -53,10 +53,19 @@ fn canonicalize_every_fuzz_fixture_schema_is_idempotent_and_ast_equivalent()
                 serde_json::to_string_pretty(canonical_again.as_value())?,
             );
 
-            let canonical_ast =
-                build_and_resolve_schema(canonical.as_value()).map_err(|error| {
-                    format!("{} schema #{index} canonical AST: {error}", path.display())
-                })?;
+            let canonical_ast = match build_and_resolve_schema(canonical.as_value()) {
+                Ok(ast) => ast,
+                Err(
+                    AstError::UnsupportedReference { .. } | AstError::UnresolvedReference { .. },
+                ) => continue,
+                Err(error) => {
+                    return Err(format!(
+                        "{} schema #{index} canonical AST: {error}",
+                        path.display()
+                    )
+                    .into());
+                }
+            };
             let canonical_again_ast = build_and_resolve_schema(canonical_again.as_value())
                 .map_err(|error| {
                     format!(

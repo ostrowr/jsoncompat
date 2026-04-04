@@ -2,31 +2,45 @@ mod format_gen;
 mod regex_gen;
 
 use fancy_regex::Regex;
-use json_schema_ast::{ArrayContains, JSONSchema, SchemaNode, SchemaNodeKind, compile};
+use json_schema_ast::{
+    ArrayContains, ResolvedNode, ResolvedNodeKind, ResolvedSchema, SchemaBuildError,
+};
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::collections::HashMap;
+use std::num::NonZeroUsize;
 
-use json_schema_ast::SchemaNodeId;
+const DEFAULT_MAX_GENERATION_ATTEMPTS: usize = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct RecursiveValidationFrame {
-    schema_id: SchemaNodeId,
-    value_address: usize,
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum GenerateError {
+    #[error(transparent)]
+    Schema(#[from] SchemaBuildError),
+    #[error("failed to generate a value accepted by the raw schema after {attempts} attempts")]
+    ExhaustedAttempts { attempts: NonZeroUsize },
 }
 
-/// Stateful value generator that caches compiled subvalidators by AST node identity.
-#[derive(Default)]
+/// Stateful value generator for resolved schema graphs.
+#[derive(Debug)]
 pub struct ValueGenerator {
-    validators: HashMap<SchemaNodeId, Option<Rc<JSONSchema>>>,
+    max_generation_attempts: NonZeroUsize,
+}
+
+impl Default for ValueGenerator {
+    fn default() -> Self {
+        Self {
+            max_generation_attempts: NonZeroUsize::new(DEFAULT_MAX_GENERATION_ATTEMPTS)
+                .expect("default generation attempt limit must be non-zero"),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 struct ArrayGenerationSchema<'a> {
-    prefix_items: &'a [SchemaNode],
-    items: &'a SchemaNode,
-    contains: Option<&'a ArrayContains<SchemaNode>>,
+    prefix_items: &'a [ResolvedNode],
+    items: &'a ResolvedNode,
+    contains: Option<&'a ArrayContains<ResolvedNode>>,
     unique_items: bool,
 }
 
@@ -36,275 +50,65 @@ impl ValueGenerator {
         Self::default()
     }
 
-    /// Generate a random JSON value *intended* to satisfy `schema`.
+    #[must_use]
+    pub fn with_max_generation_attempts(max_generation_attempts: NonZeroUsize) -> Self {
+        Self {
+            max_generation_attempts,
+        }
+    }
+
+    /// Generate a random JSON value that satisfies `schema` according to the
+    /// raw-schema validator backend.
+    ///
+    /// Internally this walks the canonicalized `ResolvedNode` graph to produce
+    /// candidate values, but only returns once `ResolvedSchema::is_valid()`
+    /// accepts the candidate.
     /// We limit recursion with `depth`.
-    pub fn generate_value(&mut self, schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
-        generate_value_with_context(schema, rng, depth, self)
-    }
-
-    fn compile_schema_node(&mut self, schema: &SchemaNode) -> Option<Rc<JSONSchema>> {
-        let node_id = schema.id();
-        if let Some(validator) = self.validators.get(&node_id) {
-            return validator.clone();
-        }
-
-        let validator = if schema_contains_cycle(schema, &mut Vec::new()) {
-            None
-        } else {
-            compile(&schema.to_json()).ok().map(Rc::new)
-        };
-        self.validators.insert(node_id, validator.clone());
-        validator
-    }
-
-    fn schema_accepts_value(&mut self, schema: &SchemaNode, value: &Value) -> bool {
-        self.schema_accepts_value_inner(schema, value, &mut HashSet::new())
-    }
-
-    fn schema_accepts_value_inner(
+    pub fn generate_value(
         &mut self,
-        schema: &SchemaNode,
-        value: &Value,
-        active: &mut HashSet<RecursiveValidationFrame>,
-    ) -> bool {
-        if let Some(validator) = self.compile_schema_node(schema) {
-            return validator.is_valid(value);
+        schema: &ResolvedSchema,
+        rng: &mut impl Rng,
+        depth: u8,
+    ) -> Result<Value, GenerateError> {
+        let root = schema.root()?;
+        for _ in 0..self.max_generation_attempts.get() {
+            let candidate = self.generate_candidate(root, rng, depth);
+            if schema.is_valid(&candidate)? {
+                return Ok(candidate);
+            }
         }
 
-        let frame = RecursiveValidationFrame {
-            schema_id: schema.id(),
-            value_address: std::ptr::from_ref(value) as usize,
-        };
-        if !active.insert(frame) {
-            // Re-entering the same schema on the same JSON value does not make
-            // progress (`A = anyOf(string, A)` on `[]`). Fail closed here while
-            // allowing productive recursion over child values with distinct addresses.
-            return false;
-        }
-
-        let is_valid = match schema.kind() {
-            SchemaNodeKind::BoolSchema(valid) => *valid,
-            SchemaNodeKind::Any => true,
-            SchemaNodeKind::String {
-                min_length,
-                max_length,
-                enumeration,
-                ..
-            } => value.as_str().is_some_and(|string_value| {
-                string_length_in_range(string_value, *min_length, *max_length)
-                    && enum_contains_value(
-                        enumeration.as_deref(),
-                        &Value::String(string_value.to_owned()),
-                    )
-            }),
-            SchemaNodeKind::Number {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
-                multiple_of,
-                enumeration,
-            } => value.as_f64().is_some_and(|number_value| {
-                numeric_value_in_range(
-                    number_value,
-                    *minimum,
-                    *exclusive_minimum,
-                    *maximum,
-                    *exclusive_maximum,
-                ) && value_is_multiple_of(number_value, *multiple_of)
-                    && enum_contains_numeric_value(enumeration.as_deref(), number_value)
-            }),
-            SchemaNodeKind::Integer {
-                minimum,
-                maximum,
-                exclusive_minimum,
-                exclusive_maximum,
-                multiple_of,
-                enumeration,
-            } => value.as_f64().is_some_and(|number_value| {
-                number_value.fract() == 0.0
-                    && numeric_value_in_range(
-                        number_value,
-                        minimum.map(|bound| bound as f64),
-                        *exclusive_minimum,
-                        maximum.map(|bound| bound as f64),
-                        *exclusive_maximum,
-                    )
-                    && value_is_multiple_of(number_value, *multiple_of)
-                    && enum_contains_numeric_value(enumeration.as_deref(), number_value)
-            }),
-            SchemaNodeKind::Boolean { enumeration } => value
-                .as_bool()
-                .is_some_and(|_| enum_contains_value(enumeration.as_deref(), value)),
-            SchemaNodeKind::Null { enumeration } => {
-                value.is_null() && enum_contains_value(enumeration.as_deref(), value)
-            }
-            SchemaNodeKind::Object {
-                properties,
-                pattern_properties,
-                required,
-                additional,
-                property_names,
-                min_properties,
-                max_properties,
-                dependent_required,
-                enumeration,
-            } => value.as_object().is_some_and(|object_value| {
-                enum_contains_value(enumeration.as_deref(), value)
-                    && min_properties.is_none_or(|minimum| object_value.len() >= minimum)
-                    && max_properties.is_none_or(|maximum| object_value.len() <= maximum)
-                    && required.iter().all(|name| object_value.contains_key(name))
-                    && dependent_required.iter().all(|(trigger, dependencies)| {
-                        !object_value.contains_key(trigger)
-                            || dependencies
-                                .iter()
-                                .all(|dependency| object_value.contains_key(dependency))
-                    })
-                    && object_value.iter().all(|(property_name, property_value)| {
-                        let property_name_value = Value::String(property_name.clone());
-                        self.schema_accepts_value_inner(
-                            property_names,
-                            &property_name_value,
-                            active,
-                        ) && self.object_property_accepts_value(
-                            properties,
-                            pattern_properties,
-                            additional,
-                            property_name,
-                            property_value,
-                            active,
-                        )
-                    })
-            }),
-            SchemaNodeKind::Array {
-                prefix_items,
-                items,
-                min_items,
-                max_items,
-                contains,
-                unique_items,
-                enumeration,
-            } => value.as_array().is_some_and(|array_value| {
-                enum_contains_value(enumeration.as_deref(), value)
-                    && min_items.is_none_or(|minimum| array_value.len() as u64 >= minimum)
-                    && max_items.is_none_or(|maximum| array_value.len() as u64 <= maximum)
-                    && (!unique_items || array_values_are_unique(array_value))
-                    && array_value.iter().enumerate().all(|(index, item)| {
-                        let item_schema = prefix_items.get(index).unwrap_or(items);
-                        self.schema_accepts_value_inner(item_schema, item, active)
-                    })
-                    && contains.as_ref().is_none_or(|contains| {
-                        let matching_items = array_value
-                            .iter()
-                            .filter(|item| {
-                                self.schema_accepts_value_inner(&contains.schema, item, active)
-                            })
-                            .count() as u64;
-                        matching_items >= contains.min_contains
-                            && contains
-                                .max_contains
-                                .is_none_or(|maximum| matching_items <= maximum)
-                    })
-            }),
-            SchemaNodeKind::Defs(_) => true,
-            SchemaNodeKind::AllOf(children) => children
-                .iter()
-                .all(|child| self.schema_accepts_value_inner(child, value, active)),
-            SchemaNodeKind::AnyOf(children) => children
-                .iter()
-                .any(|child| self.schema_accepts_value_inner(child, value, active)),
-            SchemaNodeKind::OneOf(children) => {
-                children
-                    .iter()
-                    .filter(|child| self.schema_accepts_value_inner(child, value, active))
-                    .count()
-                    == 1
-            }
-            SchemaNodeKind::Not(child) => !self.schema_accepts_value_inner(child, value, active),
-            SchemaNodeKind::IfThenElse {
-                if_schema,
-                then_schema,
-                else_schema,
-            } => {
-                if self.schema_accepts_value_inner(if_schema, value, active) {
-                    then_schema.as_ref().is_none_or(|then_schema| {
-                        self.schema_accepts_value_inner(then_schema, value, active)
-                    })
-                } else {
-                    else_schema.as_ref().is_none_or(|else_schema| {
-                        self.schema_accepts_value_inner(else_schema, value, active)
-                    })
-                }
-            }
-            SchemaNodeKind::Const(expected) => value == expected,
-            SchemaNodeKind::Enum(values) => values.contains(value),
-            SchemaNodeKind::Type(_)
-            | SchemaNodeKind::Minimum(_)
-            | SchemaNodeKind::Maximum(_)
-            | SchemaNodeKind::Required(_)
-            | SchemaNodeKind::AdditionalProperties(_)
-            | SchemaNodeKind::Format(_)
-            | SchemaNodeKind::ContentEncoding(_)
-            | SchemaNodeKind::ContentMediaType(_)
-            | SchemaNodeKind::Title(_)
-            | SchemaNodeKind::Description(_)
-            | SchemaNodeKind::Default(_)
-            | SchemaNodeKind::Examples(_)
-            | SchemaNodeKind::ReadOnly(_)
-            | SchemaNodeKind::WriteOnly(_)
-            | SchemaNodeKind::Ref(_)
-            | _ => false,
-        };
-
-        active.remove(&frame);
-        is_valid
+        Err(GenerateError::ExhaustedAttempts {
+            attempts: self.max_generation_attempts,
+        })
     }
 
-    fn object_property_accepts_value(
+    fn generate_candidate(
         &mut self,
-        properties: &HashMap<String, SchemaNode>,
-        pattern_properties: &HashMap<String, SchemaNode>,
-        additional: &SchemaNode,
-        property_name: &str,
-        property_value: &Value,
-        active: &mut HashSet<RecursiveValidationFrame>,
-    ) -> bool {
-        let mut matched = false;
-
-        if let Some(property_schema) = properties.get(property_name) {
-            matched = true;
-            if !self.schema_accepts_value_inner(property_schema, property_value, active) {
-                return false;
-            }
-        }
-
-        for (pattern, pattern_schema) in pattern_properties {
-            if !property_name_matches_pattern(pattern, property_name) {
-                continue;
-            }
-            matched = true;
-            if !self.schema_accepts_value_inner(pattern_schema, property_value, active) {
-                return false;
-            }
-        }
-
-        matched || self.schema_accepts_value_inner(additional, property_value, active)
+        schema: &ResolvedNode,
+        rng: &mut impl Rng,
+        depth: u8,
+    ) -> Value {
+        generate_candidate_with_context(schema, rng, depth, self)
+    }
+    fn schema_accepts_value(&mut self, schema: &ResolvedNode, value: &Value) -> bool {
+        schema.accepts_value(value)
     }
 
     fn generate_property_value(
         &mut self,
         property_name: &str,
-        property_schema: &SchemaNode,
-        pattern_properties: &HashMap<String, SchemaNode>,
+        property_schema: &ResolvedNode,
+        pattern_properties: &HashMap<String, ResolvedNode>,
         rng: &mut impl Rng,
         depth: u8,
     ) -> Value {
         if !property_matches_any_pattern(pattern_properties, property_name) {
-            return self.generate_value(property_schema, rng, depth);
+            return self.generate_candidate(property_schema, rng, depth);
         }
 
         for _ in 0..32 {
-            let candidate = self.generate_value(property_schema, rng, depth);
+            let candidate = self.generate_candidate(property_schema, rng, depth);
             if pattern_property_schemas_accept_value(
                 self,
                 pattern_properties,
@@ -316,7 +120,7 @@ impl ValueGenerator {
         }
 
         for pattern_schema in matching_pattern_property_schemas(pattern_properties, property_name) {
-            let candidate = self.generate_value(pattern_schema, rng, depth);
+            let candidate = self.generate_candidate(pattern_schema, rng, depth);
             if self.schema_accepts_value(property_schema, &candidate)
                 && pattern_property_schemas_accept_value(
                     self,
@@ -329,24 +133,24 @@ impl ValueGenerator {
             }
         }
 
-        self.generate_value(property_schema, rng, depth)
+        self.generate_candidate(property_schema, rng, depth)
     }
 
     fn generate_additional_property_value(
         &mut self,
         property_name: &str,
-        pattern_properties: &HashMap<String, SchemaNode>,
-        additional: &SchemaNode,
+        pattern_properties: &HashMap<String, ResolvedNode>,
+        additional: &ResolvedNode,
         rng: &mut impl Rng,
         depth: u8,
     ) -> Value {
         let matching_schemas = matching_pattern_property_schemas(pattern_properties, property_name);
         let Some(first_pattern_schema) = matching_schemas.first() else {
-            return self.generate_value(additional, rng, depth);
+            return self.generate_candidate(additional, rng, depth);
         };
 
         for _ in 0..32 {
-            let candidate = self.generate_value(first_pattern_schema, rng, depth);
+            let candidate = self.generate_candidate(first_pattern_schema, rng, depth);
             if matching_schemas
                 .iter()
                 .all(|schema| self.schema_accepts_value(schema, &candidate))
@@ -355,18 +159,23 @@ impl ValueGenerator {
             }
         }
 
-        self.generate_value(first_pattern_schema, rng, depth)
+        self.generate_candidate(first_pattern_schema, rng, depth)
     }
 }
 
-/// Generate a random JSON value *intended* to satisfy `schema`.
+/// Generate a random JSON value that satisfies `schema` according to the
+/// raw-schema validator backend.
 /// We limit recursion with `depth`.
-pub fn generate_value(schema: &SchemaNode, rng: &mut impl Rng, depth: u8) -> Value {
+pub fn generate_value(
+    schema: &ResolvedSchema,
+    rng: &mut impl Rng,
+    depth: u8,
+) -> Result<Value, GenerateError> {
     ValueGenerator::new().generate_value(schema, rng, depth)
 }
 
-fn generate_value_with_context(
-    schema: &SchemaNode,
+fn generate_candidate_with_context(
+    schema: &ResolvedNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -375,7 +184,7 @@ fn generate_value_with_context(
         return Value::Null;
     }
 
-    use SchemaNodeKind::*;
+    use ResolvedNodeKind::*;
 
     match schema.kind() {
         BoolSchema(false) => Value::Null,
@@ -425,7 +234,7 @@ fn generate_value_with_context(
                             ..
                         } = sub.kind()
                             && let Value::Object(obj) =
-                                generator.generate_value(sub, rng, depth.saturating_sub(1))
+                                generator.generate_candidate(sub, rng, depth.saturating_sub(1))
                         {
                             for (k, v) in obj {
                                 if required.contains(&k)
@@ -446,7 +255,7 @@ fn generate_value_with_context(
                     // possible that the fast generation above skipped an optional
                     // property that later turned out to be required by another
                     // branch.  We deterministically fill any such gaps here.
-                    let mut missing: HashMap<std::string::String, Option<SchemaNode>> =
+                    let mut missing: HashMap<std::string::String, Option<ResolvedNode>> =
                         HashMap::new();
                     for sub in object_subschemas {
                         if let Object {
@@ -466,7 +275,7 @@ fn generate_value_with_context(
                     for (k, schema) in missing {
                         let val = match schema {
                             Some(schema) => {
-                                generator.generate_value(&schema, rng, depth.saturating_sub(1))
+                                generator.generate_candidate(&schema, rng, depth.saturating_sub(1))
                             }
                             None => random_any(rng, depth.saturating_sub(1)),
                         };
@@ -478,7 +287,7 @@ fn generate_value_with_context(
                     random_any(rng, depth)
                 } else {
                     let index = rng.random_range(0..non_trivial.len());
-                    generator.generate_value(non_trivial[index], rng, depth.saturating_sub(1))
+                    generator.generate_candidate(non_trivial[index], rng, depth.saturating_sub(1))
                 };
 
                 if generator.schema_accepts_value(schema, &candidate) {
@@ -493,7 +302,7 @@ fn generate_value_with_context(
             for _ in 0..32 {
                 let index = rng.random_range(0..subs.len());
                 let candidate =
-                    generator.generate_value(&subs[index], rng, depth.saturating_sub(1));
+                    generator.generate_candidate(&subs[index], rng, depth.saturating_sub(1));
                 if generator.schema_accepts_value(&subs[index], &candidate) {
                     return candidate;
                 }
@@ -508,7 +317,7 @@ fn generate_value_with_context(
                 let candidate_schema =
                     object_schema_branch(&subs[pick]).unwrap_or_else(|| subs[pick].clone());
                 let candidate =
-                    generator.generate_value(&candidate_schema, rng, depth.saturating_sub(1));
+                    generator.generate_candidate(&candidate_schema, rng, depth.saturating_sub(1));
 
                 let mut ok = 0;
                 for child in subs {
@@ -703,72 +512,52 @@ fn generate_value_with_context(
                 && properties.is_empty()
                 && matches!(
                     additional.kind(),
-                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
                 )
                 && matches!(
                     property_names.kind(),
-                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
                 )
             {
                 return Value::Object(Map::new());
             }
 
-            let mut map = Map::new();
-            for (k, prop_schema) in properties {
-                if !property_name_allows(property_names, k, generator) {
-                    continue;
-                }
-                let must_include = required.contains(k);
-                // Optional fields are only included with some probability unless the
-                // schema is unconstrained (`true`/`Any`).  Skipping these avoids
-                // descending into deep recursive refs when it is unnecessary.
-                let include = if must_include {
-                    true
-                } else {
-                    !matches!(prop_schema.kind(), BoolSchema(true) | Any) && rng.random_bool(0.7)
-                };
-                if include {
-                    let val = generator.generate_property_value(
-                        k,
-                        prop_schema,
-                        pattern_properties,
-                        rng,
-                        depth.saturating_sub(1),
-                    );
-                    map.insert(k.clone(), val);
-                }
-            }
-
             let max_p: usize = max_properties.unwrap_or(usize::MAX);
 
-            if !matches!(additional.kind(), BoolSchema(false)) {
-                // If we need to hit `minProperties`, keep inventing additional keys
-                // until we reach the minimum before attempting the probabilistic
-                // extras.
-                while map.len() < min_p {
-                    let Some(key) = generate_property_key(property_names, rng, depth, generator)
-                    else {
-                        break;
+            for _ in 0..32 {
+                let mut map = Map::new();
+                for (k, prop_schema) in properties {
+                    if !property_name_allows(property_names, k, generator) {
+                        continue;
+                    }
+                    let must_include = required.contains(k);
+                    // Optional fields are only included with some probability unless the
+                    // schema is unconstrained (`true`/`Any`).  Skipping these avoids
+                    // descending into deep recursive refs when it is unnecessary.
+                    let include = if must_include {
+                        true
+                    } else {
+                        !matches!(prop_schema.kind(), BoolSchema(true) | Any)
+                            && rng.random_bool(0.7)
                     };
-                    if map.contains_key(&key) {
-                        continue;
+                    if include {
+                        let val = generator.generate_property_value(
+                            k,
+                            prop_schema,
+                            pattern_properties,
+                            rng,
+                            depth.saturating_sub(1),
+                        );
+                        map.insert(k.clone(), val);
                     }
-                    if properties.contains_key(&key) {
-                        continue;
-                    }
-                    let val = generator.generate_additional_property_value(
-                        &key,
-                        pattern_properties,
-                        additional,
-                        rng,
-                        depth.saturating_sub(1),
-                    );
-                    map.insert(key, val);
                 }
 
-                if rng.random_bool(0.3) {
+                if !matches!(additional.kind(), BoolSchema(false)) {
+                    // If we need to hit `minProperties`, keep inventing additional keys
+                    // until we reach the minimum before attempting the probabilistic
+                    // extras.
                     let mut attempts = 0;
-                    while rng.random_bool(0.5) && (map.len() < max_p) && attempts < 5 {
+                    while map.len() < min_p && attempts < 32 {
                         let Some(key) =
                             generate_property_key(property_names, rng, depth, generator)
                         else {
@@ -792,50 +581,83 @@ fn generate_value_with_context(
                         map.insert(key, val);
                         attempts += 1;
                     }
-                }
-            }
 
-            if map.len() < min_p {
-                for (k, prop_schema) in properties {
-                    if !property_name_allows(property_names, k, generator) {
-                        continue;
+                    if rng.random_bool(0.3) {
+                        let mut attempts = 0;
+                        while rng.random_bool(0.5) && (map.len() < max_p) && attempts < 5 {
+                            let Some(key) =
+                                generate_property_key(property_names, rng, depth, generator)
+                            else {
+                                break;
+                            };
+                            if map.contains_key(&key) {
+                                attempts += 1;
+                                continue;
+                            }
+                            if properties.contains_key(&key) {
+                                attempts += 1;
+                                continue;
+                            }
+                            let val = generator.generate_additional_property_value(
+                                &key,
+                                pattern_properties,
+                                additional,
+                                rng,
+                                depth.saturating_sub(1),
+                            );
+                            map.insert(key, val);
+                            attempts += 1;
+                        }
                     }
-                    if map.contains_key(k) {
-                        continue;
+                }
+
+                if map.len() < min_p {
+                    for (k, prop_schema) in properties {
+                        if !property_name_allows(property_names, k, generator) {
+                            continue;
+                        }
+                        if map.contains_key(k) {
+                            continue;
+                        }
+                        let val = generator.generate_property_value(
+                            k,
+                            prop_schema,
+                            pattern_properties,
+                            rng,
+                            depth.saturating_sub(1),
+                        );
+                        map.insert(k.clone(), val);
+                        if map.len() >= min_p {
+                            break;
+                        }
                     }
+                }
+
+                if map.is_empty()
+                    && min_p > 0
+                    && !properties.is_empty()
+                    && let Some((k, schema)) = properties
+                        .iter()
+                        .find(|(name, _)| property_name_allows(property_names, name, generator))
+                        .or_else(|| properties.iter().next())
+                {
                     let val = generator.generate_property_value(
                         k,
-                        prop_schema,
+                        schema,
                         pattern_properties,
                         rng,
                         depth.saturating_sub(1),
                     );
                     map.insert(k.clone(), val);
-                    if map.len() >= min_p {
-                        break;
-                    }
+                }
+
+                let candidate = Value::Object(map);
+                if generator.schema_accepts_value(schema, &candidate) {
+                    return candidate;
                 }
             }
 
-            if map.is_empty()
-                && min_p > 0
-                && !properties.is_empty()
-                && let Some((k, schema)) = properties
-                    .iter()
-                    .find(|(name, _)| property_name_allows(property_names, name, generator))
-                    .or_else(|| properties.iter().next())
-            {
-                let val = generator.generate_property_value(
-                    k,
-                    schema,
-                    pattern_properties,
-                    rng,
-                    depth.saturating_sub(1),
-                );
-                map.insert(k.clone(), val);
-            }
-
-            Value::Object(map)
+            random_any(rng, depth)
         }
 
         Array {
@@ -908,8 +730,6 @@ fn generate_value_with_context(
             random_any(rng, depth)
         }
 
-        Ref(_) => random_any(rng, depth),
-        Defs(_) => Value::Null,
         IfThenElse {
             if_schema,
             then_schema,
@@ -919,11 +739,11 @@ fn generate_value_with_context(
                 let candidate = if rng.random_bool(0.5)
                     && let Some(t) = then_schema
                 {
-                    generator.generate_value(t, rng, depth.saturating_sub(1))
+                    generator.generate_candidate(t, rng, depth.saturating_sub(1))
                 } else if let Some(e) = else_schema {
-                    generator.generate_value(e, rng, depth.saturating_sub(1))
+                    generator.generate_candidate(e, rng, depth.saturating_sub(1))
                 } else {
-                    generator.generate_value(if_schema, rng, depth.saturating_sub(1))
+                    generator.generate_candidate(if_schema, rng, depth.saturating_sub(1))
                 };
 
                 if generator.schema_accepts_value(schema, &candidate) {
@@ -934,20 +754,6 @@ fn generate_value_with_context(
             random_any(rng, depth)
         }
         Const(v) => v.clone(),
-        Type(_) => Value::Null,
-        Minimum(_) => Value::Null,
-        Maximum(_) => Value::Null,
-        Required(_) => Value::Null,
-        AdditionalProperties(_) => Value::Null,
-        Format(_) => Value::Null,
-        ContentEncoding(_) => Value::Null,
-        ContentMediaType(_) => Value::Null,
-        Title(_) => Value::Null,
-        Description(_) => Value::Null,
-        Default(_) => Value::Null,
-        Examples(_) => Value::Null,
-        ReadOnly(_) => Value::Null,
-        WriteOnly(_) => Value::Null,
         AllOf(_) => Value::Null,
         AnyOf(_) => Value::Null,
         OneOf(_) => Value::Null,
@@ -956,8 +762,8 @@ fn generate_value_with_context(
     }
 }
 
-fn object_schema_branch(schema: &SchemaNode) -> Option<SchemaNode> {
-    use SchemaNodeKind::*;
+fn object_schema_branch(schema: &ResolvedNode) -> Option<ResolvedNode> {
+    use ResolvedNodeKind::*;
 
     match schema.kind() {
         Object { .. } => Some(schema.clone()),
@@ -975,8 +781,8 @@ fn object_schema_branch(schema: &SchemaNode) -> Option<SchemaNode> {
 }
 
 fn generate_not_value(
-    schema: &SchemaNode,
-    negated: &SchemaNode,
+    schema: &ResolvedNode,
+    negated: &ResolvedNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -993,7 +799,7 @@ fn generate_not_value(
         }
     }
 
-    let forbidden = generator.generate_value(negated, rng, depth.saturating_sub(1));
+    let forbidden = generator.generate_candidate(negated, rng, depth.saturating_sub(1));
     let candidate = value_type_mismatch(&forbidden);
     if generator.schema_accepts_value(schema, &candidate) {
         return candidate;
@@ -1003,12 +809,12 @@ fn generate_not_value(
 }
 
 fn negated_schema_counterexample(
-    negated: &SchemaNode,
+    negated: &ResolvedNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
 ) -> Option<Value> {
-    use SchemaNodeKind::*;
+    use ResolvedNodeKind::*;
 
     Some(match negated.kind() {
         BoolSchema(false) => random_any(rng, depth),
@@ -1028,24 +834,10 @@ fn negated_schema_counterexample(
             .first()
             .and_then(|child| negated_schema_counterexample(child, rng, depth, generator))
             .unwrap_or_else(|| random_any(rng, depth)),
-        AnyOf(_) | OneOf(_) | Not(_) | IfThenElse { .. } | Ref(_) | Defs(_) => {
-            generator.generate_value(negated, rng, depth.saturating_sub(1))
+        AnyOf(_) | OneOf(_) | Not(_) | IfThenElse { .. } => {
+            generator.generate_candidate(negated, rng, depth.saturating_sub(1))
         }
-        Type(_)
-        | Minimum(_)
-        | Maximum(_)
-        | Required(_)
-        | AdditionalProperties(_)
-        | Format(_)
-        | ContentEncoding(_)
-        | ContentMediaType(_)
-        | Title(_)
-        | Description(_)
-        | Default(_)
-        | Examples(_)
-        | ReadOnly(_)
-        | WriteOnly(_)
-        | _ => random_any(rng, depth),
+        _ => random_any(rng, depth),
     })
 }
 
@@ -1142,69 +934,8 @@ fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
     Value::Object(Map::new())
 }
 
-fn schema_contains_cycle(schema: &SchemaNode, path: &mut Vec<SchemaNode>) -> bool {
-    if path.iter().any(|ancestor| ancestor.ptr_eq(schema)) {
-        return true;
-    }
-
-    let children = schema_children(schema);
-    if children.is_empty() {
-        return false;
-    }
-
-    path.push(schema.clone());
-    let contains_cycle = children
-        .iter()
-        .any(|child| schema_contains_cycle(child, path));
-    path.pop();
-    contains_cycle
-}
-
-fn schema_children(schema: &SchemaNode) -> Vec<SchemaNode> {
-    use SchemaNodeKind::*;
-
-    match schema.kind() {
-        AllOf(children) | AnyOf(children) | OneOf(children) => children.clone(),
-        Not(child) | AdditionalProperties(child) => vec![child.clone()],
-        IfThenElse {
-            if_schema,
-            then_schema,
-            else_schema,
-        } => std::iter::once(if_schema.clone())
-            .chain(then_schema.iter().cloned())
-            .chain(else_schema.iter().cloned())
-            .collect(),
-        Object {
-            properties,
-            pattern_properties,
-            additional,
-            property_names,
-            ..
-        } => properties
-            .values()
-            .cloned()
-            .chain(pattern_properties.values().cloned())
-            .chain(std::iter::once(additional.clone()))
-            .chain(std::iter::once(property_names.clone()))
-            .collect(),
-        Array {
-            prefix_items,
-            items,
-            contains,
-            ..
-        } => prefix_items
-            .iter()
-            .cloned()
-            .chain(std::iter::once(items.clone()))
-            .chain(contains.iter().map(|contains| contains.schema.clone()))
-            .collect(),
-        Defs(map) => map.values().cloned().collect(),
-        _ => Vec::new(),
-    }
-}
-
 fn property_name_allows(
-    property_names: &SchemaNode,
+    property_names: &ResolvedNode,
     candidate: &str,
     generator: &mut ValueGenerator,
 ) -> bool {
@@ -1219,7 +950,7 @@ fn property_name_matches_pattern(pattern: &str, property_name: &str) -> bool {
 }
 
 fn property_matches_any_pattern(
-    pattern_properties: &HashMap<String, SchemaNode>,
+    pattern_properties: &HashMap<String, ResolvedNode>,
     property_name: &str,
 ) -> bool {
     pattern_properties
@@ -1228,9 +959,9 @@ fn property_matches_any_pattern(
 }
 
 fn matching_pattern_property_schemas<'a>(
-    pattern_properties: &'a HashMap<String, SchemaNode>,
+    pattern_properties: &'a HashMap<String, ResolvedNode>,
     property_name: &str,
-) -> Vec<&'a SchemaNode> {
+) -> Vec<&'a ResolvedNode> {
     pattern_properties
         .iter()
         .filter_map(|(pattern, schema)| {
@@ -1241,7 +972,7 @@ fn matching_pattern_property_schemas<'a>(
 
 fn pattern_property_schemas_accept_value(
     generator: &mut ValueGenerator,
-    pattern_properties: &HashMap<String, SchemaNode>,
+    pattern_properties: &HashMap<String, ResolvedNode>,
     property_name: &str,
     property_value: &Value,
 ) -> bool {
@@ -1251,27 +982,27 @@ fn pattern_property_schemas_accept_value(
 }
 
 fn generate_property_key(
-    property_names: &SchemaNode,
+    property_names: &ResolvedNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
 ) -> Option<String> {
     if matches!(
         property_names.kind(),
-        SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+        ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
     ) {
         return Some(random_key(rng));
     }
 
     for _ in 0..32 {
         let candidate = match property_names.kind() {
-            SchemaNodeKind::String { .. } => {
-                match generator.generate_value(property_names, rng, depth.saturating_sub(1)) {
+            ResolvedNodeKind::String { .. } => {
+                match generator.generate_candidate(property_names, rng, depth.saturating_sub(1)) {
                     Value::String(s) => s,
                     _ => random_key(rng),
                 }
             }
-            SchemaNodeKind::Enum(values) => values
+            ResolvedNodeKind::Enum(values) => values
                 .iter()
                 .find_map(|v| v.as_str().map(|s| s.to_owned()))
                 .unwrap_or_else(|| random_key(rng)),
@@ -1331,7 +1062,7 @@ fn generate_array_candidate(
             if values.iter().any(|existing| existing == &value)
                 && matches!(
                     item_schema.kind(),
-                    SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+                    ResolvedNodeKind::Any | ResolvedNodeKind::BoolSchema(true)
                 )
             {
                 value = unique_fallback_value(index);
@@ -1350,8 +1081,8 @@ fn generate_array_candidate(
 }
 
 fn generate_array_item(
-    item_schema: &SchemaNode,
-    contains: Option<&ArrayContains<SchemaNode>>,
+    item_schema: &ResolvedNode,
+    contains: Option<&ArrayContains<ResolvedNode>>,
     matching_items: u64,
     remaining_slots: usize,
     rng: &mut impl Rng,
@@ -1359,7 +1090,7 @@ fn generate_array_item(
     generator: &mut ValueGenerator,
 ) -> Value {
     match contains {
-        None => generator.generate_value(item_schema, rng, depth.saturating_sub(1)),
+        None => generator.generate_candidate(item_schema, rng, depth.saturating_sub(1)),
         Some(contains) => {
             let remaining_required = contains.min_contains.saturating_sub(matching_items);
             let must_match = remaining_required >= remaining_slots as u64;
@@ -1384,15 +1115,15 @@ fn generate_array_item(
                     generator,
                 )
             } else {
-                generator.generate_value(item_schema, rng, depth.saturating_sub(1))
+                generator.generate_candidate(item_schema, rng, depth.saturating_sub(1))
             }
         }
     }
 }
 
 fn generate_array_item_matching_contains(
-    item_schema: &SchemaNode,
-    contains_schema: &SchemaNode,
+    item_schema: &ResolvedNode,
+    contains_schema: &ResolvedNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
@@ -1403,7 +1134,8 @@ fn generate_array_item_matching_contains(
         } else {
             item_schema
         };
-        let candidate = generator.generate_value(candidate_schema, rng, depth.saturating_sub(1));
+        let candidate =
+            generator.generate_candidate(candidate_schema, rng, depth.saturating_sub(1));
         let matches_item = generator.schema_accepts_value(item_schema, &candidate);
         let matches_contains = generator.schema_accepts_value(contains_schema, &candidate);
         if matches_item && matches_contains {
@@ -1411,18 +1143,18 @@ fn generate_array_item_matching_contains(
         }
     }
 
-    generator.generate_value(item_schema, rng, depth.saturating_sub(1))
+    generator.generate_candidate(item_schema, rng, depth.saturating_sub(1))
 }
 
 fn generate_array_item_avoiding_contains(
-    item_schema: &SchemaNode,
-    contains_schema: &SchemaNode,
+    item_schema: &ResolvedNode,
+    contains_schema: &ResolvedNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
 ) -> Value {
     for _ in 0..32 {
-        let candidate = generator.generate_value(item_schema, rng, depth.saturating_sub(1));
+        let candidate = generator.generate_candidate(item_schema, rng, depth.saturating_sub(1));
         let matches_item = generator.schema_accepts_value(item_schema, &candidate);
         let matches_contains = generator.schema_accepts_value(contains_schema, &candidate);
         if matches_item && !matches_contains {
@@ -1430,7 +1162,7 @@ fn generate_array_item_avoiding_contains(
         }
     }
 
-    generator.generate_value(item_schema, rng, depth.saturating_sub(1))
+    generator.generate_candidate(item_schema, rng, depth.saturating_sub(1))
 }
 
 fn unique_fallback_value(index: usize) -> Value {
@@ -1440,78 +1172,6 @@ fn unique_fallback_value(index: usize) -> Value {
         Value::Number(index.into()),
     );
     Value::Object(value)
-}
-
-fn array_values_are_unique(values: &[Value]) -> bool {
-    values
-        .iter()
-        .enumerate()
-        .all(|(index, value)| values[..index].iter().all(|seen| seen != value))
-}
-
-fn string_length_in_range(value: &str, minimum: Option<u64>, maximum: Option<u64>) -> bool {
-    let length = value.chars().count() as u64;
-    minimum.is_none_or(|minimum| length >= minimum)
-        && maximum.is_none_or(|maximum| length <= maximum)
-}
-
-fn numeric_value_in_range(
-    value: f64,
-    minimum: Option<f64>,
-    exclusive_minimum: bool,
-    maximum: Option<f64>,
-    exclusive_maximum: bool,
-) -> bool {
-    let above_minimum = match minimum {
-        None => true,
-        Some(minimum) if exclusive_minimum => value > minimum,
-        Some(minimum) => value >= minimum,
-    };
-    let below_maximum = match maximum {
-        None => true,
-        Some(maximum) if exclusive_maximum => value < maximum,
-        Some(maximum) => value <= maximum,
-    };
-    above_minimum && below_maximum
-}
-
-fn enum_contains_value(enumeration: Option<&[Value]>, value: &Value) -> bool {
-    enumeration.is_none_or(|enumeration| enumeration.contains(value))
-}
-
-fn enum_contains_numeric_value(enumeration: Option<&[Value]>, value: f64) -> bool {
-    enumeration.is_none_or(|enumeration| {
-        enumeration
-            .iter()
-            .any(|expected| expected.as_f64().is_some_and(|expected| expected == value))
-    })
-}
-
-fn value_is_multiple_of(value: f64, multiple_of: Option<f64>) -> bool {
-    let Some(multiple_of) = multiple_of else {
-        return true;
-    };
-    if multiple_of <= 0.0 {
-        return false;
-    }
-    if let (Some(value), Some(multiple_of)) = (
-        exact_positive_integer(value.abs()),
-        exact_positive_integer(multiple_of),
-    ) {
-        return value % multiple_of == 0;
-    }
-
-    let ratio = value / multiple_of;
-    (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
-}
-
-fn exact_positive_integer(value: f64) -> Option<u64> {
-    if !value.is_finite() || value <= 0.0 || value.fract() != 0.0 || value > u64::MAX as f64 {
-        return None;
-    }
-
-    let integer = value as u64;
-    ((integer as f64) == value).then_some(integer)
 }
 
 fn random_key(rng: &mut impl Rng) -> String {
@@ -1579,24 +1239,32 @@ fn literal_from_simple_pattern(pattern: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use json_schema_ast::build_and_resolve_schema;
+    use json_schema_ast::ResolvedSchema;
     use rand::{SeedableRng, rngs::StdRng};
     use serde_json::json;
+
+    fn resolve(raw: Value) -> ResolvedSchema {
+        ResolvedSchema::from_json(&raw).unwrap()
+    }
 
     #[test]
     fn object_required_properties_not_empty() {
         let schema = build_required_object_schema();
         let mut rng = StdRng::seed_from_u64(42);
         for _ in 0..50 {
-            let value = generate_value(&schema, &mut rng, 5);
+            let value = generate_value(&schema, &mut rng, 5).unwrap();
             let obj = value.as_object().expect("expected object");
             assert!(obj.contains_key("class"));
+            assert!(
+                schema.is_valid(&value).unwrap(),
+                "generated invalid value: {value}"
+            );
         }
     }
 
     #[test]
     fn recursive_allof_with_cyclic_object_branch_does_not_stack_overflow() {
-        let schema = build_and_resolve_schema(&json!({
+        let schema = resolve(json!({
             "$defs": {
                 "A": {
                     "allOf": [
@@ -1611,16 +1279,18 @@ mod tests {
                 }
             },
             "$ref": "#/$defs/A"
-        }))
-        .unwrap();
+        }));
 
         let mut rng = StdRng::seed_from_u64(42);
-        let _ = generate_value(&schema, &mut rng, 5);
+        assert!(matches!(
+            generate_value(&schema, &mut rng, 5),
+            Err(GenerateError::ExhaustedAttempts { .. })
+        ));
     }
 
     #[test]
     fn recursive_anyof_branch_does_not_get_serialized_before_generation() {
-        let schema = build_and_resolve_schema(&json!({
+        let schema = resolve(json!({
             "$defs": {
                 "Node": {
                     "properties": {
@@ -1632,16 +1302,15 @@ mod tests {
                 { "$ref": "#/$defs/Node" },
                 { "type": "string" }
             ]
-        }))
-        .unwrap();
+        }));
 
         let mut rng = StdRng::seed_from_u64(7);
-        let _ = generate_value(&schema, &mut rng, 5);
+        let _ = generate_value(&schema, &mut rng, 5).unwrap();
     }
 
     #[test]
     fn recursive_contains_with_zero_max_contains_only_generates_empty_arrays() {
-        let schema = build_and_resolve_schema(&json!({
+        let schema = resolve(json!({
             "$defs": {
                 "A": {
                     "type": "array",
@@ -1652,19 +1321,18 @@ mod tests {
                 }
             },
             "$ref": "#/$defs/A"
-        }))
-        .unwrap();
+        }));
 
         let mut rng = StdRng::seed_from_u64(99);
         for _ in 0..50 {
-            let value = generate_value(&schema, &mut rng, 8);
+            let value = generate_value(&schema, &mut rng, 8).unwrap();
             assert_eq!(value, json!([]), "generated invalid value: {value}");
         }
     }
 
     #[test]
     fn allof_object_generation_keeps_extra_keys_for_min_properties() {
-        let schema = build_and_resolve_schema(&json!({
+        let schema = resolve(json!({
             "allOf": [
                 {
                     "type": "object",
@@ -1674,21 +1342,19 @@ mod tests {
                     "type": "object"
                 }
             ]
-        }))
-        .unwrap();
+        }));
 
-        let compiled = compile(&schema.to_json()).unwrap();
         let mut rng = StdRng::seed_from_u64(12);
         for _ in 0..20 {
-            let value = generate_value(&schema, &mut rng, 5);
+            let value = generate_value(&schema, &mut rng, 5).unwrap();
             assert!(
-                compiled.is_valid(&value),
+                schema.is_valid(&value).unwrap(),
                 "generated invalid value: {value}"
             );
         }
     }
 
-    fn build_required_object_schema() -> SchemaNode {
+    fn build_required_object_schema() -> ResolvedSchema {
         let raw = json!({
             "type": "object",
             "properties": {
@@ -1697,6 +1363,6 @@ mod tests {
             },
             "required": ["class"]
         });
-        build_and_resolve_schema(&raw).unwrap()
+        resolve(raw)
     }
 }
