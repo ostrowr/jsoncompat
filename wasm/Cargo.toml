@@ -25,11 +25,9 @@ jsoncompat = { path = ".." }
 json_schema_fuzz = { path = "../fuzz" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom_04 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"] }
-getrandom_02 = { package = "getrandom", version = "0.2.17", features = ["js"] }
-
-
-
+# `rand` 0.10 uses `getrandom` 0.4 for OS entropy. The wasm adapter is the
+# binary-style crate that opts into the JS WebCrypto backend.
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
 
 [features]
 default = ["wee_alloc"]
