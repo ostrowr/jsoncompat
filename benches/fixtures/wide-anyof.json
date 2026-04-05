@@ -1,0 +1,108 @@
+{
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "v0"
+          },
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "v1"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "v2"
+          },
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "v3"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 8
+          }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "v4"
+          },
+          "value": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z]{3,12}$"
+              }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "v5"
+          },
+          "value": {
+            "type": "null"
+          }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      }
+    ]
+  },
+  "instance": {
+    "kind": "v4",
+    "value": {
+      "name": "example"
+    }
+  }
+}

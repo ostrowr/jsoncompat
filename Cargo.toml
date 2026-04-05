@@ -5,6 +5,7 @@ edition = "2024"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
+readme = "readme.md"
 
 # Workspace definition so we can host the additional sibling crates.
 [workspace]
@@ -29,9 +30,11 @@ owo-colors = "3.5"
 json_schema_ast = { path = "schema", version = "0.2.6" }
 json_schema_fuzz = { path = "fuzz", version = "0.2.6" }
 console = "0.16.0"
+fancy-regex = "0.12"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }
+criterion = "0.5"
 datatest-stable = "0.1"
 
 [[test]]
@@ -40,4 +43,12 @@ harness = false
 
 [[test]]
 name = "fuzz"
+harness = false
+
+[[bench]]
+name = "validator_cache"
+harness = false
+
+[[bench]]
+name = "schema_ops"
 harness = false

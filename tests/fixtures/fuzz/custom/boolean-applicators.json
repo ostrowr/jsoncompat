@@ -1,0 +1,94 @@
+[
+  {
+    "description": "allOf true branches are neutral",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        true,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "description": "integers are accepted",
+        "data": 1,
+        "valid": true
+      },
+      {
+        "description": "non-integers are rejected",
+        "data": "1",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "anyOf false branches are neutral",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        false,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "description": "strings are accepted by the non-false branch",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "non-strings still fail",
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "oneOf with one false branch behaves like the other branch",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        false,
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "description": "booleans are accepted",
+        "data": true,
+        "valid": true
+      },
+      {
+        "description": "non-booleans are rejected",
+        "data": "true",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "not false is equivalent to true and can still combine with sibling constraints",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": false,
+      "type": "number"
+    },
+    "tests": [
+      {
+        "description": "numbers are accepted",
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "description": "non-numbers are rejected by the sibling type constraint",
+        "data": "1.5",
+        "valid": false
+      }
+    ]
+  }
+]

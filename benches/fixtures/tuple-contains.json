@@ -1,0 +1,62 @@
+{
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "prefixItems": [
+      {
+        "type": "integer",
+        "minimum": 0
+      },
+      {
+        "type": "string",
+        "pattern": "^[a-z]+$"
+      }
+    ],
+    "items": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 2
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "hit"
+            },
+            "score": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": ["kind", "score"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "contains": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "hit"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": ["kind", "score"],
+      "additionalProperties": false
+    },
+    "minContains": 1,
+    "minItems": 3,
+    "maxItems": 12
+  },
+  "instance": [3, "seed", { "kind": "hit", "score": 77 }, "tail"]
+}

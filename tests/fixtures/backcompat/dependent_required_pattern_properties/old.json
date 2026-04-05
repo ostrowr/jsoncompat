@@ -1,0 +1,1 @@
+{"type":"object","patternProperties":{"^x$":true},"dependentRequired":{"x":["y"]},"additionalProperties":false}

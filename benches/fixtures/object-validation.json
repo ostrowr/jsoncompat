@@ -1,0 +1,70 @@
+{
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^[a-z0-9_-]{8,32}$"
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000000
+      },
+      "active": {
+        "type": "boolean"
+      },
+      "labels": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16
+        },
+        "minItems": 1,
+        "maxItems": 32,
+        "uniqueItems": true
+      },
+      "config": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": ["fast", "safe"]
+          },
+          "retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60000
+          }
+        },
+        "required": ["mode", "retries", "timeout_ms"],
+        "additionalProperties": false
+      }
+    },
+    "required": ["active", "config", "count", "id", "labels"],
+    "dependentRequired": {
+      "active": ["config"]
+    },
+    "propertyNames": {
+      "pattern": "^[a-z_]+$"
+    },
+    "additionalProperties": false
+  },
+  "instance": {
+    "id": "job_alpha_01",
+    "count": 42,
+    "active": true,
+    "labels": ["serde", "schema", "fuzz"],
+    "config": {
+      "mode": "safe",
+      "retries": 3,
+      "timeout_ms": 5000
+    }
+  }
+}

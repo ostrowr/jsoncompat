@@ -1,0 +1,49 @@
+[
+  {
+    "description": "propertyNames filters names while additionalProperties constrains unknown values",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z]+$"
+      },
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "tests": [
+      {
+        "description": "lowercase property names with integer values are valid",
+        "data": {
+          "id": 1,
+          "score": 5
+        },
+        "valid": true
+      },
+      {
+        "description": "uppercase property names violate propertyNames",
+        "data": {
+          "id": 1,
+          "Score": 5
+        },
+        "valid": false
+      },
+      {
+        "description": "additional properties with non-integer values violate additionalProperties",
+        "data": {
+          "id": 1,
+          "score": "high"
+        },
+        "valid": false
+      }
+    ]
+  }
+]

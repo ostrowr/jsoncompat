@@ -1,0 +1,35 @@
+{
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "node": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "integer"
+              },
+              "next": {
+                "$ref": "#/$defs/node"
+              }
+            },
+            "required": ["next", "value"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "$ref": "#/$defs/node"
+  },
+  "instance": {
+    "value": 1,
+    "next": {
+      "value": 2,
+      "next": null
+    }
+  }
+}

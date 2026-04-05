@@ -1,0 +1,1 @@
+{"type":"object","patternProperties":{"^x$":{"type":"integer"}}}

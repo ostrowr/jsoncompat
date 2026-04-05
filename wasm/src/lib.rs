@@ -1,7 +1,13 @@
+//! WebAssembly bindings for the `jsoncompat` compatibility checker and value generator.
+//!
+//! JavaScript callers get two exported functions: `check_compat` and
+//! `generate_value`. Both accept schemas as JSON strings and return JavaScript
+//! values or string errors through `wasm-bindgen`.
+
 use wasm_bindgen::prelude::*;
 
-use json_schema_fuzz::generate_value;
-use jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
+use jsoncompat::{Role, SchemaDocument, check_compat};
 
 use serde_json::Value as JsonValue;
 
@@ -30,7 +36,7 @@ fn parse_role(role: &str) -> Result<Role, JsValue> {
 ///
 /// * `old_schema_json` – original schema as JSON string
 /// * `new_schema_json` – updated schema as JSON string
-/// * `role` – "serializer", "deserializer" or "both" (default)
+/// * `role` – "serializer", "deserializer" or "both"
 /// Exported to JavaScript as `check_compat`.
 #[wasm_bindgen(js_name = check_compat)]
 pub fn check_compat_js(
@@ -42,26 +48,34 @@ pub fn check_compat_js(
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
 
-    let old_ast = build_and_resolve_schema(&old_raw)
+    let old_schema = SchemaDocument::from_json(&old_raw)
         .map_err(|e| JsValue::from_str(&format!("invalid old schema: {e}")))?;
-    let new_ast = build_and_resolve_schema(&new_raw)
+    let new_schema = SchemaDocument::from_json(&new_raw)
         .map_err(|e| JsValue::from_str(&format!("invalid new schema: {e}")))?;
 
-    Ok(check_compat(&old_ast, &new_ast, role_e))
+    check_compat(&old_schema, &new_schema, role_e)
+        .map_err(|e| JsValue::from_str(&format!("compatibility check failed: {e}")))
 }
 
 /// Generate a JSON value (string) that should satisfy the given schema.
 ///
 /// * `schema_json` – schema as JSON string
-/// * `depth` – recursion depth (default 5)
+/// * `depth` – recursion depth limit
 /// Exported to JavaScript as `generate_value`.
 #[wasm_bindgen(js_name = generate_value)]
 pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue> {
     let raw = parse_json(schema_json)?;
-    let schema_ast = build_and_resolve_schema(&raw)
+    let schema = SchemaDocument::from_json(&raw)
         .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
 
     let mut rng = rand::rng();
-    let v = generate_value(&schema_ast, &mut rng, depth);
+    let v = ValueGenerator::generate(&schema, GenerationConfig::new(depth), &mut rng).map_err(
+        |error| match error {
+            GenerateError::Schema(error) => JsValue::from_str(&format!("invalid schema: {error}")),
+            GenerateError::Unsatisfiable => JsValue::from_str(&error.to_string()),
+            GenerateError::ExhaustedAttempts { .. } => JsValue::from_str(&error.to_string()),
+            _ => JsValue::from_str(&error.to_string()),
+        },
+    )?;
     serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialization failure: {e}")))
 }

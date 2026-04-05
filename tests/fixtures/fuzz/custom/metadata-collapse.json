@@ -1,0 +1,76 @@
+[
+  {
+    "description": "resource metadata and sibling defs survive false oneOf collapse when locally referenced",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/carrier/$defs/name"
+        }
+      ],
+      "carrier": {
+        "$id": "https://example.com/carrier",
+        "$anchor": "carrier",
+        "$dynamicAnchor": "dynamic-carrier",
+        "title": "carrier metadata",
+        "x-jsoncompat": {
+          "preserve": true
+        },
+        "oneOf": [
+          false
+        ],
+        "$defs": {
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tests": [
+      {
+        "description": "strings still satisfy the referenced sibling $defs schema",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "non-strings still fail the referenced sibling $defs schema",
+        "data": false,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "title and x-jsoncompat metadata survive bool simplification on an addressable branch",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/carrier"
+        }
+      ],
+      "carrier": {
+        "title": "true carrier",
+        "x-jsoncompat": {
+          "note": "keep"
+        },
+        "allOf": [
+          true
+        ]
+      }
+    },
+    "tests": [
+      {
+        "description": "the simplified branch still accepts arbitrary values",
+        "data": {
+          "x": 1
+        },
+        "valid": true
+      },
+      {
+        "description": "null is also accepted because the branch simplifies to true",
+        "data": null,
+        "valid": true
+      }
+    ]
+  }
+]

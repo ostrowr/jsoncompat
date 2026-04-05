@@ -12,7 +12,7 @@ use rand::{Rng, RngExt};
 /// Generate a random string for the given JSON Schema `format` keyword.
 ///
 /// Returns `None` for unrecognised formats.
-pub fn generate_for_format(format: &str, rng: &mut impl Rng) -> Option<String> {
+pub(crate) fn generate_for_format(format: &str, rng: &mut impl Rng) -> Option<String> {
     match format {
         "date" => {
             let d: chrono::NaiveDate = Date(EN).fake_with_rng(rng);

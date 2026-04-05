@@ -1,8 +1,14 @@
+//! Python bindings for the `jsoncompat` compatibility checker and value generator.
+//!
+//! The extension module exposes `check_compat`, `generate_value`, and a `Role`
+//! constants module. Both functions accept JSON schemas as strings and report
+//! invalid inputs or unsupported core-library cases as `ValueError`.
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use ::jsoncompat::{Role, build_and_resolve_schema, check_compat};
-use json_schema_fuzz::generate_value;
+use ::jsoncompat::{Role, SchemaDocument, check_compat};
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 use serde_json::Value as JsonValue;
 
@@ -11,7 +17,7 @@ fn parse_json(s: &str) -> PyResult<JsonValue> {
     serde_json::from_str(s).map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid JSON: {e}")))
 }
 
-/// Map a string into the Role enum, raising ValueError on unknown input.
+/// Map a string into the Rust role enum, raising ValueError on unknown input.
 fn parse_role(role: &str) -> PyResult<Role> {
     match role.to_ascii_lowercase().as_str() {
         "serializer" => Ok(Role::Serializer),
@@ -46,12 +52,13 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
 
-    let old_ast = build_and_resolve_schema(&old_raw)
+    let old_schema = SchemaDocument::from_json(&old_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid old schema: {e}")))?;
-    let new_ast = build_and_resolve_schema(&new_raw)
+    let new_schema = SchemaDocument::from_json(&new_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
 
-    Ok(check_compat(&old_ast, &new_ast, role_e))
+    check_compat(&old_schema, &new_schema, role_e)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Compatibility check failed: {e}")))
 }
 
 /// Generate a JSON value intended to satisfy the provided schema.
@@ -71,11 +78,22 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
 #[pyo3(signature = (schema_json, depth=5), name = "generate_value")]
 fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let raw = parse_json(schema_json)?;
-    let schema_ast = build_and_resolve_schema(&raw)
+    let schema = SchemaDocument::from_json(&raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
 
     let mut rng = rand::rng();
-    let value = generate_value(&schema_ast, &mut rng, depth);
+    let value = ValueGenerator::generate(&schema, GenerationConfig::new(depth), &mut rng).map_err(
+        |error| match error {
+            GenerateError::Schema(error) => {
+                PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
+            }
+            GenerateError::Unsatisfiable => PyErr::new::<PyValueError, _>(error.to_string()),
+            GenerateError::ExhaustedAttempts { .. } => {
+                PyErr::new::<PyValueError, _>(error.to_string())
+            }
+            _ => PyErr::new::<PyValueError, _>(error.to_string()),
+        },
+    )?;
 
     serde_json::to_string(&value).map_err(|e| {
         PyErr::new::<PyValueError, _>(format!("Failed to serialize generated value: {e}"))
@@ -86,16 +104,14 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
 #[pymodule]
 #[pyo3(name = "jsoncompat")]
 fn jsoncompat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Ensure the random generator is initialised (auto‑initialize takes care of pyo3 env).
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
 
-    // Expose the Role enum for convenience.
-    let role_enum = PyModule::new(py, "Role")?;
-    role_enum.add("SERIALIZER", "serializer")?;
-    role_enum.add("DESERIALIZER", "deserializer")?;
-    role_enum.add("BOTH", "both")?;
-    m.add_submodule(&role_enum)?;
+    let role_constants = PyModule::new(py, "Role")?;
+    role_constants.add("SERIALIZER", "serializer")?;
+    role_constants.add("DESERIALIZER", "deserializer")?;
+    role_constants.add("BOTH", "both")?;
+    m.add_submodule(&role_constants)?;
 
     Ok(())
 }
