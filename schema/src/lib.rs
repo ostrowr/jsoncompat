@@ -9,8 +9,8 @@ mod json_semantics;
 mod schema_metadata;
 
 pub use ast::{
-    AstError, IntegerMultipleOf, NodeId, SchemaBuildError, SchemaDocument, SchemaNode,
-    SchemaNodeKind, build_and_resolve_schema,
+    AstError, IntegerMultipleOf, NodeId, NumberMultipleOf, SchemaBuildError, SchemaDocument,
+    SchemaNode, SchemaNodeKind, build_and_resolve_schema,
 };
 pub use canonicalize::CanonicalizeError as SchemaError;
 pub use constraints::{

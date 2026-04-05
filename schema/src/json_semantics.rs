@@ -1,7 +1,7 @@
 //! JSON Schema equality helpers.
 //!
 //! Draft 2020-12 treats numeric values with the same mathematical value as
-//! equal even if one is encoded as `1` and the other as `1.0`.  These helpers
+//! equal even if one is encoded as `1` and the other as `1.0`. These helpers
 //! centralize that rule so enum/const checks and `uniqueItems` do not drift.
 
 use serde_json::Value;

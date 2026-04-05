@@ -744,6 +744,7 @@ fn canonicalize_numeric_keyword(key: &str, value: &Value, pointer: &str) -> Resu
             value,
         ));
     }
+
     Ok(value.clone())
 }
 

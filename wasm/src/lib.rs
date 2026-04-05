@@ -48,7 +48,7 @@ pub fn check_compat_js(
         .map_err(|e| JsValue::from_str(&format!("invalid new schema: {e}")))?;
 
     check_compat(&old_schema, &new_schema, role_e)
-        .map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))
+        .map_err(|e| JsValue::from_str(&format!("compatibility check failed: {e}")))
 }
 
 /// Generate a JSON value (string) that should satisfy the given schema.

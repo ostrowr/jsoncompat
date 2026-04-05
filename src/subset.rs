@@ -181,10 +181,10 @@ fn type_constraints_subsumed_with_context(
             },
         ) => scalar::number_constraints_subsumed(
             *sub_bounds,
-            *sub_multiple_of,
+            sub_multiple_of.as_ref(),
             sub_enum.as_deref(),
             *sup_bounds,
-            *sup_multiple_of,
+            sup_multiple_of.as_ref(),
             sup_enum.as_deref(),
         ),
 
@@ -201,10 +201,10 @@ fn type_constraints_subsumed_with_context(
             },
         ) => scalar::integer_constraints_subsumed(
             *sub_bounds,
-            *sub_multiple_of,
+            sub_multiple_of.as_ref(),
             sub_enum.as_deref(),
             *sup_bounds,
-            *sup_multiple_of,
+            sup_multiple_of.as_ref(),
             sup_enum.as_deref(),
         ),
 

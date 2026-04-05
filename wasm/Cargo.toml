@@ -39,4 +39,3 @@ optional = true
 
 [dev-dependencies]
 wasm-bindgen-test = "0.2"
-

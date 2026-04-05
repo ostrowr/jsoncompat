@@ -8,8 +8,8 @@ mod format_gen;
 mod regex_gen;
 
 use json_schema_ast::{
-    ContainsConstraint, IntegerBounds, IntegerMultipleOf, NumberBound, NumberBounds,
-    PatternProperty, PatternSupport, SchemaBuildError, SchemaDocument, SchemaNode, SchemaNodeKind,
+    ContainsConstraint, IntegerBounds, NumberBound, NumberBounds, PatternProperty, PatternSupport,
+    SchemaBuildError, SchemaDocument, SchemaNode, SchemaNodeKind,
 };
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
@@ -452,14 +452,13 @@ fn generate_candidate_with_context(
             let (low, high) = number_generation_range(*bounds);
             let mut val = rng.random_range(low..=high);
 
-            if let Some(mo) = multiple_of
-                && *mo > 0.0
-            {
-                let k = (val / *mo).floor();
-                val = k * *mo;
+            if let Some(mo) = multiple_of {
+                let multiple_of = mo.as_f64();
+                let k = (val / multiple_of).floor();
+                val = k * multiple_of;
                 if val < low || val > high {
-                    let k = (low / *mo).ceil();
-                    val = k * *mo;
+                    let k = (low / multiple_of).ceil();
+                    val = k * multiple_of;
                 }
             }
 
@@ -489,7 +488,7 @@ fn generate_candidate_with_context(
             let mut val = rng.random_range(low..=high);
 
             if let Some(mo) = multiple_of
-                && let Some(mo) = integer_multiple_of_divisor(*mo)
+                && let Some(mo) = mo.integer_divisor_i64()
             {
                 val = (val / mo) * mo;
                 if val < low {
@@ -794,26 +793,23 @@ fn generate_candidate_with_context(
     }
 }
 
-fn integer_multiple_of_divisor(multiple_of: IntegerMultipleOf) -> Option<i64> {
-    multiple_of
-        .integer_divisor()
-        .and_then(|divisor| i64::try_from(divisor).ok())
-}
-
 fn number_generation_range(bounds: NumberBounds) -> (f64, f64) {
-    let low = match bounds.lower() {
-        NumberBound::Unbounded => 0.0,
-        NumberBound::Inclusive(value) => value,
-        NumberBound::Exclusive(value) => value + f64::EPSILON * value.abs().max(1.0) * 4.0,
-    }
-    .max(-1_000_000.0);
-
     let high = match bounds.upper() {
         NumberBound::Unbounded => 1_000_000.0,
         NumberBound::Inclusive(value) => value,
         NumberBound::Exclusive(value) => value - f64::EPSILON * value.abs().max(1.0) * 4.0,
     }
     .min(1_000_000.0);
+
+    let low = match bounds.lower() {
+        NumberBound::Unbounded => match bounds.upper() {
+            NumberBound::Unbounded => 0.0,
+            NumberBound::Inclusive(_) | NumberBound::Exclusive(_) => high - 1_000_000.0,
+        },
+        NumberBound::Inclusive(value) => value,
+        NumberBound::Exclusive(value) => value + f64::EPSILON * value.abs().max(1.0) * 4.0,
+    }
+    .max(-1_000_000.0);
 
     if low <= high {
         (low, high)

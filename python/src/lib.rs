@@ -52,7 +52,7 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
 
     check_compat(&old_schema, &new_schema, role_e)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Compatibility check failed: {e}")))
 }
 
 /// Generate a JSON value intended to satisfy the provided schema.

@@ -66,6 +66,7 @@ impl SchemaDocument {
     /// while `is_valid()` intentionally validates against a backend compiled
     /// from the original raw schema document.
     pub fn from_json(raw: &Value) -> Result<Self> {
+        let canonical = canonicalize_schema(raw)?.as_value().clone();
         let schema = Self {
             raw: raw.clone(),
             root: OnceCell::new(),
@@ -75,7 +76,7 @@ impl SchemaDocument {
         };
         schema
             .canonical
-            .set(canonicalize_schema(raw)?.as_value().clone())
+            .set(canonical)
             .expect("canonical schema cache should be initialized exactly once");
         Ok(schema)
     }
@@ -242,7 +243,10 @@ impl SchemaNode {
                 enumeration,
             } => value.as_f64().is_some_and(|number_value| {
                 bounds.contains(number_value)
-                    && value_is_multiple_of(number_value, *multiple_of)
+                    && value_is_multiple_of(
+                        number_value,
+                        multiple_of.as_ref().map(|multiple_of| multiple_of.as_f64()),
+                    )
                     && enum_contains_numeric_value(enumeration.as_deref(), value)
             }),
             SchemaNodeKind::Integer {
@@ -256,14 +260,14 @@ impl SchemaNode {
                             && bounds.as_number_bounds().contains(number_value)
                             && value_is_multiple_of(
                                 number_value,
-                                multiple_of.map(IntegerMultipleOf::as_f64),
+                                multiple_of.as_ref().map(|multiple_of| multiple_of.as_f64()),
                             )
                             && enum_contains_numeric_value(enumeration.as_deref(), value)
                     })
                 },
                 |integer_value| {
                     bounds.contains_i128(integer_value)
-                        && integer_value_is_multiple_of(integer_value, *multiple_of)
+                        && integer_value_is_multiple_of(integer_value, multiple_of.as_ref())
                         && enum_contains_numeric_value(enumeration.as_deref(), value)
                 },
             ),
@@ -503,10 +507,7 @@ impl SchemaNode {
                 obj.insert("type".into(), Value::String("number".into()));
                 write_number_bounds(&mut obj, *bounds);
                 if let Some(mo) = multiple_of {
-                    obj.insert(
-                        "multipleOf".into(),
-                        Value::Number(serde_json::Number::from_f64(*mo).unwrap()),
-                    );
+                    obj.insert("multipleOf".into(), Value::Number(mo.to_json_number()));
                 }
                 if let Some(e) = enumeration {
                     obj.insert("enum".into(), Value::Array(e.clone()));
@@ -859,7 +860,7 @@ fn value_is_multiple_of(value: f64, multiple_of: Option<f64>) -> bool {
     (ratio - ratio.round()).abs() <= f64::EPSILON * ratio.abs().max(1.0) * 4.0
 }
 
-fn integer_value_is_multiple_of(value: i128, multiple_of: Option<IntegerMultipleOf>) -> bool {
+fn integer_value_is_multiple_of(value: i128, multiple_of: Option<&IntegerMultipleOf>) -> bool {
     let Some(multiple_of) = multiple_of else {
         return true;
     };
@@ -1020,12 +1021,12 @@ enum SchemaNodeKindView<'a, Node> {
     },
     Number {
         bounds: NumberBounds,
-        multiple_of: Option<f64>,
+        multiple_of: &'a Option<NumberMultipleOf>,
         enumeration: &'a Option<Vec<Value>>,
     },
     Integer {
         bounds: IntegerBounds,
-        multiple_of: Option<IntegerMultipleOf>,
+        multiple_of: &'a Option<IntegerMultipleOf>,
         enumeration: &'a Option<Vec<Value>>,
     },
     Boolean {
@@ -1101,7 +1102,7 @@ impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchem
                 enumeration,
             } => Self::Number {
                 bounds: *bounds,
-                multiple_of: *multiple_of,
+                multiple_of,
                 enumeration,
             },
             MutableSchemaNodeKind::Integer {
@@ -1110,7 +1111,7 @@ impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchem
                 enumeration,
             } => Self::Integer {
                 bounds: *bounds,
-                multiple_of: *multiple_of,
+                multiple_of,
                 enumeration,
             },
             MutableSchemaNodeKind::Boolean { enumeration } => Self::Boolean { enumeration },
@@ -1191,7 +1192,7 @@ impl<'a, Node> From<&'a SchemaNodeKind<Node>> for SchemaNodeKindView<'a, Node> {
                 enumeration,
             } => Self::Number {
                 bounds: *bounds,
-                multiple_of: *multiple_of,
+                multiple_of,
                 enumeration,
             },
             SchemaNodeKind::Integer {
@@ -1200,7 +1201,7 @@ impl<'a, Node> From<&'a SchemaNodeKind<Node>> for SchemaNodeKindView<'a, Node> {
                 enumeration,
             } => Self::Integer {
                 bounds: *bounds,
-                multiple_of: *multiple_of,
+                multiple_of,
                 enumeration,
             },
             SchemaNodeKind::Boolean { enumeration } => Self::Boolean { enumeration },
@@ -1715,6 +1716,44 @@ enum IntegerMultipleOfKind {
     Number(f64),
 }
 
+/// Positive `multipleOf` constraint stored on number schemas.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NumberMultipleOf(f64);
+
+impl NumberMultipleOf {
+    fn new(value: f64) -> Option<Self> {
+        (value.is_finite() && value > 0.0).then_some(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_f64(self) -> f64 {
+        self.0
+    }
+
+    #[must_use]
+    pub fn is_integer_valued(self) -> bool {
+        integer_value_from_json(&Value::Number(self.to_json_number())).is_some()
+    }
+
+    #[must_use]
+    pub fn integer_divisor(self) -> Option<i128> {
+        decimal_number_integer_divisor(self.0)
+    }
+
+    #[must_use]
+    pub fn integer_divisor_is_multiple_of(self, divisor: Self) -> Option<bool> {
+        Some(
+            self.integer_divisor()?
+                .rem_euclid(divisor.integer_divisor()?)
+                == 0,
+        )
+    }
+
+    fn to_json_number(self) -> serde_json::Number {
+        serde_json::Number::from_f64(self.0).expect("finite positive multipleOf")
+    }
+}
+
 impl IntegerMultipleOf {
     fn from_integer(value: i64) -> Option<Self> {
         NonZeroI64::new(value)
@@ -1740,6 +1779,30 @@ impl IntegerMultipleOf {
             IntegerMultipleOfKind::Integer(value) => Some(i128::from(value.get())),
             IntegerMultipleOfKind::Number(value) => decimal_number_integer_divisor(value),
         }
+    }
+
+    #[must_use]
+    pub fn integer_divisor_is_multiple_of(self, divisor: Self) -> Option<bool> {
+        Some(
+            self.integer_divisor()?
+                .rem_euclid(divisor.integer_divisor()?)
+                == 0,
+        )
+    }
+
+    #[must_use]
+    pub fn integer_divisor_is_multiple_of_number(self, divisor: NumberMultipleOf) -> Option<bool> {
+        Some(
+            self.integer_divisor()?
+                .rem_euclid(divisor.integer_divisor()?)
+                == 0,
+        )
+    }
+
+    #[must_use]
+    pub fn integer_divisor_i64(self) -> Option<i64> {
+        let divisor = self.integer_divisor()?;
+        i64::try_from(divisor).ok()
     }
 
     fn to_json_number(self) -> serde_json::Number {
@@ -1772,7 +1835,7 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
     },
     Number {
         bounds: NumberBounds,
-        multiple_of: Option<f64>,
+        multiple_of: Option<NumberMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
     Integer {
@@ -1836,7 +1899,7 @@ enum MutableSchemaNodeKind<Node = MutableSchemaNode> {
     },
     Number {
         bounds: NumberBounds,
-        multiple_of: Option<f64>,
+        multiple_of: Option<NumberMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
     Integer {
@@ -2416,7 +2479,7 @@ fn parse_number_schema(
     };
     let enumeration = parse_enum_keyword(obj)?;
 
-    let multiple_of = parse_positive_f64_keyword(obj, "multipleOf")?;
+    let multiple_of = parse_number_multiple_of_keyword(obj)?;
 
     Ok(graph.push(MutableSchemaNodeKind::Number {
         bounds,
@@ -2661,21 +2724,6 @@ fn parse_f64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<f
         .transpose()
 }
 
-fn parse_positive_f64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<f64>> {
-    let Some(value) = parse_f64_keyword(obj, keyword)? else {
-        return Ok(None);
-    };
-    if value <= 0.0 {
-        return Err(invalid_parser_keyword_type(
-            keyword,
-            "a positive number",
-            obj.get(keyword)
-                .expect("present keyword must still be available for parser errors"),
-        ));
-    }
-    Ok(Some(value))
-}
-
 fn parse_i64_keyword(obj: &Map<String, Value>, keyword: &str) -> Result<Option<i64>> {
     obj.get(keyword)
         .map(|value| {
@@ -2697,6 +2745,17 @@ fn parse_integer_multiple_of_keyword(
         return Ok(None);
     };
     let multiple_of = parse_integer_multiple_of(Some(value))
+        .ok_or_else(|| invalid_parser_keyword_type("multipleOf", "a positive number", value))?;
+    Ok(Some(multiple_of))
+}
+
+fn parse_number_multiple_of_keyword(obj: &Map<String, Value>) -> Result<Option<NumberMultipleOf>> {
+    let Some(value) = obj.get("multipleOf") else {
+        return Ok(None);
+    };
+    let multiple_of = value
+        .as_f64()
+        .and_then(NumberMultipleOf::new)
         .ok_or_else(|| invalid_parser_keyword_type("multipleOf", "a positive number", value))?;
     Ok(Some(multiple_of))
 }

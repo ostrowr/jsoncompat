@@ -103,6 +103,11 @@ Important global caveats:
 - `jsoncompat::check_compat` is a document-level structural subset checker over the resolved AST. It can return
   false negatives for conservative subset proofs and false positives for string-language
   constraints that are currently ignored when both sides are open string schemas.
+- Compatibility checks reject non-integral `number.multipleOf` constraints with a typed
+  `CompatibilityError` instead of approximating fractional divisor inclusion with `f64`.
+- Runtime validation (`SchemaDocument::is_valid`) always delegates to the `jsonschema`
+  backend compiled from the raw schema document, so non-`f64` numeric schemas/values follow
+  the backend's support limits rather than the compatibility checker's exact numeric model.
 - For serializer compatibility, the checker assumes serializers do not emit undeclared extra
   properties, even when `additionalProperties: true`.
 - `json_schema_fuzz::generate_value` walks the resolved AST heuristically, then validates every
@@ -124,7 +129,7 @@ Important global caveats:
 | `maximum` | ✅ | ✅ | Integer bounds are normalized exactly where possible; number bounds use `f64`. |
 | `exclusiveMinimum` | ✅ | 🟡 | Integer exclusives are canonicalized into inclusive integer bounds; number generation may rely on validator retries around open lower bounds. |
 | `exclusiveMaximum` | ✅ | 🟡 | Integer exclusives are canonicalized into inclusive integer bounds; number generation may rely on validator retries around open upper bounds. |
-| `multipleOf` | ✅ | ✅ | Exact integer divisibility is used when both sides are integer-valued. Fractional integer divisors are preserved and projected to their implied integer divisor for integer instances; non-integer numeric checks use `f64` ratios. |
+| `multipleOf` | 🟡 | ✅ | Exact integer divisibility is supported for `integer` schemas and integer-valued `number.multipleOf`. Compatibility checks reject non-integral `number.multipleOf` constraints instead of approximating fractional divisor inclusion; runtime validation and generation still accept those schemas. |
 | `minLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
 | `maxLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
 | `pattern` | 🟡 | 🟡 | `SchemaNode::accepts_value()` enforces regexes for finite-value checks using a cached matcher per pattern, but `check_compat` does not prove regex-language inclusion between open string schemas. Unsupported ECMAScript regex constructs are preserved as source text but treated as non-matching by the internal evaluator. Regex generation is best-effort and does not guarantee coverage for complex constructs. |

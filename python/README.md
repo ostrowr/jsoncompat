@@ -21,7 +21,8 @@ import jsoncompat as jsc
 old_schema = '{"type": "string"}'
 new_schema = '{"type": "number"}'
 
-# Check compatibility (role: "serializer", "deserializer", or "both")
+# Check compatibility (role: "serializer", "deserializer", or "both").
+# Raises ValueError for invalid schemas or unsupported compatibility features.
 is_compatible = jsc.check_compat(old_schema, new_schema, "both")
 print(is_compatible)
 
@@ -33,6 +34,7 @@ print(example)
 ## API Reference
 
 - `check_compat(old_schema_json: str, new_schema_json: str, role: str = "both") -> bool`
+  - Raises `ValueError` for invalid schemas or unsupported compatibility features such as non-integral `number.multipleOf`.
 - `generate_value(schema_json: str, depth: int = 5) -> str`
 
 ## Examples
