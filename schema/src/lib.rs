@@ -29,10 +29,8 @@ pub use json_semantics::json_values_equal;
 #[cfg(test)]
 use canonicalize::CanonicalSchema;
 use canonicalize::validate_schema_dialects;
-use jsonschema::Draft;
-pub use jsonschema::JSONSchema;
+pub use jsonschema::Validator as JSONSchema;
 use serde_json::Value;
-use std::borrow::Cow;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -63,9 +61,8 @@ fn compile_schema_value(schema: &Value) -> Result<JSONSchema, CompileError> {
     // compilation errors borrow the rejected schema fragment. Convert those
     // failures into owned errors before returning so callers do not need to
     // keep the original `Value` alive.
-    JSONSchema::options()
-        .with_draft(Draft::Draft202012)
-        .compile(schema)
+    jsonschema::draft202012::options()
+        .build(schema)
         .map_err(|source| CompileError::ValidatorRejectedSchema {
             source: Box::new(owned_validation_error(source)),
         })
@@ -74,12 +71,7 @@ fn compile_schema_value(schema: &Value) -> Result<JSONSchema, CompileError> {
 fn owned_validation_error(
     source: jsonschema::ValidationError<'_>,
 ) -> jsonschema::ValidationError<'static> {
-    jsonschema::ValidationError {
-        instance: Cow::Owned(source.instance.into_owned()),
-        kind: source.kind,
-        instance_path: source.instance_path,
-        schema_path: source.schema_path,
-    }
+    source.to_owned()
 }
 
 #[cfg(test)]

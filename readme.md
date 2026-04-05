@@ -178,7 +178,7 @@ Important global caveats:
 
 | Keyword | Compat | Fuzz | Notes |
 | --- | :-: | :-: | --- |
-| `items` | ✅ | ✅ | Schema-form `items` is compared recursively and used for tail-item generation. Legacy tuple-form `items: [...]` is parsed by appending entries into `prefixItems`; use `prefixItems` for explicit Draft 2020-12 tuple schemas. |
+| `items` | ✅ | ✅ | Schema-form `items` is compared recursively and used for tail-item generation. Tuple arrays must use Draft 2020-12 `prefixItems`; legacy tuple-form `items: [...]` is rejected. |
 | `prefixItems` | ✅ | ✅ | Compared positionally and generated positionally. |
 | `additionalItems` | ⚪ | ⚪ | Legacy keyword not represented in the resolved array node, so it does not affect compatibility or generation. |
 | `minItems` | ✅ | ✅ | Defaults to `minContains` (or `1`) when `contains` is present, otherwise `0`. |

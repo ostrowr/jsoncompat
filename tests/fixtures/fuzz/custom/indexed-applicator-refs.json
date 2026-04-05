@@ -34,40 +34,5 @@
         "valid": false
       }
     ]
-  },
-  {
-    "description": "local ref targets a legacy tuple items element by index",
-    "schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "allOf": [
-        {
-          "$ref": "#/$defs/legacyTuple/items/0"
-        }
-      ],
-      "$defs": {
-        "legacyTuple": {
-          "items": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "string"
-            }
-          ]
-        }
-      }
-    },
-    "tests": [
-      {
-        "description": "the referenced first tuple schema accepts integers",
-        "data": 7,
-        "valid": true
-      },
-      {
-        "description": "the referenced first tuple schema rejects strings",
-        "data": "7",
-        "valid": false
-      }
-    ]
   }
 ]

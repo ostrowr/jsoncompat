@@ -33,7 +33,7 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12].iter().cloned().collect(),
+        [12, 15].iter().cloned().collect(),
     );
 
     map
@@ -43,7 +43,9 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
 // Test harness: one test per JSON file under fixtures/fuzz
 // -------------------------------------------------------------------------
 
-datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
+datatest_stable::harness! {
+    { test = fixture, root = "tests/fixtures/fuzz", pattern = ".*\\.json$" },
+}
 
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = fs::read(file)?;

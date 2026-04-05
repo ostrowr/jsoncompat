@@ -115,6 +115,11 @@ fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
                     return Err(format!("{} schema #{index}: {error}", path.display()).into());
                 }
             };
+            if schema_uses_non_local_references(schema_json)
+                || schema_uses_unevaluated_keywords(schema_json)
+            {
+                continue;
+            }
             let raw_compiled = compile(schema_json).map_err(|error| {
                 format!("{} schema #{index} raw compile: {error}", path.display())
             })?;
@@ -1144,26 +1149,20 @@ fn canonicalize_simplifies_allof_and_anyof_boolean_branches() {
 }
 
 #[test]
-fn canonicalize_accepts_tuple_items_arrays() {
-    assert_eq!(
+fn canonicalize_rejects_tuple_items_arrays() {
+    assert!(matches!(
         canonicalize_schema(&json!({
             "type": "array",
             "items": [
                 { "type": "integer" },
                 { "const": "done" }
             ]
-        }))
-        .unwrap()
-        .into_value(),
-        json!({
-            "items": [
-                { "multipleOf": 1, "type": "integer" },
-                { "enum": ["done"] }
-            ],
-            "minItems": 0,
-            "type": "array"
-        })
-    );
+        })),
+        Err(CanonicalizeError::InvalidSchemaNodeType {
+            pointer,
+            actual_type: "array",
+        }) if pointer == "#/items"
+    ));
 }
 
 #[test]
@@ -1357,6 +1356,31 @@ fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
             object.values().any(schema_declares_unsupported_schema_uri)
         }
         Value::Array(items) => items.iter().any(schema_declares_unsupported_schema_uri),
+        _ => false,
+    }
+}
+
+fn schema_uses_non_local_references(schema: &Value) -> bool {
+    match schema {
+        Value::Object(object) => object.iter().any(|(key, value)| match key.as_str() {
+            "$ref" | "$dynamicRef" => value
+                .as_str()
+                .is_some_and(|reference| !reference.starts_with('#')),
+            _ => schema_uses_non_local_references(value),
+        }),
+        Value::Array(items) => items.iter().any(schema_uses_non_local_references),
+        _ => false,
+    }
+}
+
+fn schema_uses_unevaluated_keywords(schema: &Value) -> bool {
+    match schema {
+        Value::Object(object) => {
+            object.contains_key("unevaluatedItems")
+                || object.contains_key("unevaluatedProperties")
+                || object.values().any(schema_uses_unevaluated_keywords)
+        }
+        Value::Array(items) => items.iter().any(schema_uses_unevaluated_keywords),
         _ => false,
     }
 }

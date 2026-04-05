@@ -1,10 +1,11 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use json_schema_ast::SchemaDocument;
 use json_schema_fuzz::{GenerationConfig, ValueGenerator};
 use jsoncompat::{Role, check_compat};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde_json::{Value, json};
+use std::hint::black_box;
 
 fn bench_generate_value_with_raw_validation(c: &mut Criterion) {
     let schema = SchemaDocument::from_json(&json!({

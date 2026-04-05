@@ -15,18 +15,18 @@ publish = false # This crate is not published to crates.io; only NPM.
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-bindgen = "0.2"
-serde_json = "1.0"
-rand = "0.10"
-anyhow = "1.0"
+wasm-bindgen = "0.2.117"
+serde_json = "1.0.149"
+rand = "0.10.0"
+anyhow = "1.0.102"
 
 # Internal crates
 jsoncompat = { path = ".." }
 json_schema_fuzz = { path = "../fuzz" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
-getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom_04 = { package = "getrandom", version = "0.4.2", features = ["wasm_js"] }
+getrandom_02 = { package = "getrandom", version = "0.2.17", features = ["js"] }
 
 
 
@@ -35,8 +35,8 @@ getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 default = ["wee_alloc"]
 
 [dependencies.wee_alloc]
-version = "0.4"
+version = "0.4.5"
 optional = true
 
 [dev-dependencies]
-wasm-bindgen-test = "0.2"
+wasm-bindgen-test = "0.3.67"
