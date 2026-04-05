@@ -2607,6 +2607,11 @@ fn parse_array_schema(
     let Some(item_count) = CountRange::new(min_items, parse_u64_keyword(obj, "maxItems")?) else {
         return Ok(graph.bool_schema(false));
     };
+    let Some(item_count) =
+        cap_array_item_count_for_false_items(&prefix_items, items_node, item_count, graph)?
+    else {
+        return Ok(graph.bool_schema(false));
+    };
     let unique_items = parse_bool_keyword(obj, "uniqueItems")?.unwrap_or(false);
     let enumeration = parse_enum_keyword(obj)?;
 
@@ -2630,6 +2635,29 @@ fn parse_array_schema(
         unique_items,
         enumeration,
     }))
+}
+
+fn cap_array_item_count_for_false_items(
+    prefix_items: &[MutableSchemaNode],
+    items_node: MutableSchemaNode,
+    item_count: CountRange<u64>,
+    graph: &MutableSchemaGraph,
+) -> Result<Option<CountRange<u64>>> {
+    if !is_false_schema(items_node, graph) {
+        return Ok(Some(item_count));
+    }
+
+    let tuple_max_items = u64::try_from(prefix_items.len()).map_err(|_| {
+        AstError::Schema(SchemaError::IntegerKeywordOutOfRange {
+            pointer: "#/prefixItems".to_owned(),
+            keyword: "prefixItems".to_owned(),
+        })
+    })?;
+
+    let max_items = item_count
+        .max()
+        .map_or(tuple_max_items, |max_items| max_items.min(tuple_max_items));
+    Ok(CountRange::new(item_count.min(), Some(max_items)))
 }
 
 fn parse_schema_array_keyword(
@@ -2977,6 +3005,12 @@ fn resolve_refs_internal(
                 contains.schema =
                     resolve_refs_internal(contains.schema, graph, root_json, stack, cache)?;
             }
+            let Some(item_count) =
+                cap_array_item_count_for_false_items(&prefix_items, items, item_count, graph)?
+            else {
+                graph.set_kind(node, MutableSchemaNodeKind::BoolSchema(false));
+                return Ok(node);
+            };
             graph.set_kind(
                 node,
                 MutableSchemaNodeKind::Array {

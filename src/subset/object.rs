@@ -21,6 +21,13 @@ pub(super) struct ObjectConstraints<'a> {
     pub(super) enumeration: Option<&'a [Value]>,
 }
 
+#[derive(Clone, Copy)]
+struct SubPropertyConjuncts<'a> {
+    property: Option<&'a SchemaNode>,
+    pattern_properties: &'a HashMap<String, PatternProperty<SchemaNode>>,
+    additional: &'a SchemaNode,
+}
+
 pub(super) fn object_constraints_subsumed(
     sub: ObjectConstraints<'_>,
     sup: ObjectConstraints<'_>,
@@ -36,7 +43,11 @@ pub(super) fn object_constraints_subsumed(
     for (property_name, sub_schema) in sub.properties {
         if !object_property_schema_is_subsumed(
             property_name,
-            sub_schema,
+            SubPropertyConjuncts {
+                property: Some(sub_schema),
+                pattern_properties: sub.pattern_properties,
+                additional: sub.additional,
+            },
             sup.properties.get(property_name),
             sup.pattern_properties,
             sup.additional,
@@ -44,6 +55,25 @@ pub(super) fn object_constraints_subsumed(
         ) {
             return false;
         }
+    }
+
+    for (property_name, sup_property_schema) in sup.properties {
+        if sub.properties.contains_key(property_name)
+            || subset_property_conjuncts_subsume_schema(
+                property_name,
+                SubPropertyConjuncts {
+                    property: None,
+                    pattern_properties: sub.pattern_properties,
+                    additional: sub.additional,
+                },
+                sup_property_schema,
+                context,
+            )
+        {
+            continue;
+        }
+
+        return false;
     }
 
     for (pattern, sub_pattern_property) in sub.pattern_properties {
@@ -85,7 +115,7 @@ pub(super) fn object_constraints_subsumed(
 
 fn object_property_schema_is_subsumed(
     property_name: &str,
-    sub_schema: &SchemaNode,
+    sub: SubPropertyConjuncts<'_>,
     sup_property_schema: Option<&SchemaNode>,
     sup_pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
     sup_additional: &SchemaNode,
@@ -95,7 +125,12 @@ fn object_property_schema_is_subsumed(
 
     if let Some(sup_property_schema) = sup_property_schema {
         matched = true;
-        if !is_subschema_of_with_context(sub_schema, sup_property_schema, context) {
+        if !subset_property_conjuncts_subsume_schema(
+            property_name,
+            sub,
+            sup_property_schema,
+            context,
+        ) {
             return false;
         }
     }
@@ -105,14 +140,46 @@ fn object_property_schema_is_subsumed(
             continue;
         }
         matched = true;
-        if !is_subschema_of_with_context(sub_schema, &sup_pattern_property.schema, context) {
+        if !subset_property_conjuncts_subsume_schema(
+            property_name,
+            sub,
+            &sup_pattern_property.schema,
+            context,
+        ) {
             return false;
         }
     }
 
-    matched
-        || (!matches!(sup_additional.kind(), SchemaNodeKind::BoolSchema(false))
-            && is_subschema_of_with_context(sub_schema, sup_additional, context))
+    matched || subset_property_conjuncts_subsume_schema(property_name, sub, sup_additional, context)
+}
+
+fn subset_property_conjuncts_subsume_schema(
+    property_name: &str,
+    sub: SubPropertyConjuncts<'_>,
+    sup_schema: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if let Some(sub_property_schema) = sub.property
+        && is_subschema_of_with_context(sub_property_schema, sup_schema, context)
+    {
+        return true;
+    }
+
+    let mut has_matching_pattern = false;
+    for sub_pattern_property in sub.pattern_properties.values() {
+        if !pattern_matches_property_name(&sub_pattern_property.pattern, property_name) {
+            continue;
+        }
+
+        has_matching_pattern = true;
+        if is_subschema_of_with_context(&sub_pattern_property.schema, sup_schema, context) {
+            return true;
+        }
+    }
+
+    sub.property.is_none()
+        && !has_matching_pattern
+        && is_subschema_of_with_context(sub.additional, sup_schema, context)
 }
 
 fn object_property_name_can_be_present(

@@ -576,6 +576,59 @@ mod tests {
     }
 
     #[test]
+    fn prefix_items_with_false_items_are_subsumed_by_max_items_cap() {
+        let old = resolve(json!({
+            "type": "array",
+            "maxItems": 2
+        }));
+        let new = resolve(json!({
+            "type": "array",
+            "prefixItems": [
+                { "const": 1 },
+                { "const": 2 }
+            ],
+            "items": false
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn prefix_items_with_ref_false_items_are_subsumed_by_max_items_cap() {
+        let old = resolve(json!({
+            "type": "array",
+            "maxItems": 1
+        }));
+        let new = resolve(json!({
+            "$defs": {
+                "Never": false
+            },
+            "type": "array",
+            "prefixItems": [{ "const": 1 }],
+            "items": {
+                "$ref": "#/$defs/Never"
+            }
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn single_item_tuples_with_false_items_satisfy_unique_items() {
+        let old = resolve(json!({
+            "type": "array",
+            "uniqueItems": true
+        }));
+        let new = resolve(json!({
+            "type": "array",
+            "prefixItems": [{ "const": 1 }],
+            "items": false
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
     fn dependent_required_trigger_can_be_admitted_by_subset_pattern_properties() {
         let old = resolve(json!({
             "type": "object",
@@ -614,6 +667,110 @@ mod tests {
         }));
 
         assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_pattern_properties_must_satisfy_matching_superset_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": false
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x$": true
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_pattern_properties_do_not_shadow_matching_explicit_subset_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": { "type": "integer" }
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": { "type": "integer" }
+            },
+            "patternProperties": {
+                "^x$": true
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_property_patterns_can_jointly_satisfy_a_matching_superset_property() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": { "type": "integer" }
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x$": true,
+                "^.$": { "type": "integer" }
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_pattern_properties_can_tighten_matching_explicit_subset_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": { "type": "integer" }
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": true
+            },
+            "patternProperties": {
+                "^x$": { "type": "integer" }
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn subset_additional_properties_must_satisfy_unmatched_superset_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": false
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "additionalProperties": true
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
     }
 
     #[test]
