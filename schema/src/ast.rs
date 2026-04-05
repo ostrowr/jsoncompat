@@ -2614,20 +2614,11 @@ fn parse_array_schema(
     obj: &Map<String, Value>,
     graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
-    let mut prefix_items =
-        parse_schema_array_keyword(obj.get("prefixItems"), "prefixItems", graph)?;
+    let prefix_items = parse_schema_array_keyword(obj.get("prefixItems"), "prefixItems", graph)?;
     let items_node = match obj.get("items") {
         None => graph.any(),
         Some(Value::Bool(true)) => graph.any(),
         Some(Value::Bool(false)) => graph.bool_schema(false),
-        Some(Value::Array(arr)) => {
-            prefix_items.extend(
-                arr.iter()
-                    .map(|schema| build_schema_ast_from_value(schema, graph))
-                    .collect::<Result<Vec<_>>>()?,
-            );
-            graph.any()
-        }
         Some(other) => build_schema_ast_from_value(other, graph)?,
     };
     let min_contains = parse_u64_keyword(obj, "minContains")?.unwrap_or(1);

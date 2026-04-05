@@ -1,7 +1,8 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use json_schema_ast::{JSONSchema, SchemaDocument, SchemaNode, compile};
 use serde_json::Value;
 use std::fs;
+use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 

@@ -9,14 +9,14 @@ readme = "README.md"
 
 
 [dependencies]
-fancy-regex = "0.12"
-serde_json = "1.0.135"
+fancy-regex = "0.17"
+serde_json = "1.0.149"
 # by default, jsonschema tries to use reqwest to resolve remote schemas, which is not supported in wasm
-jsonschema = { version = "0.16", features = ["draft202012"], default-features = false}
-thiserror = "2.0.11"
-url = "2.5.4"
-percent-encoding = "2.3.1"
+jsonschema = { version = "0.45", default-features = false}
+thiserror = "2.0.18"
+url = "2.5.8"
+percent-encoding = "2.3.2"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "../fuzz" }
-rand = "0.10"
+rand = "0.10.0"

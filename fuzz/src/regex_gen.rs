@@ -30,10 +30,7 @@ impl<R: Rng> RegexGenerator<'_, R> {
     fn gen_expr(&mut self, expr: &Expr) -> String {
         match expr {
             Expr::Empty
-            | Expr::StartText
-            | Expr::EndText
-            | Expr::StartLine
-            | Expr::EndLine
+            | Expr::Assertion(_)
             | Expr::KeepOut
             | Expr::ContinueFromPreviousMatchEnd
             | Expr::BackrefExistsCondition(_) => String::new(),
@@ -103,7 +100,7 @@ impl<R: Rng> RegexGenerator<'_, R> {
 
             Expr::Delegate { inner, casei, .. } => self.gen_from_delegate(inner, *casei),
 
-            Expr::Backref(_n) => {
+            Expr::Backref { .. } | Expr::BackrefWithRelativeRecursionLevel { .. } => {
                 // backreference \{n} is not yet supported; generated string may not match the pattern.
                 String::new()
             }

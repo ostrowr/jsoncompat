@@ -262,20 +262,8 @@ fn validate_known_keyword_dialects(
         | "propertyNames"
         | "unevaluatedItems"
         | "unevaluatedProperties"
-        | "contentSchema" => validate_schema_dialects_at_pointer(value, pointer, local_ref_targets),
-        "items" => match value {
-            Value::Array(items) => {
-                for (index, item) in items.iter().enumerate() {
-                    validate_schema_dialects_at_pointer(
-                        item,
-                        &join_pointer(pointer, &index.to_string()),
-                        local_ref_targets,
-                    )?;
-                }
-                Ok(())
-            }
-            _ => validate_schema_dialects_at_pointer(value, pointer, local_ref_targets),
-        },
+        | "contentSchema"
+        | "items" => validate_schema_dialects_at_pointer(value, pointer, local_ref_targets),
         "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
             if let Value::Array(items) = value {
                 for (index, item) in items.iter().enumerate() {
@@ -436,22 +424,8 @@ fn canonicalize_keyword_value(
         | "propertyNames"
         | "unevaluatedItems"
         | "unevaluatedProperties"
-        | "contentSchema" => canonicalize_schema_value(value, pointer, options),
-        "items" => match value {
-            Value::Array(items) => items
-                .iter()
-                .enumerate()
-                .map(|(index, item)| {
-                    canonicalize_schema_value(
-                        item,
-                        &join_pointer(pointer, &index.to_string()),
-                        options,
-                    )
-                })
-                .collect::<Result<Vec<_>>>()
-                .map(Value::Array),
-            _ => canonicalize_schema_value(value, pointer, options),
-        },
+        | "contentSchema"
+        | "items" => canonicalize_schema_value(value, pointer, options),
         "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
             let items = value
                 .as_array()
@@ -2000,7 +1974,7 @@ fn fill_implicit_constraints(schema: &mut Map<String, Value>) {
             }
         }
         Some("array") => {
-            if !schema.contains_key("items") {
+            if !schema.contains_key("items") && !schema.contains_key("unevaluatedItems") {
                 schema.insert("items".to_owned(), Value::Bool(true));
             }
             if !schema.contains_key("minItems") {
