@@ -40,7 +40,7 @@ impl SubschemaCheckContext {
 
 /// Returns `true` if **every** instance that satisfies `sub` also satisfies
 /// `sup`.
-pub fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+pub(crate) fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
     is_subschema_of_with_context(sub, sup, &mut SubschemaCheckContext::default())
 }
 
@@ -135,11 +135,6 @@ pub(super) fn is_subschema_of_with_context(
 
     context.active_pairs.remove(&recursion_key);
     is_subschema
-}
-
-/// Compare the **constraints** of two nodes of the *same* basic type.
-pub fn type_constraints_subsumed(sub: &SchemaNode, sup: &SchemaNode) -> bool {
-    type_constraints_subsumed_with_context(sub, sup, &mut SubschemaCheckContext::default())
 }
 
 fn type_constraints_subsumed_with_context(

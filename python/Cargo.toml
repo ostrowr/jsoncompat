@@ -8,6 +8,7 @@ publish = false # This crate is not published to crates.io; only PyPI.
 [lib]
 name = "jsoncompat"
 crate-type = ["cdylib"]
+doc = false
 
 [dependencies]
 pyo3 = { version = "0.25.1", features = ["extension-module", "generate-import-lib"] }

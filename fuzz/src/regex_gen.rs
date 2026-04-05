@@ -16,7 +16,7 @@ const MAX_REPEAT: usize = 6;
 ///
 /// Returns `None` when the pattern cannot be parsed or contains unsupported
 /// constructs (e.g. ECMA-262 `\c` control escapes).
-pub fn generate_matching_string(pattern: &str, rng: &mut impl Rng) -> Option<String> {
+pub(crate) fn generate_matching_string(pattern: &str, rng: &mut impl Rng) -> Option<String> {
     let tree = Expr::parse_tree(pattern).ok()?;
     let mut generator = RegexGenerator { rng };
     Some(generator.gen_expr(&tree.expr))

@@ -75,7 +75,9 @@ fn sample_incompat<R: Rng>(
         for _ in 0..attempts {
             let v = match src.gen_value(rng, depth) {
                 Ok(value) => value,
-                Err(GenerateError::ExhaustedAttempts { .. }) => return Ok(None),
+                Err(GenerateError::Unsatisfiable | GenerateError::ExhaustedAttempts { .. }) => {
+                    return Ok(None);
+                }
                 Err(error) => return Err(error.into()),
             };
             if src.is_valid(&v)? && !dst.is_valid(&v)? {
@@ -732,7 +734,7 @@ mod tests {
     }
 
     #[test]
-    fn gen_value_returns_an_error_when_no_raw_valid_candidate_is_found() {
+    fn gen_value_returns_unsatisfiable_for_false_schema() {
         let schema = SchemaDoc {
             schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
         };
@@ -740,11 +742,7 @@ mod tests {
 
         let error = schema.gen_value(&mut rng, 4).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("failed to generate a value accepted by the raw schema")
-        );
+        assert!(matches!(error, GenerateError::Unsatisfiable));
     }
 
     #[test]

@@ -5,6 +5,7 @@ edition = "2024"
 description = "JSON Schema Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
+readme = "readme.md"
 
 # Workspace definition so we can host the additional sibling crates.
 [workspace]

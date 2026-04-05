@@ -1,8 +1,10 @@
 //! Fuzzer tests.
 
-use json_schema_ast::{AstError, SchemaError};
+use json_schema_ast::{
+    AstError, NodeId, PatternSupport, SchemaDocument, SchemaError, SchemaNode, SchemaNodeKind,
+    compile,
+};
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
-use jsoncompat::{NodeId, PatternSupport, SchemaDocument, SchemaNode, SchemaNodeKind};
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -130,11 +132,12 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let generation_config = GenerationConfig::new(6);
         let evaluator_should_be_exact =
             internal_evaluator_should_be_exact(root, schema.canonical_schema_json()?);
+        let canonical_validator = compile(schema.canonical_schema_json()?)?;
 
         if validate_fixture_tests {
             for fixture_test in &fixture_schema.tests {
                 let raw_valid = schema.is_valid(&fixture_test.data)?;
-                let canonicalized_valid = schema.is_valid_canonicalized(&fixture_test.data)?;
+                let canonicalized_valid = canonical_validator.is_valid(&fixture_test.data);
                 assert_eq!(
                     raw_valid,
                     canonicalized_valid,
@@ -142,7 +145,7 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     rel_str,
                     fixture_schema.description,
                     fixture_test.description,
-                    serde_json::to_string_pretty(schema.raw_schema_json())?,
+                    serde_json::to_string_pretty(schema_json)?,
                     serde_json::to_string_pretty(schema.canonical_schema_json()?)?,
                     serde_json::to_string_pretty(&fixture_test.data)?,
                 );
@@ -194,13 +197,13 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let raw_valid = schema.is_valid(&candidate)?;
-            let canonicalized_valid = schema.is_valid_canonicalized(&candidate)?;
+            let canonicalized_valid = canonical_validator.is_valid(&candidate);
             assert_eq!(
                 raw_valid,
                 canonicalized_valid,
                 "{} schema #{idx} generated candidate validates differently after canonicalization\n\nRaw schema:\n{}\n\nCanonicalized schema:\n{}\n\nInstance:\n{}",
                 rel_str,
-                serde_json::to_string_pretty(schema.raw_schema_json())?,
+                serde_json::to_string_pretty(schema_json)?,
                 serde_json::to_string_pretty(schema.canonical_schema_json()?)?,
                 serde_json::to_string_pretty(&candidate)?,
             );

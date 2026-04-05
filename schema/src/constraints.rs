@@ -16,6 +16,7 @@ pub struct IntegerBounds {
 }
 
 impl IntegerBounds {
+    /// Return an interval with no lower or upper endpoint.
     #[must_use]
     pub const fn unbounded() -> Self {
         Self {
@@ -24,16 +25,21 @@ impl IntegerBounds {
         }
     }
 
+    /// Return the inclusive lower endpoint, if present.
     #[must_use]
     pub const fn lower(self) -> Option<i64> {
         self.lower
     }
 
+    /// Return the inclusive upper endpoint, if present.
     #[must_use]
     pub const fn upper(self) -> Option<i64> {
         self.upper
     }
 
+    /// Build a validated closed integer interval.
+    ///
+    /// Returns `None` when both endpoints are present and `lower > upper`.
     #[must_use]
     pub fn new(lower: Option<i64>, upper: Option<i64>) -> Option<Self> {
         if let (Some(lower), Some(upper)) = (lower, upper)
@@ -45,18 +51,21 @@ impl IntegerBounds {
         Some(Self { lower, upper })
     }
 
+    /// Return true when `value` is inside this interval.
     #[must_use]
     pub fn contains_i64(self, value: i64) -> bool {
         self.lower.is_none_or(|lower| value >= lower)
             && self.upper.is_none_or(|upper| value <= upper)
     }
 
+    /// Return true when `value` is inside this interval.
     #[must_use]
     pub fn contains_i128(self, value: i128) -> bool {
         self.lower.is_none_or(|lower| value >= i128::from(lower))
             && self.upper.is_none_or(|upper| value <= i128::from(upper))
     }
 
+    /// Return true when `sub` is wholly contained by this interval.
     #[must_use]
     pub fn contains_bounds(self, sub: Self) -> bool {
         self.lower <= sub.lower
@@ -67,6 +76,7 @@ impl IntegerBounds {
             }
     }
 
+    /// Project this integer interval into the corresponding number interval.
     #[must_use]
     pub fn as_number_bounds(self) -> NumberBounds {
         NumberBounds::new(
@@ -103,8 +113,11 @@ impl IntegerBounds {
 /// One finite lower/upper bound for a floating-point interval.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NumberBound {
+    /// No endpoint in this direction.
     Unbounded,
+    /// Inclusive finite endpoint.
     Inclusive(f64),
+    /// Exclusive finite endpoint.
     Exclusive(f64),
 }
 
@@ -116,6 +129,7 @@ pub struct NumberBounds {
 }
 
 impl NumberBounds {
+    /// Return an interval with no lower or upper endpoint.
     #[must_use]
     pub const fn unbounded() -> Self {
         Self {
@@ -124,6 +138,9 @@ impl NumberBounds {
         }
     }
 
+    /// Build a validated floating-point interval.
+    ///
+    /// Returns `None` for non-finite endpoints or empty intervals.
     #[must_use]
     pub fn new(lower: NumberBound, upper: NumberBound) -> Option<Self> {
         if !number_bound_is_finite(lower) || !number_bound_is_finite(upper) {
@@ -143,22 +160,26 @@ impl NumberBounds {
         Some(Self { lower, upper })
     }
 
+    /// Return the lower endpoint.
     #[must_use]
     pub const fn lower(self) -> NumberBound {
         self.lower
     }
 
+    /// Return the upper endpoint.
     #[must_use]
     pub const fn upper(self) -> NumberBound {
         self.upper
     }
 
+    /// Return true when `value` is inside this interval.
     #[must_use]
     pub fn contains(self, value: f64) -> bool {
         number_lower_bound_contains(self.lower, value)
             && number_upper_bound_contains(self.upper, value)
     }
 
+    /// Return true when `sub` is wholly contained by this interval.
     #[must_use]
     pub fn contains_bounds(self, sub: Self) -> bool {
         number_lower_bound_is_at_most(self.lower, sub.lower)
@@ -227,11 +248,15 @@ pub struct CountRange<T> {
 }
 
 impl<T: Copy + Ord> CountRange<T> {
+    /// Return an inclusive range with no upper bound.
     #[must_use]
     pub const fn unbounded_from(min: T) -> Self {
         Self { min, max: None }
     }
 
+    /// Build a validated inclusive range.
+    ///
+    /// Returns `None` when `max` is present and `min > max`.
     #[must_use]
     pub fn new(min: T, max: Option<T>) -> Option<Self> {
         if max.is_some_and(|max| min > max) {
@@ -240,21 +265,25 @@ impl<T: Copy + Ord> CountRange<T> {
         Some(Self { min, max })
     }
 
+    /// Return the inclusive lower endpoint.
     #[must_use]
     pub const fn min(self) -> T {
         self.min
     }
 
+    /// Return the inclusive upper endpoint, if present.
     #[must_use]
     pub const fn max(self) -> Option<T> {
         self.max
     }
 
+    /// Return true when `value` is inside this range.
     #[must_use]
     pub fn contains(self, value: T) -> bool {
         value >= self.min && self.max.is_none_or(|max| value <= max)
     }
 
+    /// Return true when `sub` is wholly contained by this range.
     #[must_use]
     pub fn contains_range(self, sub: Self) -> bool {
         self.min <= sub.min
@@ -269,7 +298,9 @@ impl<T: Copy + Ord> CountRange<T> {
 /// Whether a regex pattern can be executed by the internal Rust matcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PatternSupport {
+    /// The pattern compiled into the internal Rust matcher.
     Supported,
+    /// The pattern is preserved as source text but cannot be evaluated internally.
     Unsupported,
 }
 
@@ -297,16 +328,22 @@ impl PatternConstraint {
         }
     }
 
+    /// Return the original JSON Schema pattern source.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.source
     }
 
+    /// Return whether the pattern is supported by the internal Rust matcher.
     #[must_use]
     pub const fn support(&self) -> PatternSupport {
         self.support
     }
 
+    /// Return true when the supported internal matcher accepts `candidate`.
+    ///
+    /// Unsupported patterns return `false`; callers that need Draft 2020-12
+    /// validation should use `SchemaDocument::is_valid` instead.
     #[must_use]
     pub fn is_match(&self, candidate: &str) -> bool {
         match self.support {
@@ -344,11 +381,14 @@ impl Hash for PatternConstraint {
 /// One `patternProperties` entry with both the source pattern and compiled matcher.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatternProperty<Node> {
+    /// Compiled pattern and original source text for this entry.
     pub pattern: PatternConstraint,
+    /// Schema applied to property values whose names match `pattern`.
     pub schema: Node,
 }
 
 impl<Node> PatternProperty<Node> {
+    /// Build one pattern-property entry from its pattern and value schema.
     #[must_use]
     pub fn new(pattern: PatternConstraint, schema: Node) -> Self {
         Self { pattern, schema }
@@ -359,16 +399,19 @@ impl<Node> PatternProperty<Node> {
 /// count bounds cannot drift out of sync with the subschema itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainsConstraint<Node> {
+    /// Schema used to count matching array items.
     pub schema: Node,
     count: CountRange<u64>,
 }
 
 impl<Node> ContainsConstraint<Node> {
+    /// Build a `contains` constraint with normalized min/max match counts.
     #[must_use]
     pub fn new(schema: Node, count: CountRange<u64>) -> Self {
         Self { schema, count }
     }
 
+    /// Return the inclusive range of allowed matching item counts.
     #[must_use]
     pub const fn count(&self) -> CountRange<u64> {
         self.count

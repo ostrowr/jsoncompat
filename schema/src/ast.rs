@@ -27,22 +27,28 @@ type Result<T> = std::result::Result<T, AstError>;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AstError {
+    /// The raw schema document failed dialect or keyword-shape validation.
     #[error(transparent)]
     Schema(#[from] SchemaError),
+    /// The backend validator rejected the original raw schema document.
     #[error("failed to compile raw schema validator: {source}")]
     RawValidator {
         #[source]
         source: CompileError,
     },
+    #[cfg(test)]
     #[error("failed to compile canonicalized schema validator: {source}")]
     CanonicalizedValidator {
         #[source]
         source: CompileError,
     },
+    /// A local JSON Pointer `$ref` did not point to a schema node.
     #[error("local $ref '{ref_path}' does not resolve to a schema node in the current document")]
     UnresolvedReference { ref_path: String },
+    /// A local `$ref` chain cycles without ever reaching a concrete schema.
     #[error("local $ref '{ref_path}' forms an alias-only cycle with no concrete schema node")]
     CyclicReferenceAlias { ref_path: String },
+    /// Reference resolution is intentionally limited to same-document JSON Pointers.
     #[error(
         "unsupported reference '{ref_path}': only local JSON Pointer $ref targets of the form '#/...'"
     )]
@@ -55,6 +61,7 @@ pub struct SchemaDocument {
     root: OnceCell<SchemaNode>,
     canonical: OnceCell<Value>,
     raw_validator: OnceCell<JSONSchema>,
+    #[cfg(test)]
     canonical_validator: OnceCell<JSONSchema>,
 }
 
@@ -72,6 +79,7 @@ impl SchemaDocument {
             root: OnceCell::new(),
             canonical: OnceCell::new(),
             raw_validator: OnceCell::new(),
+            #[cfg(test)]
             canonical_validator: OnceCell::new(),
         };
         schema
@@ -82,6 +90,10 @@ impl SchemaDocument {
     }
 
     /// Return the lazily built resolved root node.
+    ///
+    /// This is the low-level extension point for crates that need the resolved
+    /// IR, such as `jsoncompat` and `json_schema_fuzz`. Validation callers
+    /// should prefer [`SchemaDocument::is_valid`].
     pub fn root(&self) -> Result<&SchemaNode> {
         get_or_try_init(&self.root, || {
             let canonical = self.canonical_schema_json()?;
@@ -96,12 +108,6 @@ impl SchemaDocument {
             )?;
             Ok(freeze_schema_node(root, &graph, &mut HashMap::new()))
         })
-    }
-
-    /// Return the original raw JSON Schema document.
-    #[must_use]
-    pub fn raw_schema_json(&self) -> &Value {
-        &self.raw
     }
 
     /// Return the canonicalized JSON Schema document used to build `root()`.
@@ -120,12 +126,8 @@ impl SchemaDocument {
         Ok(validator.is_valid(value))
     }
 
-    /// Validate one instance against the backend compiled from the
-    /// canonicalized schema document.
-    ///
-    /// This exists to test and debug whether canonicalization preserved
-    /// semantics relative to the raw schema validator.
-    pub fn is_valid_canonicalized(&self, value: &Value) -> Result<bool> {
+    #[cfg(test)]
+    pub(crate) fn is_valid_canonicalized(&self, value: &Value) -> Result<bool> {
         let canonical = self.canonical_schema_json()?;
         let validator = get_or_try_init(&self.canonical_validator, || {
             compile(canonical).map_err(|source| AstError::CanonicalizedValidator { source })
@@ -172,6 +174,10 @@ pub struct NodeId(usize);
 pub type SchemaBuildError = AstError;
 
 impl SchemaNode {
+    /// Return the resolved semantic variant for this node.
+    ///
+    /// The returned value is part of the canonical IR. It intentionally omits
+    /// parser-only states such as `$ref`.
     pub fn kind(&self) -> &SchemaNodeKind {
         self.0
             .get()
@@ -182,20 +188,20 @@ impl SchemaNode {
         Rc::as_ptr(&self.0) as usize
     }
 
+    /// Return a stable identity for this in-memory node.
+    ///
+    /// Identities are only meaningful within one resolved schema graph and are
+    /// primarily used for cycle guards.
     #[must_use]
     pub fn id(&self) -> NodeId {
         NodeId(self.ptr_id())
     }
 
-    pub fn ptr_eq(&self, other: &SchemaNode) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-
     /// Check whether one instance is accepted by this canonicalized AST node.
     ///
-    /// This is an internal heuristic/evaluator for resolved subgraphs used by
-    /// compatibility and generation code. User-visible validation should go
-    /// through `SchemaDocument::is_valid()`, which uses the `jsonschema`
+    /// This is a low-level evaluator for resolved subgraphs used by
+    /// compatibility and generation crates. User-visible validation should go
+    /// through [`SchemaDocument::is_valid`], which uses the `jsonschema`
     /// backend compiled from the original raw schema document.
     #[must_use]
     pub fn accepts_value(&self, value: &Value) -> bool {
@@ -459,7 +465,8 @@ impl SchemaNode {
     /// is **lossy** for complex scenarios but is sufficient for the validator
     /// tests and fuzz harness (which only relies on the subset of keywords we
     /// explicitly generate).
-    pub fn to_json(&self) -> Value {
+    #[cfg(test)]
+    pub(crate) fn to_json(&self) -> Value {
         use SchemaNodeKind::*;
 
         match self.kind() {
@@ -774,6 +781,7 @@ fn string_length_in_range(value: &str, length: CountRange<u64>) -> bool {
     length.contains(character_count)
 }
 
+#[cfg(test)]
 fn write_number_bounds(obj: &mut Map<String, Value>, bounds: NumberBounds) {
     match bounds.lower() {
         NumberBound::Unbounded => {}
@@ -816,6 +824,7 @@ fn write_number_bounds(obj: &mut Map<String, Value>, bounds: NumberBounds) {
     }
 }
 
+#[cfg(test)]
 fn write_integer_bounds(obj: &mut Map<String, Value>, bounds: IntegerBounds) {
     if let Some(value) = bounds.lower() {
         obj.insert("minimum".into(), Value::Number(value.into()));
@@ -1725,21 +1734,30 @@ impl NumberMultipleOf {
         (value.is_finite() && value > 0.0).then_some(Self(value))
     }
 
+    /// Return the positive finite divisor as `f64`.
     #[must_use]
     pub fn as_f64(self) -> f64 {
         self.0
     }
 
+    /// Return true when this number divisor can be represented as a JSON
+    /// integer without loss.
     #[must_use]
     pub fn is_integer_valued(self) -> bool {
         integer_value_from_json(&Value::Number(self.to_json_number())).is_some()
     }
 
+    /// Return the implied integer divisor for integer-valued JSON instances.
+    ///
+    /// Fractional divisors such as `0.5` admit every integer and therefore
+    /// return `Some(1)`.
     #[must_use]
     pub fn integer_divisor(self) -> Option<i128> {
         decimal_number_integer_divisor(self.0)
     }
 
+    /// Return whether every integer multiple of `self` is also a multiple of
+    /// `divisor`.
     #[must_use]
     pub fn integer_divisor_is_multiple_of(self, divisor: Self) -> Option<bool> {
         Some(
@@ -1765,6 +1783,7 @@ impl IntegerMultipleOf {
         (value.is_finite() && value > 0.0).then_some(Self(IntegerMultipleOfKind::Number(value)))
     }
 
+    /// Return the positive divisor as `f64`.
     #[must_use]
     pub fn as_f64(self) -> f64 {
         match self.0 {
@@ -1773,6 +1792,7 @@ impl IntegerMultipleOf {
         }
     }
 
+    /// Return the implied integer divisor for integer instances.
     #[must_use]
     pub fn integer_divisor(self) -> Option<i128> {
         match self.0 {
@@ -1781,6 +1801,8 @@ impl IntegerMultipleOf {
         }
     }
 
+    /// Return whether every integer multiple of `self` is also a multiple of
+    /// `divisor`.
     #[must_use]
     pub fn integer_divisor_is_multiple_of(self, divisor: Self) -> Option<bool> {
         Some(
@@ -1790,6 +1812,8 @@ impl IntegerMultipleOf {
         )
     }
 
+    /// Return whether every integer multiple of `self` is also a multiple of
+    /// the number-schema divisor.
     #[must_use]
     pub fn integer_divisor_is_multiple_of_number(self, divisor: NumberMultipleOf) -> Option<bool> {
         Some(
@@ -1799,12 +1823,14 @@ impl IntegerMultipleOf {
         )
     }
 
+    /// Return the implied integer divisor when it fits in `i64`.
     #[must_use]
     pub fn integer_divisor_i64(self) -> Option<i64> {
         let divisor = self.integer_divisor()?;
         i64::try_from(divisor).ok()
     }
 
+    #[cfg(test)]
     fn to_json_number(self) -> serde_json::Number {
         match self.0 {
             IntegerMultipleOfKind::Integer(value) => value.get().into(),
@@ -1824,32 +1850,36 @@ impl IntegerMultipleOf {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum SchemaNodeKind<Node = SchemaNode> {
+    /// Boolean schema form: `true` accepts all values, `false` accepts none.
     BoolSchema(bool),
+    /// Unconstrained schema object.
     Any,
 
+    /// String schema with normalized length, pattern, format, and enum constraints.
     String {
         length: CountRange<u64>,
         pattern: Option<PatternConstraint>,
         format: Option<String>,
         enumeration: Option<Vec<Value>>,
     },
+    /// Number schema with normalized bounds and `multipleOf`.
     Number {
         bounds: NumberBounds,
         multiple_of: Option<NumberMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
+    /// Integer schema with exact integer bounds and divisor information.
     Integer {
         bounds: IntegerBounds,
         multiple_of: Option<IntegerMultipleOf>,
         enumeration: Option<Vec<Value>>,
     },
-    Boolean {
-        enumeration: Option<Vec<Value>>,
-    },
-    Null {
-        enumeration: Option<Vec<Value>>,
-    },
+    /// Boolean schema with optional enum restriction.
+    Boolean { enumeration: Option<Vec<Value>> },
+    /// Null schema with optional enum restriction.
+    Null { enumeration: Option<Vec<Value>> },
 
+    /// Object schema with resolved property schemas and normalized count constraints.
     Object {
         properties: HashMap<String, Node>,
         pattern_properties: HashMap<String, PatternProperty<Node>>,
@@ -1860,6 +1890,7 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
         dependent_required: HashMap<String, Vec<String>>,
         enumeration: Option<Vec<Value>>,
     },
+    /// Array schema with tuple, tail-item, `contains`, and uniqueness constraints.
     Array {
         prefix_items: Vec<Node>,
         items: Node,
@@ -1869,17 +1900,24 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
         enumeration: Option<Vec<Value>>,
     },
 
+    /// Conjunction of child schemas.
     AllOf(Vec<Node>),
+    /// Disjunction of child schemas.
     AnyOf(Vec<Node>),
+    /// Exact-one disjunction of child schemas.
     OneOf(Vec<Node>),
+    /// Negation of a child schema.
     Not(Node),
+    /// Conditional applicator with optional `then` and `else` branches.
     IfThenElse {
         if_schema: Node,
         then_schema: Option<Node>,
         else_schema: Option<Node>,
     },
 
+    /// Single JSON value accepted under JSON Schema equality semantics.
     Const(Value),
+    /// Finite set of JSON values accepted under JSON Schema equality semantics.
     Enum(Vec<Value>),
 }
 
@@ -1948,8 +1986,8 @@ enum MutableSchemaNodeKind<Node = MutableSchemaNode> {
     Ref(String),
 }
 
-/// Build and fully resolve a schema node from a JSON Schema document.
-pub fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
+#[cfg(test)]
+pub(crate) fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode> {
     Ok(SchemaDocument::from_json(raw)?.root()?.clone())
 }
 

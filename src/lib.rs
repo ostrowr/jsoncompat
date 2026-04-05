@@ -1,24 +1,19 @@
-//! Back‑compatibility checking library.
+//! Backward-compatibility checks for evolving JSON Schema documents.
 //!
-//! This crate depends on `json_schema_ast`, which provides a strict
-//! in‑memory representation (`SchemaDocument` / `SchemaNode`) of a
-//! Draft 2020‑12 JSON Schema.  The only responsibility of this crate is to
-//! offer algorithms that compare two schemas and decide whether a change is
-//! backward‑compatible from the point of view of a serializer or deserializer.
+//! Build input documents with [`SchemaDocument::from_json`], then call
+//! [`check_compat`] with a [`Role`]. This crate intentionally exposes only the
+//! document-level compatibility API; lower-level resolved IR types live in
+//! `json_schema_ast`.
 
-// Re‑export the fundamental building blocks from the core schema crate so that
-// downstream crates can just depend on *this* crate for both parsing and
-// compatibility checking if they wish.
-pub use json_schema_ast::{
-    ContainsConstraint, CountRange, IntegerBounds, NodeId, NumberBound, NumberBounds,
-    PatternConstraint, PatternProperty, PatternSupport, SchemaBuildError, SchemaDocument,
-    SchemaNode, SchemaNodeKind,
-};
+// Re-export the document type needed by `check_compat` so application callers
+// do not need a second direct dependency just to construct inputs.
+use json_schema_ast::{NodeId, SchemaNode, SchemaNodeKind};
+pub use json_schema_ast::{SchemaBuildError, SchemaDocument};
 use std::collections::HashSet;
 
 mod subset;
 
-pub use subset::{is_subschema_of, type_constraints_subsumed};
+use subset::is_subschema_of;
 
 /// The role under which a compatibility check is performed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -37,17 +32,29 @@ pub enum Role {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CompatibilityError {
+    /// The old or new schema document failed canonicalization or resolution.
     #[error(transparent)]
     Schema(#[from] SchemaBuildError),
+    /// Compatibility checks do not approximate fractional `number.multipleOf`
+    /// inclusion with floating-point arithmetic.
     #[error("non-integral number multipleOf constraints are not supported by compatibility checks")]
     UnsupportedNonIntegralNumberMultipleOf,
 }
 
-/// Top‑level convenience wrapper:
+/// Return whether `new` is backward-compatible with `old` under `role`.
 ///
-/// * `Role::Serializer`   ⇒   `new ⊆ old`
-/// * `Role::Deserializer` ⇒   `old ⊆ new`
-/// * `Role::Both`         ⇒   bidirectional inclusion
+/// The checker is a structural subset proof over the documents' resolved
+/// schema graphs:
+///
+/// * [`Role::Serializer`] checks `new ⊆ old`: every value produced under the
+///   new schema must still be accepted by clients using the old schema.
+/// * [`Role::Deserializer`] checks `old ⊆ new`: every previously accepted
+///   value must still be accepted by the new schema.
+/// * [`Role::Both`] requires both directions.
+///
+/// A return value of `Ok(false)` is a proven or conservative incompatibility.
+/// A return value of `Err(_)` means the checker cannot soundly run on the input
+/// schema or feature set.
 pub fn check_compat(
     old: &SchemaDocument,
     new: &SchemaDocument,

@@ -2,9 +2,10 @@
 name = "json_schema_ast"
 version = "0.2.6"
 edition = "2024"
-description = "JSON Schema Compatibility Checker"
+description = "Strict JSON Schema Draft 2020-12 frontend and resolved IR"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
+readme = "README.md"
 
 
 [dependencies]

@@ -1,8 +1,11 @@
-//! Value generation and random schema generation for the resolved schema IR.
+//! Schema-guided JSON value generation for `json_schema_ast` documents.
 //!
 //! The generator walks the canonicalized `SchemaNode` graph to produce
 //! candidates, then validates them with `SchemaDocument::is_valid()` so raw
-//! backend validation remains the source of truth.
+//! backend validation remains the source of truth. The public entry point is
+//! [`ValueGenerator::generate`]; [`GenerationConfig`] controls recursion depth
+//! and retry budget, and [`GenerateError`] distinguishes invalid schemas,
+//! deterministic unsatisfiability, and heuristic retry exhaustion.
 
 mod format_gen;
 mod regex_gen;
@@ -19,26 +22,41 @@ use std::num::NonZeroUsize;
 const DEFAULT_MAX_GENERATION_ATTEMPTS: usize = 100;
 const DEFAULT_GENERATION_DEPTH: u8 = 5;
 
+/// Errors returned by [`ValueGenerator::generate`].
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum GenerateError {
+    /// The schema document failed canonicalization, resolution, or validator setup.
     #[error(transparent)]
     Schema(#[from] SchemaBuildError),
+    /// The resolved root is known to admit no JSON instances.
+    #[error("schema is unsatisfiable")]
+    Unsatisfiable,
+    /// The generator could not find a raw-valid candidate within the retry budget.
+    ///
+    /// This is a generation limitation, not a proof that the schema is empty.
     #[error("failed to generate a value accepted by the raw schema after {attempts} attempts")]
     ExhaustedAttempts { attempts: NonZeroUsize },
 }
 
-/// Stateful value generator for resolved schema graphs.
+/// Namespace for schema-guided JSON value generation.
+///
+/// Call [`ValueGenerator::generate`] with a [`SchemaDocument`], [`GenerationConfig`],
+/// and random number generator. The struct itself does not expose a public
+/// constructor because generation state is an implementation detail.
 #[derive(Debug)]
 pub struct ValueGenerator {
     max_generation_attempts: NonZeroUsize,
 }
 
 /// Explicit generation controls used by the document-level fuzzer API.
+///
+/// [`GenerationConfig::default`] uses the crate's standard recursion depth and
+/// retry budget. Use [`GenerationConfig::new`] when only depth needs to change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GenerationConfig {
-    pub depth: u8,
-    pub max_generation_attempts: NonZeroUsize,
+    depth: u8,
+    max_generation_attempts: NonZeroUsize,
 }
 
 impl Default for GenerationConfig {
@@ -52,6 +70,8 @@ impl Default for GenerationConfig {
 }
 
 impl GenerationConfig {
+    /// Build a generation config with the default retry budget and a recursion
+    /// depth limit.
     #[must_use]
     pub fn new(depth: u8) -> Self {
         Self {
@@ -60,19 +80,24 @@ impl GenerationConfig {
         }
     }
 
+    /// Override the number of raw-validator-checked candidates to try before
+    /// returning [`GenerateError::ExhaustedAttempts`].
     #[must_use]
     pub fn with_max_generation_attempts(mut self, max_generation_attempts: NonZeroUsize) -> Self {
         self.max_generation_attempts = max_generation_attempts;
         self
     }
-}
 
-impl Default for ValueGenerator {
-    fn default() -> Self {
-        Self {
-            max_generation_attempts: NonZeroUsize::new(DEFAULT_MAX_GENERATION_ATTEMPTS)
-                .expect("default generation attempt limit must be non-zero"),
-        }
+    /// Return the recursion depth limit used for nested schemas.
+    #[must_use]
+    pub const fn depth(self) -> u8 {
+        self.depth
+    }
+
+    /// Return the maximum number of candidates checked before retry exhaustion.
+    #[must_use]
+    pub const fn max_generation_attempts(self) -> NonZeroUsize {
+        self.max_generation_attempts
     }
 }
 
@@ -85,18 +110,21 @@ struct ArrayGenerationSchema<'a> {
 }
 
 impl ValueGenerator {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
-    pub fn with_max_generation_attempts(max_generation_attempts: NonZeroUsize) -> Self {
+    fn with_max_generation_attempts(max_generation_attempts: NonZeroUsize) -> Self {
         Self {
             max_generation_attempts,
         }
     }
 
+    /// Generate one JSON value accepted by the raw schema validator.
+    ///
+    /// This method first builds candidates from the document's resolved
+    /// canonical AST, then checks every candidate with
+    /// [`SchemaDocument::is_valid`]. If the resolved root is known to have no
+    /// valid instances, it returns [`GenerateError::Unsatisfiable`] without
+    /// spending the retry budget. If the schema may be satisfiable but the
+    /// heuristic candidate generator cannot find a raw-valid value in time, it
+    /// returns [`GenerateError::ExhaustedAttempts`].
     pub fn generate(
         schema: &SchemaDocument,
         config: GenerationConfig,
@@ -120,6 +148,10 @@ impl ValueGenerator {
         depth: u8,
     ) -> Result<Value, GenerateError> {
         let root = schema.root()?;
+        if schema_root_is_known_unsatisfiable(schema, root)? {
+            return Err(GenerateError::Unsatisfiable);
+        }
+
         for _ in 0..self.max_generation_attempts.get() {
             let candidate = self.generate_candidate(root, rng, depth);
             if schema.is_valid(&candidate)? {
@@ -204,6 +236,41 @@ impl ValueGenerator {
         }
 
         self.generate_candidate(first_pattern_schema, rng, depth)
+    }
+}
+
+fn schema_root_is_known_unsatisfiable(
+    schema: &SchemaDocument,
+    root: &SchemaNode,
+) -> Result<bool, GenerateError> {
+    if !matches!(root.kind(), SchemaNodeKind::BoolSchema(false)) {
+        return Ok(false);
+    }
+
+    Ok(is_terminal_unsatisfiable_schema(
+        schema.canonical_schema_json()?,
+    ))
+}
+
+fn is_terminal_unsatisfiable_schema(schema: &Value) -> bool {
+    match schema {
+        Value::Bool(false) => true,
+        Value::Object(object) => {
+            object.get("not") == Some(&Value::Bool(true))
+                && object.keys().all(|key| {
+                    key == "not"
+                        || matches!(
+                            key.as_str(),
+                            "$schema"
+                                | "$id"
+                                | "$anchor"
+                                | "$dynamicAnchor"
+                                | "title"
+                                | "x-jsoncompat"
+                        )
+                })
+        }
+        _ => false,
     }
 }
 
@@ -947,65 +1014,6 @@ fn value_type_mismatch(value: &Value) -> Value {
     }
 }
 
-/// Generate a *random JSON Schema* (subset) for fuzzing the value‑generator
-/// itself.  The result is raw JSON so it can immediately be passed into the
-/// authoritative validator for cross‑checking.
-pub fn random_schema(rng: &mut impl Rng, depth: u8) -> Value {
-    if depth == 0 {
-        return Value::Bool(true);
-    }
-    match rng.random_range(0..=4) {
-        // Primitive types --------------------------------------------------
-        0 => {
-            // strings with optional minLength / maxLength
-            let mut obj = Map::new();
-            obj.insert("type".into(), Value::String("string".into()));
-            if rng.random_bool(0.5) {
-                obj.insert("minLength".into(), rng.random_range(0..5u64).into());
-            }
-            if rng.random_bool(0.5) {
-                obj.insert("maxLength".into(), rng.random_range(5..10u64).into());
-            }
-            Value::Object(obj)
-        }
-        1 => {
-            // integer range
-            let mut obj = Map::new();
-            obj.insert("type".into(), Value::String("integer".into()));
-            let min = rng.random_range(-20..20);
-            let max = min + rng.random_range(0..20);
-            obj.insert("minimum".into(), min.into());
-            obj.insert("maximum".into(), max.into());
-            Value::Object(obj)
-        }
-        // Array -----------------------------------------------------------
-        2 => {
-            let mut obj = Map::new();
-            obj.insert("type".into(), Value::String("array".into()));
-            obj.insert("items".into(), random_schema(rng, depth - 1));
-            Value::Object(obj)
-        }
-        // Object ----------------------------------------------------------
-        3 => {
-            let mut props = Map::new();
-            props.insert("a".into(), random_schema(rng, depth - 1));
-            props.insert("b".into(), random_schema(rng, depth - 1));
-            let mut obj = Map::new();
-            obj.insert("type".into(), Value::String("object".into()));
-            obj.insert("properties".into(), Value::Object(props));
-            if rng.random_bool(0.5) {
-                obj.insert(
-                    "required".into(),
-                    Value::Array(vec![Value::String("a".into())]),
-                );
-            }
-            Value::Object(obj)
-        }
-        // Boolean schema --------------------------------------------------
-        _ => Value::Bool(true),
-    }
-}
-
 /// A minimal fallback to produce a random JSON value of any type.
 fn random_any(_rng: &mut impl Rng, _depth: u8) -> Value {
     // Always return an empty object – this is valid under the Draft 2020‑12
@@ -1340,6 +1348,32 @@ mod tests {
     }
 
     #[test]
+    fn false_schema_returns_unsatisfiable() {
+        let schema = resolve(json!(false));
+        let mut rng = StdRng::seed_from_u64(42);
+
+        assert!(matches!(
+            ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng),
+            Err(GenerateError::Unsatisfiable)
+        ));
+    }
+
+    #[test]
+    fn canonical_terminal_false_schema_returns_unsatisfiable() {
+        let schema = resolve(json!({
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 0
+        }));
+        let mut rng = StdRng::seed_from_u64(42);
+
+        assert!(matches!(
+            ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng),
+            Err(GenerateError::Unsatisfiable)
+        ));
+    }
+
+    #[test]
     fn recursive_allof_with_cyclic_object_branch_does_not_stack_overflow() {
         let schema = resolve(json!({
             "$defs": {
@@ -1383,6 +1417,60 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(7);
         let _ = ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng).unwrap();
+    }
+
+    #[test]
+    #[ignore = "known fuzzer gap: format generation currently ignores length constraints"]
+    fn known_gap_format_string_with_min_length_is_satisfiable() {
+        let schema = resolve(json!({
+            "type": "string",
+            "format": "email",
+            "minLength": 100
+        }));
+        assert!(
+            schema
+                .is_valid(&json!(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com"
+                ))
+                .unwrap()
+        );
+
+        assert_generates_raw_valid_value(&schema, 11, 6);
+    }
+
+    #[test]
+    #[ignore = "known fuzzer gap: unevaluatedItems bookkeeping across oneOf is not represented in the AST"]
+    fn known_gap_unevaluated_items_with_oneof_is_satisfiable() {
+        let schema = resolve(json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "prefixItems": [
+                {
+                    "const": "foo"
+                }
+            ],
+            "oneOf": [
+                {
+                    "prefixItems": [
+                        true,
+                        {
+                            "const": "bar"
+                        }
+                    ]
+                },
+                {
+                    "prefixItems": [
+                        true,
+                        {
+                            "const": "baz"
+                        }
+                    ]
+                }
+            ],
+            "unevaluatedItems": false
+        }));
+        assert!(schema.is_valid(&json!(["foo", "bar"])).unwrap());
+
+        assert_generates_raw_valid_value(&schema, 13, 6);
     }
 
     #[test]
@@ -1431,6 +1519,16 @@ mod tests {
                 "generated invalid value: {value}"
             );
         }
+    }
+
+    fn assert_generates_raw_valid_value(schema: &SchemaDocument, seed: u64, depth: u8) {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let value = ValueGenerator::generate(schema, GenerationConfig::new(depth), &mut rng)
+            .expect("expected a raw-valid generated value");
+        assert!(
+            schema.is_valid(&value).unwrap(),
+            "generated invalid value: {value}"
+        );
     }
 
     fn build_required_object_schema() -> SchemaDocument {

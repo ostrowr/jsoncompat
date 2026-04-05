@@ -2,9 +2,10 @@
 name = "json_schema_fuzz"
 version = "0.2.6"
 edition = "2024"
-description = "JSON Schema Fuzzer"
+description = "JSON Schema value generator"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
+readme = "README.md"
 
 [dependencies]
 rand = "0.10"

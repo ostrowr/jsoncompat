@@ -1,3 +1,9 @@
+//! Python bindings for the `jsoncompat` compatibility checker and value generator.
+//!
+//! The extension module exposes `check_compat`, `generate_value`, and a `Role`
+//! constants module. Both functions accept JSON schemas as strings and report
+//! invalid inputs or unsupported core-library cases as `ValueError`.
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -11,7 +17,7 @@ fn parse_json(s: &str) -> PyResult<JsonValue> {
     serde_json::from_str(s).map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid JSON: {e}")))
 }
 
-/// Map a string into the Role enum, raising ValueError on unknown input.
+/// Map a string into the Rust role enum, raising ValueError on unknown input.
 fn parse_role(role: &str) -> PyResult<Role> {
     match role.to_ascii_lowercase().as_str() {
         "serializer" => Ok(Role::Serializer),
@@ -81,6 +87,7 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
             GenerateError::Schema(error) => {
                 PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
             }
+            GenerateError::Unsatisfiable => PyErr::new::<PyValueError, _>(error.to_string()),
             GenerateError::ExhaustedAttempts { .. } => {
                 PyErr::new::<PyValueError, _>(error.to_string())
             }
@@ -97,16 +104,14 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
 #[pymodule]
 #[pyo3(name = "jsoncompat")]
 fn jsoncompat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Ensure the random generator is initialised (auto‑initialize takes care of pyo3 env).
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
 
-    // Expose the Role enum for convenience.
-    let role_enum = PyModule::new(py, "Role")?;
-    role_enum.add("SERIALIZER", "serializer")?;
-    role_enum.add("DESERIALIZER", "deserializer")?;
-    role_enum.add("BOTH", "both")?;
-    m.add_submodule(&role_enum)?;
+    let role_constants = PyModule::new(py, "Role")?;
+    role_constants.add("SERIALIZER", "serializer")?;
+    role_constants.add("DESERIALIZER", "deserializer")?;
+    role_constants.add("BOTH", "both")?;
+    m.add_submodule(&role_constants)?;
 
     Ok(())
 }

@@ -6,6 +6,10 @@
 
 use serde_json::Value;
 
+/// Return true when two JSON values are equal under JSON Schema semantics.
+///
+/// JSON Schema treats numbers by mathematical value, so `1` and `1.0` compare
+/// equal even though their JSON spellings differ.
 #[must_use]
 pub fn json_values_equal(expected: &Value, value: &Value) -> bool {
     match (expected, value) {

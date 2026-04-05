@@ -2,7 +2,7 @@ use json_schema_ast as schema;
 
 use schema::{
     AstError, CompileError, CountRange, IntegerBounds, NumberBound, NumberBounds, PatternSupport,
-    SchemaDocument, SchemaError, SchemaNode, SchemaNodeKind, build_and_resolve_schema, compile,
+    SchemaDocument, SchemaError, SchemaNode, SchemaNodeKind, compile,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -10,8 +10,7 @@ use serde_json::json;
 #[test]
 fn roundtrip_compile_validate() {
     let raw = json!({"type":"string", "minLength":3});
-    let ast = build_schema(&raw);
-    let compiled = compile_ast(&ast);
+    let compiled = compile(&raw).unwrap();
     assert!(compiled.is_valid(&json!("abc")));
     assert!(!compiled.is_valid(&json!("ab")));
 }
@@ -45,7 +44,6 @@ fn resolved_schema_validates_with_raw_backend_and_exposes_canonicalized_debug_js
     });
 
     let schema = SchemaDocument::from_json(&raw).unwrap();
-    assert_eq!(schema.raw_schema_json(), &raw);
 
     let canonical = schema.canonical_schema_json().unwrap();
     let canonical_compiled = compile(canonical).unwrap();
@@ -61,18 +59,14 @@ fn resolved_schema_validates_with_raw_backend_and_exposes_canonicalized_debug_js
         assert_eq!(schema.is_valid(&candidate).unwrap(), expected_valid);
         assert_eq!(
             schema.is_valid(&candidate).unwrap(),
-            schema.is_valid_canonicalized(&candidate).unwrap(),
+            canonical_compiled.is_valid(&candidate),
             "raw and canonicalized validators disagree for {candidate}\n\nRaw schema:\n{}\n\nCanonicalized schema:\n{}",
-            serde_json::to_string_pretty(schema.raw_schema_json()).unwrap(),
+            serde_json::to_string_pretty(&raw).unwrap(),
             serde_json::to_string_pretty(schema.canonical_schema_json().unwrap()).unwrap(),
         );
         assert_eq!(
-            schema.is_valid_canonicalized(&candidate).unwrap(),
-            canonical_compiled.is_valid(&candidate),
-        );
-        assert_eq!(
             schema.root().unwrap().accepts_value(&candidate),
-            schema.is_valid_canonicalized(&candidate).unwrap(),
+            canonical_compiled.is_valid(&candidate),
         );
     }
 }
@@ -407,7 +401,7 @@ fn resolve_local_ref_preserves_escaped_property_names_under_recursive_object() {
     let guard = ast.kind();
     if let SchemaNodeKind::Object { properties, .. } = guard {
         let next = properties.get("next~node").expect("escaped property");
-        assert!(next.ptr_eq(&ast));
+        assert_eq!(next.id(), ast.id());
     } else {
         panic!("expected object schema");
     }
@@ -433,7 +427,7 @@ fn resolve_recursive_ref() {
         let guard = ast.kind();
         if let SchemaNodeKind::Object { properties, .. } = guard {
             let next = properties.get("next").expect("next property");
-            assert!(next.ptr_eq(&ast));
+            assert_eq!(next.id(), ast.id());
         } else {
             panic!("expected object schema");
         }
@@ -503,7 +497,7 @@ fn resolve_recursive_object_through_alias_ref_chain() {
     };
 
     let next = properties.get("next").expect("next property");
-    assert!(next.ptr_eq(&ast));
+    assert_eq!(next.id(), ast.id());
 }
 
 #[test]
@@ -524,7 +518,7 @@ fn resolve_duplicate_refs_share_pointer() {
     if let SchemaNodeKind::Object { properties, .. } = guard {
         let a = properties.get("a").expect("property a");
         let b = properties.get("b").expect("property b");
-        assert!(a.ptr_eq(b));
+        assert_eq!(a.id(), b.id());
     } else {
         panic!("expected object schema");
     }
@@ -553,8 +547,7 @@ fn boolean_schemas() {
     let sample = json!({"k":1});
     for b in [true, false] {
         let raw = json!(b);
-        let ast = build_schema(&raw);
-        let compiled = compile_ast(&ast);
+        let compiled = compile(&raw).unwrap();
         assert_eq!(compiled.is_valid(&sample), b);
     }
 }
@@ -567,8 +560,8 @@ fn conditional_roundtrip() {
         "else": {"type": "string"}
     });
     let ast = build_schema(&raw);
-    let json = ast.to_json();
-    let ast2 = build_schema(&json);
+    let schema = SchemaDocument::from_json(&raw).unwrap();
+    let ast2 = build_schema(schema.canonical_schema_json().unwrap());
     assert_eq!(ast, ast2);
 }
 
@@ -842,7 +835,16 @@ fn preserves_not_false_target_when_referenced_from_then_branch() {
         SchemaNodeKind::BoolSchema(false)
     ));
 
-    let compiled = compile_ast(&ast);
+    let compiled = compile(&json!({
+        "if": {
+            "$ref": "#/not"
+        },
+        "then": {
+            "$ref": "#/not"
+        },
+        "not": false
+    }))
+    .unwrap();
     assert!(compiled.is_valid(&json!(null)));
     assert!(compiled.is_valid(&json!("value")));
 }
@@ -1066,7 +1068,7 @@ fn rejects_anchor_and_dynamic_ref_keywords_with_explicit_unsupported_reference_e
 }
 
 #[test]
-fn raw_validation_does_not_force_resolution_or_canonicalized_validator_compilation() {
+fn raw_validation_does_not_force_ast_resolution() {
     let schema = SchemaDocument::from_json(&json!({
         "$id": "https://example.com/schemas/node.json",
         "type": "string"
@@ -1198,8 +1200,8 @@ fn build_schema(raw: &Value) -> SchemaNode {
         .clone()
 }
 
-fn compile_ast(ast: &SchemaNode) -> schema::JSONSchema {
-    compile(&ast.to_json()).unwrap()
+fn build_and_resolve_schema(raw: &Value) -> Result<SchemaNode, AstError> {
+    Ok(SchemaDocument::from_json(raw)?.root()?.clone())
 }
 
 fn assert_schema_build_error(raw: &Value, expected: &str) {

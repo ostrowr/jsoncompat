@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use json_schema_ast::{JSONSchema, SchemaNode, build_and_resolve_schema, compile};
+use json_schema_ast::{JSONSchema, SchemaDocument, SchemaNode, compile};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,9 +28,9 @@ fn bench_compile(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_build_and_resolve_schema(c: &mut Criterion) {
+fn bench_schema_document_root(c: &mut Criterion) {
     let fixtures = load_bench_fixtures();
-    let mut group = c.benchmark_group("build_and_resolve_schema");
+    let mut group = c.benchmark_group("SchemaDocument::root");
 
     for fixture in &fixtures {
         group.bench_with_input(
@@ -38,14 +38,20 @@ fn bench_build_and_resolve_schema(c: &mut Criterion) {
             &fixture.schema,
             |b, schema| {
                 b.iter(|| {
-                    black_box(
-                        build_and_resolve_schema(black_box(schema)).unwrap_or_else(|error| {
+                    let document =
+                        SchemaDocument::from_json(black_box(schema)).unwrap_or_else(|error| {
                             panic!(
-                                "build_and_resolve_schema failed for {}: {error}",
+                                "SchemaDocument::from_json failed for {}: {error}",
                                 fixture.name
                             )
-                        }),
-                    )
+                        });
+                    let root = document
+                        .root()
+                        .unwrap_or_else(|error| {
+                            panic!("SchemaDocument::root failed for {}: {error}", fixture.name)
+                        })
+                        .clone();
+                    black_box(root)
                 });
             },
         );
@@ -90,7 +96,7 @@ fn criterion_config() -> Criterion {
 criterion_group! {
     name = benches;
     config = criterion_config();
-    targets = bench_compile, bench_build_and_resolve_schema, bench_validate,
+    targets = bench_compile, bench_schema_document_root, bench_validate,
 }
 criterion_main!(benches);
 
@@ -154,12 +160,21 @@ fn load_bench_fixture(path: PathBuf) -> BenchFixture {
 }
 
 fn assert_fixture_is_valid(name: &str, schema: &Value, instance: &Value, path: &Path) {
-    let ast: SchemaNode = build_and_resolve_schema(schema).unwrap_or_else(|error| {
+    let document = SchemaDocument::from_json(schema).unwrap_or_else(|error| {
         panic!(
-            "benchmark fixture {name} failed AST construction from {}: {error}",
+            "benchmark fixture {name} failed schema construction from {}: {error}",
             path.display()
         )
     });
+    let ast: SchemaNode = document
+        .root()
+        .unwrap_or_else(|error| {
+            panic!(
+                "benchmark fixture {name} failed AST resolution from {}: {error}",
+                path.display()
+            )
+        })
+        .clone();
     let validator = compile(schema).unwrap_or_else(|error| {
         panic!(
             "benchmark fixture {name} failed validator compilation from {}: {error}",

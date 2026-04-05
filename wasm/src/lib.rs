@@ -1,3 +1,9 @@
+//! WebAssembly bindings for the `jsoncompat` compatibility checker and value generator.
+//!
+//! JavaScript callers get two exported functions: `check_compat` and
+//! `generate_value`. Both accept schemas as JSON strings and return JavaScript
+//! values or string errors through `wasm-bindgen`.
+
 use wasm_bindgen::prelude::*;
 
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
@@ -30,7 +36,7 @@ fn parse_role(role: &str) -> Result<Role, JsValue> {
 ///
 /// * `old_schema_json` – original schema as JSON string
 /// * `new_schema_json` – updated schema as JSON string
-/// * `role` – "serializer", "deserializer" or "both" (default)
+/// * `role` – "serializer", "deserializer" or "both"
 /// Exported to JavaScript as `check_compat`.
 #[wasm_bindgen(js_name = check_compat)]
 pub fn check_compat_js(
@@ -54,7 +60,7 @@ pub fn check_compat_js(
 /// Generate a JSON value (string) that should satisfy the given schema.
 ///
 /// * `schema_json` – schema as JSON string
-/// * `depth` – recursion depth (default 5)
+/// * `depth` – recursion depth limit
 /// Exported to JavaScript as `generate_value`.
 #[wasm_bindgen(js_name = generate_value)]
 pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue> {
@@ -66,6 +72,7 @@ pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue
     let v = ValueGenerator::generate(&schema, GenerationConfig::new(depth), &mut rng).map_err(
         |error| match error {
             GenerateError::Schema(error) => JsValue::from_str(&format!("invalid schema: {error}")),
+            GenerateError::Unsatisfiable => JsValue::from_str(&error.to_string()),
             GenerateError::ExhaustedAttempts { .. } => JsValue::from_str(&error.to_string()),
             _ => JsValue::from_str(&error.to_string()),
         },

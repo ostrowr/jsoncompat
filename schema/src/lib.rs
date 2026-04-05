@@ -1,5 +1,10 @@
-//! A thin convenience wrapper that exposes strict Draft 2020‑12 validation
-//! and a Schema AST builder.
+//! Strict Draft 2020-12 schema documents, validation, and resolved schema IR.
+//!
+//! The main entry point is [`SchemaDocument`]. Build one from raw JSON with
+//! [`SchemaDocument::from_json`], validate instances with [`SchemaDocument::is_valid`],
+//! and use [`compile`] only when you need direct access to the underlying
+//! validator backend. Crates that implement analysis or generation can inspect
+//! the lazily resolved canonical IR with [`SchemaDocument::root`].
 
 mod ast;
 mod canonicalize;
@@ -8,9 +13,11 @@ mod json_semantics;
 
 mod schema_metadata;
 
+#[cfg(test)]
+pub(crate) use ast::build_and_resolve_schema;
 pub use ast::{
     AstError, IntegerMultipleOf, NodeId, NumberMultipleOf, SchemaBuildError, SchemaDocument,
-    SchemaNode, SchemaNodeKind, build_and_resolve_schema,
+    SchemaNode, SchemaNodeKind,
 };
 pub use canonicalize::CanonicalizeError as SchemaError;
 pub use constraints::{
@@ -30,8 +37,10 @@ use std::borrow::Cow;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CompileError {
+    /// The raw schema failed this crate's dialect or keyword-shape checks.
     #[error(transparent)]
     Schema(#[from] SchemaError),
+    /// The `jsonschema` backend rejected the schema after local checks passed.
     #[error("schema failed Draft 2020-12 validator compilation: {source}")]
     ValidatorRejectedSchema {
         #[source]

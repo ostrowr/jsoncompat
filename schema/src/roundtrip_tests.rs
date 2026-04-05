@@ -87,6 +87,34 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn canonicalized_validation_helper_matches_raw_validator() {
+    let raw = serde_json::json!({
+        "type": ["integer", "string"],
+        "minimum": 2,
+        "minLength": 2,
+        "not": {
+            "const": "zz"
+        }
+    });
+    let schema = SchemaDocument::from_json(&raw).unwrap();
+
+    for candidate in [
+        serde_json::json!(2),
+        serde_json::json!("ab"),
+        serde_json::json!("zz"),
+        serde_json::json!(1),
+        serde_json::json!("a"),
+        serde_json::json!(null),
+    ] {
+        assert_eq!(
+            schema.is_valid(&candidate).unwrap(),
+            schema.is_valid_canonicalized(&candidate).unwrap(),
+            "raw and canonicalized validators disagree for {candidate}"
+        );
+    }
+}
+
 fn collect_fixture_files(
     dir: &Path,
     files: &mut Vec<std::path::PathBuf>,
