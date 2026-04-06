@@ -1,0 +1,1 @@
+unsupported $ref 'bar' at '#/$defs/extended/properties/bar/$ref'

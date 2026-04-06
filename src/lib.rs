@@ -11,8 +11,14 @@ use json_schema_ast::{NodeId, SchemaNode, SchemaNodeKind};
 pub use json_schema_ast::{SchemaBuildError, SchemaDocument};
 use std::collections::HashSet;
 
+mod stamp;
 mod subset;
 
+pub use stamp::{
+    ENVELOPE_DATA_KEY, ENVELOPE_VERSION_KEY, STAMP_MANIFEST_VERSION, SchemaHistory,
+    SchemaVersionEntry, StampBundle, StampError, StampManifest, StampResult, StampStatus,
+    canonical_schema_hash, stamp_schema, write_stamp_manifest_atomic,
+};
 use subset::is_subschema_of;
 
 /// The role under which a compatibility check is performed.

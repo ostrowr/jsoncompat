@@ -1,0 +1,1 @@
+unsupported $ref 'http://localhost:1234/draft2019-09/ignore-prefixItems.json' at '#/$ref'

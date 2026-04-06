@@ -1,0 +1,1 @@
+unsupported $ref 'http://localhost:1234/different-id-ref-string.json' at '#/$ref'

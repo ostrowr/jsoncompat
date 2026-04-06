@@ -80,10 +80,12 @@ const waitForServer = async () => {
 };
 
 const startDeckServer = () => {
-  const child = spawn("python3", ["-m", "http.server", String(devPort), "-d", "dist"], {
+  const env = { ...process.env };
+  delete env.VIRTUAL_ENV;
+  const child = spawn("uv", ["run", "python", "-m", "http.server", String(devPort), "-d", "dist"], {
     cwd: deckRoot,
     stdio: "inherit",
-    env: process.env,
+    env,
   });
   return child;
 };

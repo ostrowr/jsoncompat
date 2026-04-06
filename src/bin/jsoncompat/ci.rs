@@ -106,8 +106,14 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                     if !ok {
                         let mut rng = rand::rng();
                         let example = match sample_incompat(
-                            &SchemaDoc { schema: old_schema },
-                            &SchemaDoc { schema: new_schema },
+                            &SchemaDoc {
+                                raw: old.schema.clone(),
+                                schema: old_schema,
+                            },
+                            &SchemaDoc {
+                                raw: new.schema.clone(),
+                                schema: new_schema,
+                            },
                             old.mode.into(),
                             100,
                             8,

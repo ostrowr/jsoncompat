@@ -11,6 +11,42 @@ function UsagePage(): ReactNode {
       <h1 className="text-3xl font-bold mb-4">Usage</h1>
 
       <section className="space-y-4">
+        <h2 id="stamp" className="text-xl font-semibold">
+          <a href="#stamp">Stamp writer and reader schemas</a>
+        </h2>
+        <p>
+          Use <code>jsoncompat stamp</code> to split a schema into a strict
+          writer schema and a tagged-union reader schema. Stamped payloads use a
+          metadata envelope with <code>version</code> and <code>data</code>{" "}
+          fields, and schema history is tracked in a manifest file.
+        </p>
+        <p>
+          Run <code>jsoncompat stamp --help</code> for more information.
+        </p>
+      </section>
+
+      <section className="space-y-4">
+        <h2 id="codegen" className="text-xl font-semibold">
+          <a href="#codegen">Generate code from JSON Schema</a>
+        </h2>
+        <p>
+          Use <code>jsoncompat codegen --target schema</code> to canonicalize
+          any JSON Schema document,{" "}
+          <code>jsoncompat codegen --target dataclasses</code> to emit frozen
+          Python dataclasses with schema-checked constructors and serializers.
+          Generated dataclass modules import shared helpers from{" "}
+          <code>jsoncompat.codegen.dataclasses</code> in the base package. If
+          the input schema contains <code>x-jsoncompat</code> metadata emitted
+          by{" "}
+          <code>jsoncompat stamp</code>, codegen preserves declaration names and
+          directional reader/writer wrappers.
+        </p>
+        <p>
+          Run <code>jsoncompat codegen --help</code> for more information.
+        </p>
+      </section>
+
+      <section className="space-y-4">
         <h2 id="ci" className="text-xl font-semibold">
           <a href="#ci">Continuous Integration (CI)</a>
         </h2>

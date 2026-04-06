@@ -10,9 +10,10 @@ readme = "readme.md"
 # Workspace definition so we can host the additional sibling crates.
 [workspace]
 members = [
+    "codegen",  # -> jsoncompat_codegen
     "fuzz",     # -> json_schema_fuzz
     "schema",   # -> json_schema_ast
-    "python",   # -> jsoncompat Python bindings
+    "pybindings", # -> jsoncompat Python bindings
     "wasm"      # -> json_schema_wasm bindings
 ]
 
@@ -28,8 +29,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 owo-colors = "4.3"
 # Our own strict Draft‑2020 implementation crate
 json_schema_ast = { path = "schema", version = "0.3.1" }
+jsoncompat_codegen = { path = "codegen", version = "0.3.1" }
 json_schema_fuzz = { path = "fuzz", version = "0.3.1" }
 console = "0.16.3"
+sha2 = "0.10.8"
 fancy-regex = "0.17"
 
 [dev-dependencies]
@@ -43,6 +46,10 @@ harness = false
 
 [[test]]
 name = "fuzz"
+harness = false
+
+[[test]]
+name = "dataclasses_fuzz"
 harness = false
 
 [[bench]]

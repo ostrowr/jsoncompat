@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["jsoncompat"]
 # [tool.uv.sources]
-# jsoncompat = { path = "../../../python", editable = true }
+# jsoncompat = { path = "../../../pybindings", editable = true }
 # ///
 """End-to-end demo for the Python bindings of jsoncompat.
 
@@ -44,7 +44,8 @@ def main() -> None:
         print(f"{role:12}: {ok}")
 
     print("\n=== Example value generation ===")
-    example = jsc.generate_value(old_schema, 3)
+    generator = jsc.generator_for(old_schema)
+    example = generator.generate_value(3)
     print("example value:", example)
 
 

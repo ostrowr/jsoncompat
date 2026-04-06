@@ -1,0 +1,1 @@
+unsupported $ref 'list' at '#/$defs/intermediate-scope/$ref'

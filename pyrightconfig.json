@@ -1,0 +1,12 @@
+{
+  "extraPaths": [
+    "pybindings"
+  ],
+  "include": [
+    "examples/stamp",
+    "pybindings/jsoncompat",
+    "tests/fixtures/dataclasses"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "strict"
+}

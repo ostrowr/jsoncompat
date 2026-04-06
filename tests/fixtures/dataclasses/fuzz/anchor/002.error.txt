@@ -1,0 +1,1 @@
+invalid schema at '#/$defs/A/anyOf/2/$defs/B': schema declaration name was not collected

@@ -1,0 +1,1 @@
+unsupported $ref '#/$defs/bar' at '#/$defs/foo/$ref'

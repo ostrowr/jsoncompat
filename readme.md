@@ -271,8 +271,8 @@ The Rust code is split into five crates and one CLI binary. The website under `w
 | `schema/` | `json_schema_ast` | Draft 2020-12 dialect checks, schema canonicalization, AST construction, local `$ref` resolution, and direct validator compilation via `jsonschema` |
 | `src/` | `jsoncompat` | Backward-compatibility checking over resolved ASTs, plus the `jsoncompat` CLI in `src/bin/jsoncompat.rs` |
 | `fuzz/` | `json_schema_fuzz` | Schema-guided JSON instance generation for fuzz tests and example values |
-| `python/` | `jsoncompat_py` | PyO3 bindings that expose `check_compat`, `generate_value`, and role constants |
-| `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings that expose `check_compat` and `generate_value` to JavaScript |
+| `pybindings/` | `jsoncompat_py` | PyO3 bindings that expose `check_compat`, reusable validators/generators, and role constants |
+| `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings that expose `check_compat` and reusable validators/generators to JavaScript |
 
 The primary schema APIs are:
 
@@ -322,7 +322,7 @@ flowchart TD
 - `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately and canonicalizes it once inside `SchemaDocument::from_json()` so keyword-shape validation happens at schema construction without maintaining a second validator path. The resolved graph is still built lazily by parsing that cached canonical JSON into a private arena-backed graph, resolving local recursive references, normalizing applicators, and freezing it into `SchemaNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `SchemaDocument::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `SchemaNode::accepts_value()` is the low-level evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics.
 - `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role` and document-level `check_compat`, and `src/subset.rs` plus `src/subset/{scalar,object,array}.rs` implement the actual inclusion relation (`sub ⊆ sup`) over `SchemaNode`. The checker uses `SchemaNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
 - `json_schema_fuzz` is the value-generation engine. Its public value-generation API is `ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng)` and it only returns values accepted by `SchemaDocument::is_valid()`; if the resolved schema is known to be empty, generation returns a typed `GenerateError::Unsatisfiable`, and if the internal candidate generator cannot find a value within its retry budget, generation returns a typed `GenerateError::ExhaustedAttempts`. Internally it walks the canonicalized `SchemaNode` graph and uses `SchemaNode::accepts_value()` only as a pruning heuristic for recursive subgraphs.
-- `jsoncompat_py` and `jsoncompat_wasm` are thin adapters. They parse JSON strings, call the Rust core crates, and map Rust errors/results into Python or JavaScript types.
+- `jsoncompat_py` and `jsoncompat_wasm` are thin adapters. They parse JSON strings into reusable validator/generator handles, call the Rust core crates, and map Rust errors/results into Python or JavaScript types. The one-shot generation/validation helpers remain as compatibility wrappers.
 
 ### Test strategy
 
@@ -332,7 +332,58 @@ flowchart TD
 
 ## Debugging canonicalization
 
-To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. Canonicalization is an internal library facility, not a `jsoncompat` CLI subcommand.
+To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. The CLI also exposes this same normalized document with `jsoncompat codegen --target schema`.
+
+## Stamped schemas
+
+`jsoncompat stamp` turns a schema into separate writer and reader schemas using
+a versioned envelope:
+
+```json
+{
+  "version": 2,
+  "data": {
+    "name": "Ada"
+  }
+}
+```
+
+Writers emit only the latest schema version, while readers accept a tagged
+union of historical writer versions. The command stores schema history in a
+manifest file and appends a new version whenever a change is not compatible in
+both directions.
+
+```bash
+jsoncompat stamp --manifest schemas.manifest.json --id user-profile --write-manifest schema.json
+jsoncompat stamp --manifest schemas.manifest.json --id user-profile --display writer schema.json > writer.schema.json
+jsoncompat stamp --manifest schemas.manifest.json --id user-profile --display reader schema.json > reader.schema.json
+jsoncompat codegen --target schema reader.schema.json
+jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
+```
+
+### Dataclass code generation
+
+`jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
+canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
+frozen, slotted Python dataclasses that import shared construction and
+serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
+carry the original input schema in `__jsoncompat_schema__`, cache a
+`jsoncompat.validator_for(...)` validator for runtime checks, and expose:
+
+- `from_json(...)` / `from_json_string(...)` constructors for schema-checked
+  deserialization;
+- `to_json(...)` / `to_json_string(...)` serializers that validate the emitted
+  JSON against the attached schema;
+- `__jsoncompat_extra__` for unknown object properties when
+  `additionalProperties` is allowed;
+- `JSONCOMPAT_MISSING` for omitted optional fields so absent and explicit
+  `null` stay distinguishable.
+
+If the input schema contains `x-jsoncompat` metadata from `jsoncompat stamp`,
+generated writer envelopes inherit from `WriterDataclassModel`, which disables
+deserialization methods, and generated reader envelopes inherit from
+`ReaderDataclassModel` / `ReaderDataclassRootModel`, which disable
+serialization methods.
 
 ## Development
 
@@ -345,6 +396,17 @@ Run tests:
 ```bash
 just check
 ```
+
+Regenerate the repo-wide dataclass snapshots for all sample schemas:
+
+```bash
+just regen-dataclasses-fixtures
+```
+
+The test suite also runs a shared generated-value fuzz harness against the Rust
+validator and generated dataclass models. The harness is backend agnostic: each
+validator only needs to implement a fixture-scoped factory and a
+`validate(&serde_json::Value)` method.
 
 Run the end-to-end CLI demo/smoke test:
 
