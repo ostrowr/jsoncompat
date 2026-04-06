@@ -17,7 +17,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
     }
   }
 }"""
-    foo: (GeneratedSchema | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
+    foo: jsoncompat_dataclasses.Omittable[GeneratedSchema] = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     jsoncompat_dataclasses.jsoncompat_field_spec("foo", "foo", (GeneratedSchema | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),

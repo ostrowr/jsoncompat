@@ -18,7 +18,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    x: (GeneratedSchema | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("x", omittable=True)
+    x: jsoncompat_dataclasses.Omittable[GeneratedSchema] = jsoncompat_dataclasses.jsoncompat_field("x", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(

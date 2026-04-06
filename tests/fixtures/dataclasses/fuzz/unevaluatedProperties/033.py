@@ -35,7 +35,7 @@ class GeneratedSchemaOneBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[
   },
   "type": "object"
 }"""
-    a: (GeneratedSchemaOneBranch2A | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("a", omittable=True)
+    a: jsoncompat_dataclasses.Omittable[GeneratedSchemaOneBranch2A] = jsoncompat_dataclasses.jsoncompat_field("a", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -65,7 +65,7 @@ class GeneratedSchemaOne(jsoncompat_dataclasses.DataclassRootModel):
     "a": true
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | None | float | list[GeneratedSchemaOneItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | float | list[GeneratedSchemaOneItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoBranch2X(jsoncompat_dataclasses.DataclassRootModel):
@@ -132,7 +132,7 @@ class GeneratedSchemaTwo(jsoncompat_dataclasses.DataclassRootModel):
     "x"
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | None | float | list[GeneratedSchemaTwoItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | float | list[GeneratedSchemaTwoItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
@@ -191,7 +191,7 @@ GeneratedSchemaOneBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.js
 
 GeneratedSchemaOneItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaOne.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | None | float | list[GeneratedSchemaOneItem] | str)
+GeneratedSchemaOne.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | float | list[GeneratedSchemaOneItem] | str | None)
 
 GeneratedSchemaTwoBranch2X.__jsoncompat_root_annotation__ = typing.Any
 
@@ -202,7 +202,7 @@ GeneratedSchemaTwoBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.js
 
 GeneratedSchemaTwoItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaTwo.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | None | float | list[GeneratedSchemaTwoItem] | str)
+GeneratedSchemaTwo.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | float | list[GeneratedSchemaTwoItem] | str | None)
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Any
 

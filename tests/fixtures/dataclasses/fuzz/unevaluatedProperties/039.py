@@ -59,7 +59,7 @@ class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typ
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    foo2: (GeneratedSchemaBranch2Foo2 | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo2", omittable=True)
+    foo2: jsoncompat_dataclasses.Omittable[GeneratedSchemaBranch2Foo2] = jsoncompat_dataclasses.jsoncompat_field("foo2", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -84,7 +84,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   },
   "unevaluatedProperties": false
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaBranch2Foo2.__jsoncompat_root_annotation__ = typing.Any
 
@@ -95,6 +95,6 @@ GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsonc
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str)
+GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema

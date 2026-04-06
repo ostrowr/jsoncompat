@@ -28,6 +28,7 @@ __all__ = [
     "JsoncompatObjectSpec",
     "ReaderDataclassModel",
     "ReaderDataclassRootModel",
+    "Omittable",
     "WriterDataclassModel",
     "jsoncompat_extra_field",
     "jsoncompat_field_spec",
@@ -53,6 +54,8 @@ class JsoncompatMissingType:
 
 
 JSONCOMPAT_MISSING = JsoncompatMissingType()
+
+type Omittable[T] = T | JsoncompatMissingType
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class JsoncompatFieldSpec:

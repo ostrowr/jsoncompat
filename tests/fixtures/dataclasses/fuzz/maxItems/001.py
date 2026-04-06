@@ -27,7 +27,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "maxItems": 2
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     extra_annotation=dict[str, typing.Any],
@@ -35,6 +35,6 @@ GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsonc
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str)
+GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema

@@ -24,8 +24,8 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
   },
   "type": "object"
 }"""
-    billing_address: (str | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("billing_address", omittable=True)
-    credit_card: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("credit_card", omittable=True)
+    billing_address: jsoncompat_dataclasses.Omittable[str] = jsoncompat_dataclasses.jsoncompat_field("billing_address", omittable=True)
+    credit_card: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("credit_card", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(

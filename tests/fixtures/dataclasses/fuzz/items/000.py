@@ -24,12 +24,12 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     "type": "integer"
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[int] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[int] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     extra_annotation=dict[str, typing.Any],
 )
 
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[int] | str)
+GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[int] | str | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema

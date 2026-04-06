@@ -31,7 +31,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     "null"
   ]
 }"""
-    root: (GeneratedSchemaBranch2 | None | list[GeneratedSchemaItem]) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (GeneratedSchemaBranch2 | list[GeneratedSchemaItem] | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 
@@ -39,6 +39,6 @@ GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsonc
     extra_annotation=dict[str, typing.Any],
 )
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (GeneratedSchemaBranch2 | None | list[GeneratedSchemaItem])
+GeneratedSchema.__jsoncompat_root_annotation__ = (GeneratedSchemaBranch2 | list[GeneratedSchemaItem] | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema

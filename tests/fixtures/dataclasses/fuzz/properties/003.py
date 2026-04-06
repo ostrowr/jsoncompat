@@ -33,12 +33,12 @@ class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typ
   },
   "type": "object"
 }"""
-    foo_bar: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo\tbar", omittable=True)
-    foo_bar2: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo\nbar", omittable=True)
-    foo_bar3: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo\fbar", omittable=True)
-    foo_bar4: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo\rbar", omittable=True)
-    foo_bar5: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo\"bar", omittable=True)
-    foo_bar6: (float | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo\\bar", omittable=True)
+    foo_bar: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("foo\tbar", omittable=True)
+    foo_bar2: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("foo\nbar", omittable=True)
+    foo_bar3: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("foo\fbar", omittable=True)
+    foo_bar4: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("foo\rbar", omittable=True)
+    foo_bar5: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("foo\"bar", omittable=True)
+    foo_bar6: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("foo\\bar", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -71,7 +71,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     jsoncompat_dataclasses.jsoncompat_field_spec("foo_bar", "foo\tbar", (float | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
@@ -85,6 +85,6 @@ GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsonc
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str)
+GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema

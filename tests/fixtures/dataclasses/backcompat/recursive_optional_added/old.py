@@ -27,7 +27,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    children: (list[GeneratedSchema] | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("children", omittable=True)
+    children: jsoncompat_dataclasses.Omittable[list[GeneratedSchema]] = jsoncompat_dataclasses.jsoncompat_field("children", omittable=True)
     value: int = jsoncompat_dataclasses.jsoncompat_field("value")
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(

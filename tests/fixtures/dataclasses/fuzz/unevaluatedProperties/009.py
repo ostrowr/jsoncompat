@@ -26,7 +26,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
     "type": "string"
   }
 }"""
-    foo: (str | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
+    foo: jsoncompat_dataclasses.Omittable[str] = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(

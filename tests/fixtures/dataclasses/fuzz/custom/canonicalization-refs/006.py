@@ -21,7 +21,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
     "x": true
   }
 }"""
-    x: (GeneratedSchemaX | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("x", omittable=True)
+    x: jsoncompat_dataclasses.Omittable[GeneratedSchemaX] = jsoncompat_dataclasses.jsoncompat_field("x", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 GeneratedSchemaX.__jsoncompat_root_annotation__ = typing.Any

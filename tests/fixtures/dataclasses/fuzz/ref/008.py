@@ -33,7 +33,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
     }
   }
 }"""
-    _ref: (GeneratedSchemaIsString | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("$ref", omittable=True)
+    _ref: jsoncompat_dataclasses.Omittable[GeneratedSchemaIsString] = jsoncompat_dataclasses.jsoncompat_field("$ref", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 GeneratedSchemaIsString.__jsoncompat_root_annotation__ = str

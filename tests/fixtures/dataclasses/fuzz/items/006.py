@@ -7,7 +7,7 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItemBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "minProperties": 0,
   "properties": {},
@@ -16,16 +16,9 @@ class GeneratedSchemaItemBranch2(jsoncompat_dataclasses.DataclassAdditionalModel
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItemItem(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = """{
-  "minimum": 5
-}"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaItemBranch2 | None | float | list[GeneratedSchemaItemItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
@@ -44,16 +37,14 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     "minimum": 5
   }
 }"""
-    root: list[GeneratedSchemaItem] = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: list[((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)] = jsoncompat_dataclasses.jsoncompat_root_field()
 
-GeneratedSchemaItemBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     extra_annotation=dict[str, typing.Any],
 )
 
-GeneratedSchemaItemItem.__jsoncompat_root_annotation__ = typing.Any
+GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaItem.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaItemBranch2 | None | float | list[GeneratedSchemaItemItem] | str)
-
-GeneratedSchema.__jsoncompat_root_annotation__ = list[GeneratedSchemaItem]
+GeneratedSchema.__jsoncompat_root_annotation__ = list[((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)]
 
 JSONCOMPAT_MODEL = GeneratedSchema

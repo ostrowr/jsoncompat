@@ -41,7 +41,7 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
 from typing import assert_type
 
 from generated_models import InventoryItem, InventoryItemMetadata, JSONCOMPAT_MODEL
-from jsoncompat.codegen.dataclasses import JSONCOMPAT_MISSING, JsoncompatMissingType
+from jsoncompat.codegen.dataclasses import JSONCOMPAT_MISSING, JsoncompatMissingType, Omittable
 
 
 item = InventoryItem.from_json({
@@ -55,10 +55,10 @@ item = InventoryItem.from_json({
 assert_type(JSONCOMPAT_MODEL, type[InventoryItem])
 assert_type(item, InventoryItem)
 assert_type(item.sku, str)
-assert_type(item.quantity, int | JsoncompatMissingType)
+assert_type(item.quantity, Omittable[int])
 assert_type(item.metadata, InventoryItemMetadata)
 assert_type(item.metadata.warehouse, str)
-assert_type(item.tags, list[str] | JsoncompatMissingType)
+assert_type(item.tags, Omittable[list[str]])
 assert_type(item.__jsoncompat_extra__, dict[str, float])
 assert_type(
     item.get_additional_property("priority"),
