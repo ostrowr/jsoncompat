@@ -200,7 +200,7 @@ for value in invalid_values:
 }
 
 #[test]
-fn python_api_exposes_reusable_schema_tools_and_deprecates_one_shot_helpers() {
+fn python_api_exposes_reusable_schema_tools_and_removes_one_shot_is_valid() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
@@ -211,14 +211,32 @@ import jsoncompat
 schema_json = '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}'
 valid_json = '{"name":"Ada"}'
 invalid_json = '{"name":1}'
+valid_value = {"name": "Ada"}
+invalid_value = {"name": 1}
 
 validator = jsoncompat.validator_for(schema_json)
 assert validator.is_valid(valid_json)
 assert not validator.is_valid(invalid_json)
+assert validator.is_valid_json(valid_json)
+assert not validator.is_valid_json(invalid_json)
+assert validator.is_valid_value(valid_value)
+assert not validator.is_valid_value(invalid_value)
+assert not hasattr(jsoncompat, "is_valid")
+
+string_validator = jsoncompat.validator_for('{"type":"string"}')
+assert string_validator.is_valid_value('{"name":"Ada"}')
+assert not string_validator.is_valid_json('{"name":"Ada"}')
+
+array_validator = jsoncompat.validator_for('{"type":"array","items":{"type":"integer"}}')
+assert array_validator.is_valid_value((1, 2, 3))
+
+integer_validator = jsoncompat.validator_for('{"type":"integer"}')
+assert integer_validator.is_valid_value(1)
+assert not integer_validator.is_valid_value(True)
 
 generator = jsoncompat.generator_for(schema_json)
 generated = generator.generate_value(3)
-assert validator.is_valid(generated)
+assert validator.is_valid_json(generated)
 
 try:
     jsoncompat.validator_for('{"type": 1}')
@@ -228,11 +246,24 @@ else:
     raise AssertionError("invalid schema was accepted")
 
 try:
-    validator.is_valid("{")
+    validator.is_valid_json("{")
 except ValueError:
     pass
 else:
     raise AssertionError("invalid instance JSON was accepted")
+
+for bad_value in (
+    {"name": float("nan")},
+    {1: "not a string key"},
+    {"name": 2**2000},
+    object(),
+):
+    try:
+        validator.is_valid_value(bad_value)
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError(f"invalid JSON-compatible value was accepted: {bad_value!r}")
 
 try:
     jsoncompat.generator_for('{"type": 1}')
@@ -243,15 +274,7 @@ else:
 
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always", DeprecationWarning)
-    assert jsoncompat.is_valid(schema_json, valid_json)
-
-assert len(caught) == 1
-assert issubclass(caught[0].category, DeprecationWarning)
-assert "validator_for" in str(caught[0].message)
-
-with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always", DeprecationWarning)
-    assert validator.is_valid(jsoncompat.generate_value(schema_json, 3))
+    assert validator.is_valid_json(jsoncompat.generate_value(schema_json, 3))
 
 assert len(caught) == 1
 assert issubclass(caught[0].category, DeprecationWarning)
