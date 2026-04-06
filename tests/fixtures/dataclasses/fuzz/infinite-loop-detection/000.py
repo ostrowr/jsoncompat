@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaInt(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaInt(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "int": {
@@ -16,10 +16,10 @@ class GeneratedSchemaInt(jsoncompat_dataclasses.DataclassRootModel):
   },
   "type": "integer"
 }"""
-    root: int = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: int = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "int": {
@@ -42,7 +42,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     }
   ]
 }"""
-    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: typing.Any = dc.jsoncompat_root_field()
 
 GeneratedSchemaInt.__jsoncompat_root_annotation__ = int
 

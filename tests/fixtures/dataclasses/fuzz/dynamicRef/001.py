@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaFoo(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaFoo(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$anchor": "items",
   "$defs": {
@@ -18,10 +18,10 @@ class GeneratedSchemaFoo(jsoncompat_dataclasses.DataclassRootModel):
   },
   "type": "string"
 }"""
-    root: str = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: str = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "foo": {
@@ -31,10 +31,10 @@ class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
   },
   "$dynamicRef": "#items"
 }"""
-    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: typing.Any = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "foo": {
@@ -49,7 +49,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[GeneratedSchemaItem] = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: list[GeneratedSchemaItem] = dc.jsoncompat_root_field()
 
 GeneratedSchemaFoo.__jsoncompat_root_annotation__ = str
 

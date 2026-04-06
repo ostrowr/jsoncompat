@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[int]):
+class GeneratedSchema(dc.DataclassAdditionalModel[int]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
@@ -26,11 +26,11 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[int]):
   ],
   "type": "object"
 }"""
-    id: int = jsoncompat_dataclasses.jsoncompat_field("id")
-    __jsoncompat_extra__: dict[str, int] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    id: int = dc.jsoncompat_field("id")
+    __jsoncompat_extra__: dict[str, int] = dc.jsoncompat_extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("id", "id", int),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("id", "id", int),
     extra_annotation=dict[str, int],
 )
 

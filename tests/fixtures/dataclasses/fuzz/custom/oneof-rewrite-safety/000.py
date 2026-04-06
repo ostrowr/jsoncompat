@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch0(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchemaBranch0(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "additionalProperties": false,
   "properties": {
@@ -24,11 +24,11 @@ class GeneratedSchemaBranch0(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    kind: typing.Literal["int"] = jsoncompat_dataclasses.jsoncompat_field("kind")
-    value: int = jsoncompat_dataclasses.jsoncompat_field("value")
+    kind: typing.Literal["int"] = dc.jsoncompat_field("kind")
+    value: int = dc.jsoncompat_field("value")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch1(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchemaBranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "additionalProperties": false,
   "properties": {
@@ -45,11 +45,11 @@ class GeneratedSchemaBranch1(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    kind: typing.Literal["str"] = jsoncompat_dataclasses.jsoncompat_field("kind")
-    value: str = jsoncompat_dataclasses.jsoncompat_field("value")
+    kind: typing.Literal["str"] = dc.jsoncompat_field("kind")
+    value: str = dc.jsoncompat_field("value")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "oneOf": [
@@ -87,16 +87,16 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaBranch0 | GeneratedSchemaBranch1) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (GeneratedSchemaBranch0 | GeneratedSchemaBranch1) = dc.jsoncompat_root_field()
 
-GeneratedSchemaBranch0.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("kind", "kind", typing.Literal["int"]),
-    jsoncompat_dataclasses.jsoncompat_field_spec("value", "value", int),
+GeneratedSchemaBranch0.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("kind", "kind", typing.Literal["int"]),
+    dc.jsoncompat_field_spec("value", "value", int),
 )
 
-GeneratedSchemaBranch1.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("kind", "kind", typing.Literal["str"]),
-    jsoncompat_dataclasses.jsoncompat_field_spec("value", "value", str),
+GeneratedSchemaBranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("kind", "kind", typing.Literal["str"]),
+    dc.jsoncompat_field_spec("value", "value", str),
 )
 
 GeneratedSchema.__jsoncompat_root_annotation__ = (GeneratedSchemaBranch0 | GeneratedSchemaBranch1)

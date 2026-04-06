@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaTreeBranch1(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchemaTreeBranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "tree": {
@@ -50,11 +50,11 @@ class GeneratedSchemaTreeBranch1(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    left: GeneratedSchemaTree = jsoncompat_dataclasses.jsoncompat_field("left")
-    right: GeneratedSchemaTree = jsoncompat_dataclasses.jsoncompat_field("right")
+    left: GeneratedSchemaTree = dc.jsoncompat_field("left")
+    right: GeneratedSchemaTree = dc.jsoncompat_field("right")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaTree(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaTree(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "tree": {
@@ -103,10 +103,10 @@ class GeneratedSchemaTree(jsoncompat_dataclasses.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaTreeBranch1 | None) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (GeneratedSchemaTreeBranch1 | None) = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "tree": {
@@ -136,11 +136,11 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   "$ref": "#/$defs/tree",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaTree = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: GeneratedSchemaTree = dc.jsoncompat_root_field()
 
-GeneratedSchemaTreeBranch1.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("left", "left", GeneratedSchemaTree),
-    jsoncompat_dataclasses.jsoncompat_field_spec("right", "right", GeneratedSchemaTree),
+GeneratedSchemaTreeBranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("left", "left", GeneratedSchemaTree),
+    dc.jsoncompat_field_spec("right", "right", GeneratedSchemaTree),
 )
 
 GeneratedSchemaTree.__jsoncompat_root_annotation__ = (GeneratedSchemaTreeBranch1 | None)

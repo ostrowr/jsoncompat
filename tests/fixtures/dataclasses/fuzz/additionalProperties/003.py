@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[(typing.Literal[False] | typing.Literal[True])]):
+class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[(typing.Literal[False] | typing.Literal[True])]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
@@ -20,24 +20,24 @@ class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[(ty
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, (typing.Literal[False] | typing.Literal[True])] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    __jsoncompat_extra__: dict[str, (typing.Literal[False] | typing.Literal[True])] = dc.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: typing.Any = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
     "type": "boolean"
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.jsoncompat_root_field()
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
     extra_annotation=dict[str, (typing.Literal[False] | typing.Literal[True])],
 )
 

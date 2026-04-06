@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBarBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchemaBarBranch2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "bar": {
@@ -27,16 +27,16 @@ class GeneratedSchemaBarBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[
   },
   "type": "object"
 }"""
-    bar: jsoncompat_dataclasses.Omittable[str] = jsoncompat_dataclasses.jsoncompat_field("bar", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    bar: dc.Omittable[str] = dc.jsoncompat_field("bar", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBarItem(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaBarItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: typing.Any = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBar(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaBar(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "bar": {
@@ -53,10 +53,10 @@ class GeneratedSchemaBar(jsoncompat_dataclasses.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[GeneratedSchemaBarItem] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[GeneratedSchemaBarItem] | str | None) = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "bar": {
@@ -77,11 +77,11 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    foo: jsoncompat_dataclasses.Omittable[str] = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    foo: dc.Omittable[str] = dc.jsoncompat_field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
-GeneratedSchemaBarBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("bar", "bar", (str | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchemaBarBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("bar", "bar", (str | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 
@@ -89,8 +89,8 @@ GeneratedSchemaBarItem.__jsoncompat_root_annotation__ = typing.Any
 
 GeneratedSchemaBar.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[GeneratedSchemaBarItem] | str | None)
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("foo", "foo", (str | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("foo", "foo", (str | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

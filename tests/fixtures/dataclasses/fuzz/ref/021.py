@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBar(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaBar(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "bar": {
@@ -16,10 +16,10 @@ class GeneratedSchemaBar(jsoncompat_dataclasses.DataclassRootModel):
   },
   "type": "string"
 }"""
-    root: str = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: str = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$comment": "URIs do not have to have HTTP(s) schemes",
   "$defs": {
@@ -35,13 +35,13 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
     }
   }
 }"""
-    foo: jsoncompat_dataclasses.Omittable[GeneratedSchemaBar] = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    foo: dc.Omittable[GeneratedSchemaBar] = dc.jsoncompat_field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 GeneratedSchemaBar.__jsoncompat_root_annotation__ = str
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("foo", "foo", (GeneratedSchemaBar | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("foo", "foo", (GeneratedSchemaBar | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class UserProfileV2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v2": {
@@ -66,13 +66,13 @@ class UserProfileV2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any])
     "version": 2
   }
 }"""
-    age: int = jsoncompat_dataclasses.jsoncompat_field("age")
-    interests: int = jsoncompat_dataclasses.jsoncompat_field("interests")
-    name: str = jsoncompat_dataclasses.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    age: int = dc.jsoncompat_field("age")
+    interests: int = dc.jsoncompat_field("interests")
+    name: str = dc.jsoncompat_field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class UserProfileWriter(jsoncompat_dataclasses.WriterDataclassModel):
+class UserProfileWriter(dc.WriterDataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v2": {
@@ -128,19 +128,19 @@ class UserProfileWriter(jsoncompat_dataclasses.WriterDataclassModel):
     "version": 2
   }
 }"""
-    version: typing.Literal[2] = jsoncompat_dataclasses.jsoncompat_field("version")
-    data: UserProfileV2 = jsoncompat_dataclasses.jsoncompat_field("data")
+    version: typing.Literal[2] = dc.jsoncompat_field("version")
+    data: UserProfileV2 = dc.jsoncompat_field("data")
 
-UserProfileV2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("age", "age", int),
-    jsoncompat_dataclasses.jsoncompat_field_spec("interests", "interests", int),
-    jsoncompat_dataclasses.jsoncompat_field_spec("name", "name", str),
+UserProfileV2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("age", "age", int),
+    dc.jsoncompat_field_spec("interests", "interests", int),
+    dc.jsoncompat_field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-UserProfileWriter.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("version", "version", typing.Literal[2]),
-    jsoncompat_dataclasses.jsoncompat_field_spec("data", "data", UserProfileV2),
+UserProfileWriter.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("version", "version", typing.Literal[2]),
+    dc.jsoncompat_field_spec("data", "data", UserProfileV2),
 )
 
 JSONCOMPAT_MODEL = UserProfileWriter
