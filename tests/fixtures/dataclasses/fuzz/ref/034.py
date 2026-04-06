@@ -13,7 +13,7 @@ class GeneratedSchemaGeneratedSchemaGeneratedSchema(jsoncompat_dataclasses.Datac
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaGeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"\":{\"type\":\"number\"}}}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"\":{\"$defs\":{\"\":{\"type\":\"number\"}}}}}"
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)

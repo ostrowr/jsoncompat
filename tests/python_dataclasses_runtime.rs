@@ -1,3 +1,4 @@
+use jsoncompat::{StampManifest, stamp_schema};
 use jsoncompat_codegen::generate_dataclass_models;
 use serde_json::json;
 use std::fs;
@@ -194,6 +195,59 @@ for value in invalid_values:
     assert!(
         output.status.success(),
         "generated dataclass invalid payload test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_use_root_defs_for_stamped_payload_ref_collisions() {
+    let stamped = stamp_schema(
+        &StampManifest::empty(),
+        "collision",
+        json!({
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/$defs/v1" }
+            },
+            "required": ["name"],
+            "additionalProperties": false,
+            "$defs": {
+                "v1": { "type": "string" }
+            }
+        }),
+    )
+    .expect("stamp schema with colliding payload $defs");
+    let source = generate_dataclass_models(&stamped.bundle.writer)
+        .expect("generate dataclasses from stamped collision schema");
+    let module_path = write_temp_module("stamped_defs_collision", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("collision_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+payload = module.CollisionV1(name="Ada")
+assert payload.to_json() == {"name": "Ada"}
+
+writer = module.CollisionWriter(version=1, data=payload)
+assert writer.to_json() == {"version": 1, "data": {"name": "Ada"}}
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass stamped collision test");
+    assert!(
+        output.status.success(),
+        "generated dataclass stamped collision test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
