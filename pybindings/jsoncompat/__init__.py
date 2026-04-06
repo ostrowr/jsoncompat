@@ -6,9 +6,19 @@ import importlib.util
 import sys
 import warnings
 from pathlib import Path
-from typing import Callable, Literal, NoReturn, Protocol, cast
+from typing import Any, Callable, Literal, NoReturn, Protocol, cast
 
 RoleLiteral = Literal["serializer", "deserializer", "both"]
+type JsonValue = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | list[JsonValue]
+    | tuple[JsonValue, ...]
+    | dict[str, JsonValue]
+)
 CheckCompatFn = Callable[[str, str, RoleLiteral], bool]
 GenerateValueFn = Callable[[str, int], str]
 GeneratorForFn = Callable[[str], "Generator"]
@@ -21,6 +31,8 @@ class Generator(Protocol):
 
 class Validator(Protocol):
     def is_valid(self, instance_json: str) -> bool: ...
+    def is_valid_json(self, instance_json: str) -> bool: ...
+    def is_valid_value(self, instance: JsonValue) -> bool: ...
 
 
 class NativeModule(Protocol):
@@ -110,7 +122,13 @@ def _load_repo_native() -> NativeModule:
 
 
 def _has_reusable_schema_api(module: object) -> bool:
-    return hasattr(module, "generator_for") and hasattr(module, "validator_for")
+    if not hasattr(module, "generator_for") or not hasattr(module, "validator_for"):
+        return False
+    try:
+        validator = cast(Any, module).validator_for('{"type":"null"}')
+    except Exception:
+        return False
+    return hasattr(validator, "is_valid_json") and hasattr(validator, "is_valid_value")
 
 
 try:
@@ -172,6 +190,7 @@ def validator_for(schema_json: str) -> Validator:
 __all__ = [
     "Role",
     "RoleLiteral",
+    "JsonValue",
     "Generator",
     "Validator",
     "check_compat",

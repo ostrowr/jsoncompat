@@ -41,7 +41,9 @@ print(example)
   - Raises `ValueError` when the schema is invalid, known to be unsatisfiable, or generation exhausts its retry budget.
 - `validator_for(schema_json: str) -> Validator`
   - Parses the schema once and returns a reusable validator.
-  - `Validator.is_valid(instance_json: str) -> bool` validates JSON strings against the parsed schema.
+  - `Validator.is_valid_json(instance_json: str) -> bool` validates JSON strings against the parsed schema.
+  - `Validator.is_valid_value(instance: JsonValue) -> bool` validates Python JSON-compatible values: `None`, `bool`, finite `int`/`float`, `str`, `list`, `tuple`, and `dict[str, ...]`.
+  - `Validator.is_valid(instance_json: str) -> bool` is a compatibility alias for `is_valid_json`.
 - `generate_value(schema_json: str, depth: int = 5) -> str`
   - Deprecated. Use `generator_for(schema_json).generate_value(depth)` instead.
 - `jsoncompat.codegen.dataclasses` runtime helpers for generated dataclass models

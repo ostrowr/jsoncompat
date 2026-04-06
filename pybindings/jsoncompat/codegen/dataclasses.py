@@ -102,8 +102,7 @@ class DataclassModel:
         if schema_json is None:
             return
         value = self.jsoncompat_to_json_unchecked()
-        instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-        if not _jsoncompat_validator_for(type(self)).is_valid(instance_json):
+        if not _jsoncompat_validator_for(type(self)).is_valid_value(value):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
@@ -136,8 +135,7 @@ class DataclassModel:
         schema_json = _jsoncompat_schema_for(cls)
         if schema_json is None:
             raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
-        instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-        if not _jsoncompat_validator_for(cls).is_valid(instance_json):
+        if not _jsoncompat_validator_for(cls).is_valid_value(value):
             raise ValueError(f"value does not satisfy {cls.__name__} schema")
         return cls.jsoncompat_from_validated(value)
 
@@ -179,8 +177,7 @@ class DataclassModel:
         schema_json = _jsoncompat_schema_for(type(self))
         if schema_json is None:
             raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
-        instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-        if not _jsoncompat_validator_for(type(self)).is_valid(instance_json):
+        if not _jsoncompat_validator_for(type(self)).is_valid_value(value):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
@@ -422,7 +419,6 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
 
 
 def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
-    instance_json: str | None = None
     for branch in branches:
         if branch is JsoncompatMissingType and value is JSONCOMPAT_MISSING:
             return JSONCOMPAT_MISSING
@@ -430,9 +426,7 @@ def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
             schema_json = _jsoncompat_schema_for(branch)
             if schema_json is None:
                 continue
-            if instance_json is None:
-                instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-            if not _jsoncompat_validator_for(branch).is_valid(instance_json):
+            if not _jsoncompat_validator_for(branch).is_valid_value(value):
                 continue
             return branch.jsoncompat_from_validated(value)
         try:

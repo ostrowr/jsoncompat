@@ -368,7 +368,8 @@ canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
 frozen, slotted Python dataclasses that import shared construction and
 serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
 carry the original input schema in `__jsoncompat_schema__`, cache a
-`jsoncompat.validator_for(...)` validator for runtime checks, and expose:
+`jsoncompat.validator_for(...)` validator for Python-value runtime checks, and
+expose:
 
 - `from_json(...)` / `from_json_string(...)` constructors for schema-checked
   deserialization;
