@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import init, { check_compat, generate_value } from "jsoncompat";
+import init, * as jsoncompat from "jsoncompat";
 // Import the raw wasm asset so Vite gives us the final URL it will be served at.
 // The `?url` suffix tells Vite to return the URL string instead of inlining / compiling it.
 // Using this explicit URL avoids any ambiguity about where the runtime should fetch the
@@ -7,6 +7,7 @@ import init, { check_compat, generate_value } from "jsoncompat";
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
 import { useState } from "react";
+import { generatorFor } from "../jsoncompatWasm";
 
 const INITAL_OLD_SCHEMA = `{
   "type": "object",
@@ -94,18 +95,18 @@ function CheckerPage() {
 			const roles = ["serializer", "deserializer", "both"] as const;
 			const results: Record<string, boolean> = {} as Record<string, boolean>;
 			for (const r of roles) {
-				results[r] = await check_compat(oldSchema, newSchema, r);
+				results[r] = await jsoncompat.check_compat(oldSchema, newSchema, r);
 			}
 			setCompat(results);
 
 			// Generate illustrative examples for both schemas
 			try {
-				setExampleOld(await generate_value(oldSchema, 5));
+				setExampleOld(generatorFor(jsoncompat, oldSchema).generate_value(5));
 			} catch (_) {
 				setExampleOld(null);
 			}
 			try {
-				setExampleNew(await generate_value(newSchema, 5));
+				setExampleNew(generatorFor(jsoncompat, newSchema).generate_value(5));
 			} catch (_) {
 				setExampleNew(null);
 			}

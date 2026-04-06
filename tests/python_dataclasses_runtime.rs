@@ -200,7 +200,7 @@ for value in invalid_values:
 }
 
 #[test]
-fn python_validation_api_exposes_reusable_validator_and_deprecates_is_valid() {
+fn python_api_exposes_reusable_schema_tools_and_deprecates_one_shot_helpers() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
@@ -216,6 +216,10 @@ validator = jsoncompat.validator_for(schema_json)
 assert validator.is_valid(valid_json)
 assert not validator.is_valid(invalid_json)
 
+generator = jsoncompat.generator_for(schema_json)
+generated = generator.generate_value(3)
+assert validator.is_valid(generated)
+
 try:
     jsoncompat.validator_for('{"type": 1}')
 except ValueError:
@@ -230,6 +234,13 @@ except ValueError:
 else:
     raise AssertionError("invalid instance JSON was accepted")
 
+try:
+    jsoncompat.generator_for('{"type": 1}')
+except ValueError:
+    pass
+else:
+    raise AssertionError("invalid generator schema was accepted")
+
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always", DeprecationWarning)
     assert jsoncompat.is_valid(schema_json, valid_json)
@@ -237,6 +248,14 @@ with warnings.catch_warnings(record=True) as caught:
 assert len(caught) == 1
 assert issubclass(caught[0].category, DeprecationWarning)
 assert "validator_for" in str(caught[0].message)
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always", DeprecationWarning)
+    assert validator.is_valid(jsoncompat.generate_value(schema_json, 3))
+
+assert len(caught) == 1
+assert issubclass(caught[0].category, DeprecationWarning)
+assert "generator_for" in str(caught[0].message)
 "###,
     );
     let output = command.output().expect("run Python validation API test");
