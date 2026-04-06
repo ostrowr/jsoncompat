@@ -14,6 +14,44 @@ must be `https://json-schema.org/draft/2020-12/schema` with an optional trailing
 >
 > This is alpha software. Not all incompatible changes are detected, and there may be false positives. Contributions are welcome!
 
+## Installation and basic usage
+
+Install the CLI with Cargo:
+
+```bash
+cargo install jsoncompat
+```
+
+Check whether a schema change is compatible for a serializer:
+
+```bash
+jsoncompat compat old-schema.json new-schema.json --role serializer
+```
+
+Check whether a schema change is compatible in both serializer and deserializer directions, with fuzzing enabled to look for a concrete counterexample:
+
+```bash
+jsoncompat compat old-schema.json new-schema.json --role both --fuzz 1000 --depth 8
+```
+
+Generate example JSON values accepted by a schema:
+
+```bash
+jsoncompat generate schema.json --count 5 --pretty
+```
+
+Compare two golden schema files in CI:
+
+```bash
+jsoncompat ci old-golden.json new-golden.json --display table
+```
+
+Run the guided CLI smoke test:
+
+```bash
+jsoncompat demo --noninteractive
+```
+
 Imagine you have an API that returns some JSON data, or JSON that you're storing in a database or file. You need to ensure that new code can read old data and that old code can read new data.
 
 It's difficult to version JSON schemas in a traditional sense, because they can break in two directions:
@@ -309,13 +347,13 @@ just check
 Run the end-to-end CLI demo/smoke test:
 
 ```bash
-jsoncompat demo
+cargo run --bin jsoncompat -- demo
 ```
 
 By default the demo pauses before each step. For CI/non-interactive runs, pass:
 
 ```bash
-jsoncompat demo --noninteractive
+cargo run --bin jsoncompat -- demo --noninteractive
 ```
 
 Run the performance benchmark harnesses:
