@@ -64,13 +64,4 @@ class GeneratedSchema(dc.DataclassModel):
 }"""
     servers: list[GeneratedSchemaItem] = dc.field("servers")
 
-GeneratedSchemaItem.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("host", "host", str),
-    dc.field_spec("port", "port", int),
-)
-
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("servers", "servers", list[GeneratedSchemaItem]),
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

@@ -30,9 +30,4 @@ class GeneratedSchema(dc.DataclassModel):
     children: dc.Omittable[list[GeneratedSchema]] = dc.field("children", omittable=True)
     value: int = dc.field("value")
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("children", "children", (list[GeneratedSchema] | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("value", "value", int),
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

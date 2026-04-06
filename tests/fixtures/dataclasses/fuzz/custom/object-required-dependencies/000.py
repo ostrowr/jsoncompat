@@ -38,10 +38,4 @@ class GeneratedSchema(dc.DataclassModel):
     kind: typing.Literal["user"] = dc.field("kind")
     name: dc.Omittable[str] = dc.field("name", omittable=True)
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("email", "email", str),
-    dc.field_spec("kind", "kind", typing.Literal["user"]),
-    dc.field_spec("name", "name", (str | dc.JsoncompatMissingType), omittable=True),
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

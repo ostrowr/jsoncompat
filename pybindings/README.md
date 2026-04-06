@@ -46,6 +46,14 @@ Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and
 - [Repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md)
 - [Developer guide](https://github.com/ostrowr/jsoncompat/blob/main/developing.md)
 
+## Benchmarks
+
+Run the generated dataclass runtime microbenchmark from the repository root:
+
+```bash
+env -u VIRTUAL_ENV uv run --project pybindings python pybindings/bench_dataclasses_runtime.py
+```
+
 ## License
 
 MIT License. See:

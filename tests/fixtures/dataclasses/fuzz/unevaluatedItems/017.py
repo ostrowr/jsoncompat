@@ -71,12 +71,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: GeneratedSchemaBar = dc.root_field()
 
-GeneratedSchemaBarBranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaBar.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[typing.Any] | str | None)
-
-GeneratedSchema.__jsoncompat_root_annotation__ = GeneratedSchemaBar
-
 JSONCOMPAT_MODEL = GeneratedSchema

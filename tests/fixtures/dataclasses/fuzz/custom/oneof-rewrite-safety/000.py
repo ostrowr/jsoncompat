@@ -89,16 +89,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: (GeneratedSchemaBranch0 | GeneratedSchemaBranch1) = dc.root_field()
 
-GeneratedSchemaBranch0.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("kind", "kind", typing.Literal["int"]),
-    dc.field_spec("value", "value", int),
-)
-
-GeneratedSchemaBranch1.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("kind", "kind", typing.Literal["str"]),
-    dc.field_spec("value", "value", str),
-)
-
-GeneratedSchema.__jsoncompat_root_annotation__ = (GeneratedSchemaBranch0 | GeneratedSchemaBranch1)
-
 JSONCOMPAT_MODEL = GeneratedSchema

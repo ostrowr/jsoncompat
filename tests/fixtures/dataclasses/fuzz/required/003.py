@@ -87,30 +87,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
 
-GeneratedSchemaBranch2FooBar.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2FooBar2.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2FooBar3.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2FooBar4.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2FooBar5.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2FooBar6.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("foo_bar", "foo\tbar", GeneratedSchemaBranch2FooBar),
-    dc.field_spec("foo_bar2", "foo\nbar", GeneratedSchemaBranch2FooBar2),
-    dc.field_spec("foo_bar3", "foo\fbar", GeneratedSchemaBranch2FooBar3),
-    dc.field_spec("foo_bar4", "foo\rbar", GeneratedSchemaBranch2FooBar4),
-    dc.field_spec("foo_bar5", "foo\"bar", GeneratedSchemaBranch2FooBar5),
-    dc.field_spec("foo_bar6", "foo\\bar", GeneratedSchemaBranch2FooBar6),
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)
-
 JSONCOMPAT_MODEL = GeneratedSchema

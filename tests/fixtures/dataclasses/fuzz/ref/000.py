@@ -19,8 +19,4 @@ class GeneratedSchema(dc.DataclassModel):
 }"""
     foo: dc.Omittable[GeneratedSchema] = dc.field("foo", omittable=True)
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("foo", "foo", (GeneratedSchema | dc.JsoncompatMissingType), omittable=True),
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

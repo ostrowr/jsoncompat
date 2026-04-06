@@ -110,22 +110,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
 
-GeneratedSchemaBranch2Branch2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("length", "length", (str | dc.JsoncompatMissingType), omittable=True),
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaBranch2Item.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("__proto__", "__proto__", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("constructor", "constructor", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("toString", "toString", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item] | str | None) | dc.JsoncompatMissingType), omittable=True),
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)
-
 JSONCOMPAT_MODEL = GeneratedSchema

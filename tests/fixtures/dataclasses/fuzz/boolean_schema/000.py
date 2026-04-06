@@ -11,6 +11,4 @@ class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
-GeneratedSchema.__jsoncompat_root_annotation__ = typing.Any
-
 JSONCOMPAT_MODEL = GeneratedSchema

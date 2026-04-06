@@ -57,17 +57,4 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     prop1: dc.Omittable[str] = dc.field("prop1", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchemaABranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaAItem.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaA.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | float | list[GeneratedSchemaAItem] | str | None)
-
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("prop1", "prop1", (str | dc.JsoncompatMissingType), omittable=True),
-    extra_annotation=dict[str, typing.Any],
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

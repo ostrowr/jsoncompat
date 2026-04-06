@@ -131,16 +131,4 @@ class UserProfileWriter(dc.WriterDataclassModel):
     version: typing.Literal[2] = dc.field("version")
     data: UserProfileV2 = dc.field("data")
 
-UserProfileV2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("age", "age", int),
-    dc.field_spec("interests", "interests", int),
-    dc.field_spec("name", "name", str),
-    extra_annotation=dict[str, typing.Any],
-)
-
-UserProfileWriter.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("version", "version", typing.Literal[2]),
-    dc.field_spec("data", "data", UserProfileV2),
-)
-
 JSONCOMPAT_MODEL = UserProfileWriter

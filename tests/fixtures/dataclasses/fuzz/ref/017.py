@@ -60,8 +60,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: typing.Any = dc.root_field()
 
-GeneratedSchemaX.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchema.__jsoncompat_root_annotation__ = typing.Any
-
 JSONCOMPAT_MODEL = GeneratedSchema

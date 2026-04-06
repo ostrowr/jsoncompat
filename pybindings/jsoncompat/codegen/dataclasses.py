@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import types
 from typing import (
@@ -12,6 +13,7 @@ from typing import (
     cast,
     get_args,
     get_origin,
+    get_type_hints,
 )
 
 from jsoncompat import is_valid
@@ -23,27 +25,22 @@ __all__ = [
     "DataclassRootModel",
     "JSONCOMPAT_EXTRA_FIELD",
     "JSONCOMPAT_MISSING",
-    "JsoncompatFieldSpec",
     "JsoncompatMissingType",
-    "JsoncompatObjectSpec",
     "ReaderDataclassModel",
     "ReaderDataclassRootModel",
     "Omittable",
     "WriterDataclassModel",
     "extra_field",
-    "field_spec",
     "field",
-    "object_spec",
     "root_field",
 ]
 
 
 JSONCOMPAT_EXTRA_FIELD = "__jsoncompat_extra__"
-JSONCOMPAT_OBJECT_SPEC_FIELD = "__jsoncompat_object_spec__"
-JSONCOMPAT_ROOT_ANNOTATION_FIELD = "__jsoncompat_root_annotation__"
 JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
+_JSONCOMPAT_MISSING_TYPE_HINT = object()
 
 
 class JsoncompatMissingType:
@@ -59,7 +56,7 @@ type Omittable[T] = T | JsoncompatMissingType
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class JsoncompatFieldSpec:
+class _JsoncompatFieldSpec:
     py_name: str
     json_name: str
     annotation: Any
@@ -67,54 +64,10 @@ class JsoncompatFieldSpec:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class JsoncompatObjectSpec:
-    fields: tuple[JsoncompatFieldSpec, ...]
+class _JsoncompatObjectSpec:
+    fields: tuple[_JsoncompatFieldSpec, ...]
     known_json_names: frozenset[str]
     extra_annotation: Any | None
-
-
-def field_spec(
-    py_name: object,
-    json_name: object,
-    annotation: Any,
-    *,
-    omittable: bool = False,
-) -> JsoncompatFieldSpec:
-    if not isinstance(py_name, str):
-        raise TypeError("field_spec py_name must be a string")
-    if not isinstance(json_name, str):
-        raise TypeError("field_spec json_name must be a string")
-    return JsoncompatFieldSpec(
-        py_name=py_name,
-        json_name=json_name,
-        annotation=annotation,
-        omittable=omittable,
-    )
-
-
-def object_spec(
-    *fields: object,
-    extra_annotation: Any | None = None,
-) -> JsoncompatObjectSpec:
-    py_names: set[str] = set()
-    json_names: set[str] = set()
-    field_specs: list[JsoncompatFieldSpec] = []
-    for field in fields:
-        if not isinstance(field, JsoncompatFieldSpec):
-            raise TypeError("object_spec fields must be JsoncompatFieldSpec")
-        if field.py_name in py_names:
-            raise TypeError(f"duplicate Python field name: {field.py_name}")
-        if field.json_name in json_names:
-            raise TypeError(f"duplicate JSON field name: {field.json_name}")
-        py_names.add(field.py_name)
-        json_names.add(field.json_name)
-        field_specs.append(field)
-
-    return JsoncompatObjectSpec(
-        fields=tuple(field_specs),
-        known_json_names=frozenset(json_names),
-        extra_annotation=extra_annotation,
-    )
 
 
 def field(
@@ -142,7 +95,6 @@ def root_field() -> Any:
 class DataclassModel:
     __slots__ = ()
 
-    __jsoncompat_object_spec__: ClassVar[JsoncompatObjectSpec]
     __jsoncompat_schema__: ClassVar[str]
 
     def __post_init__(self) -> None:
@@ -262,7 +214,6 @@ class DataclassAdditionalModel[JSONCOMPAT_ADDITIONAL_T](DataclassModel):
 class DataclassRootModel(DataclassModel):
     __slots__ = ()
 
-    __jsoncompat_root_annotation__: ClassVar[Any]
     root: Any
 
     @classmethod
@@ -329,52 +280,72 @@ def _jsoncompat_schema_for(model_type: type[DataclassModel]) -> str | None:
     return schema
 
 
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_type_hints_for(model_type: type[Any]) -> dict[str, Any]:
+    return get_type_hints(model_type)
+
+
+@functools.lru_cache(maxsize=None)
 def _jsoncompat_object_spec_for(
     model_type: type[DataclassModel],
-) -> JsoncompatObjectSpec:
-    object_spec = getattr(model_type, JSONCOMPAT_OBJECT_SPEC_FIELD, None)
-    if object_spec is not None:
-        if not isinstance(object_spec, JsoncompatObjectSpec):
-            raise TypeError(
-                f"{model_type.__name__}.{JSONCOMPAT_OBJECT_SPEC_FIELD} "
-                "must be a JsoncompatObjectSpec"
-            )
-        return object_spec
-
-    fields: list[JsoncompatFieldSpec] = []
+) -> _JsoncompatObjectSpec:
+    fields: list[_JsoncompatFieldSpec] = []
     known_json_names: set[str] = set()
     extra_annotation: Any | None = None
+    type_hints = _jsoncompat_type_hints_for(model_type)
 
     for field in _jsoncompat_dataclass_fields(model_type):
         if field.name == JSONCOMPAT_EXTRA_FIELD:
-            extra_annotation = field.type
+            extra_annotation = _jsoncompat_type_hint_for(model_type, type_hints, field.name)
             continue
         json_name = field.metadata.get(JSONCOMPAT_JSON_NAME_METADATA, field.name)
+        omittable = field.metadata.get(JSONCOMPAT_MISSING_METADATA, False)
+        annotation = _jsoncompat_type_hint_for(model_type, type_hints, field.name)
+        if omittable:
+            annotation = _jsoncompat_runtime_annotation(annotation)
         fields.append(
-            JsoncompatFieldSpec(
+            _JsoncompatFieldSpec(
                 py_name=field.name,
                 json_name=json_name,
-                annotation=field.type,
-                omittable=field.metadata.get(JSONCOMPAT_MISSING_METADATA, False),
+                annotation=annotation,
+                omittable=omittable,
             )
         )
         known_json_names.add(json_name)
 
-    return JsoncompatObjectSpec(
+    return _JsoncompatObjectSpec(
         fields=tuple(fields),
         known_json_names=frozenset(known_json_names),
         extra_annotation=extra_annotation,
     )
 
 
+def _jsoncompat_type_hint_for(
+    model_type: type[Any],
+    type_hints: dict[str, Any],
+    field_name: str,
+) -> Any:
+    annotation = type_hints.get(field_name, _JSONCOMPAT_MISSING_TYPE_HINT)
+    if annotation is _JSONCOMPAT_MISSING_TYPE_HINT:
+        raise TypeError(f"{model_type.__name__}.{field_name} is missing a type annotation")
+    return annotation
+
+
+def _jsoncompat_runtime_annotation(annotation: Any) -> Any:
+    if get_origin(annotation) is Omittable:
+        args = get_args(annotation)
+        if len(args) != 1:
+            raise TypeError("Omittable annotations must have exactly one argument")
+        return args[0] | JsoncompatMissingType
+    return annotation
+
+
+@functools.lru_cache(maxsize=None)
 def _jsoncompat_root_annotation_for(model_type: type[DataclassRootModel]) -> Any:
-    root_annotation = getattr(model_type, JSONCOMPAT_ROOT_ANNOTATION_FIELD, None)
-    if root_annotation is not None:
-        return root_annotation
-    for field in _jsoncompat_dataclass_fields(model_type):
-        if field.name == "root":
-            return field.type
-    raise TypeError(f"{model_type.__name__} is missing root field")
+    type_hints = _jsoncompat_type_hints_for(model_type)
+    return _jsoncompat_runtime_annotation(
+        _jsoncompat_type_hint_for(model_type, type_hints, "root")
+    )
 
 
 def _jsoncompat_construct_extra(annotation: Any, value: dict[str, Any]) -> dict[str, Any]:

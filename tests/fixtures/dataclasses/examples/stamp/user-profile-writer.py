@@ -131,16 +131,4 @@ class ExamplesStampUserProfileWriter(dc.WriterDataclassModel):
     version: typing.Literal[2] = dc.field("version")
     data: ExamplesStampUserProfileV2 = dc.field("data")
 
-ExamplesStampUserProfileV2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("age", "age", int),
-    dc.field_spec("interests", "interests", int),
-    dc.field_spec("name", "name", str),
-    extra_annotation=dict[str, typing.Any],
-)
-
-ExamplesStampUserProfileWriter.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("version", "version", typing.Literal[2]),
-    dc.field_spec("data", "data", ExamplesStampUserProfileV2),
-)
-
 JSONCOMPAT_MODEL = ExamplesStampUserProfileWriter

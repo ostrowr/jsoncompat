@@ -77,17 +77,4 @@ class GeneratedSchema(dc.DataclassModel):
     nested: dc.Omittable[GeneratedSchemaNested] = dc.field("nested", omittable=True)
     tags: dc.Omittable[list[str]] = dc.field("tags", omittable=True)
 
-GeneratedSchemaNested.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("count", "count", (int | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("flag", "flag", (typing.Literal[False] | typing.Literal[True])),
-)
-
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("description", "description", (str | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("id", "id", str),
-    dc.field_spec("name", "name", str),
-    dc.field_spec("nested", "nested", (GeneratedSchemaNested | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("tags", "tags", (list[str] | dc.JsoncompatMissingType), omittable=True),
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

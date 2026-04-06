@@ -182,28 +182,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: typing.Any = dc.root_field()
 
-GeneratedSchemaOneBranch2A.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaOneBranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("a", "a", (GeneratedSchemaOneBranch2A | dc.JsoncompatMissingType), omittable=True),
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaOneItem.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaOne.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | float | list[GeneratedSchemaOneItem] | str | None)
-
-GeneratedSchemaTwoBranch2X.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaTwoBranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("x", "x", GeneratedSchemaTwoBranch2X),
-    extra_annotation=dict[str, typing.Any],
-)
-
-GeneratedSchemaTwoItem.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaTwo.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | float | list[GeneratedSchemaTwoItem] | str | None)
-
-GeneratedSchema.__jsoncompat_root_annotation__ = typing.Any
-
 JSONCOMPAT_MODEL = GeneratedSchema

@@ -54,17 +54,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
 
-GeneratedSchemaBranch2Bar.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2Foo.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("bar", "bar", (GeneratedSchemaBranch2Bar | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("foo", "foo", (GeneratedSchemaBranch2Foo | dc.JsoncompatMissingType), omittable=True),
-)
-
-GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
-
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None)
-
 JSONCOMPAT_MODEL = GeneratedSchema
