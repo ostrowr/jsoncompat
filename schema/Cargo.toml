@@ -1,6 +1,6 @@
 [package]
 name = "json_schema_ast"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2024"
 description = "Strict JSON Schema Draft 2020-12 frontend and resolved IR"
 repository = "https://github.com/ostrowr/jsoncompat"
