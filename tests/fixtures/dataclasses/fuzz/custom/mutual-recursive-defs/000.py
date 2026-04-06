@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaABranch1(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchemaABranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -60,10 +60,10 @@ class GeneratedSchemaABranch1(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    next: GeneratedSchemaB = jsoncompat_dataclasses.jsoncompat_field("next")
+    next: GeneratedSchemaB = dc.jsoncompat_field("next")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaA(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaA(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -123,10 +123,10 @@ class GeneratedSchemaA(jsoncompat_dataclasses.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaABranch1 | None) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (GeneratedSchemaABranch1 | None) = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBBranch1(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchemaBBranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -179,10 +179,10 @@ class GeneratedSchemaBBranch1(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    next: GeneratedSchemaA = jsoncompat_dataclasses.jsoncompat_field("next")
+    next: GeneratedSchemaA = dc.jsoncompat_field("next")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaB(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaB(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -242,10 +242,10 @@ class GeneratedSchemaB(jsoncompat_dataclasses.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaBBranch1 | None) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (GeneratedSchemaBBranch1 | None) = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -290,16 +290,16 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   "$ref": "#/$defs/a",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaA = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: GeneratedSchemaA = dc.jsoncompat_root_field()
 
-GeneratedSchemaABranch1.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("next", "next", GeneratedSchemaB),
+GeneratedSchemaABranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("next", "next", GeneratedSchemaB),
 )
 
 GeneratedSchemaA.__jsoncompat_root_annotation__ = (GeneratedSchemaABranch1 | None)
 
-GeneratedSchemaBBranch1.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("next", "next", GeneratedSchemaA),
+GeneratedSchemaBBranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("next", "next", GeneratedSchemaA),
 )
 
 GeneratedSchemaB.__jsoncompat_root_annotation__ = (GeneratedSchemaBBranch1 | None)

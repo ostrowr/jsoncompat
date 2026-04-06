@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "properties": {
     "id": {
@@ -16,11 +16,11 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
   },
   "type": "object"
 }"""
-    id: jsoncompat_dataclasses.Omittable[int] = jsoncompat_dataclasses.jsoncompat_field("id", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    id: dc.Omittable[int] = dc.jsoncompat_field("id", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("id", "id", (int | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("id", "id", (int | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

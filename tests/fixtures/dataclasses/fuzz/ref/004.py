@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaA(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaA(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -22,10 +22,10 @@ class GeneratedSchemaA(jsoncompat_dataclasses.DataclassRootModel):
   },
   "type": "integer"
 }"""
-    root: int = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: int = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaB(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaB(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -40,10 +40,10 @@ class GeneratedSchemaB(jsoncompat_dataclasses.DataclassRootModel):
   },
   "$ref": "#/$defs/a"
 }"""
-    root: GeneratedSchemaA = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: GeneratedSchemaA = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaC(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaC(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -58,10 +58,10 @@ class GeneratedSchemaC(jsoncompat_dataclasses.DataclassRootModel):
   },
   "$ref": "#/$defs/b"
 }"""
-    root: GeneratedSchemaB = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: GeneratedSchemaB = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a": {
@@ -77,7 +77,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   "$ref": "#/$defs/c",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaC = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: GeneratedSchemaC = dc.jsoncompat_root_field()
 
 GeneratedSchemaA.__jsoncompat_root_annotation__ = int
 

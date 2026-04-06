@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "item": {
@@ -40,15 +40,15 @@ class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: list[typing.Any] = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaSubItemFoo(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaSubItemFoo(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: typing.Any = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaSubItem(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchemaSubItem(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "item": {
@@ -75,11 +75,11 @@ class GeneratedSchemaSubItem(jsoncompat_dataclasses.DataclassAdditionalModel[typ
   ],
   "type": "object"
 }"""
-    foo: GeneratedSchemaSubItemFoo = jsoncompat_dataclasses.jsoncompat_field("foo")
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    foo: GeneratedSchemaSubItemFoo = dc.jsoncompat_field("foo")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "item": {
@@ -116,14 +116,14 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: list[typing.Any] = dc.jsoncompat_root_field()
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = list[typing.Any]
 
 GeneratedSchemaSubItemFoo.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaSubItem.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("foo", "foo", GeneratedSchemaSubItemFoo),
+GeneratedSchemaSubItem.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("foo", "foo", GeneratedSchemaSubItemFoo),
     extra_annotation=dict[str, typing.Any],
 )
 

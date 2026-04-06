@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ExamplesStampUserProfileV1(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v1": {
@@ -86,12 +86,12 @@ class ExamplesStampUserProfileV1(jsoncompat_dataclasses.DataclassAdditionalModel
     "version": 1
   }
 }"""
-    age: int = jsoncompat_dataclasses.jsoncompat_field("age")
-    name: str = jsoncompat_dataclasses.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    age: int = dc.jsoncompat_field("age")
+    name: str = dc.jsoncompat_field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ExamplesStampUserProfileV2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v1": {
@@ -174,13 +174,13 @@ class ExamplesStampUserProfileV2(jsoncompat_dataclasses.DataclassAdditionalModel
     "version": 2
   }
 }"""
-    age: int = jsoncompat_dataclasses.jsoncompat_field("age")
-    interests: int = jsoncompat_dataclasses.jsoncompat_field("interests")
-    name: str = jsoncompat_dataclasses.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    age: int = dc.jsoncompat_field("age")
+    interests: int = dc.jsoncompat_field("interests")
+    name: str = dc.jsoncompat_field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ExamplesStampUserProfileV2Reader(jsoncompat_dataclasses.ReaderDataclassModel):
+class ExamplesStampUserProfileV2Reader(dc.ReaderDataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v1": {
@@ -258,11 +258,11 @@ class ExamplesStampUserProfileV2Reader(jsoncompat_dataclasses.ReaderDataclassMod
     "version": 2
   }
 }"""
-    version: typing.Literal[2] = jsoncompat_dataclasses.jsoncompat_field("version")
-    data: ExamplesStampUserProfileV2 = jsoncompat_dataclasses.jsoncompat_field("data")
+    version: typing.Literal[2] = dc.jsoncompat_field("version")
+    data: ExamplesStampUserProfileV2 = dc.jsoncompat_field("data")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ExamplesStampUserProfileV1Reader(jsoncompat_dataclasses.ReaderDataclassModel):
+class ExamplesStampUserProfileV1Reader(dc.ReaderDataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v1": {
@@ -340,12 +340,12 @@ class ExamplesStampUserProfileV1Reader(jsoncompat_dataclasses.ReaderDataclassMod
     "version": 1
   }
 }"""
-    version: typing.Literal[1] = jsoncompat_dataclasses.jsoncompat_field("version")
-    data: ExamplesStampUserProfileV1 = jsoncompat_dataclasses.jsoncompat_field("data")
+    version: typing.Literal[1] = dc.jsoncompat_field("version")
+    data: ExamplesStampUserProfileV1 = dc.jsoncompat_field("data")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ExamplesStampUserProfileReader(jsoncompat_dataclasses.ReaderDataclassRootModel):
+class ExamplesStampUserProfileReader(dc.ReaderDataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "v1": {
@@ -457,29 +457,29 @@ class ExamplesStampUserProfileReader(jsoncompat_dataclasses.ReaderDataclassRootM
     "stable_id": "examples/stamp/user-profile"
   }
 }"""
-    root: (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader) = dc.jsoncompat_root_field()
 
-ExamplesStampUserProfileV1.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("age", "age", int),
-    jsoncompat_dataclasses.jsoncompat_field_spec("name", "name", str),
+ExamplesStampUserProfileV1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("age", "age", int),
+    dc.jsoncompat_field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-ExamplesStampUserProfileV2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("age", "age", int),
-    jsoncompat_dataclasses.jsoncompat_field_spec("interests", "interests", int),
-    jsoncompat_dataclasses.jsoncompat_field_spec("name", "name", str),
+ExamplesStampUserProfileV2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("age", "age", int),
+    dc.jsoncompat_field_spec("interests", "interests", int),
+    dc.jsoncompat_field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-ExamplesStampUserProfileV2Reader.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("version", "version", typing.Literal[2]),
-    jsoncompat_dataclasses.jsoncompat_field_spec("data", "data", ExamplesStampUserProfileV2),
+ExamplesStampUserProfileV2Reader.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("version", "version", typing.Literal[2]),
+    dc.jsoncompat_field_spec("data", "data", ExamplesStampUserProfileV2),
 )
 
-ExamplesStampUserProfileV1Reader.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("version", "version", typing.Literal[1]),
-    jsoncompat_dataclasses.jsoncompat_field_spec("data", "data", ExamplesStampUserProfileV1),
+ExamplesStampUserProfileV1Reader.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("version", "version", typing.Literal[1]),
+    dc.jsoncompat_field_spec("data", "data", ExamplesStampUserProfileV1),
 )
 
 

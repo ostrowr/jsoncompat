@@ -14,7 +14,7 @@ const WRITER_MODEL_CLASS: &str = "WriterDataclassModel";
 const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
 const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
 const OMITTABLE_TYPE_NAME: &str = "Omittable";
-const DATACLASSES_RUNTIME_MODULE: &str = "jsoncompat_dataclasses";
+const DATACLASSES_RUNTIME_MODULE: &str = "dc";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataclassError {
@@ -77,6 +77,7 @@ struct DataclassModuleBuilder {
 impl DataclassModuleBuilder {
     fn new(named_refs: BTreeMap<String, String>, validation_root: Value) -> Self {
         let class_names = [
+            DATACLASSES_RUNTIME_MODULE,
             DATACLASS_ADDITIONAL_MODEL_CLASS,
             DATACLASS_MODEL_CLASS,
             DATACLASS_ROOT_MODEL_CLASS,
@@ -449,7 +450,7 @@ fn render_dataclass_module(
     output.push_str("from __future__ import annotations\n\n");
     output.push_str("from dataclasses import dataclass\n");
     output.push_str("import typing\n\n");
-    output.push_str("from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses\n\n\n");
+    output.push_str("from jsoncompat.codegen import dataclasses as dc\n\n\n");
 
     for class_spec in &builder.classes {
         render_class_spec(&mut output, class_spec);
@@ -1201,6 +1202,7 @@ fn single_type_annotation(type_name: &str, pointer: &str) -> Result<String, Data
 fn collect_named_refs(schema: &Value) -> Result<BTreeMap<String, String>, DataclassError> {
     let mut refs = BTreeMap::new();
     let mut used_names = BTreeSet::from([
+        DATACLASSES_RUNTIME_MODULE.to_owned(),
         DATACLASS_MODEL_CLASS.to_owned(),
         DATACLASS_ROOT_MODEL_CLASS.to_owned(),
         EXTRA_FIELD_NAME.to_owned(),
@@ -1860,8 +1862,8 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("class UserProfile(jsoncompat_dataclasses.DataclassModel):"));
-        assert!(source.contains("name: str = jsoncompat_dataclasses.jsoncompat_field(\"name\")"));
+        assert!(source.contains("class UserProfile(dc.DataclassModel):"));
+        assert!(source.contains("name: str = dc.jsoncompat_field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
     }
 
@@ -1903,11 +1905,8 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("class UserProfileV1(jsoncompat_dataclasses.DataclassModel):"));
-        assert!(
-            source
-                .contains("class UserProfileWriter(jsoncompat_dataclasses.WriterDataclassModel):")
-        );
+        assert!(source.contains("class UserProfileV1(dc.DataclassModel):"));
+        assert!(source.contains("class UserProfileWriter(dc.WriterDataclassModel):"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfileWriter"));
     }
 
@@ -1955,10 +1954,10 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains(
-            "nickname: jsoncompat_dataclasses.Omittable[str | None] = jsoncompat_dataclasses.jsoncompat_field(\"nickname\", omittable=True)"
+            "nickname: dc.Omittable[str | None] = dc.jsoncompat_field(\"nickname\", omittable=True)"
         ));
         assert!(source.contains(
-            "jsoncompat_dataclasses.jsoncompat_field_spec(\"nickname\", \"nickname\", ((str | None) | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True)"
+            "dc.jsoncompat_field_spec(\"nickname\", \"nickname\", ((str | None) | dc.JsoncompatMissingType), omittable=True)"
         ));
     }
 }

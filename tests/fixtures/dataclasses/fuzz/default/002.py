@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
@@ -19,11 +19,11 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
   },
   "type": "object"
 }"""
-    alpha: jsoncompat_dataclasses.Omittable[float] = jsoncompat_dataclasses.jsoncompat_field("alpha", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    alpha: dc.Omittable[float] = dc.jsoncompat_field("alpha", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("alpha", "alpha", (float | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("alpha", "alpha", (float | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

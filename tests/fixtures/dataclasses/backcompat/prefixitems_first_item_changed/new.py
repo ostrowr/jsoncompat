@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "minItems": 1,
   "prefixItems": [
@@ -17,7 +17,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: list[typing.Any] = dc.jsoncompat_root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = list[typing.Any]
 

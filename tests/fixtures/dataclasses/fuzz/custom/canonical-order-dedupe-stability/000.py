@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ColorEnum(jsoncompat_dataclasses.DataclassRootModel):
+class ColorEnum(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "enum": [
@@ -18,7 +18,7 @@ class ColorEnum(jsoncompat_dataclasses.DataclassRootModel):
   "title": "color enum",
   "type": "string"
 }"""
-    root: (typing.Literal["blue"] | typing.Literal["red"]) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (typing.Literal["blue"] | typing.Literal["red"]) = dc.jsoncompat_root_field()
 
 ColorEnum.__jsoncompat_root_annotation__ = (typing.Literal["blue"] | typing.Literal["red"])
 

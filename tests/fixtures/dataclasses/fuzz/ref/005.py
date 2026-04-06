@@ -3,16 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaReffedItem(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaReffedItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: typing.Any = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaReffed(jsoncompat_dataclasses.DataclassRootModel):
+class GeneratedSchemaReffed(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "reffed": {
@@ -21,10 +21,10 @@ class GeneratedSchemaReffed(jsoncompat_dataclasses.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[GeneratedSchemaReffedItem] = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: list[GeneratedSchemaReffedItem] = dc.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "reffed": {
@@ -39,15 +39,15 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
     }
   }
 }"""
-    foo: jsoncompat_dataclasses.Omittable[GeneratedSchemaReffed] = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
+    foo: dc.Omittable[GeneratedSchemaReffed] = dc.jsoncompat_field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
 
 GeneratedSchemaReffedItem.__jsoncompat_root_annotation__ = typing.Any
 
 GeneratedSchemaReffed.__jsoncompat_root_annotation__ = list[GeneratedSchemaReffedItem]
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("foo", "foo", (GeneratedSchemaReffed | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("foo", "foo", (GeneratedSchemaReffed | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

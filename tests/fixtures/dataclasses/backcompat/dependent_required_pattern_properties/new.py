@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "additionalProperties": false,
   "patternProperties": {
@@ -17,7 +17,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
 }"""
     pass
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
 )
 
 JSONCOMPAT_MODEL = GeneratedSchema

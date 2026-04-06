@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import typing
 
-from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
+from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaNested(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchemaNested(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "additionalProperties": false,
   "properties": {
@@ -24,11 +24,11 @@ class GeneratedSchemaNested(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    count: jsoncompat_dataclasses.Omittable[int] = jsoncompat_dataclasses.jsoncompat_field("count", omittable=True)
-    flag: (typing.Literal[False] | typing.Literal[True]) = jsoncompat_dataclasses.jsoncompat_field("flag")
+    count: dc.Omittable[int] = dc.jsoncompat_field("count", omittable=True)
+    flag: (typing.Literal[False] | typing.Literal[True]) = dc.jsoncompat_field("flag")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
+class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -68,21 +68,21 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    id: str = jsoncompat_dataclasses.jsoncompat_field("id")
-    name: str = jsoncompat_dataclasses.jsoncompat_field("name")
-    nested: jsoncompat_dataclasses.Omittable[GeneratedSchemaNested] = jsoncompat_dataclasses.jsoncompat_field("nested", omittable=True)
-    tags: jsoncompat_dataclasses.Omittable[list[str]] = jsoncompat_dataclasses.jsoncompat_field("tags", omittable=True)
+    id: str = dc.jsoncompat_field("id")
+    name: str = dc.jsoncompat_field("name")
+    nested: dc.Omittable[GeneratedSchemaNested] = dc.jsoncompat_field("nested", omittable=True)
+    tags: dc.Omittable[list[str]] = dc.jsoncompat_field("tags", omittable=True)
 
-GeneratedSchemaNested.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("count", "count", (int | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
-    jsoncompat_dataclasses.jsoncompat_field_spec("flag", "flag", (typing.Literal[False] | typing.Literal[True])),
+GeneratedSchemaNested.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("count", "count", (int | dc.JsoncompatMissingType), omittable=True),
+    dc.jsoncompat_field_spec("flag", "flag", (typing.Literal[False] | typing.Literal[True])),
 )
 
-GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
-    jsoncompat_dataclasses.jsoncompat_field_spec("id", "id", str),
-    jsoncompat_dataclasses.jsoncompat_field_spec("name", "name", str),
-    jsoncompat_dataclasses.jsoncompat_field_spec("nested", "nested", (GeneratedSchemaNested | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
-    jsoncompat_dataclasses.jsoncompat_field_spec("tags", "tags", (list[str] | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+    dc.jsoncompat_field_spec("id", "id", str),
+    dc.jsoncompat_field_spec("name", "name", str),
+    dc.jsoncompat_field_spec("nested", "nested", (GeneratedSchemaNested | dc.JsoncompatMissingType), omittable=True),
+    dc.jsoncompat_field_spec("tags", "tags", (list[str] | dc.JsoncompatMissingType), omittable=True),
 )
 
 JSONCOMPAT_MODEL = GeneratedSchema
