@@ -76,7 +76,7 @@ function RustTab() {
       <p>
         Add the crate to your <code className="font-mono">Cargo.toml</code>
       </p>
-      <CodeBlock>[dependencies] jsoncompat = "0.3.0"</CodeBlock>
+      <CodeBlock>[dependencies] jsoncompat = "0.3.1"</CodeBlock>
       <CodeBlock>{`use jsoncompat::{Role, SchemaDocument, check_compat};
 use serde_json::json;
 
