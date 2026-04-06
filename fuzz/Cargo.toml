@@ -1,16 +1,22 @@
 [package]
 name = "json_schema_fuzz"
-version = "0.2.6"
+version = "0.3.1"
 edition = "2024"
-description = "JSON Schema Fuzzer"
+description = "JSON Schema value generator"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
+readme = "README.md"
 
 [dependencies]
-rand = "0.8"
-serde_json = "1.0.135"
-json_schema_ast = { path = "../schema", version = "0.2.6" }
-fancy-regex = "0.12"
+rand = "0.10.0"
+serde_json = "1.0.149"
+json_schema_ast = { path = "../schema", version = "0.3.1" }
+fancy-regex = "0.17"
+regex-syntax = "0.8.10"
+fake = { version = "5.1.0", features = ["chrono", "uuid"] }
+chrono = "0.4.44"
+uuid = { version = "1.23.0", features = ["rng-rand"] }
+thiserror = "2.0.18"
 
 [dev-dependencies]
-url = "2.5.4"
+url = "2.5.8"

@@ -56,10 +56,6 @@ function CliTab() {
         <CodeBlock>cargo install jsoncompat</CodeBlock>
       </section>
       <section className="space-y-4">
-        <p>Homebrew</p>
-        <CodeBlock>brew install jsoncompat</CodeBlock>
-      </section>
-      <section className="space-y-4">
         <p>
           or install directly from the{" "}
           <a
@@ -80,13 +76,14 @@ function RustTab() {
       <p>
         Add the crate to your <code className="font-mono">Cargo.toml</code>
       </p>
-      <CodeBlock>[dependencies] jsoncompat = "*"</CodeBlock>
-      <CodeBlock>{`use jsoncompat::check_compat;
+      <CodeBlock>[dependencies] jsoncompat = "0.3.1"</CodeBlock>
+      <CodeBlock>{`use jsoncompat::{Role, SchemaDocument, check_compat};
+use serde_json::json;
 
-let old = r#"{"type":"string"}"#;
-let new_ = r#"{"type":"number"}"#;
+let old = SchemaDocument::from_json(&json!({"type":"string"})).unwrap();
+let new_ = SchemaDocument::from_json(&json!({"type":"number"})).unwrap();
 
-assert!(check_compat(old, new_, "both"));`}</CodeBlock>
+assert!(!check_compat(&old, &new_, Role::Both).unwrap());`}</CodeBlock>
     </section>
   );
 }

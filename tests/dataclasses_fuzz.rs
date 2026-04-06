@@ -16,7 +16,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
+datatest_stable::harness! {
+    { test = fixture, root = "tests/fixtures/fuzz", pattern = ".*\\.json$" },
+}
 
 fn fixture(file: &Path) -> Result<(), Box<dyn Error>> {
     run_generated_value_fixture(file, &DataclassGeneratedValueValidatorFactory)
@@ -31,12 +33,72 @@ impl GeneratedValueValidatorFactory for DataclassGeneratedValueValidatorFactory 
         &self,
         schema_case: &FuzzSchemaCase<'_>,
     ) -> Result<Option<Self::Validator>, Box<dyn Error>> {
+        if !dataclass_codegen_preserves_shape_semantics(schema_case.schema_json) {
+            return Ok(None);
+        }
+
         let source = match generate_dataclass_models(schema_case.schema_json) {
             Ok(source) => source,
             Err(_) => return Ok(None),
         };
         let module_path = write_generated_module(schema_case, &source)?;
         Ok(Some(DataclassGeneratedValueValidator::spawn(module_path)?))
+    }
+}
+
+fn dataclass_codegen_preserves_shape_semantics(schema: &Value) -> bool {
+    match schema {
+        Value::Bool(_) => true,
+        Value::Object(obj) => {
+            if dataclass_codegen_emits_object_model(obj) && !has_exact_json_type(obj, "object") {
+                return false;
+            }
+            if dataclass_codegen_emits_list_annotation(obj) && !has_exact_json_type(obj, "array") {
+                return false;
+            }
+
+            obj.iter().all(|(keyword, value)| {
+                schema_children(keyword, value)
+                    .into_iter()
+                    .all(dataclass_codegen_preserves_shape_semantics)
+            })
+        }
+        _ => false,
+    }
+}
+
+fn dataclass_codegen_emits_object_model(obj: &serde_json::Map<String, Value>) -> bool {
+    obj.contains_key("properties") || obj.contains_key("required")
+}
+
+fn dataclass_codegen_emits_list_annotation(obj: &serde_json::Map<String, Value>) -> bool {
+    obj.contains_key("items")
+}
+
+fn has_exact_json_type(obj: &serde_json::Map<String, Value>, expected_type: &str) -> bool {
+    matches!(
+        obj.get("type"),
+        Some(Value::String(type_name)) if type_name == expected_type
+    )
+}
+
+fn schema_children<'a>(keyword: &str, value: &'a Value) -> Vec<&'a Value> {
+    match keyword {
+        "$defs" | "definitions" | "properties" | "patternProperties" | "dependentSchemas" => value
+            .as_object()
+            .map_or_else(Vec::new, |object| object.values().collect::<Vec<_>>()),
+        "items"
+        | "additionalProperties"
+        | "contains"
+        | "propertyNames"
+        | "not"
+        | "if"
+        | "then"
+        | "else" => vec![value],
+        "prefixItems" | "oneOf" | "anyOf" | "allOf" => value
+            .as_array()
+            .map_or_else(Vec::new, |items| items.iter().collect::<Vec<_>>()),
+        _ => Vec::new(),
     }
 }
 

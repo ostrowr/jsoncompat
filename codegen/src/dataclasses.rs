@@ -1,5 +1,4 @@
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
-use json_schema_ast::canonicalize_json;
 use serde_json::{Map, Value};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1534,6 +1533,23 @@ fn canonical_schema_literal(schema: &Value) -> String {
     serde_json::to_string(&canonicalize_json(schema)).expect("canonical schema is valid JSON")
 }
 
+fn canonicalize_json(value: &Value) -> Value {
+    match value {
+        Value::Object(obj) => {
+            let mut canonical = Map::new();
+            let mut keys = obj.keys().collect::<Vec<_>>();
+            keys.sort();
+            for key in keys {
+                let child = obj.get(key).expect("key comes from object");
+                canonical.insert(key.clone(), canonicalize_json(child));
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
+        _ => value.clone(),
+    }
+}
+
 fn render_class_base(class_spec: &ClassSpec) -> String {
     match (&class_spec.kind, class_spec.base_class) {
         (
@@ -1585,7 +1601,10 @@ fn python_literal_annotation(value: &Value) -> Option<String> {
                 Some("float".to_owned())
             }
         }
-        Value::Number(_) => Some(format!("typing.Literal[{}]", python_json_literal(value))),
+        Value::Number(number) if number.is_u64() => {
+            Some(format!("typing.Literal[{}]", python_json_literal(value)))
+        }
+        Value::Number(_) => Some("float".to_owned()),
         Value::Array(_) | Value::Object(_) => None,
     }
 }
@@ -1798,5 +1817,19 @@ mod tests {
                 .contains("class UserProfileWriter(jsoncompat_dataclasses.WriterDataclassModel):")
         );
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfileWriter"));
+    }
+
+    #[test]
+    fn float_form_enum_values_use_float_annotation() {
+        let schema = json!({
+            "type": "number",
+            "enum": [9007199254740994.0]
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("root: float ="));
+        assert!(source.contains("GeneratedSchema.__jsoncompat_root_annotation__ = float"));
+        assert!(!source.contains("typing.Literal[9007199254740994.0]"));
     }
 }

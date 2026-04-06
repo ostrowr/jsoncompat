@@ -1,0 +1,65 @@
+[
+  {
+    "description": "required properties, dependentRequired, and minProperties interact",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "user"
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "email"
+      ],
+      "dependentRequired": {
+        "name": [
+          "email"
+        ]
+      },
+      "minProperties": 2,
+      "additionalProperties": false
+    },
+    "tests": [
+      {
+        "description": "name and email together satisfy dependentRequired",
+        "data": {
+          "kind": "user",
+          "name": "alice",
+          "email": "alice@example.com"
+        },
+        "valid": true
+      },
+      {
+        "description": "email alone still satisfies minProperties",
+        "data": {
+          "kind": "user",
+          "email": "alice@example.com"
+        },
+        "valid": true
+      },
+      {
+        "description": "name without email violates dependentRequired",
+        "data": {
+          "kind": "user",
+          "name": "alice"
+        },
+        "valid": false
+      },
+      {
+        "description": "only the required discriminator violates minProperties",
+        "data": {
+          "kind": "user"
+        },
+        "valid": false
+      }
+    ]
+  }
+]

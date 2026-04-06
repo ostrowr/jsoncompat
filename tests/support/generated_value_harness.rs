@@ -1,6 +1,5 @@
-use json_schema_ast::compile;
-use json_schema_fuzz::generate_value;
-use jsoncompat::build_and_resolve_schema;
+use json_schema_ast::{AstError, SchemaDocument, SchemaError};
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -10,6 +9,9 @@ use std::path::Path;
 
 const FUZZ_FIXTURE_ROOT: &str = "tests/fixtures/fuzz";
 const GENERATED_VALUE_ITERATIONS: usize = 1000;
+const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
+const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
+    "https://json-schema.org/draft/2020-12/schema#";
 
 pub struct FuzzSchemaCase<'a> {
     #[allow(dead_code)]
@@ -52,7 +54,7 @@ where
     let whitelist = load_whitelist();
     let allowed = whitelist.get::<str>(rel_str.as_ref());
 
-    for (index, schema_json) in schemas.iter().enumerate() {
+    'schemas: for (index, schema_json) in schemas.iter().enumerate() {
         if schema_json == &Value::Bool(false) {
             continue;
         }
@@ -62,15 +64,63 @@ where
             index,
             schema_json,
         };
-        let ast = build_and_resolve_schema(schema_json)?;
-        let compiled = compile(schema_json)?;
+        let schema = match SchemaDocument::from_json(schema_json) {
+            Ok(schema) => schema,
+            Err(error)
+                if !rel_str.starts_with("custom/")
+                    && schema_declares_unsupported_schema_uri(schema_json) =>
+            {
+                assert!(
+                    matches!(
+                        error,
+                        AstError::Schema(
+                            SchemaError::UnsupportedSchemaDialect {
+                                ref pointer,
+                                expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+                                ..
+                            }
+                        ) if pointer == "#/$schema"
+                    ),
+                    "unexpected unsupported-$schema error for {rel_str} schema #{index}: {error}"
+                );
+                continue;
+            }
+            Err(AstError::UnsupportedReference { .. } | AstError::UnresolvedReference { .. })
+                if !rel_str.starts_with("custom/") =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
         let mut generated_validator = validator_factory.build_validator(&schema_case)?;
         let is_whitelisted = allowed.map(|set| set.contains(&index)).unwrap_or(false);
 
         let mut success = true;
         for _ in 0..GENERATED_VALUE_ITERATIONS {
-            let candidate = generate_value(&ast, &mut rng, 6);
-            if !compiled.is_valid(&candidate) {
+            let candidate = match ValueGenerator::generate(
+                &schema,
+                GenerationConfig::new(6),
+                &mut rng,
+            ) {
+                Ok(candidate) => candidate,
+                Err(GenerateError::Unsatisfiable | GenerateError::ExhaustedAttempts { .. }) => {
+                    if !is_whitelisted {
+                        panic!(
+                            "Failed to generate a valid instance for schema #{index} in {rel_str}\n\nSchema:\n{}",
+                            serde_json::to_string_pretty(schema_json)?,
+                        );
+                    }
+                    success = false;
+                    break;
+                }
+                Err(GenerateError::Schema(
+                    AstError::UnsupportedReference { .. } | AstError::UnresolvedReference { .. },
+                )) if !rel_str.starts_with("custom/") => {
+                    continue 'schemas;
+                }
+                Err(error) => return Err(error.into()),
+            };
+            if !schema.is_valid(&candidate)? {
                 if !is_whitelisted {
                     panic!(
                         "{}",
@@ -123,6 +173,24 @@ fn collect_embedded_schemas(root: &Value) -> Vec<Value> {
     }
 }
 
+fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
+    match schema {
+        Value::Object(object) => {
+            if let Some(schema_uri) = object.get("$schema")
+                && !matches!(
+                    schema_uri.as_str(),
+                    Some(JSON_SCHEMA_DRAFT_2020_12 | JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT)
+                )
+            {
+                return true;
+            }
+            object.values().any(schema_declares_unsupported_schema_uri)
+        }
+        Value::Array(items) => items.iter().any(schema_declares_unsupported_schema_uri),
+        _ => false,
+    }
+}
+
 fn format_validation_failure(
     rel_path: &str,
     schema_index: usize,
@@ -145,65 +213,23 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         "oneOf.json".to_string(),
         [2, 4, 5].iter().cloned().collect(),
     );
-    map.insert(
-        "not.json".to_string(),
-        [2, 3, 4, 5, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "if-then-else.json".to_string(),
-        [3, 4, 5, 7, 8, 9].iter().cloned().collect(),
-    );
+    map.insert("not.json".to_string(), [4, 5, 8].iter().cloned().collect());
     map.insert(
         "unevaluatedItems.json".to_string(),
-        [5, 9, 12, 18].iter().cloned().collect(),
+        [12, 18].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33].iter().cloned().collect(),
-    );
-    map.insert(
-        "items.json".to_string(),
-        [2, 3, 5, 7, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "uniqueItems.json".to_string(),
-        [2, 5].iter().cloned().collect(),
-    );
-    map.insert(
-        "properties.json".to_string(),
-        [1, 2].iter().cloned().collect(),
+        [12, 15].iter().cloned().collect(),
     );
     map.insert(
         "anchor.json".to_string(),
         [0, 1, 2, 3].iter().cloned().collect(),
     );
     map.insert(
-        "additionalProperties.json".to_string(),
-        [5].iter().cloned().collect(),
-    );
-    map.insert(
-        "infinite-loop-detection.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
         "optional/anchor.json".to_string(),
         [0].iter().cloned().collect(),
     );
-    map.insert(
-        "optional/ecmascript-regex.json".to_string(),
-        [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-            30, 31,
-        ]
-        .iter()
-        .cloned()
-        .collect(),
-    );
-    map.insert(
-        "optional/non-bmp-regex.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
         "optional/unknownKeyword.json".to_string(),
         [0].iter().cloned().collect(),
@@ -230,10 +256,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
             .iter()
             .cloned()
             .collect(),
-    );
-    map.insert(
-        "if-then-else.json".to_string(),
-        [7, 8].iter().cloned().collect(),
     );
     map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
     map.insert(

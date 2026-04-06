@@ -1,0 +1,63 @@
+[
+  {
+    "description": "unknown keyword branches are preserved when locally referenced",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/x-custom/nested"
+        }
+      ],
+      "x-custom": {
+        "nested": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "description": "strings satisfy the referenced unknown-keyword branch",
+        "data": "ok",
+        "valid": true
+      },
+      {
+        "description": "non-strings fail the referenced unknown-keyword branch",
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "unknown keyword arrays are preserved when an indexed child is referenced",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/x-custom/variants/1"
+        }
+      ],
+      "x-custom": {
+        "variants": [
+          {
+            "type": "integer"
+          },
+          {
+            "const": "selected"
+          }
+        ]
+      }
+    },
+    "tests": [
+      {
+        "description": "the referenced unknown-keyword array element is valid",
+        "data": "selected",
+        "valid": true
+      },
+      {
+        "description": "other strings are invalid",
+        "data": "other",
+        "valid": false
+      }
+    ]
+  }
+]

@@ -1,0 +1,1 @@
+unsupported $ref '#/contains' at '#/items/$ref'

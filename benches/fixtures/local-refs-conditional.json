@@ -1,0 +1,57 @@
+{
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "email_payload": {
+        "type": "string",
+        "pattern": "^[a-z]+@[a-z]+\\.[a-z]+$"
+      },
+      "count_payload": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000
+      }
+    },
+    "allOf": [
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": ["email", "count"]
+          },
+          "payload": true
+        },
+        "required": ["kind", "payload"],
+        "additionalProperties": false
+      },
+      {
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "email"
+            }
+          },
+          "required": ["kind"]
+        },
+        "then": {
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/email_payload"
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/count_payload"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "instance": {
+    "kind": "email",
+    "payload": "user@example.com"
+  }
+}

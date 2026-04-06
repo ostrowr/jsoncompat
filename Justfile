@@ -22,6 +22,14 @@ check:
 regen-dataclasses-fixtures:
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas
 
+bench:
+  @echo "[just] running Rust benchmarks …"
+  cargo bench --benches
+
+bench-check:
+  @echo "[just] smoke-checking Rust benchmarks …"
+  cargo bench --benches -- --test
+
 # ---- Basic python smoke test ----
 
 python-demo:

@@ -70,8 +70,8 @@ importers:
         specifier: ^1.158.0
         version: 1.167.11(@tanstack/react-router@1.168.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
       jsoncompat:
-        specifier: 0.2.6
-        version: 0.2.6
+        specifier: 0.3.1
+        version: 0.3.1
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -3425,8 +3425,8 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  jsoncompat@0.2.6:
-    resolution: {integrity: sha512-3PZcXSwR4gDS3Q5YDRlpwJblevZRdj/C50BI0LvnXtJ0u+4+cTf9zr7kXNJJYxDZ2dChYKhgntH/JX52XYz6Ow==}
+  jsoncompat@0.3.1:
+    resolution: {integrity: sha512-QZ+qQMQnhj14DY56G3+KVTDMcRe2XICSS//wYWSdJPLW6LtGzITBTgKVBYD9VJwDKo6CWl9laGwIuHbt6M3ykA==}
 
   jszip@3.10.1:
     resolution: {integrity: sha512-xXDvecyTpGLrqFrvkrUSoxxfJI5AH7U8zxxtVclpsUtMCq4JQ290LY8AW5c7Ggnr/Y/oK+bQMbqK2qmtk3pN4g==}
@@ -8266,7 +8266,7 @@ snapshots:
 
   json5@2.2.3: {}
 
-  jsoncompat@0.2.6: {}
+  jsoncompat@0.3.1: {}
 
   jszip@3.10.1:
     dependencies:

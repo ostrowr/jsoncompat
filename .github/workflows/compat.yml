@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout current sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
@@ -23,11 +23,11 @@ jobs:
           git fetch origin main
           echo "MERGE_BASE=$(git merge-base HEAD origin/main)" >> $GITHUB_OUTPUT
 
-      - name: Checkout stamp example schema from MERGE_BASE
+      - name: Checkout pydantic_golden from MERGE_BASE
         run: |
-          cp examples/stamp/schema-v2.json examples/stamp/schema-v2.json.new
-          git checkout ${{ steps.merge_base.outputs.MERGE_BASE }} -- examples/stamp/schema-v2.json
+          cp examples/python/pydantic_golden/tests/schemas.golden examples/python/pydantic_golden/tests/schemas.golden.new
+          git checkout ${{ steps.merge_base.outputs.MERGE_BASE }} -- examples/python/pydantic_golden/tests/schemas.golden
 
       - name: Run jsoncompat ci
         run: |
-          cargo run --bin jsoncompat ci examples/stamp/schema-v2.json examples/stamp/schema-v2.json.new
+          cargo run --bin jsoncompat ci examples/python/pydantic_golden/tests/schemas.golden examples/python/pydantic_golden/tests/schemas.golden.new

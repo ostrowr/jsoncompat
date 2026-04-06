@@ -1,0 +1,103 @@
+{
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "base": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": ["single", "batch"]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "metadata": {
+            "$ref": "#/$defs/metadata"
+          }
+        },
+        "required": ["kind", "metadata", "size"],
+        "additionalProperties": false
+      },
+      "metadata": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "pattern": "^[a-z]{3,10}$"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 8
+            },
+            "minItems": 1,
+            "maxItems": 6
+          }
+        },
+        "required": ["owner", "tags"],
+        "additionalProperties": false
+      }
+    },
+    "allOf": [
+      {
+        "$ref": "#/$defs/base"
+      },
+      {
+        "type": "object",
+        "propertyNames": {
+          "pattern": "^[a-z_]+$"
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "batch"
+            }
+          },
+          "required": ["kind"]
+        },
+        "then": {
+          "properties": {
+            "size": {
+              "minimum": 10
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "size": {
+              "maximum": 9
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "$ref": "#/$defs/metadata"
+          }
+        },
+        "required": ["metadata"]
+      },
+      {
+        "type": "object",
+        "minProperties": 3,
+        "maxProperties": 3
+      }
+    ]
+  },
+  "instance": {
+    "kind": "batch",
+    "size": 24,
+    "metadata": {
+      "owner": "alice",
+      "tags": ["core", "serde", "json"]
+    }
+  }
+}

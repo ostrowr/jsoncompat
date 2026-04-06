@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
@@ -34,7 +34,7 @@ jobs:
         run: cargo install uv --locked
 
       - name: Cache cargo registry and build outputs
-        uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -67,9 +67,9 @@ jobs:
             target: aarch64
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Build wheels
-        uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i '3.12 3.13'
@@ -77,10 +77,10 @@ jobs:
           manylinux: auto
           working-directory: pybindings
       - name: Upload wheels
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: wheels-linux-${{ matrix.platform.target }}
-          path: python/dist
+          path: pybindings/dist
 
   python-musllinux:
     runs-on: ${{ matrix.platform.runner }}
@@ -92,9 +92,9 @@ jobs:
           - runner: ubuntu-22.04
             target: aarch64
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Build wheels
-        uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i '3.12 3.13'
@@ -102,10 +102,10 @@ jobs:
           manylinux: musllinux_1_2
           working-directory: pybindings
       - name: Upload wheels
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
-          path: python/dist
+          path: pybindings/dist
 
   python-windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -117,19 +117,19 @@ jobs:
           - runner: windows-latest
             target: x86
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Build wheels
-        uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i '3.12 3.13'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           working-directory: pybindings
       - name: Upload wheels
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: python/dist
+          path: pybindings/dist
 
   python-macos:
     runs-on: ${{ matrix.platform.runner }}
@@ -141,19 +141,19 @@ jobs:
           - runner: macos-latest
             target: aarch64
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Build wheels
-        uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i '3.12 3.13'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           working-directory: pybindings
       - name: Upload wheels
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: wheels-macos-${{ matrix.platform.target }}
-          path: python/dist
+          path: pybindings/dist
 
   python-release:
     name: Release
@@ -168,14 +168,14 @@ jobs:
       # Used to generate artifact attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'wheels-*/*'
       - name: Publish to PyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1.49.3
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
@@ -190,7 +190,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
@@ -201,7 +201,7 @@ jobs:
         run: cargo install wasm-pack --locked
 
       - name: Cache cargo registry and build outputs
-        uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -227,7 +227,7 @@ jobs:
           done
 
       - name: Upload wasm artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: js-packages
           path: dist/js
@@ -250,17 +250,17 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'js-packages/**/*'
 
       - name: Tree
         run: |
           tree js-packages
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
@@ -303,7 +303,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
@@ -311,7 +311,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo registry and build outputs
-        uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
@@ -322,6 +322,10 @@ jobs:
       - name: Build CLI
         run: cargo build --locked --release --bin jsoncompat
 
+      - name: Run CLI demo
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: ./target/release/jsoncompat demo --noninteractive
+
       - name: Prepare artifact
         shell: bash
         run: |
@@ -329,7 +333,7 @@ jobs:
           cp target/release/jsoncompat${{ matrix.ext }} dist/${{ matrix.asset_name }}
 
       - name: Upload CLI artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: cli-${{ matrix.os }}
           path: dist/${{ matrix.asset_name }}
@@ -349,15 +353,31 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'cli-*/**'
 
       - name: Upload binaries to GitHub Release
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
-        with:
-          files: cli-*/**
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          tag="${GITHUB_REF_NAME}"
+          assets=(cli-*/*)
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets matched cli-*/*"
+            exit 1
+          fi
+
+          repo="${GITHUB_REPOSITORY}"
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --repo "$repo" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" --repo "$repo" --verify-tag --title "$tag" --notes ""
+          fi

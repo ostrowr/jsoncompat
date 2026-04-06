@@ -1,0 +1,103 @@
+[
+  {
+    "description": "exact contains cardinality interacts with minItems and maxItems",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {
+        "type": "string"
+      },
+      "minContains": 2,
+      "maxContains": 2,
+      "minItems": 2,
+      "maxItems": 3
+    },
+    "tests": [
+      {
+        "description": "exactly two matching items is valid",
+        "data": [
+          "a",
+          "b"
+        ],
+        "valid": true
+      },
+      {
+        "description": "one matching item is invalid",
+        "data": [
+          "a",
+          1,
+          2
+        ],
+        "valid": false
+      },
+      {
+        "description": "three matching items exceed maxContains",
+        "data": [
+          "a",
+          "b",
+          "c"
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "contains with equal minContains and maxItems forces all items to match",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {
+        "const": 1
+      },
+      "minContains": 2,
+      "maxItems": 2
+    },
+    "tests": [
+      {
+        "description": "two matching items is valid",
+        "data": [
+          1,
+          1
+        ],
+        "valid": true
+      },
+      {
+        "description": "one non-matching item makes minContains impossible",
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "minContains=0 and maxContains=0 forbid every matching item",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {
+        "const": 1
+      },
+      "minContains": 0,
+      "maxContains": 0
+    },
+    "tests": [
+      {
+        "description": "no matching values is valid",
+        "data": [
+          0,
+          {}
+        ],
+        "valid": true
+      },
+      {
+        "description": "a matching value violates maxContains=0",
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
+  }
+]

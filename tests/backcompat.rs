@@ -1,6 +1,6 @@
-use json_schema_ast::compile;
-use json_schema_fuzz::generate_value;
-use jsoncompat::{Role, build_and_resolve_schema, check_compat};
+use json_schema_ast::SchemaDocument;
+use json_schema_fuzz::{GenerationConfig, ValueGenerator};
+use jsoncompat::{Role, check_compat};
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::Value;
@@ -8,11 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // datatest‑stable macro generates one test per fixture directory.
-datatest_stable::harness!(
-    fixture,
-    "tests/fixtures/backcompat",
-    r".*[/\\]expect\.json$"
-);
+datatest_stable::harness! {
+    { test = fixture, root = "tests/fixtures/backcompat", pattern = r".*[/\\]expect\.json$" },
+}
 
 #[derive(Deserialize)]
 struct Expectation {
@@ -39,12 +37,12 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let expect: Expectation = serde_json::from_slice(&fs::read(expect_file)?)?;
 
     // Build ASTs
-    let old_ast = build_and_resolve_schema(&old_raw)?;
-    let new_ast = build_and_resolve_schema(&new_raw)?;
+    let old_schema = SchemaDocument::from_json(&old_raw)?;
+    let new_schema = SchemaDocument::from_json(&new_raw)?;
 
     // Core compat result
-    let ser = check_compat(&old_ast, &new_ast, Role::Serializer);
-    let de = check_compat(&old_ast, &new_ast, Role::Deserializer);
+    let ser = check_compat(&old_schema, &new_schema, Role::Serializer)?;
+    let de = check_compat(&old_schema, &new_schema, Role::Deserializer)?;
 
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
@@ -59,55 +57,51 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let ex_path = dir.join("examples.json");
     if ex_path.exists() {
         let samples: SampleSets = serde_json::from_slice(&fs::read(&ex_path)?)?;
-        let compiled_old = compile(&old_raw)?;
-        let compiled_new = compile(&new_raw)?;
-
         for v in &samples.old_only {
             assert!(
-                compiled_old.is_valid(v),
+                old_schema.is_valid(v)?,
                 "old_only invalid in {dir:?}: {v:?}"
             );
             assert!(
-                !compiled_new.is_valid(v),
+                !new_schema.is_valid(v)?,
                 "old_only accepted by NEW in {dir:?}: {v:?}"
             );
         }
         for v in &samples.new_only {
             assert!(
-                compiled_new.is_valid(v),
+                new_schema.is_valid(v)?,
                 "new_only invalid in {dir:?}: {v:?}"
             );
             assert!(
-                !compiled_old.is_valid(v),
+                !old_schema.is_valid(v)?,
                 "new_only accepted by OLD in {dir:?}: {v:?}"
             );
         }
         for v in &samples.both {
             assert!(
-                compiled_old.is_valid(v) && compiled_new.is_valid(v),
+                old_schema.is_valid(v)? && new_schema.is_valid(v)?,
                 "both sample invalid in {dir:?}: {v:?}"
             );
         }
     }
 
     // Quick fuzz confirmation (10 samples each direction)
-    let compiled_old = compile(&old_raw)?;
-    let compiled_new = compile(&new_raw)?;
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
+    let config = GenerationConfig::new(4);
 
     for _ in 0..100 {
-        let v_new = generate_value(&new_ast, &mut rng, 4);
+        let v_new = ValueGenerator::generate(&new_schema, config, &mut rng)?;
         if expect.serializer {
             assert!(
-                compiled_old.is_valid(&v_new),
+                old_schema.is_valid(&v_new)?,
                 "serializer=true but OLD rejects generated value {v_new:?} in {dir:?}"
             );
         }
 
-        let v_old = generate_value(&old_ast, &mut rng, 4);
+        let v_old = ValueGenerator::generate(&old_schema, config, &mut rng)?;
         if expect.deserializer {
             assert!(
-                compiled_new.is_valid(&v_old),
+                new_schema.is_valid(&v_old)?,
                 "deserializer=true but NEW rejects generated value {v_old:?} in {dir:?}"
             );
         }

@@ -1,0 +1,76 @@
+[
+  {
+    "description": "inclusive and exclusive integer bounds near i64 max are normalized safely",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 9223372036854775806,
+      "exclusiveMaximum": 9223372036854775807
+    },
+    "tests": [
+      {
+        "description": "the largest in-range integer is valid",
+        "data": 9223372036854775806,
+        "valid": true
+      },
+      {
+        "description": "the exclusive upper bound itself is invalid",
+        "data": 9223372036854775807,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "fractional integer bounds are rounded toward the nearest valid integers",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": -1.1,
+      "maximum": 1.1
+    },
+    "tests": [
+      {
+        "description": "zero is in range after integer normalization",
+        "data": 0,
+        "valid": true
+      },
+      {
+        "description": "the lower rounded-out integer is invalid",
+        "data": -2,
+        "valid": false
+      },
+      {
+        "description": "the upper rounded-out integer is invalid",
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "integer multipleOf combines with a narrow boundary window",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": -4,
+      "maximum": 4,
+      "multipleOf": 2
+    },
+    "tests": [
+      {
+        "description": "even numbers in range are valid",
+        "data": 4,
+        "valid": true
+      },
+      {
+        "description": "odd numbers in range are invalid",
+        "data": 3,
+        "valid": false
+      },
+      {
+        "description": "even numbers outside the window are invalid",
+        "data": 6,
+        "valid": false
+      }
+    ]
+  }
+]

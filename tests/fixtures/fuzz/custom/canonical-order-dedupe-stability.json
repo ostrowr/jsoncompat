@@ -1,0 +1,62 @@
+[
+  {
+    "description": "duplicate enum entries and reordered keys canonicalize without changing validation",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        "red",
+        "blue",
+        "red"
+      ],
+      "title": "color enum",
+      "type": "string"
+    },
+    "tests": [
+      {
+        "description": "an enum member remains valid",
+        "data": "red",
+        "valid": true
+      },
+      {
+        "description": "a non-member remains invalid",
+        "data": "green",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "duplicate anyOf branches are stable when an indexed ref points at one branch",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "$ref": "#/variants/anyOf/1"
+        }
+      ],
+      "variants": {
+        "anyOf": [
+          {
+            "pattern": "^[a-z]+$",
+            "type": "string"
+          },
+          {
+            "type": "string",
+            "pattern": "^[a-z]+$"
+          }
+        ]
+      }
+    },
+    "tests": [
+      {
+        "description": "lowercase strings satisfy the referenced duplicate branch",
+        "data": "abc",
+        "valid": true
+      },
+      {
+        "description": "uppercase strings fail the referenced duplicate branch",
+        "data": "ABC",
+        "valid": false
+      }
+    ]
+  }
+]
