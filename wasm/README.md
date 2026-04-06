@@ -6,7 +6,7 @@ generating example values from JavaScript.
 ## Installation
 
 ```bash
-npm install jsoncompat
+npm install jsoncompat@0.3.0
 ```
 
 ## Public Interface
