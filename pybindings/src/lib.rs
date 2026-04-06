@@ -201,25 +201,6 @@ fn validator_for_py(schema_json: &str) -> PyResult<ValidatorPy> {
     validator_for_schema(schema_json)
 }
 
-/// Check whether a JSON value satisfies a schema.
-///
-/// Parameters
-/// ----------
-/// schema_json : str
-///     JSON string of the schema to validate against.
-/// instance_json : str
-///     JSON string of the candidate value.
-///
-/// Returns
-/// -------
-/// bool
-///     `True` if the value satisfies the schema, `False` otherwise.
-#[pyfunction]
-#[pyo3(signature = (schema_json, instance_json), name = "is_valid")]
-fn is_valid_py(schema_json: &str, instance_json: &str) -> PyResult<bool> {
-    validator_for_schema(schema_json)?.is_valid(instance_json)
-}
-
 /// Python module definition
 #[pymodule]
 #[pyo3(name = "_native")]
@@ -228,7 +209,6 @@ fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
     m.add_function(wrap_pyfunction!(generator_for_py, m)?)?;
     m.add_function(wrap_pyfunction!(validator_for_py, m)?)?;
-    m.add_function(wrap_pyfunction!(is_valid_py, m)?)?;
     m.add_class::<GeneratorPy>()?;
     m.add_class::<ValidatorPy>()?;
 

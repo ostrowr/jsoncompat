@@ -44,8 +44,6 @@ print(example)
   - `Validator.is_valid(instance_json: str) -> bool` validates JSON strings against the parsed schema.
 - `generate_value(schema_json: str, depth: int = 5) -> str`
   - Deprecated. Use `generator_for(schema_json).generate_value(depth)` instead.
-- `is_valid(schema_json: str, instance_json: str) -> bool`
-  - Deprecated. Use `validator_for(schema_json).is_valid(instance_json)` instead.
 - `jsoncompat.codegen.dataclasses` runtime helpers for generated dataclass models
 - `Role.SERIALIZER`, `Role.DESERIALIZER`, and `Role.BOTH` are string constants accepted by `check_compat`.
 
