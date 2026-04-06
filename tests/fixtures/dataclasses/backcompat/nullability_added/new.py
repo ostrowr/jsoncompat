@@ -8,9 +8,14 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"anyOf\":[{\"enum\":[null]},{\"minLength\":0,\"type\":\"string\"}]}"
-    root: (str | typing.Literal[None]) = jsoncompat_dataclasses.jsoncompat_root_field()
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "type": [
+    "string",
+    "null"
+  ]
+}"""
+    root: (None | str) = jsoncompat_dataclasses.jsoncompat_root_field()
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (str | typing.Literal[None])
+GeneratedSchema.__jsoncompat_root_annotation__ = (None | str)
 
 JSONCOMPAT_MODEL = GeneratedSchema

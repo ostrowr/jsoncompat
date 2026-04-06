@@ -8,37 +8,57 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2FooBar(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2FooBar2(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2FooBar3(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2FooBar4(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2FooBar5(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2FooBar6(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"minProperties\":6,\"properties\":{\"foo\\tbar\":true,\"foo\\nbar\":true,\"foo\\fbar\":true,\"foo\\rbar\":true,\"foo\\\"bar\":true,\"foo\\\\bar\":true},\"required\":[\"foo\\tbar\",\"foo\\nbar\",\"foo\\fbar\",\"foo\\rbar\",\"foo\\\"bar\",\"foo\\\\bar\"],\"type\":\"object\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "minProperties": 6,
+  "properties": {
+    "foo\\tbar": true,
+    "foo\\nbar": true,
+    "foo\\fbar": true,
+    "foo\\rbar": true,
+    "foo\\"bar": true,
+    "foo\\\\bar": true
+  },
+  "required": [
+    "foo\\tbar",
+    "foo\\nbar",
+    "foo\\fbar",
+    "foo\\rbar",
+    "foo\\"bar",
+    "foo\\\\bar"
+  ],
+  "type": "object"
+}"""
     foo_bar: GeneratedSchemaBranch2FooBar = jsoncompat_dataclasses.jsoncompat_field("foo\tbar")
     foo_bar2: GeneratedSchemaBranch2FooBar2 = jsoncompat_dataclasses.jsoncompat_field("foo\nbar")
     foo_bar3: GeneratedSchemaBranch2FooBar3 = jsoncompat_dataclasses.jsoncompat_field("foo\fbar")
@@ -49,13 +69,23 @@ class GeneratedSchemaBranch2(jsoncompat_dataclasses.DataclassAdditionalModel[typ
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"enum\":[null]},{\"enum\":[false,true]},{\"minProperties\":6,\"properties\":{\"foo\\tbar\":true,\"foo\\nbar\":true,\"foo\\fbar\":true,\"foo\\rbar\":true,\"foo\\\"bar\":true,\"foo\\\\bar\":true},\"required\":[\"foo\\tbar\",\"foo\\nbar\",\"foo\\fbar\",\"foo\\rbar\",\"foo\\\"bar\",\"foo\\\\bar\"],\"type\":\"object\"},{\"items\":true,\"minItems\":0,\"type\":\"array\"},{\"minLength\":0,\"type\":\"string\"},{\"type\":\"number\"}]}"
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | typing.Literal[None]) = jsoncompat_dataclasses.jsoncompat_root_field()
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "required": [
+    "foo\\nbar",
+    "foo\\"bar",
+    "foo\\\\bar",
+    "foo\\rbar",
+    "foo\\tbar",
+    "foo\\fbar"
+  ]
+}"""
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaBranch2FooBar.__jsoncompat_root_annotation__ = typing.Any
 
@@ -81,6 +111,6 @@ GeneratedSchemaBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsonc
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | typing.Literal[None])
+GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | None | float | list[GeneratedSchemaItem] | str)
 
 JSONCOMPAT_MODEL = GeneratedSchema

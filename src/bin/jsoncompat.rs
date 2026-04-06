@@ -32,6 +32,7 @@ mod stamp;
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
 pub(crate) struct SchemaDoc {
+    pub(crate) raw: Value,
     pub(crate) schema: backcompat::SchemaDocument,
 }
 
@@ -43,7 +44,7 @@ impl SchemaDoc {
         let schema = backcompat::SchemaDocument::from_json(&json)
             .with_context(|| format!("building schema for {path}"))?;
 
-        Ok(Self { schema })
+        Ok(Self { raw: json, schema })
     }
 
     #[inline]
@@ -178,12 +179,13 @@ mod tests {
 
     #[test]
     fn gen_value_retries_until_raw_schema_accepts_the_candidate() {
+        let raw = json!({
+            "type": "integer",
+            "minimum": 1
+        });
         let schema = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!({
-                "type": "integer",
-                "minimum": 1
-            }))
-            .unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&raw).unwrap(),
+            raw,
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -197,8 +199,10 @@ mod tests {
 
     #[test]
     fn gen_value_returns_unsatisfiable_for_false_schema() {
+        let raw = json!(false);
         let schema = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&raw).unwrap(),
+            raw,
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -209,11 +213,15 @@ mod tests {
 
     #[test]
     fn sample_incompat_with_role_both_continues_after_exhausting_the_first_direction() {
+        let old_raw = json!({});
+        let new_raw = json!(false);
         let old = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!({})).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&old_raw).unwrap(),
+            raw: old_raw,
         };
         let new = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&new_raw).unwrap(),
+            raw: new_raw,
         };
         let mut rng = StdRng::seed_from_u64(7);
 

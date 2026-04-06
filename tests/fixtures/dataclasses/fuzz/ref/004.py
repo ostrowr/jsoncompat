@@ -8,22 +8,75 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaA(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"a\":{\"multipleOf\":1,\"type\":\"integer\"},\"b\":{\"$ref\":\"#/$defs/a\"},\"c\":{\"$ref\":\"#/$defs/b\"}},\"multipleOf\":1,\"type\":\"integer\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$defs": {
+    "a": {
+      "type": "integer"
+    },
+    "b": {
+      "$ref": "#/$defs/a"
+    },
+    "c": {
+      "$ref": "#/$defs/b"
+    }
+  },
+  "type": "integer"
+}"""
     root: int = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaB(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"a\":{\"multipleOf\":1,\"type\":\"integer\"},\"b\":{\"$ref\":\"#/$defs/a\"},\"c\":{\"$ref\":\"#/$defs/b\"}},\"$ref\":\"#/$defs/a\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$defs": {
+    "a": {
+      "type": "integer"
+    },
+    "b": {
+      "$ref": "#/$defs/a"
+    },
+    "c": {
+      "$ref": "#/$defs/b"
+    }
+  },
+  "$ref": "#/$defs/a"
+}"""
     root: GeneratedSchemaA = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaC(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"a\":{\"multipleOf\":1,\"type\":\"integer\"},\"b\":{\"$ref\":\"#/$defs/a\"},\"c\":{\"$ref\":\"#/$defs/b\"}},\"$ref\":\"#/$defs/b\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$defs": {
+    "a": {
+      "type": "integer"
+    },
+    "b": {
+      "$ref": "#/$defs/a"
+    },
+    "c": {
+      "$ref": "#/$defs/b"
+    }
+  },
+  "$ref": "#/$defs/b"
+}"""
     root: GeneratedSchemaB = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"a\":{\"multipleOf\":1,\"type\":\"integer\"},\"b\":{\"$ref\":\"#/$defs/a\"},\"c\":{\"$ref\":\"#/$defs/b\"}},\"$ref\":\"#/$defs/c\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$defs": {
+    "a": {
+      "type": "integer"
+    },
+    "b": {
+      "$ref": "#/$defs/a"
+    },
+    "c": {
+      "$ref": "#/$defs/b"
+    }
+  },
+  "$ref": "#/$defs/c",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}"""
     root: GeneratedSchemaC = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaA.__jsoncompat_root_annotation__ = int

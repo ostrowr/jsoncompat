@@ -31,7 +31,7 @@ pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
 
     match args.target {
         CodegenTarget::Dataclasses => {
-            let source = generate_dataclass_models(canonical_schema)?;
+            let source = generate_dataclass_models(&schema.raw)?;
             print!("{source}");
             Ok(())
         }

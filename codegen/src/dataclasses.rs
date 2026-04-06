@@ -67,13 +67,14 @@ struct DataclassModuleBuilder {
     classes: Vec<ClassSpec>,
     class_names: BTreeMap<String, String>,
     named_refs: BTreeMap<String, String>,
-    root_defs: Option<Map<String, Value>>,
+    validation_root: Value,
+    validation_root_defs: Option<Map<String, Value>>,
     inline_names: BTreeMap<String, String>,
     inline_name_counters: BTreeMap<String, u32>,
 }
 
 impl DataclassModuleBuilder {
-    fn new(named_refs: BTreeMap<String, String>, root_defs: Option<Map<String, Value>>) -> Self {
+    fn new(named_refs: BTreeMap<String, String>, validation_root: Value) -> Self {
         let class_names = [
             DATACLASS_ADDITIONAL_MODEL_CLASS,
             DATACLASS_MODEL_CLASS,
@@ -90,7 +91,12 @@ impl DataclassModuleBuilder {
             classes: Vec::new(),
             class_names,
             named_refs,
-            root_defs,
+            validation_root_defs: validation_root
+                .as_object()
+                .and_then(|obj| obj.get("$defs"))
+                .and_then(Value::as_object)
+                .cloned(),
+            validation_root,
             inline_names: BTreeMap::new(),
             inline_name_counters: BTreeMap::new(),
         }
@@ -140,7 +146,7 @@ impl DataclassModuleBuilder {
             Value::Bool(_) => self.register_class(
                 ClassSpec {
                     name: name.to_owned(),
-                    schema_json: self.schema_json(schema)?,
+                    schema_json: self.schema_json(schema, pointer)?,
                     base_class: DATACLASS_ROOT_MODEL_CLASS,
                     kind: ClassKind::Root {
                         annotation: typing_symbol("Any"),
@@ -182,7 +188,7 @@ impl DataclassModuleBuilder {
 
         self.classes.push(ClassSpec {
             name: name.to_owned(),
-            schema_json: self.schema_json(&Value::Object(obj.clone()))?,
+            schema_json: self.schema_json(&Value::Object(obj.clone()), pointer)?,
             base_class: if matches!(kind, ClassKind::Root { .. }) {
                 DATACLASS_ROOT_MODEL_CLASS
             } else {
@@ -262,15 +268,21 @@ impl DataclassModuleBuilder {
         }
     }
 
-    fn schema_json(&self, schema: &Value) -> Result<String, DataclassError> {
-        let schema = match (schema, self.root_defs.as_ref()) {
-            (Value::Object(obj), Some(root_defs)) => Value::Object(schema_object_with_root_defs(
-                obj,
-                &Map::from_iter([("$defs".to_owned(), Value::Object(root_defs.clone()))]),
-            )?),
-            _ => schema.clone(),
+    fn schema_json(
+        &self,
+        fallback_schema: &Value,
+        pointer: &str,
+    ) -> Result<String, DataclassError> {
+        let validation_schema = resolve_json_pointer(&self.validation_root, pointer)
+            .unwrap_or(fallback_schema)
+            .clone();
+        let schema = match (&validation_schema, self.validation_root_defs.as_ref()) {
+            (Value::Object(obj), Some(root_defs)) => {
+                Value::Object(schema_object_with_root_defs(obj, root_defs)?)
+            }
+            _ => validation_schema,
         };
-        Ok(canonical_schema_literal(&schema))
+        pretty_schema_literal(&schema)
     }
 
     fn schema_annotation(
@@ -398,10 +410,13 @@ impl DataclassModuleBuilder {
 
 pub fn generate_dataclass_models(schema: &Value) -> Result<String, DataclassError> {
     let document = SchemaDocument::from_json(schema)?;
-    render_dataclass_module(document.canonical_schema_json()?)
+    render_dataclass_module(document.canonical_schema_json()?, schema)
 }
 
-fn render_dataclass_module(schema: &Value) -> Result<String, DataclassError> {
+fn render_dataclass_module(
+    schema: &Value,
+    validation_schema: &Value,
+) -> Result<String, DataclassError> {
     let named_refs = collect_named_refs(schema)?;
     let root_name = named_refs.get("#").cloned().ok_or_else(|| {
         invalid_schema(
@@ -411,12 +426,7 @@ fn render_dataclass_module(schema: &Value) -> Result<String, DataclassError> {
     })?;
 
     let root_metadata = parse_optional_metadata(schema, "#")?;
-    let root_defs = schema
-        .as_object()
-        .and_then(|obj| obj.get("$defs"))
-        .and_then(Value::as_object)
-        .cloned();
-    let mut builder = DataclassModuleBuilder::new(named_refs, root_defs);
+    let mut builder = DataclassModuleBuilder::new(named_refs, validation_schema.clone());
     match &root_metadata {
         Some(JsoncompatMetadata::Writer { .. }) | Some(JsoncompatMetadata::Reader { .. }) => {
             emit_root_defs(&mut builder, schema)?;
@@ -447,13 +457,25 @@ fn render_dataclass_module(schema: &Value) -> Result<String, DataclassError> {
     if let Some(metadata) = &root_metadata {
         match metadata {
             JsoncompatMetadata::Writer { .. } => {
-                render_writer_class(&mut output, expect_schema_object(schema, "#")?)?;
+                render_writer_class(
+                    &mut output,
+                    expect_schema_object(schema, "#")?,
+                    expect_schema_object(validation_schema, "#")?,
+                )?;
                 output.push('\n');
             }
             JsoncompatMetadata::Reader { .. } => {
-                render_reader_variants(&mut output, expect_schema_object(schema, "#")?)?;
+                render_reader_variants(
+                    &mut output,
+                    expect_schema_object(schema, "#")?,
+                    expect_schema_object(validation_schema, "#")?,
+                )?;
                 output.push('\n');
-                render_reader_root_class(&mut output, expect_schema_object(schema, "#")?)?;
+                render_reader_root_class(
+                    &mut output,
+                    expect_schema_object(schema, "#")?,
+                    expect_schema_object(validation_schema, "#")?,
+                )?;
                 output.push('\n');
             }
             JsoncompatMetadata::Declaration { .. } => {}
@@ -504,7 +526,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
     writeln!(
         output,
         "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-        python_string_literal(&class_spec.schema_json)
+        python_triple_quoted_string_literal(&class_spec.schema_json)
     )
     .expect("writing to String cannot fail");
 
@@ -572,6 +594,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
 fn render_writer_class(
     output: &mut String,
     writer: &Map<String, Value>,
+    validation_writer: &Map<String, Value>,
 ) -> Result<(), DataclassError> {
     let metadata = parse_metadata(writer, "#")?;
     let JsoncompatMetadata::Writer {
@@ -599,7 +622,9 @@ fn render_writer_class(
     writeln!(
         output,
         "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-        python_string_literal(&canonical_schema_literal(&Value::Object(writer.clone())))
+        python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
+            validation_writer.clone()
+        ))?)
     )
     .expect("writing to String cannot fail");
     writeln!(
@@ -620,6 +645,7 @@ fn render_writer_class(
 fn render_reader_variants(
     output: &mut String,
     reader: &Map<String, Value>,
+    validation_reader: &Map<String, Value>,
 ) -> Result<(), DataclassError> {
     let branches = reader
         .get("oneOf")
@@ -629,6 +655,12 @@ fn render_reader_variants(
     for (index, branch) in branches.iter().enumerate() {
         let pointer = format!("#/oneOf/{index}");
         let branch = expect_schema_object(branch, &pointer)?;
+        let validation_branch = validation_reader
+            .get("oneOf")
+            .and_then(Value::as_array)
+            .and_then(|branches| branches.get(index))
+            .and_then(Value::as_object)
+            .unwrap_or(branch);
         let metadata = parse_metadata(branch, &pointer)?;
         let JsoncompatMetadata::ReaderVariant {
             name,
@@ -655,9 +687,9 @@ fn render_reader_variants(
         writeln!(
             output,
             "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-            python_string_literal(&canonical_schema_literal(&Value::Object(
-                schema_object_with_root_defs(branch, reader)?
-            )))
+            python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
+                schema_object_with_root_defs(validation_branch, root_defs(validation_reader)?)?
+            ))?)
         )
         .expect("writing to String cannot fail");
         writeln!(
@@ -679,15 +711,12 @@ fn render_reader_variants(
 
 fn schema_object_with_root_defs(
     schema: &Map<String, Value>,
-    root: &Map<String, Value>,
+    root_defs: &Map<String, Value>,
 ) -> Result<Map<String, Value>, DataclassError> {
     let mut schema = schema.clone();
-    let Some(root_defs) = root.get("$defs") else {
+    if root_defs.is_empty() {
         return Ok(schema);
-    };
-    let root_defs = root_defs
-        .as_object()
-        .ok_or_else(|| invalid_schema("#/$defs".to_owned(), "$defs must be an object"))?;
+    }
 
     let mut defs = schema
         .remove("$defs")
@@ -703,6 +732,7 @@ fn schema_object_with_root_defs(
 fn render_reader_root_class(
     output: &mut String,
     reader: &Map<String, Value>,
+    validation_reader: &Map<String, Value>,
 ) -> Result<(), DataclassError> {
     let metadata = parse_metadata(reader, "#")?;
     let JsoncompatMetadata::Reader { name, .. } = metadata else {
@@ -736,7 +766,9 @@ fn render_reader_root_class(
     writeln!(
         output,
         "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-        python_string_literal(&canonical_schema_literal(&Value::Object(reader.clone())))
+        python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
+            validation_reader.clone()
+        ))?)
     )
     .expect("writing to String cannot fail");
     writeln!(
@@ -1472,6 +1504,43 @@ fn expect_schema_object<'a>(
         .ok_or_else(|| invalid_schema(pointer.to_owned(), "schema must be an object"))
 }
 
+fn root_defs(root: &Map<String, Value>) -> Result<&Map<String, Value>, DataclassError> {
+    match root.get("$defs") {
+        Some(Value::Object(defs)) => Ok(defs),
+        Some(_) => Err(invalid_schema(
+            "#/$defs".to_owned(),
+            "$defs must be an object",
+        )),
+        None => Ok(empty_schema_object()),
+    }
+}
+
+fn empty_schema_object() -> &'static Map<String, Value> {
+    static EMPTY: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
+    EMPTY.get_or_init(Map::new)
+}
+
+fn resolve_json_pointer<'a>(root: &'a Value, pointer: &str) -> Option<&'a Value> {
+    if pointer == "#" {
+        return Some(root);
+    }
+    let pointer = pointer.strip_prefix("#/")?;
+    let mut current = root;
+    for segment in pointer.split('/').map(unescape_pointer_token) {
+        match current {
+            Value::Object(obj) => {
+                current = obj.get(&segment)?;
+            }
+            Value::Array(items) => {
+                let index = segment.parse::<usize>().ok()?;
+                current = items.get(index)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(current)
+}
+
 fn union_branch_context(schema: &Map<String, Value>, keyword: &str) -> Map<String, Value> {
     let mut context = schema.clone();
     context.remove(keyword);
@@ -1536,25 +1605,9 @@ fn union_annotation(annotations: &[String]) -> String {
     }
 }
 
-fn canonical_schema_literal(schema: &Value) -> String {
-    serde_json::to_string(&canonicalize_json(schema)).expect("canonical schema is valid JSON")
-}
-
-fn canonicalize_json(value: &Value) -> Value {
-    match value {
-        Value::Object(obj) => {
-            let mut canonical = Map::new();
-            let mut keys = obj.keys().collect::<Vec<_>>();
-            keys.sort();
-            for key in keys {
-                let child = obj.get(key).expect("key comes from object");
-                canonical.insert(key.clone(), canonicalize_json(child));
-            }
-            Value::Object(canonical)
-        }
-        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
-        _ => value.clone(),
-    }
+fn pretty_schema_literal(schema: &Value) -> Result<String, DataclassError> {
+    serde_json::to_string_pretty(schema)
+        .map_err(|error| invalid_schema("#".to_owned(), format!("schema is not JSON: {error}")))
 }
 
 fn render_class_base(class_spec: &ClassSpec) -> String {
@@ -1585,6 +1638,15 @@ fn python_string_literal(value: &str) -> String {
     serde_json::to_string(value).expect("Python string literal source is valid JSON")
 }
 
+fn python_triple_quoted_string_literal(value: &str) -> String {
+    format!(
+        "\"\"\"{}\"\"\"",
+        value
+            .replace('\\', "\\\\")
+            .replace("\"\"\"", "\\\"\\\"\\\"")
+    )
+}
+
 fn python_json_literal(value: &Value) -> String {
     match value {
         Value::Null => "None".to_owned(),
@@ -1598,7 +1660,8 @@ fn python_json_literal(value: &Value) -> String {
 
 fn python_literal_annotation(value: &Value) -> Option<String> {
     match value {
-        Value::Null | Value::Bool(_) | Value::String(_) => {
+        Value::Null => Some("None".to_owned()),
+        Value::Bool(_) | Value::String(_) => {
             Some(format!("typing.Literal[{}]", python_json_literal(value)))
         }
         Value::Number(number) if number.to_string().starts_with('-') => {
@@ -1838,5 +1901,21 @@ mod tests {
         assert!(source.contains("root: float ="));
         assert!(source.contains("GeneratedSchema.__jsoncompat_root_annotation__ = float"));
         assert!(!source.contains("typing.Literal[9007199254740994.0]"));
+    }
+
+    #[test]
+    fn generated_schema_literal_preserves_pretty_printed_raw_schema() {
+        let schema = json!({
+            "title": "nullable name",
+            "type": ["string", "null"]
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("root: (None | str) ="));
+        assert!(source.contains(
+            "    __jsoncompat_schema__: typing.ClassVar[str] = \"\"\"{\n  \"title\": \"nullable name\",\n  \"type\": [\n    \"string\",\n    \"null\"\n  ]\n}\"\"\""
+        ));
+        assert!(!source.contains("\"anyOf\":"));
     }
 }

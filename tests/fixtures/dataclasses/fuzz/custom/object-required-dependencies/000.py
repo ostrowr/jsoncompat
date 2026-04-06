@@ -8,7 +8,32 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"dependentRequired\":{\"name\":[\"email\"]},\"minProperties\":2,\"properties\":{\"email\":{\"minLength\":0,\"type\":\"string\"},\"kind\":{\"enum\":[\"user\"]},\"name\":{\"minLength\":0,\"type\":\"string\"}},\"required\":[\"email\",\"kind\"],\"type\":\"object\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "dependentRequired": {
+    "name": [
+      "email"
+    ]
+  },
+  "minProperties": 2,
+  "properties": {
+    "email": {
+      "type": "string"
+    },
+    "kind": {
+      "const": "user"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "email"
+  ],
+  "type": "object"
+}"""
     email: str = jsoncompat_dataclasses.jsoncompat_field("email")
     kind: typing.Literal["user"] = jsoncompat_dataclasses.jsoncompat_field("kind")
     name: (str | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("name", omittable=True)
