@@ -200,6 +200,54 @@ for value in invalid_values:
 }
 
 #[test]
+fn python_validation_api_exposes_reusable_validator_and_deprecates_is_valid() {
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import warnings
+
+import jsoncompat
+
+schema_json = '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}'
+valid_json = '{"name":"Ada"}'
+invalid_json = '{"name":1}'
+
+validator = jsoncompat.validator_for(schema_json)
+assert validator.is_valid(valid_json)
+assert not validator.is_valid(invalid_json)
+
+try:
+    jsoncompat.validator_for('{"type": 1}')
+except ValueError:
+    pass
+else:
+    raise AssertionError("invalid schema was accepted")
+
+try:
+    validator.is_valid("{")
+except ValueError:
+    pass
+else:
+    raise AssertionError("invalid instance JSON was accepted")
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always", DeprecationWarning)
+    assert jsoncompat.is_valid(schema_json, valid_json)
+
+assert len(caught) == 1
+assert issubclass(caught[0].category, DeprecationWarning)
+assert "validator_for" in str(caught[0].message)
+"###,
+    );
+    let output = command.output().expect("run Python validation API test");
+    assert!(
+        output.status.success(),
+        "Python validation API test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_for_checkout_demo_are_python_usable() {
     let source = generate_dataclass_models(&json!({
         "type": "object",
