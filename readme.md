@@ -271,7 +271,7 @@ The Rust code is split into five crates and one CLI binary. The website under `w
 | `schema/` | `json_schema_ast` | Draft 2020-12 dialect checks, schema canonicalization, AST construction, local `$ref` resolution, and direct validator compilation via `jsonschema` |
 | `src/` | `jsoncompat` | Backward-compatibility checking over resolved ASTs, plus the `jsoncompat` CLI in `src/bin/jsoncompat.rs` |
 | `fuzz/` | `json_schema_fuzz` | Schema-guided JSON instance generation for fuzz tests and example values |
-| `python/` | `jsoncompat_py` | PyO3 bindings that expose `check_compat`, `generate_value`, and role constants |
+| `pybindings/` | `jsoncompat_py` | PyO3 bindings that expose `check_compat`, `generate_value`, and role constants |
 | `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings that expose `check_compat` and `generate_value` to JavaScript |
 
 The primary schema APIs are:

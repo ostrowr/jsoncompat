@@ -694,7 +694,7 @@ fn schema_object_with_root_defs(
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
     for (key, value) in root_defs {
-        defs.entry(key.clone()).or_insert_with(|| value.clone());
+        defs.insert(key.clone(), value.clone());
     }
     schema.insert("$defs".to_owned(), Value::Object(defs));
     Ok(schema)
