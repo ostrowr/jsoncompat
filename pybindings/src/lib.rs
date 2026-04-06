@@ -12,9 +12,42 @@ use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 use serde_json::Value as JsonValue;
 
+#[pyclass(name = "Validator", module = "jsoncompat._native", unsendable)]
+struct ValidatorPy {
+    schema: SchemaDocument,
+}
+
+#[pymethods]
+impl ValidatorPy {
+    /// Check whether a JSON value satisfies this validator's schema.
+    ///
+    /// Parameters
+    /// ----------
+    /// instance_json : str
+    ///     JSON string of the candidate value.
+    ///
+    /// Returns
+    /// -------
+    /// bool
+    ///     `True` if the value satisfies the schema, `False` otherwise.
+    fn is_valid(&self, instance_json: &str) -> PyResult<bool> {
+        let instance = parse_json(instance_json)?;
+        self.schema
+            .is_valid(&instance)
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
+    }
+}
+
 /// Parse a JSON string into a serde_json::Value, converting any error into a Python ValueError.
 fn parse_json(s: &str) -> PyResult<JsonValue> {
     serde_json::from_str(s).map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid JSON: {e}")))
+}
+
+fn validator_for_schema(schema_json: &str) -> PyResult<ValidatorPy> {
+    let raw = parse_json(schema_json)?;
+    let schema = SchemaDocument::from_json(&raw)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
+    Ok(ValidatorPy { schema })
 }
 
 /// Map a string into the Rust role enum, raising ValueError on unknown input.
@@ -100,6 +133,23 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     })
 }
 
+/// Build a reusable validator for a JSON Schema.
+///
+/// Parameters
+/// ----------
+/// schema_json : str
+///     JSON string of the schema to validate against.
+///
+/// Returns
+/// -------
+/// Validator
+///     A reusable validator that parses the schema once.
+#[pyfunction]
+#[pyo3(signature = (schema_json), name = "validator_for")]
+fn validator_for_py(schema_json: &str) -> PyResult<ValidatorPy> {
+    validator_for_schema(schema_json)
+}
+
 /// Check whether a JSON value satisfies a schema.
 ///
 /// Parameters
@@ -116,14 +166,7 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (schema_json, instance_json), name = "is_valid")]
 fn is_valid_py(schema_json: &str, instance_json: &str) -> PyResult<bool> {
-    let raw = parse_json(schema_json)?;
-    let instance = parse_json(instance_json)?;
-    let schema = SchemaDocument::from_json(&raw)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
-
-    schema
-        .is_valid(&instance)
-        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
+    validator_for_schema(schema_json)?.is_valid(instance_json)
 }
 
 /// Python module definition
@@ -132,7 +175,9 @@ fn is_valid_py(schema_json: &str, instance_json: &str) -> PyResult<bool> {
 fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
+    m.add_function(wrap_pyfunction!(validator_for_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_valid_py, m)?)?;
+    m.add_class::<ValidatorPy>()?;
 
     let role_constants = PyModule::new(py, "Role")?;
     role_constants.add("SERIALIZER", "serializer")?;

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Literal
 
+from jsoncompat import validator_for
 from jsoncompat.codegen import dataclasses as dc
 
 
@@ -121,9 +123,11 @@ PAYLOAD = {
     "currency": "USD",
     "traceId": "trace_123",
 }
+PAYLOAD_JSON = json.dumps(PAYLOAD, separators=(",", ":"), sort_keys=True)
 
 
 def clear_runtime_caches() -> None:
+    getattr(dc._jsoncompat_validator_for, "cache_clear")()
     getattr(dc._jsoncompat_type_hints_for, "cache_clear")()
     getattr(dc._jsoncompat_object_spec_for, "cache_clear")()
     getattr(dc._jsoncompat_root_annotation_for, "cache_clear")()
@@ -171,12 +175,16 @@ def main() -> None:
     clear_runtime_caches()
     infer_all_specs()
     instance = from_json()
+    validator = validator_for(BenchEvent.__jsoncompat_schema__)
     assert instance.to_json() == PAYLOAD
+    assert validator.is_valid(PAYLOAD_JSON)
 
     bench("cold spec inference", args.iterations, cold_spec_inference)
     clear_runtime_caches()
     infer_all_specs()
+    from_json()
     bench("cached spec lookup", args.iterations, cached_spec_lookup)
+    bench("validator.is_valid", args.iterations, lambda: validator.is_valid(PAYLOAD_JSON))
     bench("from_json", args.iterations, from_json)
     bench("to_json", args.iterations, lambda: to_json(instance))
 

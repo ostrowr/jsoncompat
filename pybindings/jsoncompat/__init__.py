@@ -4,6 +4,7 @@ import importlib
 import importlib.machinery
 import importlib.util
 import sys
+import warnings
 from pathlib import Path
 from typing import Callable, Literal, NoReturn, Protocol, cast
 
@@ -11,6 +12,11 @@ RoleLiteral = Literal["serializer", "deserializer", "both"]
 CheckCompatFn = Callable[[str, str, RoleLiteral], bool]
 GenerateValueFn = Callable[[str, int], str]
 IsValidFn = Callable[[str, str], bool]
+ValidatorForFn = Callable[[str], "Validator"]
+
+
+class Validator(Protocol):
+    def is_valid(self, instance_json: str) -> bool: ...
 
 
 class NativeModule(Protocol):
@@ -22,6 +28,8 @@ class NativeModule(Protocol):
     ) -> bool: ...
 
     def generate_value(self, schema_json: str, depth: int) -> str: ...
+
+    def validator_for(self, schema_json: str) -> Validator: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
 
@@ -40,7 +48,7 @@ def _missing_check_compat(
     _ = (old_schema_json, new_schema_json, role)
     raise ModuleNotFoundError(
         "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
-        "before calling check_compat() or generate_value()."
+        "before calling check_compat()."
     )
 
 
@@ -48,7 +56,7 @@ def _missing_generate_value(schema_json: str, depth: int) -> NoReturn:
     _ = (schema_json, depth)
     raise ModuleNotFoundError(
         "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
-        "before calling check_compat() or generate_value()."
+        "before calling generate_value()."
     )
 
 
@@ -56,7 +64,15 @@ def _missing_is_valid(schema_json: str, instance_json: str) -> NoReturn:
     _ = (schema_json, instance_json)
     raise ModuleNotFoundError(
         "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
-        "before calling check_compat() or generate_value()."
+        "before calling is_valid()."
+    )
+
+
+def _missing_validator_for(schema_json: str) -> NoReturn:
+    _ = schema_json
+    raise ModuleNotFoundError(
+        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
+        "before calling validator_for()."
     )
 
 
@@ -99,14 +115,19 @@ except ModuleNotFoundError as error:
     except ModuleNotFoundError:
         _check_compat_native: CheckCompatFn = _missing_check_compat
         _generate_value_native: GenerateValueFn = _missing_generate_value
+        _validator_for_native: ValidatorForFn = _missing_validator_for
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _check_compat_native = _repo_native.check_compat
         _generate_value_native = _repo_native.generate_value
+        _validator_for_native = _repo_native.validator_for
         _is_valid_native = _repo_native.is_valid
 else:
+    if not hasattr(_native_module, "validator_for"):
+        _native_module = _load_repo_native()
     _check_compat_native = _native_module.check_compat
     _generate_value_native = _native_module.generate_value
+    _validator_for_native = _native_module.validator_for
     _is_valid_native = _native_module.is_valid
 
 
@@ -124,9 +145,28 @@ def generate_value(schema_json: str, depth: int = 5) -> str:
     return generate_value_native(schema_json, depth)
 
 
+def validator_for(schema_json: str) -> Validator:
+    validator_for_native = _validator_for_native
+    return validator_for_native(schema_json)
+
+
 def is_valid(schema_json: str, instance_json: str) -> bool:
+    warnings.warn(
+        "jsoncompat.is_valid(schema_json, instance_json) is deprecated; "
+        "use jsoncompat.validator_for(schema_json).is_valid(instance_json) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     is_valid_native = _is_valid_native
     return is_valid_native(schema_json, instance_json)
 
 
-__all__ = ["Role", "RoleLiteral", "check_compat", "generate_value", "is_valid"]
+__all__ = [
+    "Role",
+    "RoleLiteral",
+    "Validator",
+    "check_compat",
+    "generate_value",
+    "is_valid",
+    "validator_for",
+]

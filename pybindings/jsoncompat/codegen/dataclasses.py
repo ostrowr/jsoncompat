@@ -16,7 +16,7 @@ from typing import (
     get_type_hints,
 )
 
-from jsoncompat import is_valid
+from jsoncompat import validator_for
 
 
 __all__ = [
@@ -102,7 +102,8 @@ class DataclassModel:
         if schema_json is None:
             return
         value = self.jsoncompat_to_json_unchecked()
-        if not is_valid(schema_json, json.dumps(value, separators=(",", ":"), sort_keys=True)):
+        instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
+        if not _jsoncompat_validator_for(type(self)).is_valid(instance_json):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
@@ -136,7 +137,7 @@ class DataclassModel:
         if schema_json is None:
             raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
         instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-        if not is_valid(schema_json, instance_json):
+        if not _jsoncompat_validator_for(cls).is_valid(instance_json):
             raise ValueError(f"value does not satisfy {cls.__name__} schema")
         return cls.jsoncompat_from_validated(value)
 
@@ -179,7 +180,7 @@ class DataclassModel:
         if schema_json is None:
             raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
         instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-        if not is_valid(schema_json, instance_json):
+        if not _jsoncompat_validator_for(type(self)).is_valid(instance_json):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
@@ -278,6 +279,14 @@ def _jsoncompat_schema_for(model_type: type[DataclassModel]) -> str | None:
             f"{model_type.__name__}.{JSONCOMPAT_SCHEMA_FIELD} must be a JSON string"
         )
     return schema
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_validator_for(model_type: type[DataclassModel]) -> Any:
+    schema_json = _jsoncompat_schema_for(model_type)
+    if schema_json is None:
+        raise TypeError(f"{model_type.__name__} is missing __jsoncompat_schema__")
+    return validator_for(schema_json)
 
 
 @functools.lru_cache(maxsize=None)
@@ -423,7 +432,7 @@ def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
                 continue
             if instance_json is None:
                 instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
-            if not is_valid(schema_json, instance_json):
+            if not _jsoncompat_validator_for(branch).is_valid(instance_json):
                 continue
             return branch.jsoncompat_from_validated(value)
         try:
