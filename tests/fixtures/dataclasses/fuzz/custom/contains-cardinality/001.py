@@ -8,12 +8,20 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "true"
+    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"contains\":{\"enum\":[1]},\"items\":true,\"maxItems\":2,\"minContains\":2,\"minItems\":2,\"type\":\"array\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contains": {
+    "const": 1
+  },
+  "maxItems": 2,
+  "minContains": 2,
+  "type": "array"
+}"""
     root: list[GeneratedSchemaItem] = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any

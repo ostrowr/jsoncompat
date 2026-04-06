@@ -200,6 +200,124 @@ for value in invalid_values:
 }
 
 #[test]
+fn generated_dataclasses_for_checkout_demo_are_python_usable() {
+    let source = generate_dataclass_models(&json!({
+        "type": "object",
+        "required": ["event", "customer", "items", "currency"],
+        "properties": {
+            "event": {
+                "enum": ["checkout.completed", "checkout.failed"]
+            },
+            "customer": {
+                "type": "object",
+                "required": ["id", "email", "segment"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "email": { "type": "string", "format": "email" },
+                    "segment": { "enum": ["self_serve", "startup", "enterprise"] },
+                    "trialDaysRemaining": { "type": "integer", "minimum": 0, "maximum": 30 }
+                },
+                "additionalProperties": false
+            },
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "required": ["sku", "quantity", "unitPrice"],
+                    "properties": {
+                        "sku": { "enum": ["starter-seat", "team-seat", "audit-log"] },
+                        "quantity": { "type": "integer", "minimum": 1, "maximum": 5 },
+                        "unitPrice": { "type": "integer", "minimum": 0, "maximum": 500 }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "currency": { "enum": ["USD", "EUR", "GBP"] },
+            "couponCode": { "type": "string", "minLength": 4, "maxLength": 12 }
+        },
+        "additionalProperties": false
+    }))
+    .expect("generate dataclasses from checkout demo schema");
+    let module_path = write_temp_module("checkout_demo", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+import typing
+
+from jsoncompat.codegen.dataclasses import JSONCOMPAT_MISSING
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("checkout_demo_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model_hints = typing.get_type_hints(module.GeneratedSchema)
+customer_hints = typing.get_type_hints(module.GeneratedSchemaCustomer)
+item_hints = typing.get_type_hints(module.GeneratedSchemaItem)
+assert model_hints["customer"] is module.GeneratedSchemaCustomer
+assert model_hints["items"] == list[module.GeneratedSchemaItem]
+assert customer_hints["id"] is str
+assert item_hints["quantity"] is int
+
+assert module.GeneratedSchema.__jsoncompat_schema__.startswith('{\n')
+assert '"minProperties"' not in module.GeneratedSchema.__jsoncompat_schema__
+
+customer = module.GeneratedSchemaCustomer(
+    id="cus_123",
+    email="ada@example.com",
+    segment="enterprise",
+    trialDaysRemaining=7,
+)
+item = module.GeneratedSchemaItem(
+    sku="team-seat",
+    quantity=2,
+    unitPrice=120,
+)
+event = module.GeneratedSchema(
+    event="checkout.completed",
+    customer=customer,
+    items=[item],
+    currency="USD",
+)
+assert event.couponCode is JSONCOMPAT_MISSING
+assert event.to_json() == {
+    "event": "checkout.completed",
+    "customer": {
+        "id": "cus_123",
+        "email": "ada@example.com",
+        "segment": "enterprise",
+        "trialDaysRemaining": 7,
+    },
+    "items": [
+        {
+            "sku": "team-seat",
+            "quantity": 2,
+            "unitPrice": 120,
+        }
+    ],
+    "currency": "USD",
+}
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass checkout demo test");
+    assert!(
+        output.status.success(),
+        "generated dataclass checkout demo test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_use_root_defs_for_stamped_payload_ref_collisions() {
     let stamped = stamp_schema(
         &StampManifest::empty(),

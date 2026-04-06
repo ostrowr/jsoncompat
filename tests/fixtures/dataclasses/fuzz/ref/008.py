@@ -8,12 +8,31 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaIsString(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"is-string\":{\"minLength\":0,\"type\":\"string\"}},\"minLength\":0,\"type\":\"string\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$defs": {
+    "is-string": {
+      "type": "string"
+    }
+  },
+  "type": "string"
+}"""
     root: str = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any]):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"is-string\":{\"minLength\":0,\"type\":\"string\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"properties\":{\"$ref\":{\"$ref\":\"#/$defs/is-string\"}}}"
+    __jsoncompat_schema__: typing.ClassVar[str] = """{
+  "$defs": {
+    "is-string": {
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "$ref": {
+      "$ref": "#/$defs/is-string"
+    }
+  }
+}"""
     _ref: (GeneratedSchemaIsString | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("$ref", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
