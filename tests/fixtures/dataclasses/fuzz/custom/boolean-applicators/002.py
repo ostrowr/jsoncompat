@@ -13,11 +13,11 @@ class GeneratedSchemaBranch0(jsoncompat_dataclasses.DataclassRootModel):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"oneOf\":[false,{\"type\":\"boolean\"}]}"
-    root: (GeneratedSchemaBranch0 | bool) = jsoncompat_dataclasses.jsoncompat_root_field()
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"oneOf\":[false,{\"enum\":[false,true]}]}"
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch0) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaBranch0.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (GeneratedSchemaBranch0 | bool)
+GeneratedSchema.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch0)
 
 JSONCOMPAT_MODEL = GeneratedSchema

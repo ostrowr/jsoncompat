@@ -8,7 +8,7 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"const\":9007199254740992}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"enum\":[9007199254740992]}"
     root: typing.Literal[9007199254740992] = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Literal[9007199254740992]

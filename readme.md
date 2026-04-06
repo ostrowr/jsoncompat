@@ -332,7 +332,7 @@ flowchart TD
 
 ## Debugging canonicalization
 
-To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. Canonicalization is an internal library facility, not a `jsoncompat` CLI subcommand.
+To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. The CLI also exposes this same normalized document with `jsoncompat codegen --target schema`.
 
 ## Stamped schemas
 
@@ -363,10 +363,11 @@ jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 
 ### Dataclass code generation
 
-`jsoncompat codegen --target dataclasses` accepts any JSON Schema document and
-emits frozen, slotted Python dataclasses that import shared construction and
+`jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
+canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
+frozen, slotted Python dataclasses that import shared construction and
 serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
-carry the source schema in `__jsoncompat_schema__`, validate with
+carry the canonical schema in `__jsoncompat_schema__`, validate with
 `jsoncompat.is_valid(...)`, and expose:
 
 - `from_json(...)` / `from_json_string(...)` constructors for schema-checked

@@ -1,0 +1,1 @@
+invalid schema document: unsupported $schema URI at '#/$schema': expected 'https://json-schema.org/draft/2020-12/schema', got 'http://localhost:1234/draft2020-12/metaschema-no-validation.json'

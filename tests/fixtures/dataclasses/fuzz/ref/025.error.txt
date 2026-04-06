@@ -1,1 +1,1 @@
-unsupported $ref 'urn:uuid:deadbeef-1234-0000-0000-4321feebdaed#/$defs/bar' at '#/properties/foo/$ref'
+invalid schema at '#/anyOf/2/$defs/bar': schema declaration name was not collected

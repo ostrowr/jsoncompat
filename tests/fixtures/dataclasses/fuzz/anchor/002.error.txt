@@ -1,1 +1,1 @@
-unsupported $ref 'http://localhost:1234/draft2020-12/nested.json#foo' at '#/$ref'
+invalid schema at '#/$defs/A/anyOf/2/$defs/B': schema declaration name was not collected

@@ -1,1 +1,1 @@
-unsupported $ref 'genericList' at '#/$defs/numberList/$ref'
+invalid schema at '#/$defs/genericList/anyOf/2/$defs/defaultItemType': schema declaration name was not collected

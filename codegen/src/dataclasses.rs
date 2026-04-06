@@ -1,4 +1,5 @@
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
+use json_schema_ast::{SchemaBuildError, SchemaDocument};
 use serde_json::{Map, Value};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,6 +17,11 @@ const DATACLASSES_RUNTIME_MODULE: &str = "jsoncompat_dataclasses";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataclassError {
+    #[error("invalid schema document: {source}")]
+    InvalidSchemaDocument {
+        #[from]
+        source: SchemaBuildError,
+    },
     #[error("invalid schema at '{pointer}': {message}")]
     InvalidSchema { pointer: String, message: String },
     #[error("unsupported $ref '{ref_value}' at '{pointer}'")]
@@ -391,7 +397,8 @@ impl DataclassModuleBuilder {
 }
 
 pub fn generate_dataclass_models(schema: &Value) -> Result<String, DataclassError> {
-    render_dataclass_module(schema)
+    let document = SchemaDocument::from_json(schema)?;
+    render_dataclass_module(document.canonical_schema_json()?)
 }
 
 fn render_dataclass_module(schema: &Value) -> Result<String, DataclassError> {
