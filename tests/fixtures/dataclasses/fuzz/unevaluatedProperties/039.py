@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2Foo2(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
@@ -59,13 +59,13 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    foo2: dc.Omittable[GeneratedSchemaBranch2Foo2] = dc.jsoncompat_field("foo2", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    foo2: dc.Omittable[GeneratedSchemaBranch2Foo2] = dc.field("foo2", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -84,12 +84,12 @@ class GeneratedSchema(dc.DataclassRootModel):
   },
   "unevaluatedProperties": false
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
 
 GeneratedSchemaBranch2Foo2.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("foo2", "foo2", (GeneratedSchemaBranch2Foo2 | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("foo2", "foo2", (GeneratedSchemaBranch2Foo2 | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

@@ -50,8 +50,8 @@ class GeneratedSchemaTreeBranch1(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    left: GeneratedSchemaTree = dc.jsoncompat_field("left")
-    right: GeneratedSchemaTree = dc.jsoncompat_field("right")
+    left: GeneratedSchemaTree = dc.field("left")
+    right: GeneratedSchemaTree = dc.field("right")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTree(dc.DataclassRootModel):
@@ -103,7 +103,7 @@ class GeneratedSchemaTree(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaTreeBranch1 | None) = dc.jsoncompat_root_field()
+    root: (GeneratedSchemaTreeBranch1 | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -136,11 +136,11 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/tree",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaTree = dc.jsoncompat_root_field()
+    root: GeneratedSchemaTree = dc.root_field()
 
-GeneratedSchemaTreeBranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("left", "left", GeneratedSchemaTree),
-    dc.jsoncompat_field_spec("right", "right", GeneratedSchemaTree),
+GeneratedSchemaTreeBranch1.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("left", "left", GeneratedSchemaTree),
+    dc.field_spec("right", "right", GeneratedSchemaTree),
 )
 
 GeneratedSchemaTree.__jsoncompat_root_annotation__ = (GeneratedSchemaTreeBranch1 | None)

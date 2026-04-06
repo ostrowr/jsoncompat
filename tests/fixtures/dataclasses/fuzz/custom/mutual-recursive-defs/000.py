@@ -60,7 +60,7 @@ class GeneratedSchemaABranch1(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    next: GeneratedSchemaB = dc.jsoncompat_field("next")
+    next: GeneratedSchemaB = dc.field("next")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaA(dc.DataclassRootModel):
@@ -123,7 +123,7 @@ class GeneratedSchemaA(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaABranch1 | None) = dc.jsoncompat_root_field()
+    root: (GeneratedSchemaABranch1 | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBBranch1(dc.DataclassModel):
@@ -179,7 +179,7 @@ class GeneratedSchemaBBranch1(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    next: GeneratedSchemaA = dc.jsoncompat_field("next")
+    next: GeneratedSchemaA = dc.field("next")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaB(dc.DataclassRootModel):
@@ -242,7 +242,7 @@ class GeneratedSchemaB(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaBBranch1 | None) = dc.jsoncompat_root_field()
+    root: (GeneratedSchemaBBranch1 | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -290,16 +290,16 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/a",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaA = dc.jsoncompat_root_field()
+    root: GeneratedSchemaA = dc.root_field()
 
-GeneratedSchemaABranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("next", "next", GeneratedSchemaB),
+GeneratedSchemaABranch1.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("next", "next", GeneratedSchemaB),
 )
 
 GeneratedSchemaA.__jsoncompat_root_annotation__ = (GeneratedSchemaABranch1 | None)
 
-GeneratedSchemaBBranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("next", "next", GeneratedSchemaA),
+GeneratedSchemaBBranch1.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("next", "next", GeneratedSchemaA),
 )
 
 GeneratedSchemaB.__jsoncompat_root_annotation__ = (GeneratedSchemaBBranch1 | None)

@@ -14,7 +14,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch3(dc.DataclassRootModel):
@@ -22,7 +22,7 @@ class GeneratedSchemaBranch3(dc.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "not": true
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -34,9 +34,9 @@ class GeneratedSchema(dc.DataclassRootModel):
   "maxContains": 1,
   "minContains": 3
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | GeneratedSchemaBranch3 | float | str | None) = dc.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | GeneratedSchemaBranch3 | float | str | None) = dc.root_field()
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
     extra_annotation=dict[str, typing.Any],
 )
 

@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBool(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """false"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -20,7 +20,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/bool",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaBool = dc.jsoncompat_root_field()
+    root: GeneratedSchemaBool = dc.root_field()
 
 GeneratedSchemaBool.__jsoncompat_root_annotation__ = typing.Any
 

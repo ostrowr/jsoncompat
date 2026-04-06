@@ -86,9 +86,9 @@ class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
     "version": 1
   }
 }"""
-    age: int = dc.jsoncompat_field("age")
-    name: str = dc.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    age: int = dc.field("age")
+    name: str = dc.field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
@@ -174,10 +174,10 @@ class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     "version": 2
   }
 }"""
-    age: int = dc.jsoncompat_field("age")
-    interests: int = dc.jsoncompat_field("interests")
-    name: str = dc.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    age: int = dc.field("age")
+    interests: int = dc.field("interests")
+    name: str = dc.field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV2Reader(dc.ReaderDataclassModel):
@@ -258,8 +258,8 @@ class ExamplesStampUserProfileV2Reader(dc.ReaderDataclassModel):
     "version": 2
   }
 }"""
-    version: typing.Literal[2] = dc.jsoncompat_field("version")
-    data: ExamplesStampUserProfileV2 = dc.jsoncompat_field("data")
+    version: typing.Literal[2] = dc.field("version")
+    data: ExamplesStampUserProfileV2 = dc.field("data")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV1Reader(dc.ReaderDataclassModel):
@@ -340,8 +340,8 @@ class ExamplesStampUserProfileV1Reader(dc.ReaderDataclassModel):
     "version": 1
   }
 }"""
-    version: typing.Literal[1] = dc.jsoncompat_field("version")
-    data: ExamplesStampUserProfileV1 = dc.jsoncompat_field("data")
+    version: typing.Literal[1] = dc.field("version")
+    data: ExamplesStampUserProfileV1 = dc.field("data")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -457,29 +457,29 @@ class ExamplesStampUserProfileReader(dc.ReaderDataclassRootModel):
     "stable_id": "examples/stamp/user-profile"
   }
 }"""
-    root: (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader) = dc.jsoncompat_root_field()
+    root: (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader) = dc.root_field()
 
-ExamplesStampUserProfileV1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("age", "age", int),
-    dc.jsoncompat_field_spec("name", "name", str),
+ExamplesStampUserProfileV1.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("age", "age", int),
+    dc.field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-ExamplesStampUserProfileV2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("age", "age", int),
-    dc.jsoncompat_field_spec("interests", "interests", int),
-    dc.jsoncompat_field_spec("name", "name", str),
+ExamplesStampUserProfileV2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("age", "age", int),
+    dc.field_spec("interests", "interests", int),
+    dc.field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-ExamplesStampUserProfileV2Reader.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("version", "version", typing.Literal[2]),
-    dc.jsoncompat_field_spec("data", "data", ExamplesStampUserProfileV2),
+ExamplesStampUserProfileV2Reader.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("version", "version", typing.Literal[2]),
+    dc.field_spec("data", "data", ExamplesStampUserProfileV2),
 )
 
-ExamplesStampUserProfileV1Reader.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("version", "version", typing.Literal[1]),
-    dc.jsoncompat_field_spec("data", "data", ExamplesStampUserProfileV1),
+ExamplesStampUserProfileV1Reader.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("version", "version", typing.Literal[1]),
+    dc.field_spec("data", "data", ExamplesStampUserProfileV1),
 )
 
 

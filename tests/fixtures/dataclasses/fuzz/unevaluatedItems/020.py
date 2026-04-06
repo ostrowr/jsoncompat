@@ -13,7 +13,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -44,15 +44,15 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     }
   }
 }"""
-    foo: dc.Omittable[(typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None] = dc.jsoncompat_field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    foo: dc.Omittable[(typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None] = dc.field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
     extra_annotation=dict[str, typing.Any],
 )
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("foo", "foo", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None) | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("foo", "foo", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None) | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

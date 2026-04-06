@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch1(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{}"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -22,7 +22,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     {}
   ]
 }"""
-    root: (GeneratedSchemaBranch1 | float) = dc.jsoncompat_root_field()
+    root: (GeneratedSchemaBranch1 | float) = dc.root_field()
 
 GeneratedSchemaBranch1.__jsoncompat_root_annotation__ = typing.Any
 

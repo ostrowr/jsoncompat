@@ -24,8 +24,8 @@ class GeneratedSchemaBranch0(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    kind: typing.Literal["int"] = dc.jsoncompat_field("kind")
-    value: int = dc.jsoncompat_field("value")
+    kind: typing.Literal["int"] = dc.field("kind")
+    value: int = dc.field("value")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch1(dc.DataclassModel):
@@ -45,8 +45,8 @@ class GeneratedSchemaBranch1(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    kind: typing.Literal["str"] = dc.jsoncompat_field("kind")
-    value: str = dc.jsoncompat_field("value")
+    kind: typing.Literal["str"] = dc.field("kind")
+    value: str = dc.field("value")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -87,16 +87,16 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaBranch0 | GeneratedSchemaBranch1) = dc.jsoncompat_root_field()
+    root: (GeneratedSchemaBranch0 | GeneratedSchemaBranch1) = dc.root_field()
 
-GeneratedSchemaBranch0.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("kind", "kind", typing.Literal["int"]),
-    dc.jsoncompat_field_spec("value", "value", int),
+GeneratedSchemaBranch0.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("kind", "kind", typing.Literal["int"]),
+    dc.field_spec("value", "value", int),
 )
 
-GeneratedSchemaBranch1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("kind", "kind", typing.Literal["str"]),
-    dc.jsoncompat_field_spec("value", "value", str),
+GeneratedSchemaBranch1.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("kind", "kind", typing.Literal["str"]),
+    dc.field_spec("value", "value", str),
 )
 
 GeneratedSchema.__jsoncompat_root_annotation__ = (GeneratedSchemaBranch0 | GeneratedSchemaBranch1)

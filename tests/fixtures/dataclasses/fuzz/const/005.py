@@ -12,7 +12,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "const": true
 }"""
-    root: typing.Literal[True] = dc.jsoncompat_root_field()
+    root: typing.Literal[True] = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Literal[True]
 

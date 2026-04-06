@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -17,7 +17,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "array"
 }"""
-    root: list[GeneratedSchemaItem] = dc.jsoncompat_root_field()
+    root: list[GeneratedSchemaItem] = dc.root_field()
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = typing.Any
 

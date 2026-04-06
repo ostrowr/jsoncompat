@@ -24,7 +24,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[list[list[list[float]]]] = dc.jsoncompat_root_field()
+    root: list[list[list[list[float]]]] = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = list[list[list[list[float]]]]
 

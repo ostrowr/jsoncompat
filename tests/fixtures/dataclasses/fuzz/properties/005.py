@@ -18,13 +18,13 @@ class GeneratedSchemaBranch2Branch2(dc.DataclassAdditionalModel[typing.Any]):
   },
   "type": "object"
 }"""
-    length: dc.Omittable[str] = dc.jsoncompat_field("length", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    length: dc.Omittable[str] = dc.field("length", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2Item(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
@@ -78,15 +78,15 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   },
   "type": "object"
 }"""
-    __proto__: dc.Omittable[float] = dc.jsoncompat_field("__proto__", omittable=True)
-    constructor: dc.Omittable[float] = dc.jsoncompat_field("constructor", omittable=True)
-    toString: dc.Omittable[(typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item] | str | None] = dc.jsoncompat_field("toString", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    __proto__: dc.Omittable[float] = dc.field("__proto__", omittable=True)
+    constructor: dc.Omittable[float] = dc.field("constructor", omittable=True)
+    toString: dc.Omittable[(typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item] | str | None] = dc.field("toString", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -108,19 +108,19 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
 
-GeneratedSchemaBranch2Branch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("length", "length", (str | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchemaBranch2Branch2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("length", "length", (str | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 
 GeneratedSchemaBranch2Item.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("__proto__", "__proto__", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("constructor", "constructor", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("toString", "toString", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item] | str | None) | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("__proto__", "__proto__", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("constructor", "constructor", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("toString", "toString", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item] | str | None) | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

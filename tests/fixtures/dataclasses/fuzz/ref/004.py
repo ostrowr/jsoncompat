@@ -22,7 +22,7 @@ class GeneratedSchemaA(dc.DataclassRootModel):
   },
   "type": "integer"
 }"""
-    root: int = dc.jsoncompat_root_field()
+    root: int = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaB(dc.DataclassRootModel):
@@ -40,7 +40,7 @@ class GeneratedSchemaB(dc.DataclassRootModel):
   },
   "$ref": "#/$defs/a"
 }"""
-    root: GeneratedSchemaA = dc.jsoncompat_root_field()
+    root: GeneratedSchemaA = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaC(dc.DataclassRootModel):
@@ -58,7 +58,7 @@ class GeneratedSchemaC(dc.DataclassRootModel):
   },
   "$ref": "#/$defs/b"
 }"""
-    root: GeneratedSchemaB = dc.jsoncompat_root_field()
+    root: GeneratedSchemaB = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -77,7 +77,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/c",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaC = dc.jsoncompat_root_field()
+    root: GeneratedSchemaC = dc.root_field()
 
 GeneratedSchemaA.__jsoncompat_root_annotation__ = int
 

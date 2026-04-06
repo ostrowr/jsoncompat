@@ -12,7 +12,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "const": -2.0
 }"""
-    root: float = dc.jsoncompat_root_field()
+    root: float = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = float
 

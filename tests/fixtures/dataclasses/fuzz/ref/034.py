@@ -20,7 +20,7 @@ class GeneratedSchemaGeneratedSchemaGeneratedSchema(dc.DataclassRootModel):
   },
   "type": "number"
 }"""
-    root: float = dc.jsoncompat_root_field()
+    root: float = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaGeneratedSchema(dc.DataclassRootModel):
@@ -35,7 +35,7 @@ class GeneratedSchemaGeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -56,7 +56,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 GeneratedSchemaGeneratedSchemaGeneratedSchema.__jsoncompat_root_annotation__ = float
 

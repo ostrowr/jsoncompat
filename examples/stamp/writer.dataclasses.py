@@ -66,10 +66,10 @@ class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     "version": 2
   }
 }"""
-    age: int = dc.jsoncompat_field("age")
-    interests: int = dc.jsoncompat_field("interests")
-    name: str = dc.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    age: int = dc.field("age")
+    interests: int = dc.field("interests")
+    name: str = dc.field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileWriter(dc.WriterDataclassModel):
@@ -128,19 +128,19 @@ class UserProfileWriter(dc.WriterDataclassModel):
     "version": 2
   }
 }"""
-    version: typing.Literal[2] = dc.jsoncompat_field("version")
-    data: UserProfileV2 = dc.jsoncompat_field("data")
+    version: typing.Literal[2] = dc.field("version")
+    data: UserProfileV2 = dc.field("data")
 
-UserProfileV2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("age", "age", int),
-    dc.jsoncompat_field_spec("interests", "interests", int),
-    dc.jsoncompat_field_spec("name", "name", str),
+UserProfileV2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("age", "age", int),
+    dc.field_spec("interests", "interests", int),
+    dc.field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-UserProfileWriter.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("version", "version", typing.Literal[2]),
-    dc.jsoncompat_field_spec("data", "data", UserProfileV2),
+UserProfileWriter.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("version", "version", typing.Literal[2]),
+    dc.field_spec("data", "data", UserProfileV2),
 )
 
 JSONCOMPAT_MODEL = UserProfileWriter

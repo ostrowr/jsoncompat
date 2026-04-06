@@ -16,7 +16,7 @@ class GeneratedSchemaIsString(dc.DataclassRootModel):
   },
   "type": "string"
 }"""
-    root: str = dc.jsoncompat_root_field()
+    root: str = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -33,13 +33,13 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     }
   }
 }"""
-    _ref: dc.Omittable[GeneratedSchemaIsString] = dc.jsoncompat_field("$ref", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    _ref: dc.Omittable[GeneratedSchemaIsString] = dc.field("$ref", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 GeneratedSchemaIsString.__jsoncompat_root_annotation__ = str
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("_ref", "$ref", (GeneratedSchemaIsString | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("_ref", "$ref", (GeneratedSchemaIsString | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

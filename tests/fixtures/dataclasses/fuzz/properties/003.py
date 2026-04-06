@@ -33,18 +33,18 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   },
   "type": "object"
 }"""
-    foo_bar: dc.Omittable[float] = dc.jsoncompat_field("foo\tbar", omittable=True)
-    foo_bar2: dc.Omittable[float] = dc.jsoncompat_field("foo\nbar", omittable=True)
-    foo_bar3: dc.Omittable[float] = dc.jsoncompat_field("foo\fbar", omittable=True)
-    foo_bar4: dc.Omittable[float] = dc.jsoncompat_field("foo\rbar", omittable=True)
-    foo_bar5: dc.Omittable[float] = dc.jsoncompat_field("foo\"bar", omittable=True)
-    foo_bar6: dc.Omittable[float] = dc.jsoncompat_field("foo\\bar", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    foo_bar: dc.Omittable[float] = dc.field("foo\tbar", omittable=True)
+    foo_bar2: dc.Omittable[float] = dc.field("foo\nbar", omittable=True)
+    foo_bar3: dc.Omittable[float] = dc.field("foo\fbar", omittable=True)
+    foo_bar4: dc.Omittable[float] = dc.field("foo\rbar", omittable=True)
+    foo_bar5: dc.Omittable[float] = dc.field("foo\"bar", omittable=True)
+    foo_bar6: dc.Omittable[float] = dc.field("foo\\bar", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -71,15 +71,15 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("foo_bar", "foo\tbar", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("foo_bar2", "foo\nbar", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("foo_bar3", "foo\fbar", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("foo_bar4", "foo\rbar", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("foo_bar5", "foo\"bar", (float | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("foo_bar6", "foo\\bar", (float | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("foo_bar", "foo\tbar", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("foo_bar2", "foo\nbar", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("foo_bar3", "foo\fbar", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("foo_bar4", "foo\rbar", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("foo_bar5", "foo\"bar", (float | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("foo_bar6", "foo\\bar", (float | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

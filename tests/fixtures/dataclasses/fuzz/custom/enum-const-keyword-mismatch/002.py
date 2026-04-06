@@ -15,7 +15,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     "type": "integer"
   }
 }"""
-    root: list[int] = dc.jsoncompat_root_field()
+    root: list[int] = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = list[int]
 

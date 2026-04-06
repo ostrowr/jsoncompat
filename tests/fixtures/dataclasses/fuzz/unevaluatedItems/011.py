@@ -22,7 +22,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedItems": false
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch22(dc.DataclassAdditionalModel[typing.Any]):
@@ -40,7 +40,7 @@ class GeneratedSchemaBranch22(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedItems": false
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -72,13 +72,13 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "unevaluatedItems": false
 }"""
-    root: ((GeneratedSchemaBranch2 | float | list[typing.Any] | str | typing.Any) | (GeneratedSchemaBranch22 | float | list[typing.Any] | str | typing.Any)) = dc.jsoncompat_root_field()
+    root: ((GeneratedSchemaBranch2 | float | list[typing.Any] | str | typing.Any) | (GeneratedSchemaBranch22 | float | list[typing.Any] | str | typing.Any)) = dc.root_field()
 
-GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+GeneratedSchemaBranch2.__jsoncompat_object_spec__ = dc.object_spec(
     extra_annotation=dict[str, typing.Any],
 )
 
-GeneratedSchemaBranch22.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+GeneratedSchemaBranch22.__jsoncompat_object_spec__ = dc.object_spec(
     extra_annotation=dict[str, typing.Any],
 )
 

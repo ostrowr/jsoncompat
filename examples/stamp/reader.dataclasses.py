@@ -86,9 +86,9 @@ class UserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
     "version": 1
   }
 }"""
-    age: int = dc.jsoncompat_field("age")
-    name: str = dc.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    age: int = dc.field("age")
+    name: str = dc.field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
@@ -174,10 +174,10 @@ class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     "version": 2
   }
 }"""
-    age: int = dc.jsoncompat_field("age")
-    interests: int = dc.jsoncompat_field("interests")
-    name: str = dc.jsoncompat_field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    age: int = dc.field("age")
+    interests: int = dc.field("interests")
+    name: str = dc.field("name")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2Reader(dc.ReaderDataclassModel):
@@ -258,8 +258,8 @@ class UserProfileV2Reader(dc.ReaderDataclassModel):
     "version": 2
   }
 }"""
-    version: typing.Literal[2] = dc.jsoncompat_field("version")
-    data: UserProfileV2 = dc.jsoncompat_field("data")
+    version: typing.Literal[2] = dc.field("version")
+    data: UserProfileV2 = dc.field("data")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV1Reader(dc.ReaderDataclassModel):
@@ -340,8 +340,8 @@ class UserProfileV1Reader(dc.ReaderDataclassModel):
     "version": 1
   }
 }"""
-    version: typing.Literal[1] = dc.jsoncompat_field("version")
-    data: UserProfileV1 = dc.jsoncompat_field("data")
+    version: typing.Literal[1] = dc.field("version")
+    data: UserProfileV1 = dc.field("data")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -457,29 +457,29 @@ class UserProfileReader(dc.ReaderDataclassRootModel):
     "stable_id": "user-profile"
   }
 }"""
-    root: (UserProfileV1Reader | UserProfileV2Reader) = dc.jsoncompat_root_field()
+    root: (UserProfileV1Reader | UserProfileV2Reader) = dc.root_field()
 
-UserProfileV1.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("age", "age", int),
-    dc.jsoncompat_field_spec("name", "name", str),
+UserProfileV1.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("age", "age", int),
+    dc.field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-UserProfileV2.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("age", "age", int),
-    dc.jsoncompat_field_spec("interests", "interests", int),
-    dc.jsoncompat_field_spec("name", "name", str),
+UserProfileV2.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("age", "age", int),
+    dc.field_spec("interests", "interests", int),
+    dc.field_spec("name", "name", str),
     extra_annotation=dict[str, typing.Any],
 )
 
-UserProfileV2Reader.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("version", "version", typing.Literal[2]),
-    dc.jsoncompat_field_spec("data", "data", UserProfileV2),
+UserProfileV2Reader.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("version", "version", typing.Literal[2]),
+    dc.field_spec("data", "data", UserProfileV2),
 )
 
-UserProfileV1Reader.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("version", "version", typing.Literal[1]),
-    dc.jsoncompat_field_spec("data", "data", UserProfileV1),
+UserProfileV1Reader.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("version", "version", typing.Literal[1]),
+    dc.field_spec("data", "data", UserProfileV1),
 )
 
 

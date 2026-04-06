@@ -551,7 +551,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
                 if field.required {
                     writeln!(
                         output,
-                        "    {}: {} = {}.jsoncompat_field({})",
+                        "    {}: {} = {}.field({})",
                         field.py_name,
                         annotation,
                         DATACLASSES_RUNTIME_MODULE,
@@ -561,7 +561,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
                 } else {
                     writeln!(
                         output,
-                        "    {}: {} = {}.jsoncompat_field({}, omittable=True)",
+                        "    {}: {} = {}.field({}, omittable=True)",
                         field.py_name,
                         annotation,
                         DATACLASSES_RUNTIME_MODULE,
@@ -573,7 +573,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
             if let Some(extra_annotation) = extra_annotation {
                 writeln!(
                     output,
-                    "    {EXTRA_FIELD_NAME}: dict[str, {extra_annotation}] = {}.jsoncompat_extra_field()",
+                    "    {EXTRA_FIELD_NAME}: dict[str, {extra_annotation}] = {}.extra_field()",
                     DATACLASSES_RUNTIME_MODULE,
                 )
                 .expect("writing to String cannot fail");
@@ -582,7 +582,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
         ClassKind::Root { annotation } => {
             writeln!(
                 output,
-                "    root: {annotation} = {}.jsoncompat_root_field()",
+                "    root: {annotation} = {}.root_field()",
                 DATACLASSES_RUNTIME_MODULE,
             )
             .expect("writing to String cannot fail");
@@ -628,13 +628,13 @@ fn render_writer_class(
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "    version: typing.Literal[{version}] = {}.jsoncompat_field(\"version\")",
+        "    version: typing.Literal[{version}] = {}.field(\"version\")",
         DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "    data: {payload_type} = {}.jsoncompat_field(\"data\")",
+        "    data: {payload_type} = {}.field(\"data\")",
         DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
@@ -693,13 +693,13 @@ fn render_reader_variants(
         .expect("writing to String cannot fail");
         writeln!(
             output,
-            "    version: typing.Literal[{version}] = {}.jsoncompat_field(\"version\")",
+            "    version: typing.Literal[{version}] = {}.field(\"version\")",
             DATACLASSES_RUNTIME_MODULE,
         )
         .expect("writing to String cannot fail");
         writeln!(
             output,
-            "    data: {payload_type} = {}.jsoncompat_field(\"data\")\n",
+            "    data: {payload_type} = {}.field(\"data\")\n",
             DATACLASSES_RUNTIME_MODULE,
         )
         .expect("writing to String cannot fail");
@@ -772,7 +772,7 @@ fn render_reader_root_class(
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "    root: {} = {}.jsoncompat_root_field()",
+        "    root: {} = {}.root_field()",
         union_annotation(&variant_names),
         DATACLASSES_RUNTIME_MODULE,
     )
@@ -788,7 +788,7 @@ fn render_class_runtime_spec(output: &mut String, class_spec: &ClassSpec) {
         } => {
             writeln!(
                 output,
-                "{}.__jsoncompat_object_spec__ = {}.jsoncompat_object_spec(",
+                "{}.__jsoncompat_object_spec__ = {}.object_spec(",
                 class_spec.name, DATACLASSES_RUNTIME_MODULE,
             )
             .expect("writing to String cannot fail");
@@ -801,7 +801,7 @@ fn render_class_runtime_spec(output: &mut String, class_spec: &ClassSpec) {
                 if field.required {
                     writeln!(
                         output,
-                        "    {}.jsoncompat_field_spec({}, {}, {}),",
+                        "    {}.field_spec({}, {}, {}),",
                         DATACLASSES_RUNTIME_MODULE,
                         python_string_literal(&field.py_name),
                         python_string_literal(&field.json_name),
@@ -811,7 +811,7 @@ fn render_class_runtime_spec(output: &mut String, class_spec: &ClassSpec) {
                 } else {
                     writeln!(
                         output,
-                        "    {}.jsoncompat_field_spec({}, {}, {}, omittable=True),",
+                        "    {}.field_spec({}, {}, {}, omittable=True),",
                         DATACLASSES_RUNTIME_MODULE,
                         python_string_literal(&field.py_name),
                         python_string_literal(&field.json_name),
@@ -861,19 +861,19 @@ fn render_writer_runtime_spec(
 
     writeln!(
         output,
-        "{name}.__jsoncompat_object_spec__ = {}.jsoncompat_object_spec(",
+        "{name}.__jsoncompat_object_spec__ = {}.object_spec(",
         DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "    {}.jsoncompat_field_spec(\"version\", \"version\", typing.Literal[{version}]),",
+        "    {}.field_spec(\"version\", \"version\", typing.Literal[{version}]),",
         DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "    {}.jsoncompat_field_spec(\"data\", \"data\", {payload_type}),",
+        "    {}.field_spec(\"data\", \"data\", {payload_type}),",
         DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
@@ -910,19 +910,19 @@ fn render_reader_variant_runtime_specs(
 
         writeln!(
             output,
-            "{name}.__jsoncompat_object_spec__ = {}.jsoncompat_object_spec(",
+            "{name}.__jsoncompat_object_spec__ = {}.object_spec(",
             DATACLASSES_RUNTIME_MODULE,
         )
         .expect("writing to String cannot fail");
         writeln!(
             output,
-            "    {}.jsoncompat_field_spec(\"version\", \"version\", typing.Literal[{version}]),",
+            "    {}.field_spec(\"version\", \"version\", typing.Literal[{version}]),",
             DATACLASSES_RUNTIME_MODULE,
         )
         .expect("writing to String cannot fail");
         writeln!(
             output,
-            "    {}.jsoncompat_field_spec(\"data\", \"data\", {payload_type}),",
+            "    {}.field_spec(\"data\", \"data\", {payload_type}),",
             DATACLASSES_RUNTIME_MODULE,
         )
         .expect("writing to String cannot fail");
@@ -1863,7 +1863,7 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("class UserProfile(dc.DataclassModel):"));
-        assert!(source.contains("name: str = dc.jsoncompat_field(\"name\")"));
+        assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
     }
 
@@ -1954,10 +1954,10 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains(
-            "nickname: dc.Omittable[str | None] = dc.jsoncompat_field(\"nickname\", omittable=True)"
+            "nickname: dc.Omittable[str | None] = dc.field(\"nickname\", omittable=True)"
         ));
         assert!(source.contains(
-            "dc.jsoncompat_field_spec(\"nickname\", \"nickname\", ((str | None) | dc.JsoncompatMissingType), omittable=True)"
+            "dc.field_spec(\"nickname\", \"nickname\", ((str | None) | dc.JsoncompatMissingType), omittable=True)"
         ));
     }
 }

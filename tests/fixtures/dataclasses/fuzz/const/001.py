@@ -15,7 +15,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     "foo": "bar"
   }
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Any
 

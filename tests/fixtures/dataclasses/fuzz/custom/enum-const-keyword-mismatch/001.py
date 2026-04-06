@@ -13,7 +13,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "const": 7,
   "minLength": 1
 }"""
-    root: typing.Literal[7] = dc.jsoncompat_root_field()
+    root: typing.Literal[7] = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Literal[7]
 

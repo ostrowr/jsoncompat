@@ -40,12 +40,12 @@ class GeneratedSchemaItem(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = dc.jsoncompat_root_field()
+    root: list[typing.Any] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaSubItemFoo(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaSubItem(dc.DataclassAdditionalModel[typing.Any]):
@@ -75,8 +75,8 @@ class GeneratedSchemaSubItem(dc.DataclassAdditionalModel[typing.Any]):
   ],
   "type": "object"
 }"""
-    foo: GeneratedSchemaSubItemFoo = dc.jsoncompat_field("foo")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    foo: GeneratedSchemaSubItemFoo = dc.field("foo")
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -116,14 +116,14 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = dc.jsoncompat_root_field()
+    root: list[typing.Any] = dc.root_field()
 
 GeneratedSchemaItem.__jsoncompat_root_annotation__ = list[typing.Any]
 
 GeneratedSchemaSubItemFoo.__jsoncompat_root_annotation__ = typing.Any
 
-GeneratedSchemaSubItem.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("foo", "foo", GeneratedSchemaSubItemFoo),
+GeneratedSchemaSubItem.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("foo", "foo", GeneratedSchemaSubItemFoo),
     extra_annotation=dict[str, typing.Any],
 )
 

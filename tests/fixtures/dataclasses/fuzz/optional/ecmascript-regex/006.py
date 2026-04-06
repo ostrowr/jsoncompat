@@ -13,7 +13,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "pattern": "^\\\\w$",
   "type": "string"
 }"""
-    root: str = dc.jsoncompat_root_field()
+    root: str = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = str
 

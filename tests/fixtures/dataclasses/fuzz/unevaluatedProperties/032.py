@@ -18,11 +18,11 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    x: dc.Omittable[GeneratedSchema] = dc.jsoncompat_field("x", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    x: dc.Omittable[GeneratedSchema] = dc.field("x", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("x", "x", (GeneratedSchema | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("x", "x", (GeneratedSchema | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

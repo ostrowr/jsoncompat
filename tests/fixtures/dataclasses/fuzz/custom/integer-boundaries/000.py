@@ -14,7 +14,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "minimum": 9223372036854775806,
   "type": "integer"
 }"""
-    root: typing.Literal[9223372036854775806] = dc.jsoncompat_root_field()
+    root: typing.Literal[9223372036854775806] = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Literal[9223372036854775806]
 
