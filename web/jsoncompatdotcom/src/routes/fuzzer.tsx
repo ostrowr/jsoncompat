@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import init, * as jsoncompat from "jsoncompat";
 // Get the final URL of the wasm binary from Vite at build time.
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from "jsoncompat/jsoncompat_wasm_bg.wasm?url";
 import { useState } from "react";
-import { generatorFor } from "../jsoncompatWasm";
+import init, { generate_value } from "jsoncompat";
 
 const DEFAULT_SCHEMA = `{
   "type": "object",
@@ -61,10 +60,10 @@ function FuzzerPage() {
     setExamples([]);
     try {
       await init(wasmUrl); // TODO: only do once
-      const generator = generatorFor(jsoncompat, schema);
       const vals: string[] = [];
       for (let i = 0; i < numExamples; i++) {
-        const v = generator.generate_value(depth);
+        // eslint-disable-next-line no-await-in-loop
+        const v = await generate_value(schema, depth);
         vals.push(v);
       }
       setExamples(vals);
