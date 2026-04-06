@@ -372,8 +372,9 @@ jobs:
             exit 1
           fi
 
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "${assets[@]}" --clobber
+          repo="${GITHUB_REPOSITORY}"
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --repo "$repo" --clobber
           else
-            gh release create "$tag" "${assets[@]}" --verify-tag --title "$tag" --notes ""
+            gh release create "$tag" "${assets[@]}" --repo "$repo" --verify-tag --title "$tag" --notes ""
           fi
