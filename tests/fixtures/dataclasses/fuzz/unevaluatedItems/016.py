@@ -45,7 +45,7 @@ class GeneratedSchemaBar(jsoncompat_dataclasses.DataclassRootModel):
     }
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | None | float | list[typing.Any] | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[typing.Any] | str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
@@ -75,7 +75,7 @@ GeneratedSchemaBarBranch2.__jsoncompat_object_spec__ = jsoncompat_dataclasses.js
     extra_annotation=dict[str, typing.Any],
 )
 
-GeneratedSchemaBar.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | None | float | list[typing.Any] | str)
+GeneratedSchemaBar.__jsoncompat_root_annotation__ = ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[typing.Any] | str | None)
 
 GeneratedSchema.__jsoncompat_root_annotation__ = GeneratedSchemaBar
 

@@ -35,7 +35,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassAdditionalModel[typing.Any
     }
   }
 }"""
-    foo: (GeneratedSchemaBar | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
+    foo: jsoncompat_dataclasses.Omittable[GeneratedSchemaBar] = jsoncompat_dataclasses.jsoncompat_field("foo", omittable=True)
     __jsoncompat_extra__: dict[str, typing.Any] = jsoncompat_dataclasses.jsoncompat_extra_field()
 
 GeneratedSchemaBar.__jsoncompat_root_annotation__ = str

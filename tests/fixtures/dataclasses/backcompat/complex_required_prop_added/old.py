@@ -53,7 +53,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
   ],
   "type": "object"
 }"""
-    config: (GeneratedSchemaConfig | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("config", omittable=True)
+    config: jsoncompat_dataclasses.Omittable[GeneratedSchemaConfig] = jsoncompat_dataclasses.jsoncompat_field("config", omittable=True)
     id: str = jsoncompat_dataclasses.jsoncompat_field("id")
     name: str = jsoncompat_dataclasses.jsoncompat_field("name")
 

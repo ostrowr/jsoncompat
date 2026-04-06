@@ -15,8 +15,8 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     null
   ]
 }"""
-    root: (None | typing.Literal[6]) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (typing.Literal[6] | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (None | typing.Literal[6])
+GeneratedSchema.__jsoncompat_root_annotation__ = (typing.Literal[6] | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema

@@ -13,6 +13,7 @@ const READER_ROOT_MODEL_CLASS: &str = "ReaderDataclassRootModel";
 const WRITER_MODEL_CLASS: &str = "WriterDataclassModel";
 const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
 const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
+const OMITTABLE_TYPE_NAME: &str = "Omittable";
 const DATACLASSES_RUNTIME_MODULE: &str = "jsoncompat_dataclasses";
 
 #[derive(Debug, thiserror::Error)]
@@ -81,6 +82,7 @@ impl DataclassModuleBuilder {
             DATACLASS_ROOT_MODEL_CLASS,
             READER_MODEL_CLASS,
             READER_ROOT_MODEL_CLASS,
+            OMITTABLE_TYPE_NAME,
             WRITER_MODEL_CLASS,
         ]
         .into_iter()
@@ -345,7 +347,7 @@ impl DataclassModuleBuilder {
                     return Ok(name);
                 }
                 if obj.contains_key("oneOf") || obj.contains_key("anyOf") {
-                    return self.emit_inline_root_class(schema, pointer, scope_name, hint_name);
+                    return self.schema_annotation(obj, pointer, scope_name);
                 }
                 if is_object_schema(obj) {
                     return self.emit_inline_object_class(obj, pointer, scope_name, hint_name);
@@ -543,11 +545,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
                 let annotation = if field.required {
                     field.annotation.clone()
                 } else {
-                    format!(
-                        "({} | {})",
-                        field.annotation,
-                        runtime_dataclass_symbol(MISSING_TYPE_NAME),
-                    )
+                    omittable_annotation(&field.annotation)
                 };
                 if field.required {
                     writeln!(
@@ -797,11 +795,7 @@ fn render_class_runtime_spec(output: &mut String, class_spec: &ClassSpec) {
                 let annotation = if field.required {
                     field.annotation.clone()
                 } else {
-                    format!(
-                        "({} | {})",
-                        field.annotation,
-                        runtime_dataclass_symbol(MISSING_TYPE_NAME),
-                    )
+                    missing_union_annotation(&field.annotation)
                 };
                 if field.required {
                     writeln!(
@@ -1211,6 +1205,7 @@ fn collect_named_refs(schema: &Value) -> Result<BTreeMap<String, String>, Datacl
         DATACLASS_ROOT_MODEL_CLASS.to_owned(),
         EXTRA_FIELD_NAME.to_owned(),
         MISSING_TYPE_NAME.to_owned(),
+        OMITTABLE_TYPE_NAME.to_owned(),
         READER_MODEL_CLASS.to_owned(),
         READER_ROOT_MODEL_CLASS.to_owned(),
         WRITER_MODEL_CLASS.to_owned(),
@@ -1594,15 +1589,42 @@ fn is_object_schema(obj: &Map<String, Value>) -> bool {
 }
 
 fn union_annotation(annotations: &[String]) -> String {
-    let mut unique = BTreeSet::new();
+    let mut unique = Vec::new();
     for annotation in annotations {
-        unique.insert(annotation.clone());
+        if !unique.contains(annotation) {
+            unique.push(annotation.clone());
+        }
     }
+    unique.sort_by(
+        |left, right| match (left.as_str() == "None", right.as_str() == "None") {
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            _ => left.cmp(right),
+        },
+    );
     match unique.len() {
         0 => typing_symbol("Any"),
-        1 => unique.into_iter().next().expect("len checked above"),
+        1 => unique.pop().expect("len checked above"),
         _ => format!("({})", unique.into_iter().collect::<Vec<_>>().join(" | ")),
     }
+}
+
+fn omittable_annotation(annotation: &str) -> String {
+    let annotation = annotation
+        .strip_prefix('(')
+        .and_then(|stripped| stripped.strip_suffix(')'))
+        .unwrap_or(annotation);
+    format!(
+        "{}[{annotation}]",
+        runtime_dataclass_symbol(OMITTABLE_TYPE_NAME),
+    )
+}
+
+fn missing_union_annotation(annotation: &str) -> String {
+    format!(
+        "({annotation} | {})",
+        runtime_dataclass_symbol(MISSING_TYPE_NAME),
+    )
 }
 
 fn pretty_schema_literal(schema: &Value) -> Result<String, DataclassError> {
@@ -1912,10 +1934,31 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("root: (None | str) ="));
+        assert!(source.contains("root: (str | None) ="));
         assert!(source.contains(
             "    __jsoncompat_schema__: typing.ClassVar[str] = \"\"\"{\n  \"title\": \"nullable name\",\n  \"type\": [\n    \"string\",\n    \"null\"\n  ]\n}\"\"\""
         ));
         assert!(!source.contains("\"anyOf\":"));
+    }
+
+    #[test]
+    fn omittable_nullable_fields_use_omittable_alias() {
+        let schema = json!({
+            "title": "profile",
+            "type": "object",
+            "properties": {
+                "nickname": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains(
+            "nickname: jsoncompat_dataclasses.Omittable[str | None] = jsoncompat_dataclasses.jsoncompat_field(\"nickname\", omittable=True)"
+        ));
+        assert!(source.contains(
+            "jsoncompat_dataclasses.jsoncompat_field_spec(\"nickname\", \"nickname\", ((str | None) | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True)"
+        ));
     }
 }

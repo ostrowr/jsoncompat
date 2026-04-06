@@ -36,7 +36,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
 }"""
     email: str = jsoncompat_dataclasses.jsoncompat_field("email")
     kind: typing.Literal["user"] = jsoncompat_dataclasses.jsoncompat_field("kind")
-    name: (str | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("name", omittable=True)
+    name: jsoncompat_dataclasses.Omittable[str] = jsoncompat_dataclasses.jsoncompat_field("name", omittable=True)
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     jsoncompat_dataclasses.jsoncompat_field_spec("email", "email", str),

@@ -14,8 +14,8 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
     "null"
   ]
 }"""
-    root: (None | str) = jsoncompat_dataclasses.jsoncompat_root_field()
+    root: (str | None) = jsoncompat_dataclasses.jsoncompat_root_field()
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (None | str)
+GeneratedSchema.__jsoncompat_root_annotation__ = (str | None)
 
 JSONCOMPAT_MODEL = GeneratedSchema
