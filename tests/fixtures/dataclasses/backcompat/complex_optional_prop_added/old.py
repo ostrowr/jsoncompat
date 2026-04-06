@@ -8,13 +8,13 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaNested(jsoncompat_dataclasses.DataclassModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"additionalProperties\":false,\"properties\":{\"count\":{\"minimum\":0,\"type\":\"integer\"},\"flag\":{\"type\":\"boolean\"}},\"required\":[\"flag\"],\"type\":\"object\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"additionalProperties\":false,\"minProperties\":1,\"properties\":{\"count\":{\"minimum\":0,\"multipleOf\":1,\"type\":\"integer\"},\"flag\":{\"enum\":[false,true]}},\"required\":[\"flag\"],\"type\":\"object\"}"
     count: (int | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("count", omittable=True)
-    flag: bool = jsoncompat_dataclasses.jsoncompat_field("flag")
+    flag: (typing.Literal[False] | typing.Literal[True]) = jsoncompat_dataclasses.jsoncompat_field("flag")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"nested\":{\"additionalProperties\":false,\"properties\":{\"count\":{\"minimum\":0,\"type\":\"integer\"},\"flag\":{\"type\":\"boolean\"}},\"required\":[\"flag\"],\"type\":\"object\"},\"tags\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"id\",\"name\"],\"type\":\"object\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"minProperties\":2,\"properties\":{\"id\":{\"minLength\":0,\"type\":\"string\"},\"name\":{\"minLength\":0,\"type\":\"string\"},\"nested\":{\"additionalProperties\":false,\"minProperties\":1,\"properties\":{\"count\":{\"minimum\":0,\"multipleOf\":1,\"type\":\"integer\"},\"flag\":{\"enum\":[false,true]}},\"required\":[\"flag\"],\"type\":\"object\"},\"tags\":{\"items\":{\"minLength\":0,\"type\":\"string\"},\"minItems\":0,\"type\":\"array\"}},\"required\":[\"id\",\"name\"],\"type\":\"object\"}"
     id: str = jsoncompat_dataclasses.jsoncompat_field("id")
     name: str = jsoncompat_dataclasses.jsoncompat_field("name")
     nested: (GeneratedSchemaNested | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("nested", omittable=True)
@@ -22,7 +22,7 @@ class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
 
 GeneratedSchemaNested.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(
     jsoncompat_dataclasses.jsoncompat_field_spec("count", "count", (int | jsoncompat_dataclasses.JsoncompatMissingType), omittable=True),
-    jsoncompat_dataclasses.jsoncompat_field_spec("flag", "flag", bool),
+    jsoncompat_dataclasses.jsoncompat_field_spec("flag", "flag", (typing.Literal[False] | typing.Literal[True])),
 )
 
 GeneratedSchema.__jsoncompat_object_spec__ = jsoncompat_dataclasses.jsoncompat_object_spec(

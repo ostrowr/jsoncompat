@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
-use serde_json::{Map, Value};
 
-use crate::read_to_string;
+use crate::SchemaDoc;
 use jsoncompat_codegen::generate_dataclass_models;
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -24,45 +23,27 @@ pub(crate) struct CodegenArgs {
 }
 
 pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
-    let schema = read_json(&args.schema)?;
+    let schema = SchemaDoc::load(&args.schema)?;
+    let canonical_schema = schema
+        .schema
+        .canonical_schema_json()
+        .with_context(|| format!("canonicalizing schema for {}", args.schema))?;
 
     match args.target {
         CodegenTarget::Dataclasses => {
-            let source = generate_dataclass_models(&schema)?;
+            let source = generate_dataclass_models(canonical_schema)?;
             print!("{source}");
             Ok(())
         }
-        CodegenTarget::Schema => print_json(&canonicalize_json(&schema), args.pretty),
+        CodegenTarget::Schema => print_json(canonical_schema, args.pretty),
     }
 }
 
-fn read_json(path: &str) -> Result<Value> {
-    let raw = read_to_string(path)?;
-    serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))
-}
-
-fn print_json(value: &Value, pretty: bool) -> Result<()> {
+fn print_json(value: &serde_json::Value, pretty: bool) -> Result<()> {
     if pretty {
         println!("{}", serde_json::to_string_pretty(value)?);
     } else {
         println!("{}", serde_json::to_string(value)?);
     }
     Ok(())
-}
-
-fn canonicalize_json(value: &Value) -> Value {
-    match value {
-        Value::Object(obj) => {
-            let mut canonical = Map::new();
-            let mut keys = obj.keys().collect::<Vec<_>>();
-            keys.sort();
-            for key in keys {
-                let child = obj.get(key).expect("key comes from object");
-                canonical.insert(key.clone(), canonicalize_json(child));
-            }
-            Value::Object(canonical)
-        }
-        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
-        _ => value.clone(),
-    }
 }

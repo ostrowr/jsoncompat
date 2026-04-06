@@ -8,12 +8,12 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaInt(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"int\":{\"type\":\"integer\"}},\"type\":\"integer\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"int\":{\"multipleOf\":1,\"type\":\"integer\"}},\"multipleOf\":1,\"type\":\"integer\"}"
     root: int = jsoncompat_dataclasses.jsoncompat_root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"int\":{\"type\":\"integer\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"allOf\":[{\"properties\":{\"foo\":{\"$ref\":\"#/$defs/int\"}}},{\"additionalProperties\":{\"$ref\":\"#/$defs/int\"}}]}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$defs\":{\"int\":{\"multipleOf\":1,\"type\":\"integer\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"allOf\":[{\"properties\":{\"foo\":{\"$ref\":\"#/$defs/int\"}}},{\"additionalProperties\":{\"$ref\":\"#/$defs/int\"}}]}"
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchemaInt.__jsoncompat_root_annotation__ = int

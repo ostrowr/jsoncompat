@@ -8,7 +8,7 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$id\":\"https://schema/using/format-assertion/false\",\"$schema\":\"http://localhost:1234/draft2020-12/format-assertion-false.json\",\"format\":\"ipv4\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"allOf\":[{\"$ref\":\"#/if\"}],\"if\":{\"enum\":[\"ready\"]}}"
     root: typing.Any = jsoncompat_dataclasses.jsoncompat_root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = typing.Any

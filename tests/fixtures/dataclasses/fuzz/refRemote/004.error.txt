@@ -1,1 +1,1 @@
-unsupported $ref 'folderInteger.json' at '#/items/items/$ref'
+unsupported $ref 'folderInteger.json' at '#/anyOf/3/items/anyOf/3/items/$ref'

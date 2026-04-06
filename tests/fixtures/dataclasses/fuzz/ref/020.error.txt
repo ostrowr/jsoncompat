@@ -1,1 +1,1 @@
-unsupported $ref 'urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed' at '#/properties/foo/$ref'
+unsupported $ref 'urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed' at '#/anyOf/2/properties/foo/$ref'

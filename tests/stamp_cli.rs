@@ -97,7 +97,25 @@ fn stamp_initializes_manifest_and_codegen_lowers_reader_schema_from_stdin() {
 
     let normalized: Value =
         serde_json::from_slice(&codegen_output.stdout).expect("parse normalized reader stdout");
-    assert_eq!(normalized, reader);
+    assert_ne!(normalized, reader);
+    assert_eq!(
+        normalized["$defs"]["v1"]["x-jsoncompat"],
+        reader["$defs"]["v1"]["x-jsoncompat"]
+    );
+    assert_eq!(normalized["$defs"]["v1"]["minProperties"], 1);
+    assert_eq!(
+        normalized["$defs"]["v1"]["properties"]["name"]["minLength"],
+        0
+    );
+    assert_eq!(normalized["oneOf"][0]["minProperties"], 2);
+    assert_eq!(
+        normalized["oneOf"][0]["properties"]["version"]["enum"],
+        serde_json::json!([1])
+    );
+    assert_eq!(
+        normalized["oneOf"][0]["required"],
+        serde_json::json!(["data", "version"])
+    );
 }
 
 #[test]

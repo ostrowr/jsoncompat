@@ -8,7 +8,7 @@ from jsoncompat.codegen import dataclasses as jsoncompat_dataclasses
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(jsoncompat_dataclasses.DataclassModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{\"children\":{\"items\":{\"$ref\":\"#\"},\"type\":\"array\"},\"value\":{\"type\":\"integer\"}},\"required\":[\"value\"],\"type\":\"object\"}"
+    __jsoncompat_schema__: typing.ClassVar[str] = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"minProperties\":1,\"properties\":{\"children\":{\"items\":{\"$ref\":\"#\"},\"minItems\":0,\"type\":\"array\"},\"value\":{\"multipleOf\":1,\"type\":\"integer\"}},\"required\":[\"value\"],\"type\":\"object\"}"
     children: (list[GeneratedSchema] | jsoncompat_dataclasses.JsoncompatMissingType) = jsoncompat_dataclasses.jsoncompat_field("children", omittable=True)
     value: int = jsoncompat_dataclasses.jsoncompat_field("value")
 

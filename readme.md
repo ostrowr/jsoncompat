@@ -105,11 +105,12 @@ jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 
 ### Dataclass code generation
 
-`jsoncompat codegen --target dataclasses` accepts any JSON Schema document and
-emits frozen, slotted Python dataclasses that import shared construction and
+`jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
+canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
+frozen, slotted Python dataclasses that import shared construction and
 serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
-carry the source schema in `__jsoncompat_schema__`, validate through the Python
-runtime package, and expose:
+carry the canonical schema in `__jsoncompat_schema__`, validate through the
+Python runtime package, and expose:
 
 - `from_json(...)` / `from_json_string(...)` constructors for schema-checked
   deserialization;
