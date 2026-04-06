@@ -44,7 +44,8 @@ def main() -> None:
         print(f"{role:12}: {ok}")
 
     print("\n=== Example value generation ===")
-    example = jsc.generate_value(old_schema, 3)
+    generator = jsc.generator_for(old_schema)
+    example = generator.generate_value(3)
     print("example value:", example)
 
 
