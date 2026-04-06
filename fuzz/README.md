@@ -10,7 +10,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json_schema_fuzz = "0.2.6"
+json_schema_fuzz = "0.3.0"
 ```
 
 ## Usage

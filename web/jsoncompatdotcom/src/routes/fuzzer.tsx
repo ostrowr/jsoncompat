@@ -7,11 +7,41 @@ import init, { generate_value } from "jsoncompat";
 
 const DEFAULT_SCHEMA = `{
   "type": "object",
+  "required": ["event", "customer", "items", "currency"],
   "properties": {
-    "name": { "type": "string" },
-    "age": { "type": "integer", "minimum": 18 }
+    "event": {
+      "enum": ["checkout.completed", "checkout.failed"]
+    },
+    "customer": {
+      "type": "object",
+      "required": ["id", "email", "segment"],
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "segment": { "enum": ["self_serve", "startup", "enterprise"] },
+        "trialDaysRemaining": { "type": "integer", "minimum": 0, "maximum": 30 }
+      },
+      "additionalProperties": false
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["sku", "quantity", "unitPrice"],
+        "properties": {
+          "sku": { "enum": ["starter-seat", "team-seat", "audit-log"] },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "unitPrice": { "type": "integer", "minimum": 0, "maximum": 500 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "currency": { "enum": ["USD", "EUR", "GBP"] },
+    "couponCode": { "type": "string", "minLength": 4, "maxLength": 12 }
   },
-  "required": ["name"]
+  "additionalProperties": false
 }`;
 
 export const Route = createFileRoute("/fuzzer")({
@@ -119,17 +149,27 @@ function FuzzerPage() {
       </div>
 
       {examples.length > 0 && (
-        <div className="max-h-[40rem] space-y-4 overflow-y-auto rounded-md border border-gray-200 p-2">
+        <section className="max-h-[40rem] overflow-y-auto rounded-md border border-gray-200 bg-white">
+          <div className="sticky top-0 border-b border-gray-200 bg-white px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Generated examples
+            </h2>
+          </div>
           {examples.map((ex, idx) => (
-            <pre
+            <article
               // biome-ignore lint/suspicious/noArrayIndexKey: nothing else to use
               key={idx}
-              className="max-h-40 overflow-auto rounded bg-gray-100 p-4 text-sm"
+              className="border-b border-gray-100 last:border-b-0"
             >
-              {ex}
-            </pre>
+              <h3 className="px-4 pt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Example {idx + 1}
+              </h3>
+              <pre className="max-h-40 overflow-auto p-4 pt-2 text-sm">
+                {ex}
+              </pre>
+            </article>
           ))}
-        </div>
+        </section>
       )}
 
       {error && <p className="mt-4 text-red-600">{error}</p>}
