@@ -7,11 +7,41 @@ import init, { generate_value } from "jsoncompat";
 
 const DEFAULT_SCHEMA = `{
   "type": "object",
+  "required": ["event", "customer", "items", "currency"],
   "properties": {
-    "name": { "type": "string" },
-    "age": { "type": "integer", "minimum": 18 }
+    "event": {
+      "enum": ["checkout.completed", "checkout.failed"]
+    },
+    "customer": {
+      "type": "object",
+      "required": ["id", "email", "segment"],
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "segment": { "enum": ["self_serve", "startup", "enterprise"] },
+        "trialDaysRemaining": { "type": "integer", "minimum": 0, "maximum": 30 }
+      },
+      "additionalProperties": false
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["sku", "quantity", "unitPrice"],
+        "properties": {
+          "sku": { "enum": ["starter-seat", "team-seat", "audit-log"] },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "unitPrice": { "type": "integer", "minimum": 0, "maximum": 500 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "currency": { "enum": ["USD", "EUR", "GBP"] },
+    "couponCode": { "type": "string", "minLength": 4, "maxLength": 12 }
   },
-  "required": ["name"]
+  "additionalProperties": false
 }`;
 
 export const Route = createFileRoute("/fuzzer")({

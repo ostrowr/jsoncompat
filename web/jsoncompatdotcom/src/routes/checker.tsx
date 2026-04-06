@@ -10,17 +10,65 @@ import { useState } from "react";
 
 const INITAL_OLD_SCHEMA = `{
   "type": "object",
+  "required": ["id", "contact", "plan"],
   "properties": {
-    "name": { "type": "string" }
-  }
+    "id": { "type": "string" },
+    "contact": {
+      "type": "object",
+      "required": ["email"],
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "smsOptIn": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "plan": { "enum": ["free", "team", "enterprise"] },
+    "usage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["metric", "value"],
+        "properties": {
+          "metric": { "enum": ["api_calls", "seats"] },
+          "value": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
 }`;
 
 const INITAL_NEW_SCHEMA = `{
   "type": "object",
+  "required": ["id", "contact", "plan", "usage"],
   "properties": {
-    "name": { "type": "string", "minLength": 5 },
-    "age": { "type": "integer", "minimum": 18 }
-  }
+    "id": { "type": "string" },
+    "contact": {
+      "type": "object",
+      "required": ["email"],
+      "properties": {
+        "email": { "type": "string", "format": "email", "minLength": 6 },
+        "smsOptIn": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "plan": { "enum": ["team", "enterprise"] },
+    "usage": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["metric", "value"],
+        "properties": {
+          "metric": { "enum": ["api_calls", "seats"] },
+          "value": { "type": "integer", "minimum": 0, "maximum": 100000 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
 }`;
 
 export const Route = createFileRoute("/checker")({
