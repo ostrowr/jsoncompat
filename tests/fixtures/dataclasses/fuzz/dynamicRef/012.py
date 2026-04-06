@@ -26,7 +26,7 @@ class GeneratedSchemaStart(dc.DataclassRootModel):
   "$dynamicRef": "inner_scope#thingy",
   "$id": "start"
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaThingy(dc.DataclassRootModel):
@@ -49,7 +49,7 @@ class GeneratedSchemaThingy(dc.DataclassRootModel):
   "$id": "inner_scope",
   "type": "string"
 }"""
-    root: str = dc.jsoncompat_root_field()
+    root: str = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -91,7 +91,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     "$ref": "start"
   }
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 GeneratedSchemaStart.__jsoncompat_root_annotation__ = typing.Any
 

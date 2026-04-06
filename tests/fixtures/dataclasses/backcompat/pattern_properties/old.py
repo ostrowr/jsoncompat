@@ -14,7 +14,7 @@ class GeneratedSchema(dc.DataclassModel):
 }"""
     pass
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
 )
 
 JSONCOMPAT_MODEL = GeneratedSchema

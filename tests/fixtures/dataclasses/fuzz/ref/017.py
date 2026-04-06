@@ -32,7 +32,7 @@ class GeneratedSchemaX(dc.DataclassRootModel):
     }
   }
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -58,7 +58,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 GeneratedSchemaX.__jsoncompat_root_annotation__ = typing.Any
 

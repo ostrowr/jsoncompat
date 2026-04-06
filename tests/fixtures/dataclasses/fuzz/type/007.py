@@ -15,7 +15,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     "string"
   ]
 }"""
-    root: (int | str) = dc.jsoncompat_root_field()
+    root: (int | str) = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = (int | str)
 

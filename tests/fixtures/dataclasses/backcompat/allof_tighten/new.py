@@ -13,7 +13,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "minimum": 0,
   "type": "integer"
 }"""
-    root: int = dc.jsoncompat_root_field()
+    root: int = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = int
 

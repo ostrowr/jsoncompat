@@ -18,7 +18,7 @@ class ColorEnum(dc.DataclassRootModel):
   "title": "color enum",
   "type": "string"
 }"""
-    root: (typing.Literal["blue"] | typing.Literal["red"]) = dc.jsoncompat_root_field()
+    root: (typing.Literal["blue"] | typing.Literal["red"]) = dc.root_field()
 
 ColorEnum.__jsoncompat_root_annotation__ = (typing.Literal["blue"] | typing.Literal["red"])
 

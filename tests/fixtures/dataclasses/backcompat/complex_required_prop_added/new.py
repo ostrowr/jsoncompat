@@ -20,7 +20,7 @@ class GeneratedSchemaConfig(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    enable: (typing.Literal[False] | typing.Literal[True]) = dc.jsoncompat_field("enable")
+    enable: (typing.Literal[False] | typing.Literal[True]) = dc.field("enable")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
@@ -57,20 +57,20 @@ class GeneratedSchema(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    config: dc.Omittable[GeneratedSchemaConfig] = dc.jsoncompat_field("config", omittable=True)
-    description: str = dc.jsoncompat_field("description")
-    id: str = dc.jsoncompat_field("id")
-    name: str = dc.jsoncompat_field("name")
+    config: dc.Omittable[GeneratedSchemaConfig] = dc.field("config", omittable=True)
+    description: str = dc.field("description")
+    id: str = dc.field("id")
+    name: str = dc.field("name")
 
-GeneratedSchemaConfig.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("enable", "enable", (typing.Literal[False] | typing.Literal[True])),
+GeneratedSchemaConfig.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("enable", "enable", (typing.Literal[False] | typing.Literal[True])),
 )
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("config", "config", (GeneratedSchemaConfig | dc.JsoncompatMissingType), omittable=True),
-    dc.jsoncompat_field_spec("description", "description", str),
-    dc.jsoncompat_field_spec("id", "id", str),
-    dc.jsoncompat_field_spec("name", "name", str),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("config", "config", (GeneratedSchemaConfig | dc.JsoncompatMissingType), omittable=True),
+    dc.field_spec("description", "description", str),
+    dc.field_spec("id", "id", str),
+    dc.field_spec("name", "name", str),
 )
 
 JSONCOMPAT_MODEL = GeneratedSchema

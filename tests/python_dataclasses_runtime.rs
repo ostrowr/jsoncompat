@@ -24,9 +24,9 @@ from jsoncompat.codegen.dataclasses import (
     ReaderDataclassModel,
     ReaderDataclassRootModel,
     WriterDataclassModel,
-    jsoncompat_extra_field,
-    jsoncompat_field,
-    jsoncompat_root_field,
+    extra_field,
+    field,
+    root_field,
 )
 
 
@@ -34,9 +34,9 @@ from jsoncompat.codegen.dataclasses import (
 class Profile(DataclassAdditionalModel[str]):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}'
 
-    name: str = jsoncompat_field("name")
-    age: int | None = jsoncompat_field("age", omittable=True)
-    __jsoncompat_extra__: dict[str, str] = jsoncompat_extra_field()
+    name: str = field("name")
+    age: int | None = field("age", omittable=True)
+    __jsoncompat_extra__: dict[str, str] = extra_field()
 
 
 profile = Profile.from_json({"name": "Ada", "nickname": "ace"})
@@ -73,7 +73,7 @@ for factory in (
 class ProfileRoot(DataclassRootModel):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"string","minLength":1}'
 
-    root: str = jsoncompat_root_field()
+    root: str = root_field()
 
 
 assert ProfileRoot.from_json("ok").root == "ok"
@@ -90,23 +90,23 @@ else:
 class ProfileWriter(WriterDataclassModel):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}},"required":["version","data"],"additionalProperties":false}'
 
-    version: Literal[1] = jsoncompat_field("version")
-    data: Profile = jsoncompat_field("data")
+    version: Literal[1] = field("version")
+    data: Profile = field("data")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileReaderV1(ReaderDataclassModel):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}'
 
-    version: Literal[1] = jsoncompat_field("version")
-    data: Profile = jsoncompat_field("data")
+    version: Literal[1] = field("version")
+    data: Profile = field("data")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileReader(ReaderDataclassRootModel):
     __jsoncompat_schema__: ClassVar[str] = '{"oneOf":[{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}]}'
 
-    root: ProfileReaderV1 = jsoncompat_root_field()
+    root: ProfileReaderV1 = root_field()
 
 
 writer = ProfileWriter(version=1, data=Profile(name="Ada"))

@@ -11,7 +11,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "type": "number"
 }"""
-    root: float = dc.jsoncompat_root_field()
+    root: float = dc.root_field()
 
 GeneratedSchema.__jsoncompat_root_annotation__ = float
 

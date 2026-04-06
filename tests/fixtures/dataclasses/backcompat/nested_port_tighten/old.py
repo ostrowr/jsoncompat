@@ -26,8 +26,8 @@ class GeneratedSchemaItem(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    host: str = dc.jsoncompat_field("host")
-    port: int = dc.jsoncompat_field("port")
+    host: str = dc.field("host")
+    port: int = dc.field("port")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
@@ -62,15 +62,15 @@ class GeneratedSchema(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    servers: list[GeneratedSchemaItem] = dc.jsoncompat_field("servers")
+    servers: list[GeneratedSchemaItem] = dc.field("servers")
 
-GeneratedSchemaItem.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("host", "host", str),
-    dc.jsoncompat_field_spec("port", "port", int),
+GeneratedSchemaItem.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("host", "host", str),
+    dc.field_spec("port", "port", int),
 )
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("servers", "servers", list[GeneratedSchemaItem]),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("servers", "servers", list[GeneratedSchemaItem]),
 )
 
 JSONCOMPAT_MODEL = GeneratedSchema

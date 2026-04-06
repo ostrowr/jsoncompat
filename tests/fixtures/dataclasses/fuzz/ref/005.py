@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaReffedItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaReffed(dc.DataclassRootModel):
@@ -21,7 +21,7 @@ class GeneratedSchemaReffed(dc.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[GeneratedSchemaReffedItem] = dc.jsoncompat_root_field()
+    root: list[GeneratedSchemaReffedItem] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -39,15 +39,15 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     }
   }
 }"""
-    foo: dc.Omittable[GeneratedSchemaReffed] = dc.jsoncompat_field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    foo: dc.Omittable[GeneratedSchemaReffed] = dc.field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 GeneratedSchemaReffedItem.__jsoncompat_root_annotation__ = typing.Any
 
 GeneratedSchemaReffed.__jsoncompat_root_annotation__ = list[GeneratedSchemaReffedItem]
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("foo", "foo", (GeneratedSchemaReffed | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("foo", "foo", (GeneratedSchemaReffed | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

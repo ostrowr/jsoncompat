@@ -16,7 +16,7 @@ class GeneratedSchemaFoo(dc.DataclassRootModel):
   },
   "type": "number"
 }"""
-    root: float = dc.jsoncompat_root_field()
+    root: float = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -30,7 +30,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/foo",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaFoo = dc.jsoncompat_root_field()
+    root: GeneratedSchemaFoo = dc.root_field()
 
 GeneratedSchemaFoo.__jsoncompat_root_annotation__ = float
 

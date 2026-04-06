@@ -18,7 +18,7 @@ class GeneratedSchemaFoo(dc.DataclassRootModel):
   },
   "type": "string"
 }"""
-    root: str = dc.jsoncompat_root_field()
+    root: str = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -31,7 +31,7 @@ class GeneratedSchemaItem(dc.DataclassRootModel):
   },
   "$dynamicRef": "#items"
 }"""
-    root: typing.Any = dc.jsoncompat_root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -49,7 +49,7 @@ class GeneratedSchema(dc.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[GeneratedSchemaItem] = dc.jsoncompat_root_field()
+    root: list[GeneratedSchemaItem] = dc.root_field()
 
 GeneratedSchemaFoo.__jsoncompat_root_annotation__ = str
 

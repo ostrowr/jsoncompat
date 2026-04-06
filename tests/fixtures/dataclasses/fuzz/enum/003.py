@@ -27,13 +27,13 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   ],
   "type": "object"
 }"""
-    bar: typing.Literal["bar"] = dc.jsoncompat_field("bar")
-    foo: dc.Omittable[typing.Literal["foo"]] = dc.jsoncompat_field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    bar: typing.Literal["bar"] = dc.field("bar")
+    foo: dc.Omittable[typing.Literal["foo"]] = dc.field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("bar", "bar", typing.Literal["bar"]),
-    dc.jsoncompat_field_spec("foo", "foo", (typing.Literal["foo"] | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("bar", "bar", typing.Literal["bar"]),
+    dc.field_spec("foo", "foo", (typing.Literal["foo"] | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

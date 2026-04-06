@@ -19,11 +19,11 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   },
   "type": "object"
 }"""
-    alpha: dc.Omittable[float] = dc.jsoncompat_field("alpha", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.jsoncompat_extra_field()
+    alpha: dc.Omittable[float] = dc.field("alpha", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.jsoncompat_object_spec(
-    dc.jsoncompat_field_spec("alpha", "alpha", (float | dc.JsoncompatMissingType), omittable=True),
+GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
+    dc.field_spec("alpha", "alpha", (float | dc.JsoncompatMissingType), omittable=True),
     extra_annotation=dict[str, typing.Any],
 )
 

@@ -30,11 +30,11 @@ __all__ = [
     "ReaderDataclassRootModel",
     "Omittable",
     "WriterDataclassModel",
-    "jsoncompat_extra_field",
-    "jsoncompat_field_spec",
-    "jsoncompat_field",
-    "jsoncompat_object_spec",
-    "jsoncompat_root_field",
+    "extra_field",
+    "field_spec",
+    "field",
+    "object_spec",
+    "root_field",
 ]
 
 
@@ -57,6 +57,7 @@ JSONCOMPAT_MISSING = JsoncompatMissingType()
 
 type Omittable[T] = T | JsoncompatMissingType
 
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class JsoncompatFieldSpec:
     py_name: str
@@ -72,7 +73,7 @@ class JsoncompatObjectSpec:
     extra_annotation: Any | None
 
 
-def jsoncompat_field_spec(
+def field_spec(
     py_name: object,
     json_name: object,
     annotation: Any,
@@ -80,9 +81,9 @@ def jsoncompat_field_spec(
     omittable: bool = False,
 ) -> JsoncompatFieldSpec:
     if not isinstance(py_name, str):
-        raise TypeError("jsoncompat_field_spec py_name must be a string")
+        raise TypeError("field_spec py_name must be a string")
     if not isinstance(json_name, str):
-        raise TypeError("jsoncompat_field_spec json_name must be a string")
+        raise TypeError("field_spec json_name must be a string")
     return JsoncompatFieldSpec(
         py_name=py_name,
         json_name=json_name,
@@ -91,7 +92,7 @@ def jsoncompat_field_spec(
     )
 
 
-def jsoncompat_object_spec(
+def object_spec(
     *fields: object,
     extra_annotation: Any | None = None,
 ) -> JsoncompatObjectSpec:
@@ -100,7 +101,7 @@ def jsoncompat_object_spec(
     field_specs: list[JsoncompatFieldSpec] = []
     for field in fields:
         if not isinstance(field, JsoncompatFieldSpec):
-            raise TypeError("jsoncompat_object_spec fields must be JsoncompatFieldSpec")
+            raise TypeError("object_spec fields must be JsoncompatFieldSpec")
         if field.py_name in py_names:
             raise TypeError(f"duplicate Python field name: {field.py_name}")
         if field.json_name in json_names:
@@ -116,7 +117,7 @@ def jsoncompat_object_spec(
     )
 
 
-def jsoncompat_field(
+def field(
     json_name: str,
     *,
     omittable: bool = False,
@@ -130,11 +131,11 @@ def jsoncompat_field(
     return dataclasses.field(metadata=metadata)
 
 
-def jsoncompat_extra_field() -> Any:
+def extra_field() -> Any:
     return dataclasses.field(default_factory=_jsoncompat_empty_extra, repr=False)
 
 
-def jsoncompat_root_field() -> Any:
+def root_field() -> Any:
     return dataclasses.field()
 
 
