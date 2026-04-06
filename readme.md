@@ -292,13 +292,7 @@ flowchart TD
 
 ## Debugging canonicalization
 
-To inspect the canonicalized schema document that backs compatibility checks and generation:
-
-```bash
-jsoncompat canonicalize schema.json --pretty
-```
-
-For programmatic checks, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances.
+To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. Canonicalization is an internal library facility, not a `jsoncompat` CLI subcommand.
 
 ## Development
 
@@ -315,13 +309,13 @@ just check
 Run the end-to-end CLI demo/smoke test:
 
 ```bash
-just demo
+jsoncompat demo
 ```
 
 By default the demo pauses before each step. For CI/non-interactive runs, pass:
 
 ```bash
-just demo -- --noninteractive
+jsoncompat demo --noninteractive
 ```
 
 Run the performance benchmark harnesses:
