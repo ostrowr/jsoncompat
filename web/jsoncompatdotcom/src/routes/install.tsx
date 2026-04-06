@@ -120,15 +120,11 @@ function JsTab() {
     <section className="space-y-4">
       <p>Browser / Node via WebAssembly:</p>
       <CodeBlock>npm i jsoncompat</CodeBlock>
-      <CodeBlock>{`import init, { check_compat, generator_for, validator_for } from "jsoncompat";
+      <CodeBlock>{`import init, { check_compat } from "jsoncompat";
 
 await init(); // or init(wasmUrl) with Vite bundlers
 
-const schema = '{"type":"string"}';
-const ok = await check_compat(schema, '{"type":"number"}', "both");
-const generator = generator_for(schema);
-const value = generator.generate_value(5);
-const valid = validator_for(schema).is_valid(value);`}</CodeBlock>
+const ok = await check_compat('{"type":"string"}', '{"type":"number"}', "both");`}</CodeBlock>
       <p>
         See more usage examples{" "}
         <a
