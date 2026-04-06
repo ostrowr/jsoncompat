@@ -57,14 +57,4 @@ class GeneratedSchema(dc.DataclassModel):
     id: str = dc.field("id")
     name: str = dc.field("name")
 
-GeneratedSchemaConfig.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("enable", "enable", (typing.Literal[False] | typing.Literal[True])),
-)
-
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("config", "config", (GeneratedSchemaConfig | dc.JsoncompatMissingType), omittable=True),
-    dc.field_spec("id", "id", str),
-    dc.field_spec("name", "name", str),
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

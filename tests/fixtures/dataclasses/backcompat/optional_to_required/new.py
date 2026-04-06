@@ -22,9 +22,4 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     id: int = dc.field("id")
     __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("id", "id", int),
-    extra_annotation=dict[str, typing.Any],
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

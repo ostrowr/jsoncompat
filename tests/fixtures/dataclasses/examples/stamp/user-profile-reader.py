@@ -459,30 +459,4 @@ class ExamplesStampUserProfileReader(dc.ReaderDataclassRootModel):
 }"""
     root: (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader) = dc.root_field()
 
-ExamplesStampUserProfileV1.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("age", "age", int),
-    dc.field_spec("name", "name", str),
-    extra_annotation=dict[str, typing.Any],
-)
-
-ExamplesStampUserProfileV2.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("age", "age", int),
-    dc.field_spec("interests", "interests", int),
-    dc.field_spec("name", "name", str),
-    extra_annotation=dict[str, typing.Any],
-)
-
-ExamplesStampUserProfileV2Reader.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("version", "version", typing.Literal[2]),
-    dc.field_spec("data", "data", ExamplesStampUserProfileV2),
-)
-
-ExamplesStampUserProfileV1Reader.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("version", "version", typing.Literal[1]),
-    dc.field_spec("data", "data", ExamplesStampUserProfileV1),
-)
-
-
-ExamplesStampUserProfileReader.__jsoncompat_root_annotation__ = (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader)
-
 JSONCOMPAT_MODEL = ExamplesStampUserProfileReader

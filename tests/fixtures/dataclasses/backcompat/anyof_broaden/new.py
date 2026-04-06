@@ -20,6 +20,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: (float | str) = dc.root_field()
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (float | str)
-
 JSONCOMPAT_MODEL = GeneratedSchema

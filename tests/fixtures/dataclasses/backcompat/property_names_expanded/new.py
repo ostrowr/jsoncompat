@@ -48,13 +48,4 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     flags: GeneratedSchemaFlags = dc.field("flags")
     __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
-GeneratedSchemaFlags.__jsoncompat_object_spec__ = dc.object_spec(
-    extra_annotation=dict[str, (typing.Literal[False] | typing.Literal[True])],
-)
-
-GeneratedSchema.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("flags", "flags", GeneratedSchemaFlags),
-    extra_annotation=dict[str, typing.Any],
-)
-
 JSONCOMPAT_MODEL = GeneratedSchema

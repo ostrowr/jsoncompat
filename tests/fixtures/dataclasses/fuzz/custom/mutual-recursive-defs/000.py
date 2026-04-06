@@ -292,18 +292,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: GeneratedSchemaA = dc.root_field()
 
-GeneratedSchemaABranch1.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("next", "next", GeneratedSchemaB),
-)
-
-GeneratedSchemaA.__jsoncompat_root_annotation__ = (GeneratedSchemaABranch1 | None)
-
-GeneratedSchemaBBranch1.__jsoncompat_object_spec__ = dc.object_spec(
-    dc.field_spec("next", "next", GeneratedSchemaA),
-)
-
-GeneratedSchemaB.__jsoncompat_root_annotation__ = (GeneratedSchemaBBranch1 | None)
-
-GeneratedSchema.__jsoncompat_root_annotation__ = GeneratedSchemaA
-
 JSONCOMPAT_MODEL = GeneratedSchema

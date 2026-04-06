@@ -486,31 +486,6 @@ fn render_dataclass_module(
         }
     }
 
-    for class_spec in &builder.classes {
-        render_class_runtime_spec(&mut output, class_spec);
-        output.push('\n');
-    }
-
-    if let Some(metadata) = &root_metadata {
-        match metadata {
-            JsoncompatMetadata::Writer { .. } => {
-                render_writer_runtime_spec(&mut output, expect_schema_object(schema, "#")?)?;
-                output.push('\n');
-            }
-            JsoncompatMetadata::Reader { .. } => {
-                render_reader_variant_runtime_specs(
-                    &mut output,
-                    expect_schema_object(schema, "#")?,
-                )?;
-                output.push('\n');
-                render_reader_root_runtime_spec(&mut output, expect_schema_object(schema, "#")?)?;
-                output.push('\n');
-            }
-            JsoncompatMetadata::Declaration { .. } => {}
-            JsoncompatMetadata::ReaderVariant { .. } => unreachable!(),
-        }
-    }
-
     writeln!(&mut output, "JSONCOMPAT_MODEL = {root_name}").expect("writing to String cannot fail");
 
     Ok(output)
@@ -775,192 +750,6 @@ fn render_reader_root_class(
         "    root: {} = {}.root_field()",
         union_annotation(&variant_names),
         DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    Ok(())
-}
-
-fn render_class_runtime_spec(output: &mut String, class_spec: &ClassSpec) {
-    match &class_spec.kind {
-        ClassKind::Object {
-            fields,
-            extra_annotation,
-        } => {
-            writeln!(
-                output,
-                "{}.__jsoncompat_object_spec__ = {}.object_spec(",
-                class_spec.name, DATACLASSES_RUNTIME_MODULE,
-            )
-            .expect("writing to String cannot fail");
-            for field in fields {
-                let annotation = if field.required {
-                    field.annotation.clone()
-                } else {
-                    missing_union_annotation(&field.annotation)
-                };
-                if field.required {
-                    writeln!(
-                        output,
-                        "    {}.field_spec({}, {}, {}),",
-                        DATACLASSES_RUNTIME_MODULE,
-                        python_string_literal(&field.py_name),
-                        python_string_literal(&field.json_name),
-                        annotation,
-                    )
-                    .expect("writing to String cannot fail");
-                } else {
-                    writeln!(
-                        output,
-                        "    {}.field_spec({}, {}, {}, omittable=True),",
-                        DATACLASSES_RUNTIME_MODULE,
-                        python_string_literal(&field.py_name),
-                        python_string_literal(&field.json_name),
-                        annotation,
-                    )
-                    .expect("writing to String cannot fail");
-                }
-            }
-            if let Some(extra_annotation) = extra_annotation {
-                writeln!(
-                    output,
-                    "    extra_annotation=dict[str, {extra_annotation}],"
-                )
-                .expect("writing to String cannot fail");
-            }
-            writeln!(output, ")").expect("writing to String cannot fail");
-        }
-        ClassKind::Root { annotation } => {
-            writeln!(
-                output,
-                "{}.__jsoncompat_root_annotation__ = {annotation}",
-                class_spec.name
-            )
-            .expect("writing to String cannot fail");
-        }
-    }
-}
-
-fn render_writer_runtime_spec(
-    output: &mut String,
-    writer: &Map<String, Value>,
-) -> Result<(), DataclassError> {
-    let metadata = parse_metadata(writer, "#")?;
-    let JsoncompatMetadata::Writer {
-        name,
-        version,
-        payload_ref,
-        ..
-    } = metadata
-    else {
-        return Err(invalid_schema(
-            join_pointer("#", JSONCOMPAT_METADATA_KEY),
-            "writer schema must have writer metadata",
-        ));
-    };
-    let payload_type = resolve_schema_ref_name(writer, &payload_ref, "#")?;
-
-    writeln!(
-        output,
-        "{name}.__jsoncompat_object_spec__ = {}.object_spec(",
-        DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    {}.field_spec(\"version\", \"version\", typing.Literal[{version}]),",
-        DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    {}.field_spec(\"data\", \"data\", {payload_type}),",
-        DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    writeln!(output, ")").expect("writing to String cannot fail");
-    Ok(())
-}
-
-fn render_reader_variant_runtime_specs(
-    output: &mut String,
-    reader: &Map<String, Value>,
-) -> Result<(), DataclassError> {
-    let branches = reader
-        .get("oneOf")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid_schema("#/oneOf".to_owned(), "oneOf must be an array"))?;
-
-    for (index, branch) in branches.iter().enumerate() {
-        let pointer = format!("#/oneOf/{index}");
-        let branch = expect_schema_object(branch, &pointer)?;
-        let metadata = parse_metadata(branch, &pointer)?;
-        let JsoncompatMetadata::ReaderVariant {
-            name,
-            version,
-            payload_ref,
-            ..
-        } = metadata
-        else {
-            return Err(invalid_schema(
-                join_pointer(&pointer, JSONCOMPAT_METADATA_KEY),
-                "reader branch must have reader_variant metadata",
-            ));
-        };
-        let payload_type = resolve_schema_ref_name(reader, &payload_ref, &pointer)?;
-
-        writeln!(
-            output,
-            "{name}.__jsoncompat_object_spec__ = {}.object_spec(",
-            DATACLASSES_RUNTIME_MODULE,
-        )
-        .expect("writing to String cannot fail");
-        writeln!(
-            output,
-            "    {}.field_spec(\"version\", \"version\", typing.Literal[{version}]),",
-            DATACLASSES_RUNTIME_MODULE,
-        )
-        .expect("writing to String cannot fail");
-        writeln!(
-            output,
-            "    {}.field_spec(\"data\", \"data\", {payload_type}),",
-            DATACLASSES_RUNTIME_MODULE,
-        )
-        .expect("writing to String cannot fail");
-        writeln!(output, ")\n").expect("writing to String cannot fail");
-    }
-
-    Ok(())
-}
-
-fn render_reader_root_runtime_spec(
-    output: &mut String,
-    reader: &Map<String, Value>,
-) -> Result<(), DataclassError> {
-    let metadata = parse_metadata(reader, "#")?;
-    let JsoncompatMetadata::Reader { name, .. } = metadata else {
-        return Err(invalid_schema(
-            join_pointer("#", JSONCOMPAT_METADATA_KEY),
-            "reader schema must have reader metadata",
-        ));
-    };
-
-    let branches = reader
-        .get("oneOf")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid_schema("#/oneOf".to_owned(), "oneOf must be an array"))?;
-    let mut variant_names = Vec::new();
-    for (index, branch) in branches.iter().enumerate() {
-        let pointer = format!("#/oneOf/{index}");
-        variant_names.push(metadata_name(
-            expect_schema_object(branch, &pointer)?,
-            &pointer,
-        )?);
-    }
-
-    writeln!(
-        output,
-        "{name}.__jsoncompat_root_annotation__ = {}",
-        union_annotation(&variant_names)
     )
     .expect("writing to String cannot fail");
     Ok(())
@@ -1622,13 +1411,6 @@ fn omittable_annotation(annotation: &str) -> String {
     )
 }
 
-fn missing_union_annotation(annotation: &str) -> String {
-    format!(
-        "({annotation} | {})",
-        runtime_dataclass_symbol(MISSING_TYPE_NAME),
-    )
-}
-
 fn pretty_schema_literal(schema: &Value) -> Result<String, DataclassError> {
     serde_json::to_string_pretty(schema)
         .map_err(|error| invalid_schema("#".to_owned(), format!("schema is not JSON: {error}")))
@@ -1920,7 +1702,7 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("root: float ="));
-        assert!(source.contains("GeneratedSchema.__jsoncompat_root_annotation__ = float"));
+        assert!(!source.contains("__jsoncompat_root_annotation__"));
         assert!(!source.contains("typing.Literal[9007199254740994.0]"));
     }
 
@@ -1956,8 +1738,8 @@ mod tests {
         assert!(source.contains(
             "nickname: dc.Omittable[str | None] = dc.field(\"nickname\", omittable=True)"
         ));
-        assert!(source.contains(
-            "dc.field_spec(\"nickname\", \"nickname\", ((str | None) | dc.JsoncompatMissingType), omittable=True)"
-        ));
+        assert!(!source.contains("__jsoncompat_object_spec__"));
+        assert!(!source.contains("dc.object_spec("));
+        assert!(!source.contains("dc.field_spec("));
     }
 }

@@ -240,6 +240,10 @@ fn generated_dataclasses_for_checkout_demo_are_python_usable() {
         "additionalProperties": false
     }))
     .expect("generate dataclasses from checkout demo schema");
+    assert!(!source.contains("__jsoncompat_object_spec__"));
+    assert!(!source.contains("dc.object_spec("));
+    assert!(!source.contains("dc.field_spec("));
+    assert!(!source.contains("__jsoncompat_root_annotation__"));
     let module_path = write_temp_module("checkout_demo", &source);
 
     let mut command = python_env::python_command();
@@ -304,6 +308,27 @@ assert event.to_json() == {
     ],
     "currency": "USD",
 }
+
+parsed = module.GeneratedSchema.from_json({
+    "event": "checkout.completed",
+    "customer": {
+        "id": "cus_123",
+        "email": "ada@example.com",
+        "segment": "enterprise",
+        "trialDaysRemaining": 7,
+    },
+    "items": [
+        {
+            "sku": "team-seat",
+            "quantity": 2,
+            "unitPrice": 120,
+        }
+    ],
+    "currency": "USD",
+})
+assert parsed.couponCode is JSONCOMPAT_MISSING
+assert parsed.customer.id == "cus_123"
+assert parsed.items[0].sku == "team-seat"
 "###,
     );
     command.arg(module_path);

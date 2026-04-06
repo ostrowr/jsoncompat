@@ -52,6 +52,14 @@ See the basic demo:
 - https://github.com/ostrowr/jsoncompat/blob/main/examples/python/basic/demo.py
 - https://jsoncompat.com
 
+## Benchmarks
+
+Run the generated dataclass runtime microbenchmark from the repository root:
+
+```bash
+env -u VIRTUAL_ENV uv run --project pybindings python pybindings/bench_dataclasses_runtime.py
+```
+
 ## License
 
 MIT License. See:

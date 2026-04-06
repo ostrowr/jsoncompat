@@ -16,6 +16,4 @@ class GeneratedSchema(dc.DataclassRootModel):
 }"""
     root: (typing.Literal["a"] | typing.Literal["b"]) = dc.root_field()
 
-GeneratedSchema.__jsoncompat_root_annotation__ = (typing.Literal["a"] | typing.Literal["b"])
-
 JSONCOMPAT_MODEL = GeneratedSchema
