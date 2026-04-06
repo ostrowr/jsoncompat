@@ -319,13 +319,9 @@ jobs:
       - name: Build CLI
         run: cargo build --locked --release --bin jsoncompat
 
-      - name: Install just
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        run: cargo install just --locked --version 1.45.0
-
       - name: Run CLI demo
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        run: just demo -- --noninteractive
+        run: ./target/release/jsoncompat demo --noninteractive
 
       - name: Prepare artifact
         shell: bash
