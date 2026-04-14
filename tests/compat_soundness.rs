@@ -1,3 +1,4 @@
+use fancy_regex::Regex;
 use jsoncompat::{Role, SchemaDocument, check_compat};
 use serde_json::{Value, json};
 
@@ -2639,6 +2640,11 @@ fn assert_witnesses_preserve_inclusion(
             .is_valid(witness)
             .expect("source witness validation should succeed")
         {
+            if role == Role::Deserializer
+                && witness_uses_only_additional_object_properties(source, witness)
+            {
+                continue;
+            }
             assert!(
                 target
                     .is_valid(witness)
@@ -2647,4 +2653,35 @@ fn assert_witnesses_preserve_inclusion(
             );
         }
     }
+}
+
+// Deserializer checks intentionally model what the old serializer can emit,
+// not every object accepted by `additionalProperties`.
+fn witness_uses_only_additional_object_properties(
+    source: &SchemaDocument,
+    witness: &Value,
+) -> bool {
+    let Some(object) = witness.as_object() else {
+        return false;
+    };
+    let Some(schema) = source.source_schema_json().as_object() else {
+        return false;
+    };
+
+    let explicit_properties = schema.get("properties").and_then(Value::as_object);
+    let pattern_properties = schema.get("patternProperties").and_then(Value::as_object);
+
+    object.keys().any(|property| {
+        let explicitly_declared =
+            explicit_properties.is_some_and(|properties| properties.contains_key(property));
+        let pattern_declared = pattern_properties.is_some_and(|patterns| {
+            patterns.keys().any(|pattern| {
+                Regex::new(pattern)
+                    .and_then(|regex| regex.is_match(property))
+                    .unwrap_or(true)
+            })
+        });
+
+        !explicitly_declared && !pattern_declared
+    })
 }

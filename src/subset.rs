@@ -27,6 +27,7 @@ pub(super) struct SubschemaCheckContext {
     active_pairs: HashMap<(NodeId, NodeId), usize>,
     acceptance_deviations: HashMap<NodeId, AcceptanceDeviation>,
     productive_depth: usize,
+    assume_subset_omits_undeclared_properties: bool,
 }
 
 impl SubschemaCheckContext {
@@ -208,12 +209,43 @@ pub(crate) fn explain_subschema_failure(
     explain_subschema_failure_with_context(sub, sup, &mut SubschemaCheckContext::default())
 }
 
+pub(crate) fn explain_subschema_failure_emitted_values(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+) -> Option<SubschemaExplanation> {
+    explain_subschema_failure_with_context(
+        sub,
+        sup,
+        &mut SubschemaCheckContext {
+            assume_subset_omits_undeclared_properties: true,
+            ..SubschemaCheckContext::default()
+        },
+    )
+}
+
 fn explain_subschema_failure_with_context(
     sub: &SchemaNode,
     sup: &SchemaNode,
     context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     analyze_subschema_with_context(sub, sup, context, ExplanationMode::Explain).explanation
+}
+
+/// Variant of [`is_subschema_of`] that models serializer output rather than
+/// full JSON Schema validity for the subset side.
+///
+/// In this mode, object schemas on the subset side are treated as if
+/// undeclared extra properties are never emitted, even when
+/// `additionalProperties` would permit them.
+pub(crate) fn is_subschema_of_emitted_values(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    is_subschema_of_with_context(
+        sub,
+        sup,
+        &mut SubschemaCheckContext {
+            assume_subset_omits_undeclared_properties: true,
+            ..SubschemaCheckContext::default()
+        },
+    )
 }
 
 pub(super) fn is_subschema_of_with_context(
