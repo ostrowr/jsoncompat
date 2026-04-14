@@ -20,6 +20,7 @@ use scalar::{
 #[derive(Default)]
 pub(super) struct SubschemaCheckContext {
     active_pairs: HashSet<(NodeId, NodeId)>,
+    assume_subset_omits_undeclared_properties: bool,
 }
 
 impl SubschemaCheckContext {
@@ -42,6 +43,23 @@ impl SubschemaCheckContext {
 /// `sup`.
 pub(crate) fn is_subschema_of(sub: &SchemaNode, sup: &SchemaNode) -> bool {
     is_subschema_of_with_context(sub, sup, &mut SubschemaCheckContext::default())
+}
+
+/// Variant of [`is_subschema_of`] that models serializer output rather than
+/// full JSON Schema validity for the subset side.
+///
+/// In this mode, object schemas on the subset side are treated as if
+/// undeclared extra properties are never emitted, even when
+/// `additionalProperties` would permit them.
+pub(crate) fn is_subschema_of_emitted_values(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    is_subschema_of_with_context(
+        sub,
+        sup,
+        &mut SubschemaCheckContext {
+            active_pairs: HashSet::new(),
+            assume_subset_omits_undeclared_properties: true,
+        },
+    )
 }
 
 pub(super) fn is_subschema_of_with_context(
