@@ -27,6 +27,8 @@ type Result<T> = std::result::Result<T, CanonicalizeError>;
 const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
     "https://json-schema.org/draft/2020-12/schema#";
+const OPENAPI_31_SCHEMA_OBJECT_DIALECT: &str = "https://spec.openapis.org/oas/3.1/dialect/base";
+const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base";
 const MAX_PASSES: usize = 64;
 
 #[derive(Debug, thiserror::Error)]
@@ -664,9 +666,12 @@ fn canonicalize_schema_uri(value: &Value, pointer: &str) -> Result<Value> {
         JSON_SCHEMA_DRAFT_2020_12 | JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT => {
             Ok(Value::String(JSON_SCHEMA_DRAFT_2020_12.to_owned()))
         }
+        OPENAPI_31_SCHEMA_OBJECT_DIALECT => {
+            Ok(Value::String(OPENAPI_31_SCHEMA_OBJECT_DIALECT.to_owned()))
+        }
         _ => Err(CanonicalizeError::UnsupportedSchemaDialect {
             pointer: pointer.to_owned(),
-            expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+            expected_uri: SUPPORTED_SCHEMA_DIALECTS,
             actual_uri: uri.to_owned(),
         }),
     }

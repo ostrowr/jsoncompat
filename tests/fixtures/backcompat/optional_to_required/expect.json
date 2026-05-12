@@ -1,1 +1,5 @@
-{"serializer": true, "deserializer": false}
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "new schema #/required: property 'id' is no longer guaranteed to be present"
+}

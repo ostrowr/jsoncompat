@@ -1,0 +1,42 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "AnyOf request fixture", "version": "1.0.0" },
+  "paths": {
+    "/events": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "const": "alpha" },
+                      "alpha": { "type": "string" }
+                    },
+                    "required": ["kind", "alpha"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "const": "beta" },
+                      "beta_old": { "type": "string" }
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "ok" }
+        }
+      }
+    }
+  }
+}

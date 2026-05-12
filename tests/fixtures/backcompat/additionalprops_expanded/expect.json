@@ -1,1 +1,5 @@
-{"serializer": false, "deserializer": true}
+{
+  "serializer": false,
+  "deserializer": true,
+  "expected_serializer_message": "new schema #/additionalProperties: additional properties can accept values the comparison target rejects"
+}

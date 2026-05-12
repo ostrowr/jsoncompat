@@ -1,1 +1,5 @@
-{"serializer": true, "deserializer": false}
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #: new values may be allOf-constrained values, but the previous schema only accepted integers"
+}

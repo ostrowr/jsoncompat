@@ -1,4 +1,5 @@
 {
   "serializer": false,
-  "deserializer": true
+  "deserializer": true,
+  "expected_serializer_message": "new schema #/anyOf/2: anyOf branch 3 -> closest previous anyOf branch: new values may be enumerated values, but the previous schema only accepted strings"
 }

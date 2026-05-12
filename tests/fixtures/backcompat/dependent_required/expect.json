@@ -1,1 +1,5 @@
-{"serializer": true, "deserializer": false}
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "new schema #/dependentRequired/credit_card: property 'credit_card' may appear without dependent property 'billing_address'"
+}

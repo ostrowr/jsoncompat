@@ -1,4 +1,5 @@
 {
   "serializer": false,
-  "deserializer": true
+  "deserializer": true,
+  "expected_serializer_message": "new schema #/properties/description: property 'description' can appear with values the comparison target rejects"
 }

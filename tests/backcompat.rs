@@ -1,6 +1,6 @@
 use json_schema_ast::SchemaDocument;
 use json_schema_fuzz::{GenerationConfig, ValueGenerator};
-use jsoncompat::{Role, check_compat};
+use jsoncompat::{Role, check_compat, explain_compat_failure};
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::Value;
@@ -16,6 +16,10 @@ datatest_stable::harness! {
 struct Expectation {
     serializer: bool,
     deserializer: bool,
+    #[serde(default)]
+    expected_serializer_message: Option<String>,
+    #[serde(default)]
+    expected_deserializer_message: Option<String>,
     #[serde(default)]
     allowed_failure: bool,
 }
@@ -43,6 +47,8 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Core compat result
     let ser = check_compat(&old_schema, &new_schema, Role::Serializer)?;
     let de = check_compat(&old_schema, &new_schema, Role::Deserializer)?;
+    let ser_message = explain_compat_failure(&old_schema, &new_schema, Role::Serializer)?;
+    let de_message = explain_compat_failure(&old_schema, &new_schema, Role::Deserializer)?;
 
     if expect.allowed_failure {
         if ser == expect.serializer && de == expect.deserializer {
@@ -52,6 +58,20 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(ser, expect.serializer, "serializer mismatch in {dir:?}");
         assert_eq!(de, expect.deserializer, "deserializer mismatch in {dir:?}");
     }
+    assert_expected_message(
+        dir.as_path(),
+        "serializer",
+        ser,
+        expect.expected_serializer_message.as_deref(),
+        ser_message.as_deref(),
+    );
+    assert_expected_message(
+        dir.as_path(),
+        "deserializer",
+        de,
+        expect.expected_deserializer_message.as_deref(),
+        de_message.as_deref(),
+    );
 
     // Load examples if present
     let ex_path = dir.join("examples.json");
@@ -108,4 +128,34 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn assert_expected_message(
+    dir: &Path,
+    role: &str,
+    compatible: bool,
+    expected: Option<&str>,
+    actual: Option<&str>,
+) {
+    match (compatible, expected, actual) {
+        (true, None, None) => {}
+        (true, Some(expected), _) => panic!(
+            "compatible {role} fixture {dir:?} must not define a message, found {expected:?}"
+        ),
+        (true, None, Some(actual)) => {
+            panic!("compatible {role} fixture {dir:?} produced an unexpected message {actual:?}")
+        }
+        (false, Some(expected), Some(actual)) => {
+            assert_eq!(actual, expected, "{role} issue message mismatch in {dir:?}")
+        }
+        (false, None, Some(actual)) => panic!(
+            "incompatible {role} fixture {dir:?} must define its expected message; actual {actual:?}"
+        ),
+        (false, Some(expected), None) => panic!(
+            "incompatible {role} fixture {dir:?} expected {expected:?}, but no message was produced"
+        ),
+        (false, None, None) => panic!(
+            "incompatible {role} fixture {dir:?} must define its expected message, but no message was produced"
+        ),
+    }
 }

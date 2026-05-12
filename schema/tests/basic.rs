@@ -72,7 +72,7 @@ fn resolved_schema_validates_with_raw_backend_and_exposes_canonicalized_debug_js
 }
 
 #[test]
-fn compile_rejects_non_2020_12_schema_uri_before_validator_backend() {
+fn compile_rejects_unsupported_schema_uri_before_validator_backend() {
     let raw = json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "string"
@@ -84,10 +84,47 @@ fn compile_rejects_non_2020_12_schema_uri_before_validator_backend() {
         error,
         CompileError::Schema(SchemaError::UnsupportedSchemaDialect {
             pointer,
-            expected_uri: "https://json-schema.org/draft/2020-12/schema",
+            expected_uri: "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base",
             actual_uri,
         }) if pointer == "#/$schema" && actual_uri == "http://json-schema.org/draft-07/schema#"
     ));
+}
+
+#[test]
+fn compile_accepts_openapi_31_schema_object_dialect() {
+    let raw = json!({
+        "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
+        "type": ["string", "null"],
+        "format": "email"
+    });
+
+    let compiled = compile(&raw).unwrap();
+
+    assert!(compiled.is_valid(&json!("ada@example.com")));
+    assert!(compiled.is_valid(&json!(null)));
+    assert!(!compiled.is_valid(&json!(42)));
+}
+
+#[test]
+fn resolved_schema_from_json_preserves_openapi_31_schema_object_dialect() {
+    let raw = json!({
+        "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
+        "type": "string",
+        "minLength": 2
+    });
+
+    let schema = SchemaDocument::from_json(&raw).unwrap();
+
+    assert_eq!(
+        schema
+            .canonical_schema_json()
+            .unwrap()
+            .get("$schema")
+            .and_then(Value::as_str),
+        Some("https://spec.openapis.org/oas/3.1/dialect/base"),
+    );
+    assert!(schema.is_valid(&json!("ok")).unwrap());
+    assert!(!schema.is_valid(&json!("x")).unwrap());
 }
 
 #[test]

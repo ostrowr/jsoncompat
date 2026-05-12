@@ -4,10 +4,14 @@
 
 [![crates.io](https://img.shields.io/crates/v/jsoncompat)](https://crates.io/crates/jsoncompat) [![docs.rs](https://docs.rs/jsoncompat/badge.svg)](https://docs.rs/jsoncompat) [![PyPI](https://img.shields.io/pypi/v/jsoncompat.svg)](https://pypi.org/project/jsoncompat/) [![npm](https://img.shields.io/npm/v/jsoncompat.svg)](https://www.npmjs.com/package/jsoncompat) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Check compatibility of evolving JSON schemas.
+Check compatibility of evolving JSON schemas and OpenAPI contracts.
 
-jsoncompat currently supports JSON Schema Draft 2020-12 only. If a schema declares `$schema`, it
-must be `https://json-schema.org/draft/2020-12/schema` with an optional trailing `#`.
+jsoncompat supports raw JSON Schema Draft 2020-12 documents, standalone OpenAPI 3.1
+Schema Objects, and OpenAPI 3.1 JSON documents passed to `jsoncompat compat`.
+If a schema declares `$schema`, it must be either
+`https://json-schema.org/draft/2020-12/schema` with an optional trailing `#`, or
+`https://spec.openapis.org/oas/3.1/dialect/base`. OpenAPI 3.0-only schema semantics such
+as `nullable` are not interpreted; use the OpenAPI 3.1 / JSON Schema form instead.
 
 > [!WARNING]
 > Docs and examples at [jsoncompat.com](https://jsoncompat.com)
@@ -32,6 +36,12 @@ Check whether a schema change is compatible in both serializer and deserializer 
 
 ```bash
 jsoncompat compat old-schema.json new-schema.json --role both --fuzz 1000 --depth 8
+```
+
+Check whether an OpenAPI 3.1 contract change is backward-compatible:
+
+```bash
+jsoncompat compat old-openapi.json new-openapi.json
 ```
 
 Generate example JSON values accepted by a schema:
@@ -140,10 +150,32 @@ let new = SchemaDocument::from_json(&json!({ "type": ["string", "null"] })).unwr
 let compatible = check_compat(&old, &new, Role::Deserializer).unwrap();
 ```
 
-- `SchemaDocument::from_json(&Value)` builds and canonicalizes a Draft 2020-12 schema document.
+- `SchemaDocument::from_json(&Value)` builds and canonicalizes a Draft 2020-12 schema document or OpenAPI 3.1 Schema Object.
 - `check_compat(&old, &new, Role::Serializer | Role::Deserializer | Role::Both)` returns whether the schema change is compatible for that role.
 - `CompatibilityError` reports schema construction failures and compatibility features that are intentionally rejected instead of approximated.
 - `json_schema_fuzz::ValueGenerator::generate(&schema, GenerationConfig::new(depth), rng)` is the separate Rust value-generation API.
+
+OpenAPI contract compatibility uses a parallel typed entrypoint:
+
+```rust
+use jsoncompat::{OpenApiDocument, check_openapi_compat};
+use serde_json::json;
+
+let old = OpenApiDocument::from_json(&json!({
+    "openapi": "3.1.0",
+    "info": { "title": "Pets", "version": "1.0.0" },
+    "paths": {}
+})).unwrap();
+let new = old.clone();
+
+let report = check_openapi_compat(&old, &new).unwrap();
+assert!(report.is_compatible());
+```
+
+- `OpenApiDocument::from_json(&Value)` builds an OpenAPI 3.1 JSON contract document.
+- `check_openapi_compat(&old, &new)` lowers each shared operation into synthetic request and response schemas, then reuses the normal compatibility checker underneath.
+- `OpenApiCompatibilityReport::issues()` lists operation removals plus request- and response-surface incompatibilities.
+- `explain_compat_failure(&old, &new, role)` returns a best-effort structural explanation for schema incompatibilities; `jsoncompat compat` includes the same style of explanation in CLI output for both raw JSON Schema and OpenAPI inputs when it can. Explanations start with a role-aware schema JSON Pointer such as `new schema #/properties/status`; OpenAPI comparisons use the lowered per-operation request or response schema that the compatibility engine checks.
 
 ## Support checklist
 
@@ -276,11 +308,12 @@ The Rust code is split into five crates and one CLI binary. The website under `w
 
 The primary schema APIs are:
 
-- `json_schema_ast::compile(&raw_schema)`, which compiles the original schema document directly with the `jsonschema` validator backend. Before compilation, this crate rejects any `$schema` declaration other than Draft 2020-12 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing `#`).
+- `json_schema_ast::compile(&raw_schema)`, which compiles the original schema document directly with the `jsonschema` validator backend. Before compilation, this crate rejects any `$schema` declaration other than Draft 2020-12 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing `#`) or the OpenAPI 3.1 Schema Object dialect (`https://spec.openapis.org/oas/3.1/dialect/base`).
 - `json_schema_ast::SchemaDocument::from_json(&raw_schema)` (alias: `SchemaDocument::from_json`), which eagerly stores the original raw schema JSON, eagerly canonicalizes and validates the schema document once, and then lazily materializes compiled validators on first use:
   - `SchemaDocument::is_valid(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the original raw schema document.
   - `SchemaDocument::canonical_schema_json() -> Result<&Value, SchemaBuildError>` returns the cached canonicalized schema document as JSON so humans can inspect the rewrite directly.
 - `json_schema_fuzz::ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng) -> Result<Value, GenerateError>`, which is the Rust generation API.
+- `jsoncompat::OpenApiDocument::from_json(&raw_openapi)` plus `jsoncompat::check_openapi_compat(&old, &new)`, which compare OpenAPI 3.1 JSON documents by lowering operations into request and response envelope schemas before invoking the same subset checker.
 
 The resolved IR extension API is public because `jsoncompat` and
 `json_schema_fuzz` are separate crates. `SchemaDocument::root()` lazily resolves
@@ -320,7 +353,7 @@ flowchart TD
 ### What each crate owns
 
 - `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately and canonicalizes it once inside `SchemaDocument::from_json()` so keyword-shape validation happens at schema construction without maintaining a second validator path. The resolved graph is still built lazily by parsing that cached canonical JSON into a private arena-backed graph, resolving local recursive references, normalizing applicators, and freezing it into `SchemaNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `SchemaDocument::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `SchemaNode::accepts_value()` is the low-level evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics.
-- `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role` and document-level `check_compat`, and `src/subset.rs` plus `src/subset/{scalar,object,array}.rs` implement the actual inclusion relation (`sub ⊆ sup`) over `SchemaNode`. The checker uses `SchemaNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
+- `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role`, document-level `check_compat`, and the OpenAPI compatibility surface. `src/openapi.rs` lowers OpenAPI 3.1 operations into synthetic request/response schemas that model parameters, request bodies, status/media variants, response headers, local component refs, and operation removal. `src/subset.rs` plus `src/subset/{scalar,object,array}.rs` implement the actual inclusion relation (`sub ⊆ sup`) over `SchemaNode`. The checker uses `SchemaNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
 - `json_schema_fuzz` is the value-generation engine. Its public value-generation API is `ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng)` and it only returns values accepted by `SchemaDocument::is_valid()`; if the resolved schema is known to be empty, generation returns a typed `GenerateError::Unsatisfiable`, and if the internal candidate generator cannot find a value within its retry budget, generation returns a typed `GenerateError::ExhaustedAttempts`. Internally it walks the canonicalized `SchemaNode` graph and uses `SchemaNode::accepts_value()` only as a pruning heuristic for recursive subgraphs.
 - `jsoncompat_py` and `jsoncompat_wasm` are thin adapters. They parse JSON strings, call the Rust core crates, and map Rust errors/results into Python or JavaScript types.
 
@@ -328,11 +361,29 @@ flowchart TD
 
 - `tests/backcompat.rs` checks expected serializer/deserializer compatibility outcomes for hand-authored old/new schema pairs, then fuzzes each direction to look for concrete counterexamples.
 - `tests/fuzz.rs` runs the JSON-Schema-Test-Suite fixture corpus through `SchemaDocument::from_json`, asks `json_schema_fuzz::ValueGenerator` for raw-valid examples, compiles `SchemaDocument::canonical_schema_json()` to assert canonicalization parity, and additionally checks `SchemaNode::accepts_value()` against the canonicalized validator on schemas that stay within the internal evaluator's supported subset. Fixtures that rely on unsupported reference-resource features are skipped when schema build returns a typed resolver error, and known generation gaps are tracked by explicit `GenerateError::ExhaustedAttempts` whitelist entries.
+- `tests/openapi_fixtures.rs` runs the OpenAPI contract regression corpus under `tests/fixtures/openapi_compat`, including focused `anyOf` request/response evolution cases where shallow diffing can miss serializer- or deserializer-side incompatibilities.
 - `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` test canonicalization and AST round-tripping directly.
 
 ## Debugging canonicalization
 
 To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. Canonicalization is an internal library facility, not a `jsoncompat` CLI subcommand.
+
+### OpenAPI compatibility
+
+`jsoncompat compat old-openapi.json new-openapi.json` auto-detects OpenAPI 3.1
+JSON documents and compares:
+
+- path, query, header, and cookie parameters, including requiredness, schema/content shape, and serialization controls (`style`, `explode`, `allowReserved`, and `allowEmptyValue`);
+- request bodies, their requiredness, media types, and schemas;
+- response status/media/body variants and response headers, including header requiredness;
+- removed operations;
+- local `#/components/...` references for parameters, request bodies, responses, headers, and schema refs under `#/components/schemas/...`.
+
+The OpenAPI lowerer rejects remote refs and unsupported OpenAPI versions rather than approximating them.
+It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON-first input model.
+Response media-type additions are treated as backward-risky because they expand the serializer-side
+response contract; `oasdiff` currently reports that case as non-breaking, so the two tools intentionally
+differ there.
 
 ## Development
 

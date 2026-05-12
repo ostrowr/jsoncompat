@@ -1,1 +1,6 @@
-{"serializer": false, "deserializer": false}
+{
+  "serializer": false,
+  "deserializer": false,
+  "expected_serializer_message": "new schema #/anyOf/1: anyOf branch 2: new values may be enumerated values, but the previous schema only accepted numbers",
+  "expected_deserializer_message": "old schema #/anyOf/1: anyOf branch 2: new values may be numbers, but the previous schema only accepted enumerated values"
+}

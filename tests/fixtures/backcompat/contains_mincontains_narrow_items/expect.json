@@ -1,4 +1,6 @@
 {
   "serializer": false,
-  "deserializer": false
+  "deserializer": false,
+  "expected_serializer_message": "old schema #/contains: array values do not guarantee at least 2 item(s) matching the required contains schema",
+  "expected_deserializer_message": "old schema #/items: array items: new values may be any value, but the previous schema only accepted integers"
 }

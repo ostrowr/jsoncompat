@@ -1,6 +1,6 @@
 # json_schema_ast
 
-Strict Draft 2020-12 JSON Schema documents, validation, and resolved schema IR.
+Strict Draft 2020-12 JSON Schema and OpenAPI 3.1 Schema Object documents, validation, and resolved schema IR.
 
 [![crates.io](https://img.shields.io/crates/v/json_schema_ast)](https://crates.io/crates/json_schema_ast) [![docs.rs](https://docs.rs/json_schema_ast/badge.svg)](https://docs.rs/json_schema_ast) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
@@ -44,7 +44,7 @@ assert!(validator.is_valid(&json!({ "id": 42 })));
 
 For validation callers:
 
-- `SchemaDocument::from_json(&Value)` builds a document from a raw Draft 2020-12 JSON Schema.
+- `SchemaDocument::from_json(&Value)` builds a document from a raw Draft 2020-12 JSON Schema or OpenAPI 3.1 Schema Object.
 - `SchemaDocument::is_valid(&Value)` validates instances against the original raw schema.
 - `SchemaDocument::canonical_schema_json()` exposes the canonicalized schema used for IR construction and debugging.
 - `compile(&Value)` returns the underlying `jsonschema::JSONSchema` validator after this crate's dialect checks.
@@ -67,9 +67,13 @@ Rust matcher can evaluate a JSON Schema pattern.
 The resolved IR entrypoints are public because `jsoncompat` and
 `json_schema_fuzz` are separate crates; most users only need the validation API.
 
-If a schema document sets `$schema`, it must be exactly Draft 2020-12
+If a schema document sets `$schema`, it must be either Draft 2020-12
 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing
-`#`). Omitting `$schema` is allowed and is interpreted as Draft 2020-12.
+`#`) or the OpenAPI 3.1 Schema Object dialect
+(`https://spec.openapis.org/oas/3.1/dialect/base`). Omitting `$schema` is
+allowed and is interpreted as Draft 2020-12. OpenAPI 3.0-only schema semantics
+such as `nullable` are not interpreted; use the OpenAPI 3.1 / JSON Schema form
+instead.
 
 Same-document refs to `"#"` and `"#/..."` are supported, including recursive
 graphs. Pure alias cycles, remote refs, plain-name fragments, and dynamic refs

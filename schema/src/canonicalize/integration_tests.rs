@@ -11,6 +11,7 @@ const MAX_SAFE_ADJACENT_INTEGER_MUTATION: i64 = 9_007_199_254_740_990;
 const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
     "https://json-schema.org/draft/2020-12/schema#";
+const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base";
 
 #[test]
 fn canonicalize_every_fuzz_fixture_schema_is_idempotent_and_ast_equivalent()
@@ -1255,7 +1256,7 @@ fn canonicalize_rejects_invalid_schema_shapes_with_precise_pointers() {
             "$schema": "https://json-schema.org/draft-07/schema#",
             "type": "string"
         }),
-        "unsupported $schema URI at '#/$schema': expected 'https://json-schema.org/draft/2020-12/schema', got 'https://json-schema.org/draft-07/schema#'",
+        "unsupported $schema URI at '#/$schema': expected 'https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base', got 'https://json-schema.org/draft-07/schema#'",
     );
     assert_canonicalize_error(
         &json!({ "$schema": 7 }),
@@ -1401,7 +1402,7 @@ fn assert_unsupported_schema_uri_error(
             error,
             CanonicalizeError::UnsupportedSchemaDialect {
                 pointer,
-                expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+                expected_uri: SUPPORTED_SCHEMA_DIALECTS,
                 actual_uri,
             } if pointer == "#/$schema" && actual_uri == expected_uri
         ),

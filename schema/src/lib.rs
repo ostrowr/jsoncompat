@@ -1,4 +1,5 @@
-//! Strict Draft 2020-12 schema documents, validation, and resolved schema IR.
+//! Strict Draft 2020-12 JSON Schema and OpenAPI 3.1 Schema Object documents,
+//! validation, and resolved schema IR.
 //!
 //! The main entry point is [`SchemaDocument`]. Build one from raw JSON with
 //! [`SchemaDocument::from_json`], validate instances with [`SchemaDocument::is_valid`],

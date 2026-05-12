@@ -943,6 +943,7 @@ dependencies = [
  "json_schema_ast",
  "json_schema_fuzz",
  "owo-colors",
+ "percent-encoding",
  "rand",
  "serde",
  "serde_json",

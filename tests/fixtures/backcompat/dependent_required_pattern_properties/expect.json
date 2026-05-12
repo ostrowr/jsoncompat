@@ -1,1 +1,5 @@
-{"serializer": false, "deserializer": true}
+{
+  "serializer": false,
+  "deserializer": true,
+  "expected_serializer_message": "old schema #/dependentRequired/x: property 'x' may appear without dependent property 'y'"
+}

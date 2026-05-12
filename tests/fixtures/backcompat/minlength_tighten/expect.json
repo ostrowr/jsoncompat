@@ -1,1 +1,5 @@
-{"serializer": true, "deserializer": false}
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #: string length range 1.. is not contained by required range 5.."
+}

@@ -1,9 +1,12 @@
-//! Backward-compatibility checks for evolving JSON Schema documents.
+//! Backward-compatibility checks for evolving JSON Schema documents and
+//! OpenAPI 3.1 contracts.
 //!
 //! Build input documents with [`SchemaDocument::from_json`], then call
 //! [`check_compat`] with a [`Role`]. This crate intentionally exposes only the
-//! document-level compatibility API; lower-level resolved IR types live in
-//! `json_schema_ast`.
+//! document-level JSON Schema compatibility API; lower-level resolved IR types
+//! live in `json_schema_ast`. OpenAPI callers can build [`OpenApiDocument`]s
+//! and call [`check_openapi_compat`], which lowers operations into synthetic
+//! request and response schemas before reusing the same subset checker.
 
 // Re-export the document type needed by `check_compat` so application callers
 // do not need a second direct dependency just to construct inputs.
@@ -11,9 +14,15 @@ use json_schema_ast::{NodeId, SchemaNode, SchemaNodeKind};
 pub use json_schema_ast::{SchemaBuildError, SchemaDocument};
 use std::collections::HashSet;
 
+mod json_pointer;
+mod openapi;
 mod subset;
 
-use subset::is_subschema_of;
+pub use openapi::{
+    OpenApiCompatibilityError, OpenApiCompatibilityIssue, OpenApiCompatibilityReport,
+    OpenApiCompatibilitySurface, OpenApiDocument, OpenApiError, check_openapi_compat,
+};
+use subset::{explain_subschema_failure, is_subschema_of};
 
 /// The role under which a compatibility check is performed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -71,6 +80,39 @@ pub fn check_compat(
         Role::Deserializer => Ok(is_subschema_of(old, new)),
         Role::Both => Ok(is_subschema_of(new, old) && is_subschema_of(old, new)),
     }
+}
+
+/// Return a best-effort static explanation for the first incompatibility under
+/// `role`, or `Ok(None)` when the checker finds no incompatibility to explain.
+///
+/// This diagnostic path is intentionally narrower than [`check_compat`]: it
+/// preserves the sound compatibility verdict while surfacing the most useful
+/// structural reason the checker can identify.
+pub fn explain_compat_failure(
+    old: &SchemaDocument,
+    new: &SchemaDocument,
+    role: Role,
+) -> Result<Option<String>, CompatibilityError> {
+    let old = old.root()?;
+    let new = new.root()?;
+
+    reject_unsupported_compatibility_features(old)?;
+    reject_unsupported_compatibility_features(new)?;
+
+    let explanation =
+        match role {
+            Role::Serializer => explain_subschema_failure(new, old)
+                .map(|explanation| explanation.render("new", "old")),
+            Role::Deserializer => explain_subschema_failure(old, new)
+                .map(|explanation| explanation.render("old", "new")),
+            Role::Both => explain_subschema_failure(new, old)
+                .map(|explanation| explanation.render("new", "old"))
+                .or_else(|| {
+                    explain_subschema_failure(old, new)
+                        .map(|explanation| explanation.render("old", "new"))
+                }),
+        };
+    Ok(explanation)
 }
 
 fn reject_unsupported_compatibility_features(

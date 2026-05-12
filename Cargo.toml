@@ -2,7 +2,7 @@
 name = "jsoncompat"
 version = "0.3.1"
 edition = "2024"
-description = "JSON Schema Compatibility Checker"
+description = "JSON Schema and OpenAPI Compatibility Checker"
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
 readme = "readme.md"
@@ -31,6 +31,7 @@ json_schema_ast = { path = "schema", version = "0.3.1" }
 json_schema_fuzz = { path = "fuzz", version = "0.3.1" }
 console = "0.16.3"
 fancy-regex = "0.17"
+percent-encoding = "2.3"
 
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }
@@ -43,6 +44,10 @@ harness = false
 
 [[test]]
 name = "fuzz"
+harness = false
+
+[[test]]
+name = "openapi_fixtures"
 harness = false
 
 [[bench]]

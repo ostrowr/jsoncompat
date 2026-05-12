@@ -1,0 +1,5 @@
+{
+  "compatible": false,
+  "surfaces": ["Request"],
+  "expected_message": "new schema #/properties/body/properties/value/anyOf/1/required: property 'body' -> property 'value' -> anyOf branch 2: property 'beta' is no longer guaranteed to be present"
+}

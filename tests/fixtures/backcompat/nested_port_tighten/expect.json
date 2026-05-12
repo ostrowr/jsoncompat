@@ -1,4 +1,5 @@
 {
   "serializer": true,
-  "deserializer": false
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #/properties/servers/items/properties/port: property 'servers' -> array items -> property 'port': integer bounds [0, 65535] are not contained by required bounds [1024, 65535]"
 }

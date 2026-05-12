@@ -7,6 +7,7 @@ use std::path::Path;
 const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
 const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
     "https://json-schema.org/draft/2020-12/schema#";
+const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base";
 
 #[test]
 fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,7 +43,7 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
                     error,
                     CanonicalizeError::UnsupportedSchemaDialect {
                         pointer,
-                        expected_uri: JSON_SCHEMA_DRAFT_2020_12,
+                        expected_uri: SUPPORTED_SCHEMA_DIALECTS,
                         ..
                     } if pointer == "#/$schema"
                 ));

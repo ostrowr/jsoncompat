@@ -1,14 +1,15 @@
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use owo_colors::OwoColorize;
+use serde_json::Value;
 
-use crate::{RoleCli, SchemaDoc, sample_incompat};
+use crate::{RoleCli, SchemaDoc, read_to_string, sample_incompat};
 use jsoncompat as backcompat;
 
 #[derive(clap::Args)]
 pub(crate) struct CompatArgs {
-    /// Path to the *old* schema.
+    /// Path to the *old* JSON Schema or OpenAPI 3.1 document.
     old: String,
-    /// Path to the *new* schema.
+    /// Path to the *new* JSON Schema or OpenAPI 3.1 document.
     new: String,
     /// Compatibility role.
     #[arg(long, value_enum, default_value_t = RoleCli::Both)]
@@ -22,15 +23,59 @@ pub(crate) struct CompatArgs {
 }
 
 pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
-    let old = SchemaDoc::load(&args.old)?;
-    let new = SchemaDoc::load(&args.new)?;
+    let old = CompatInput::load(&args.old)?;
+    let new = CompatInput::load(&args.new)?;
     let role: backcompat::Role = args.role.into();
 
-    let ok_static = backcompat::check_compat(&old.schema, &new.schema, role)?;
+    match (old, new) {
+        (CompatInput::Schema(old), CompatInput::Schema(new)) => {
+            compat_schemas(old, new, role, args.fuzz, args.depth)
+        }
+        (CompatInput::OpenApi(old), CompatInput::OpenApi(new)) => {
+            if args.fuzz > 0 {
+                bail!("--fuzz is only available for raw JSON Schema inputs");
+            }
+            compat_openapi(old, new)
+        }
+        _ => bail!("compat inputs must both be raw JSON Schemas or both be OpenAPI 3.1 documents"),
+    }
+}
 
-    let offender = if args.fuzz > 0 && !ok_static {
+enum CompatInput {
+    Schema(SchemaDoc),
+    OpenApi(backcompat::OpenApiDocument),
+}
+
+impl CompatInput {
+    fn load(path: &str) -> Result<Self> {
+        let raw = read_to_string(path)?;
+        let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
+        if json
+            .as_object()
+            .is_some_and(|object| object.contains_key("openapi"))
+        {
+            let document = backcompat::OpenApiDocument::from_json(&json)
+                .with_context(|| format!("building OpenAPI document for {path}"))?;
+            return Ok(Self::OpenApi(document));
+        }
+
+        let schema = backcompat::SchemaDocument::from_json(&json)
+            .with_context(|| format!("building schema for {path}"))?;
+        Ok(Self::Schema(SchemaDoc { schema }))
+    }
+}
+
+fn compat_schemas(
+    old: SchemaDoc,
+    new: SchemaDoc,
+    role: backcompat::Role,
+    fuzz: u32,
+    depth: u8,
+) -> Result<()> {
+    let ok_static = backcompat::check_compat(&old.schema, &new.schema, role)?;
+    let offender = if fuzz > 0 && !ok_static {
         let mut rng = rand::rng();
-        sample_incompat(&old, &new, role, args.fuzz as usize, args.depth, &mut rng)?
+        sample_incompat(&old, &new, role, fuzz as usize, depth, &mut rng)?
     } else {
         None
     };
@@ -49,6 +94,9 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
         "✘".red(),
         role
     );
+    if let Some(detail) = backcompat::explain_compat_failure(&old.schema, &new.schema, role)? {
+        eprintln!("{} {}", "•".yellow(), detail);
+    }
 
     if let Some(ex) = offender {
         let pretty =
@@ -65,6 +113,34 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
             "{} New schema: {}",
             "•".yellow(),
             if new_valid { "accepts" } else { "rejects" }
+        );
+    }
+
+    std::process::exit(1);
+}
+
+fn compat_openapi(
+    old: backcompat::OpenApiDocument,
+    new: backcompat::OpenApiDocument,
+) -> Result<()> {
+    let report = backcompat::check_openapi_compat(&old, &new)?;
+    if report.is_compatible() {
+        eprintln!("{} OpenAPI documents seem backward-compatible", "✔".green());
+        return Ok(());
+    }
+
+    eprintln!(
+        "{} OpenAPI documents are NOT backward-compatible",
+        "✘".red()
+    );
+    for issue in report.issues() {
+        eprintln!(
+            "{} {} {} {:?}: {}",
+            "•".yellow(),
+            issue.method,
+            issue.path,
+            issue.surface,
+            issue.message
         );
     }
 
@@ -111,5 +187,79 @@ mod tests {
             message.contains("keyword 'maxLength' at '#/maxLength' must be a non-negative integer"),
             "unexpected error: {message}"
         );
+    }
+
+    #[test]
+    fn compat_command_accepts_identical_openapi_documents() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir();
+        let old_path = dir.join(format!("jsoncompat-openapi-old-{unique}.json"));
+        let new_path = dir.join(format!("jsoncompat-openapi-new-{unique}.json"));
+        let openapi = r#"{
+  "openapi": "3.1.0",
+  "info": { "title": "Pets", "version": "1.0.0" },
+  "paths": {
+    "/pets": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}"#;
+
+        fs::write(&old_path, openapi).unwrap();
+        fs::write(&new_path, openapi).unwrap();
+
+        let result = cmd(CompatArgs {
+            old: old_path.to_string_lossy().into_owned(),
+            new: new_path.to_string_lossy().into_owned(),
+            role: RoleCli::Both,
+            fuzz: 0,
+            depth: 8,
+        });
+
+        fs::remove_file(old_path).unwrap();
+        fs::remove_file(new_path).unwrap();
+        result.unwrap();
+    }
+
+    #[test]
+    fn schema_compat_explanation_describes_a_property_type_widening() {
+        let old = backcompat::SchemaDocument::from_json(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "preamble": { "type": "string" }
+            }
+        }))
+        .unwrap();
+        let new = backcompat::SchemaDocument::from_json(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "preamble": { "type": ["string", "object"] }
+            }
+        }))
+        .unwrap();
+
+        let detail = backcompat::explain_compat_failure(&old, &new, backcompat::Role::Serializer)
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            detail.contains("new schema #/properties/preamble"),
+            "{detail}"
+        );
+        assert!(detail.contains("property 'preamble'"), "{detail}");
     }
 }

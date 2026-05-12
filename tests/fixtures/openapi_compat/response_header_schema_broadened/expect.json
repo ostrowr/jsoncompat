@@ -1,0 +1,7 @@
+{
+  "compatible": false,
+  "surfaces": [
+    "Response"
+  ],
+  "expected_message": "new schema #/properties/headers/properties/x-rate-limit/properties/value/anyOf/1: property 'headers' -> property 'x-rate-limit' -> property 'value' -> anyOf branch 2: new values may be strings, but the previous schema only accepted integers"
+}
