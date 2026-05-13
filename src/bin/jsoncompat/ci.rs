@@ -402,4 +402,27 @@ mod tests {
 
         assert!(matches!(grade.status, Status::Incompatible { .. }));
     }
+
+    #[test]
+    fn ci_grade_marks_invalid_schemas_before_compatibility_checks() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string",
+                "maxLength": "x"
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string"
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
 }

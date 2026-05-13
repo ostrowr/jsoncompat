@@ -69,6 +69,27 @@ impl OpenApiDocument {
                 actual: version.to_owned(),
             });
         }
+        let info = object
+            .get("info")
+            .and_then(Value::as_object)
+            .ok_or_else(|| invalid_value(&JsonPointer::root().child("info"), "an object"))?;
+        for field in ["title", "version"] {
+            if !info.get(field).is_some_and(Value::is_string) {
+                return Err(invalid_value(
+                    &JsonPointer::root().child("info").child(field),
+                    "a string",
+                ));
+            }
+        }
+        if !["paths", "components", "webhooks"]
+            .iter()
+            .any(|field| object.contains_key(*field))
+        {
+            return Err(invalid_value(
+                &JsonPointer::root(),
+                "at least one of `paths`, `components`, or `webhooks`",
+            ));
+        }
         if let Some(paths) = object.get("paths")
             && !paths.is_object()
         {
@@ -82,6 +103,14 @@ impl OpenApiDocument {
         {
             return Err(invalid_value(
                 &JsonPointer::root().child("components"),
+                "an object",
+            ));
+        }
+        if let Some(webhooks) = object.get("webhooks")
+            && !webhooks.is_object()
+        {
+            return Err(invalid_value(
+                &JsonPointer::root().child("webhooks"),
                 "an object",
             ));
         }
@@ -382,7 +411,9 @@ fn collect_parameters(
     let mut parameters = BTreeMap::new();
     for (index, raw_parameter) in raw.iter().enumerate() {
         let parameter_pointer = pointer.child(index.to_string());
-        let parameter = parse_parameter(resolver, raw_parameter, &parameter_pointer)?;
+        let Some(parameter) = parse_parameter(resolver, raw_parameter, &parameter_pointer)? else {
+            continue;
+        };
         let identity = (
             parameter.location,
             parameter_identity_name(parameter.location, &parameter.name),
@@ -412,7 +443,7 @@ fn parse_parameter(
     resolver: &Resolver<'_>,
     raw: &Value,
     pointer: &JsonPointer,
-) -> Result<Parameter, OpenApiError> {
+) -> Result<Option<Parameter>, OpenApiError> {
     let raw = resolver.resolve_value(raw, pointer)?;
     let object = raw
         .as_object()
@@ -429,6 +460,9 @@ fn parse_parameter(
             .ok_or_else(|| invalid_value(&pointer.child("in"), "a string"))?,
         &pointer.child("in"),
     )?;
+    if is_ignored_header_parameter(location, &name) {
+        return Ok(None);
+    }
     let required = object
         .get("required")
         .map(|value| {
@@ -454,12 +488,20 @@ fn parse_parameter(
         |schema| parameter_schema_value(location, object, pointer, schema),
     )?;
 
-    Ok(Parameter {
+    Ok(Some(Parameter {
         name,
         location,
         required,
         value,
-    })
+    }))
+}
+
+fn is_ignored_header_parameter(location: ParameterLocation, name: &str) -> bool {
+    location == ParameterLocation::Header
+        && matches!(
+            name.to_ascii_lowercase().as_str(),
+            "accept" | "content-type" | "authorization"
+        )
 }
 
 fn reject_query_only_metadata_outside_query(
@@ -744,8 +786,18 @@ fn lower_response_schema(
             "an object containing at least one response",
         ));
     }
+    let explicit_status_codes = explicit_response_status_codes(responses);
+    let ranged_status_classes = ranged_response_status_classes(responses);
     let mut variants = Vec::new();
     for (status, raw_response) in responses {
+        if status.starts_with("x-") {
+            continue;
+        }
+        let statuses =
+            lowered_response_statuses(status, &explicit_status_codes, &ranged_status_classes);
+        if statuses.is_empty() {
+            continue;
+        }
         let response_pointer = responses_pointer.child(status);
         let raw_response = resolver.resolve_value(raw_response, &response_pointer)?;
         let response = raw_response
@@ -764,7 +816,7 @@ fn lower_response_schema(
         variants.push(json!({
             "type": "object",
             "properties": {
-                "status": { "enum": [status] },
+                "status": { "enum": statuses },
                 "body": body,
                 "headers": headers
             },
@@ -772,8 +824,84 @@ fn lower_response_schema(
             "additionalProperties": false
         }));
     }
+    if variants.is_empty() {
+        return Err(invalid_value(
+            &responses_pointer,
+            "an object containing at least one response",
+        ));
+    }
 
     attach_schema_defs(resolver, any_of(variants))
+}
+
+fn explicit_response_status_codes(responses: &Map<String, Value>) -> BTreeSet<u16> {
+    responses
+        .keys()
+        .filter_map(|status| parse_explicit_response_status(status))
+        .collect()
+}
+
+fn ranged_response_status_classes(responses: &Map<String, Value>) -> BTreeSet<u16> {
+    responses
+        .keys()
+        .filter_map(|status| parse_response_status_range(status))
+        .collect()
+}
+
+fn lowered_response_statuses(
+    status: &str,
+    explicit_status_codes: &BTreeSet<u16>,
+    ranged_status_classes: &BTreeSet<u16>,
+) -> Vec<Value> {
+    if status == "default" {
+        return standard_http_status_codes()
+            .filter(|code| {
+                !explicit_status_codes.contains(code)
+                    && !ranged_status_classes.contains(&(code / 100))
+            })
+            .map(response_status_value)
+            .collect();
+    }
+
+    if let Some(status_class) = parse_response_status_range(status) {
+        return standard_http_status_codes()
+            .filter(|code| code / 100 == status_class && !explicit_status_codes.contains(code))
+            .map(response_status_value)
+            .collect();
+    }
+
+    vec![Value::String(status.to_owned())]
+}
+
+fn standard_http_status_codes() -> impl Iterator<Item = u16> {
+    100..=599
+}
+
+fn is_standard_http_status_code(code: u16) -> bool {
+    (100..=599).contains(&code)
+}
+
+fn response_status_value(code: u16) -> Value {
+    Value::String(format!("{code:03}"))
+}
+
+fn parse_explicit_response_status(status: &str) -> Option<u16> {
+    if status.len() != 3 || !status.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let code = status.parse::<u16>().ok()?;
+    is_standard_http_status_code(code).then_some(code)
+}
+
+fn parse_response_status_range(status: &str) -> Option<u16> {
+    match status {
+        "1XX" => Some(1),
+        "2XX" => Some(2),
+        "3XX" => Some(3),
+        "4XX" => Some(4),
+        "5XX" => Some(5),
+        _ => None,
+    }
 }
 
 fn lower_response_body(
@@ -845,6 +973,9 @@ fn lower_response_headers(
     let mut properties = Map::new();
     let mut required = Vec::new();
     for (name, raw_header) in headers {
+        if name.eq_ignore_ascii_case("content-type") {
+            continue;
+        }
         let header_pointer = pointer.child(name);
         let field = lower_response_header_field(resolver, name, raw_header, &header_pointer)?;
         if field.required {
@@ -932,11 +1063,11 @@ fn lower_field_value(
             schema_value(rewrite_schema_refs(schema, &pointer.child("schema"))?)
         }
         (None, Some(content)) => Ok(FieldValue::Content {
-            media_schema: any_of(lower_content_variants(
+            media_schema: lower_single_content_variant(
                 resolver,
                 content,
                 &pointer.child("content"),
-            )?),
+            )?,
         }),
         (Some(_), Some(_)) => Err(invalid_value(
             pointer,
@@ -947,6 +1078,27 @@ fn lower_field_value(
             "exactly one of `schema` or `content`",
         )),
     }
+}
+
+fn lower_single_content_variant(
+    resolver: &Resolver<'_>,
+    content: &Value,
+    pointer: &JsonPointer,
+) -> Result<Value, OpenApiError> {
+    let content = content
+        .as_object()
+        .ok_or_else(|| invalid_value(pointer, "an object containing exactly one media type"))?;
+    if content.len() != 1 {
+        return Err(invalid_value(
+            pointer,
+            "an object containing exactly one media type",
+        ));
+    }
+    Ok(any_of(lower_content_variants(
+        resolver,
+        &Value::Object(content.clone()),
+        pointer,
+    )?))
 }
 
 fn any_of(mut variants: Vec<Value>) -> Value {

@@ -32,6 +32,11 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
             compat_schemas(old, new, role, args.fuzz, args.depth)
         }
         (CompatInput::OpenApi(old), CompatInput::OpenApi(new)) => {
+            if args.role != RoleCli::Both {
+                bail!(
+                    "--role is only available for raw JSON Schema inputs; OpenAPI comparisons check request and response compatibility together"
+                );
+            }
             if args.fuzz > 0 {
                 bail!("--fuzz is only available for raw JSON Schema inputs");
             }
@@ -50,10 +55,7 @@ impl CompatInput {
     fn load(path: &str) -> Result<Self> {
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
-        if json
-            .as_object()
-            .is_some_and(|object| object.contains_key("openapi"))
-        {
+        if looks_like_openapi_document(&json) {
             let document = backcompat::OpenApiDocument::from_json(&json)
                 .with_context(|| format!("building OpenAPI document for {path}"))?;
             return Ok(Self::OpenApi(document));
@@ -63,6 +65,17 @@ impl CompatInput {
             .with_context(|| format!("building schema for {path}"))?;
         Ok(Self::Schema(SchemaDoc { schema }))
     }
+}
+
+fn looks_like_openapi_document(json: &Value) -> bool {
+    let Some(object) = json.as_object() else {
+        return false;
+    };
+    object.get("openapi").and_then(Value::as_str).is_some()
+        && object.get("info").is_some_and(Value::is_object)
+        && ["paths", "components", "webhooks"]
+            .iter()
+            .any(|field| object.contains_key(*field))
 }
 
 fn compat_schemas(
@@ -233,6 +246,105 @@ mod tests {
         fs::remove_file(old_path).unwrap();
         fs::remove_file(new_path).unwrap();
         result.unwrap();
+    }
+
+    #[test]
+    fn raw_schemas_with_openapi_annotations_stay_raw_schemas() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "jsoncompat-schema-with-openapi-annotation-{unique}.json"
+        ));
+        fs::write(&path, r#"{"openapi":"3.1.0","type":"string"}"#).unwrap();
+
+        let input = CompatInput::load(&path.to_string_lossy()).unwrap();
+
+        fs::remove_file(path).unwrap();
+        assert!(matches!(input, CompatInput::Schema(_)));
+    }
+
+    #[test]
+    fn compat_command_rejects_openapi_role_flags() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir();
+        let old_path = dir.join(format!("jsoncompat-openapi-role-old-{unique}.json"));
+        let new_path = dir.join(format!("jsoncompat-openapi-role-new-{unique}.json"));
+        let openapi = r#"{
+  "openapi": "3.1.0",
+  "info": { "title": "Pets", "version": "1.0.0" },
+  "paths": {
+    "/pets": {
+      "get": {
+        "responses": {
+          "200": { "description": "ok" }
+        }
+      }
+    }
+  }
+}"#;
+
+        fs::write(&old_path, openapi).unwrap();
+        fs::write(&new_path, openapi).unwrap();
+
+        let error = cmd(CompatArgs {
+            old: old_path.to_string_lossy().into_owned(),
+            new: new_path.to_string_lossy().into_owned(),
+            role: RoleCli::Serializer,
+            fuzz: 0,
+            depth: 8,
+        })
+        .unwrap_err();
+
+        fs::remove_file(old_path).unwrap();
+        fs::remove_file(new_path).unwrap();
+
+        assert!(
+            error.to_string().contains("--role is only available"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn compat_command_rejects_unsupported_openapi_versions_before_schema_fallback() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir();
+        let old_path = dir.join(format!("jsoncompat-openapi-30-old-{unique}.json"));
+        let new_path = dir.join(format!("jsoncompat-openapi-30-new-{unique}.json"));
+        let openapi = r#"{
+  "openapi": "3.0.3",
+  "info": { "title": "Pets", "version": "1.0.0" },
+  "paths": {}
+}"#;
+
+        fs::write(&old_path, openapi).unwrap();
+        fs::write(&new_path, openapi).unwrap();
+
+        let error = cmd(CompatArgs {
+            old: old_path.to_string_lossy().into_owned(),
+            new: new_path.to_string_lossy().into_owned(),
+            role: RoleCli::Both,
+            fuzz: 0,
+            depth: 8,
+        })
+        .unwrap_err();
+
+        fs::remove_file(old_path).unwrap();
+        fs::remove_file(new_path).unwrap();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("building OpenAPI document"), "{message}");
+        assert!(
+            message.contains("unsupported OpenAPI version '3.0.3'"),
+            "{message}"
+        );
     }
 
     #[test]

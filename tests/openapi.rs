@@ -72,6 +72,32 @@ fn identical_openapi_documents_are_compatible() {
 }
 
 #[test]
+fn openapi_documents_require_info_and_a_contract_surface() {
+    let missing_info = json!({
+        "openapi": "3.1.0",
+        "paths": {}
+    });
+    let info_error = OpenApiDocument::from_json(&missing_info)
+        .expect_err("OpenAPI document without info must fail")
+        .to_string();
+    assert!(info_error.contains("#/info"), "{info_error}");
+
+    let missing_surface = json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Pets",
+            "version": "1.0.0"
+        }
+    });
+    let surface_error = OpenApiDocument::from_json(&missing_surface)
+        .expect_err("OpenAPI document without paths/components/webhooks must fail")
+        .to_string();
+    assert!(surface_error.contains("paths"), "{surface_error}");
+    assert!(surface_error.contains("components"), "{surface_error}");
+    assert!(surface_error.contains("webhooks"), "{surface_error}");
+}
+
+#[test]
 fn adding_a_required_query_parameter_is_incompatible() {
     let old = spec(get_operation());
     let new = spec(json!({
@@ -378,6 +404,58 @@ fn removing_allow_empty_value_from_a_query_parameter_is_incompatible() {
 }
 
 #[test]
+fn parameters_reject_multiple_content_media_types() {
+    let error = compat_error(
+        spec(json!({
+            "parameters": [{
+                "name": "filter",
+                "in": "query",
+                "content": {
+                    "application/json": {
+                        "schema": { "type": "string" }
+                    },
+                    "text/plain": {
+                        "schema": { "type": "string" }
+                    }
+                }
+            }],
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("content") && error.contains("exactly one media type"),
+        "{error}"
+    );
+}
+
+#[test]
+fn ignored_reserved_header_parameters_do_not_affect_compatibility() {
+    let old = spec(json!({
+        "parameters": [{
+            "name": "Accept",
+            "in": "header"
+        }, {
+            "name": "Content-Type",
+            "in": "header",
+            "required": true
+        }, {
+            "name": "Authorization",
+            "in": "header"
+        }],
+        "responses": {
+            "200": response_schema(json!({ "type": "object" }))
+        }
+    }));
+    let new = spec(get_operation());
+
+    assert!(report(old, new).is_compatible());
+}
+
+#[test]
 fn response_header_refs_are_resolved_before_lowering() {
     let spec = json!({
         "openapi": "3.1.0",
@@ -407,6 +485,36 @@ fn response_header_refs_are_resolved_before_lowering() {
     });
 
     assert!(report(spec.clone(), spec).is_compatible());
+}
+
+#[test]
+fn response_content_type_headers_do_not_affect_compatibility() {
+    let old = spec(json!({
+        "responses": {
+            "200": {
+                "description": "ok",
+                "headers": {
+                    "Content-Type": {
+                        "schema": { "type": "integer" }
+                    }
+                }
+            }
+        }
+    }));
+    let new = spec(json!({
+        "responses": {
+            "200": {
+                "description": "ok",
+                "headers": {
+                    "content-type": {
+                        "schema": { "type": ["integer", "string"] }
+                    }
+                }
+            }
+        }
+    }));
+
+    assert!(report(old, new).is_compatible());
 }
 
 #[test]
@@ -443,6 +551,37 @@ fn content_based_response_headers_remain_compatible_when_unchanged() {
     });
 
     assert!(report(spec.clone(), spec).is_compatible());
+}
+
+#[test]
+fn response_headers_reject_multiple_content_media_types() {
+    let error = compat_error(
+        spec(json!({
+            "responses": {
+                "200": {
+                    "description": "ok",
+                    "headers": {
+                        "X-Meta": {
+                            "content": {
+                                "application/json": {
+                                    "schema": { "type": "object" }
+                                },
+                                "text/plain": {
+                                    "schema": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("content") && error.contains("exactly one media type"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -515,6 +654,119 @@ fn non_query_parameters_reject_query_only_metadata() {
     assert!(
         error.contains("allowEmptyValue") && error.contains("a query parameter field"),
         "{error}"
+    );
+}
+
+#[test]
+fn expanding_default_with_an_equivalent_explicit_response_is_compatible() {
+    let old = spec(json!({
+        "responses": {
+            "default": response_schema(json!({ "type": "object" }))
+        }
+    }));
+    let new = spec(json!({
+        "responses": {
+            "default": response_schema(json!({ "type": "object" })),
+            "404": response_schema(json!({ "type": "object" }))
+        }
+    }));
+
+    assert!(report(old, new).is_compatible());
+}
+
+#[test]
+fn response_specification_extensions_do_not_affect_compatibility() {
+    let old = spec(json!({
+        "responses": {
+            "200": response_schema(json!({ "type": "object" }))
+        }
+    }));
+    let new = spec(json!({
+        "responses": {
+            "200": response_schema(json!({ "type": "object" })),
+            "x-owner": {
+                "team": "platform"
+            }
+        }
+    }));
+
+    assert!(report(old, new).is_compatible());
+}
+
+#[test]
+fn responses_objects_with_only_extensions_are_rejected() {
+    let error = compat_error(
+        spec(json!({
+            "responses": {
+                "x-owner": {
+                    "team": "platform"
+                }
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("responses") && error.contains("at least one response"),
+        "{error}"
+    );
+}
+
+#[test]
+fn expanding_a_response_range_with_an_equivalent_explicit_response_is_compatible() {
+    let old = spec(json!({
+        "responses": {
+            "2XX": response_schema(json!({ "type": "object" }))
+        }
+    }));
+    let new = spec(json!({
+        "responses": {
+            "2XX": response_schema(json!({ "type": "object" })),
+            "200": response_schema(json!({ "type": "object" }))
+        }
+    }));
+
+    assert!(report(old, new).is_compatible());
+}
+
+#[test]
+fn overriding_a_response_range_with_a_broader_explicit_response_is_incompatible() {
+    let old = spec(json!({
+        "responses": {
+            "2XX": response_schema(json!({
+                "type": "object",
+                "properties": {
+                    "status": { "type": "string" }
+                },
+                "required": ["status"]
+            }))
+        }
+    }));
+    let new = spec(json!({
+        "responses": {
+            "2XX": response_schema(json!({
+                "type": "object",
+                "properties": {
+                    "status": { "type": "string" }
+                },
+                "required": ["status"]
+            })),
+            "200": response_schema(json!({
+                "type": "object",
+                "properties": {
+                    "status": { "type": ["string", "null"] }
+                },
+                "required": ["status"]
+            }))
+        }
+    }));
+
+    let report = report(old, new);
+
+    assert!(!report.is_compatible());
+    assert_eq!(
+        issue_surfaces(&report),
+        vec![OpenApiCompatibilitySurface::Response]
     );
 }
 

@@ -381,6 +381,8 @@ JSON documents and compares:
 
 The OpenAPI lowerer rejects remote refs and unsupported OpenAPI versions rather than approximating them.
 It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON-first input model.
+`--role` and `--fuzz` remain raw-JSON-Schema-only flags; OpenAPI comparisons always check request compatibility in the deserializer direction and response compatibility in the serializer direction together.
+CLI flows fail invalid JSON Schema or OpenAPI inputs before attempting generation, grading, or compatibility reporting.
 Response media-type additions are treated as backward-risky because they expand the serializer-side
 response contract; `oasdiff` currently reports that case as non-breaking, so the two tools intentionally
 differ there.
