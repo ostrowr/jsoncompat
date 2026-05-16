@@ -2,18 +2,27 @@
 
 use crate::SchemaNode;
 use json_schema_ast::{
-    CountRange, IntegerBounds, IntegerMultipleOf, NumberBounds, NumberMultipleOf, SchemaNodeKind,
-    json_values_equal,
+    CountRange, IntegerBounds, IntegerMultipleOf, NumberBounds, NumberMultipleOf,
+    PatternConstraint, SchemaNodeKind, json_values_equal,
 };
 use serde_json::Value;
 
-pub(super) fn scalar_constraints_subsumed(
-    sub_length: CountRange<u64>,
-    sub_enum: Option<&[Value]>,
-    sup_length: CountRange<u64>,
-    sup_enum: Option<&[Value]>,
+#[derive(Debug, Clone, Copy)]
+pub(super) struct StringConstraints<'a> {
+    pub(super) length: CountRange<u64>,
+    pub(super) pattern: Option<&'a PatternConstraint>,
+    pub(super) format: Option<&'a str>,
+    pub(super) enumeration: Option<&'a [Value]>,
+}
+
+pub(super) fn string_constraints_subsumed(
+    sub: StringConstraints<'_>,
+    sup: StringConstraints<'_>,
 ) -> bool {
-    sup_length.contains_range(sub_length) && check_enum_inclusion(sub_enum, sup_enum)
+    sup.length.contains_range(sub.length)
+        && required_constraint_is_preserved(sub.pattern, sup.pattern)
+        && required_constraint_is_preserved(sub.format, sup.format)
+        && check_enum_inclusion(sub.enumeration, sup.enumeration)
 }
 
 pub(super) fn number_constraints_subsumed(
@@ -125,4 +134,11 @@ fn check_integer_multiple_of_inclusion_by_number(
     sub_multiple_of
         .integer_divisor_is_multiple_of_number(*sup_multiple_of)
         .unwrap_or(false)
+}
+
+fn required_constraint_is_preserved<T: PartialEq + ?Sized>(
+    sub_constraint: Option<&T>,
+    sup_constraint: Option<&T>,
+) -> bool {
+    sup_constraint.is_none() || sub_constraint == sup_constraint
 }

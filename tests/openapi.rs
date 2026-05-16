@@ -340,6 +340,54 @@ fn compatibility_rejects_operation_security_until_it_is_compared() {
 }
 
 #[test]
+fn compatibility_rejects_unsupported_path_item_fields_before_lowering() {
+    for (field, value) in [
+        ("servers", json!([{ "url": "https://api.example.com" }])),
+        ("summary", json!("Pets")),
+    ] {
+        let error = compat_error(
+            json!({
+                "openapi": "3.1.0",
+                "info": { "title": "Pets", "version": "1.0.0" },
+                "paths": {
+                    "/pets": {
+                        (field): value,
+                        "get": get_operation()
+                    }
+                }
+            }),
+            spec(get_operation()),
+        );
+
+        assert!(error.contains("#/paths/~1pets"), "{field}: {error}");
+        assert!(error.contains(field), "{field}: {error}");
+    }
+}
+
+#[test]
+fn compatibility_rejects_unsupported_operation_fields_before_lowering() {
+    for (field, value) in [
+        ("servers", json!([{ "url": "https://api.example.com" }])),
+        ("tags", json!(["pets"])),
+    ] {
+        let error = compat_error(
+            spec(json!({
+                (field): value,
+                "responses": {
+                    "200": response_schema(json!({ "type": "object" }))
+                }
+            })),
+            spec(get_operation()),
+        );
+
+        assert!(
+            error.contains("#/paths/~1pets/get") && error.contains(field),
+            "{field}: {error}"
+        );
+    }
+}
+
+#[test]
 fn compatibility_rejects_media_type_encoding_until_it_is_compared() {
     let error = compat_error(
         spec(json!({
@@ -1396,6 +1444,45 @@ fn local_component_refs_are_lowered_before_compatibility_checks() {
     });
 
     assert!(!report(old, new).is_compatible());
+}
+
+#[test]
+fn openapi_reference_objects_reject_non_reference_siblings() {
+    let error = compat_error(
+        json!({
+            "openapi": "3.1.0",
+            "info": { "title": "Pets", "version": "1.0.0" },
+            "paths": {
+                "/pets": {
+                    "get": {
+                        "parameters": [{
+                            "$ref": "#/components/parameters/Limit",
+                            "required": true
+                        }],
+                        "responses": {
+                            "200": response_schema(json!({ "type": "object" }))
+                        }
+                    }
+                }
+            },
+            "components": {
+                "parameters": {
+                    "Limit": {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": { "type": "integer" }
+                    }
+                }
+            }
+        }),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("#/paths/~1pets/get/parameters/0/required")
+            && error.contains("Reference Objects"),
+        "{error}"
+    );
 }
 
 #[test]

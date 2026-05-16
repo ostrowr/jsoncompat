@@ -17,7 +17,8 @@ mod object;
 mod scalar;
 
 use scalar::{
-    check_enum_inclusion, integer_constraints_subsumed_by_number, scalar_constraints_subsumed,
+    StringConstraints, check_enum_inclusion, integer_constraints_subsumed_by_number,
+    string_constraints_subsumed,
 };
 
 #[derive(Default)]
@@ -517,19 +518,29 @@ fn explain_type_constraint_failure(
         (
             String {
                 length: sub_length,
+                pattern: sub_pattern,
+                format: sub_format,
                 enumeration: sub_enum,
-                ..
             },
             String {
                 length: sup_length,
+                pattern: sup_pattern,
+                format: sup_format,
                 enumeration: sup_enum,
-                ..
             },
         ) => explain_string_constraints(
-            *sub_length,
-            sub_enum.as_deref(),
-            *sup_length,
-            sup_enum.as_deref(),
+            StringConstraints {
+                length: *sub_length,
+                pattern: sub_pattern.as_ref(),
+                format: sub_format.as_deref(),
+                enumeration: sub_enum.as_deref(),
+            },
+            StringConstraints {
+                length: *sup_length,
+                pattern: sup_pattern.as_ref(),
+                format: sup_format.as_deref(),
+                enumeration: sup_enum.as_deref(),
+            },
         ),
         (
             Number {
@@ -848,19 +859,27 @@ fn explain_schema_kind_gap(sub: &SchemaNode, sup: &SchemaNode) -> Option<Subsche
 }
 
 fn explain_string_constraints(
-    sub_length: CountRange<u64>,
-    sub_enum: Option<&[Value]>,
-    sup_length: CountRange<u64>,
-    sup_enum: Option<&[Value]>,
+    sub: StringConstraints<'_>,
+    sup: StringConstraints<'_>,
 ) -> Option<SubschemaExplanation> {
-    if !sup_length.contains_range(sub_length) {
+    if !sup.length.contains_range(sub.length) {
         return Some(SubschemaExplanation::new(format!(
             "string length range {} is not contained by required range {}",
-            format_count_range(sub_length),
-            format_count_range(sup_length),
+            format_count_range(sub.length),
+            format_count_range(sup.length),
         )));
     }
-    explain_enumeration_gap(sub_enum, sup_enum)
+    if sup.pattern.is_some() && sub.pattern != sup.pattern {
+        return Some(SubschemaExplanation::new(
+            "string pattern does not preserve the comparison target's required pattern",
+        ));
+    }
+    if sup.format.is_some() && sub.format != sup.format {
+        return Some(SubschemaExplanation::new(
+            "string format does not preserve the comparison target's required format",
+        ));
+    }
+    explain_enumeration_gap(sub.enumeration, sup.enumeration)
 }
 
 fn explain_number_constraints(
@@ -1076,19 +1095,29 @@ fn type_constraints_subsumed_with_context(
         (
             String {
                 length: sub_length,
+                pattern: sub_pattern,
+                format: sub_format,
                 enumeration: sub_enum,
-                ..
             },
             String {
                 length: sup_length,
+                pattern: sup_pattern,
+                format: sup_format,
                 enumeration: sup_enum,
-                ..
             },
-        ) => scalar_constraints_subsumed(
-            *sub_length,
-            sub_enum.as_deref(),
-            *sup_length,
-            sup_enum.as_deref(),
+        ) => string_constraints_subsumed(
+            StringConstraints {
+                length: *sub_length,
+                pattern: sub_pattern.as_ref(),
+                format: sub_format.as_deref(),
+                enumeration: sub_enum.as_deref(),
+            },
+            StringConstraints {
+                length: *sup_length,
+                pattern: sup_pattern.as_ref(),
+                format: sup_format.as_deref(),
+                enumeration: sup_enum.as_deref(),
+            },
         ),
 
         (
@@ -1770,5 +1799,50 @@ mod tests {
 
         assert!(is_subschema_of(&int_enum, &float_enum));
         assert!(is_subschema_of(&float_enum, &int_enum));
+    }
+
+    #[test]
+    fn differing_string_patterns_are_not_treated_as_subsumed() {
+        let old = resolve(json!({
+            "type": "string",
+            "pattern": "^a+$"
+        }));
+        let new = resolve(json!({
+            "type": "string",
+            "pattern": "^b+$"
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn differing_string_formats_are_not_treated_as_subsumed() {
+        let old = resolve(json!({
+            "type": "string",
+            "format": "email"
+        }));
+        let new = resolve(json!({
+            "type": "string",
+            "format": "uuid"
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn identical_string_language_constraints_remain_subsumed() {
+        let old = resolve(json!({
+            "type": "string",
+            "pattern": "^a+$",
+            "format": "email"
+        }));
+        let new = resolve(json!({
+            "type": "string",
+            "pattern": "^a+$",
+            "format": "email",
+            "minLength": 1
+        }));
+
+        assert!(is_subschema_of(&new, &old));
     }
 }

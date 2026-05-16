@@ -179,6 +179,61 @@ fn reject_unsupported_document_fields(object: &Map<String, Value>) -> Result<(),
     Ok(())
 }
 
+fn reject_unsupported_path_item_fields(
+    path_item: &Map<String, Value>,
+    pointer: &JsonPointer,
+) -> Result<(), OpenApiError> {
+    for field in path_item.keys() {
+        if field.starts_with("x-")
+            || field == "parameters"
+            || HTTP_METHODS.contains(&field.as_str())
+        {
+            continue;
+        }
+
+        let expected = match field.as_str() {
+            "servers" => "absent until OpenAPI path-item server compatibility is supported",
+            "summary" | "description" => {
+                "absent until OpenAPI path-item metadata is explicitly accepted"
+            }
+            _ => {
+                "a supported OpenAPI path item field or specification extension beginning with 'x-'"
+            }
+        };
+        return Err(invalid_value(&pointer.child(field), expected));
+    }
+
+    Ok(())
+}
+
+fn reject_unsupported_operation_fields(
+    operation: &Map<String, Value>,
+    pointer: &JsonPointer,
+) -> Result<(), OpenApiError> {
+    for field in operation.keys() {
+        if field.starts_with("x-")
+            || matches!(field.as_str(), "parameters" | "requestBody" | "responses")
+        {
+            continue;
+        }
+
+        let expected = match field.as_str() {
+            "callbacks" => "absent until callback compatibility is supported",
+            "security" => "absent until OpenAPI security requirement compatibility is supported",
+            "servers" => "absent until OpenAPI operation server compatibility is supported",
+            "tags" | "summary" | "description" | "externalDocs" | "operationId" | "deprecated" => {
+                "absent until OpenAPI operation metadata is explicitly accepted"
+            }
+            _ => {
+                "a supported OpenAPI operation field or specification extension beginning with 'x-'"
+            }
+        };
+        return Err(invalid_value(&pointer.child(field), expected));
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy)]
 enum OpenApiSchemaDialect {
     JsonSchemaDraft202012,
@@ -532,6 +587,7 @@ fn lower_operations(
         let path_item = path_item
             .as_object()
             .ok_or_else(|| invalid_value(&path_pointer, "an object or local reference"))?;
+        reject_unsupported_path_item_fields(path_item, &path_pointer)?;
         let path_parameters = collect_parameters(
             &resolver,
             path_item.get("parameters"),
@@ -548,20 +604,7 @@ fn lower_operations(
             let operation = operation_value
                 .as_object()
                 .ok_or_else(|| invalid_value(&operation_pointer, "an object or local reference"))?;
-            if operation.contains_key("callbacks") {
-                return Err(invalid_value(
-                    &operation_pointer.child("callbacks"),
-                    "absent until callback compatibility is supported",
-                )
-                .into());
-            }
-            if operation.contains_key("security") {
-                return Err(invalid_value(
-                    &operation_pointer.child("security"),
-                    "absent until OpenAPI security requirement compatibility is supported",
-                )
-                .into());
-            }
+            reject_unsupported_operation_fields(operation, &operation_pointer)?;
             let operation_parameters = collect_parameters(
                 &resolver,
                 operation.get("parameters"),
@@ -1476,13 +1519,16 @@ impl<'a> Resolver<'a> {
         let mut current = value;
         let mut visited_references = BTreeSet::new();
         loop {
-            let Some(reference) = current
-                .as_object()
-                .and_then(|object| object.get("$ref"))
-                .and_then(Value::as_str)
-            else {
+            let Some(object) = current.as_object() else {
                 return Ok(current);
             };
+            let Some(reference) = object.get("$ref") else {
+                return Ok(current);
+            };
+            let reference = reference
+                .as_str()
+                .ok_or_else(|| invalid_value(&pointer.child("$ref"), "a string"))?;
+            reject_reference_object_siblings(object, pointer)?;
             if !visited_references.insert(reference.to_owned()) {
                 return Err(OpenApiError::CyclicReference {
                     pointer: pointer.render(),
@@ -1531,6 +1577,29 @@ impl<'a> Resolver<'a> {
         }
         Ok(defs)
     }
+}
+
+fn reject_reference_object_siblings(
+    reference: &Map<String, Value>,
+    pointer: &JsonPointer,
+) -> Result<(), OpenApiError> {
+    for (field, value) in reference {
+        match field.as_str() {
+            "$ref" => {}
+            "summary" | "description" => {
+                if !value.is_string() {
+                    return Err(invalid_value(&pointer.child(field), "a string"));
+                }
+            }
+            _ => {
+                return Err(invalid_value(
+                    &pointer.child(field),
+                    "absent from OpenAPI Reference Objects",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn load_component_schema_defs(

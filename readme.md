@@ -192,8 +192,8 @@ Legend:
 Important global caveats:
 
 - `jsoncompat::check_compat` is a document-level structural subset checker over the resolved AST. It can return
-  false negatives for conservative subset proofs and false positives for string-language
-  constraints that are currently ignored when both sides are open string schemas.
+  false negatives for conservative subset proofs, including string-language cases where a required
+  `pattern` or `format` changes rather than staying exactly the same.
 - Compatibility checks reject non-integral `number.multipleOf` constraints with a typed
   `CompatibilityError` instead of approximating fractional divisor inclusion with `f64`.
 - Runtime validation (`SchemaDocument::is_valid`) always delegates to the `jsonschema`
@@ -224,8 +224,8 @@ Important global caveats:
 | `multipleOf` | 🟡 | ✅ | Exact integer divisibility is supported for `integer` schemas and integer-valued `number.multipleOf`. Compatibility checks reject non-integral `number.multipleOf` constraints instead of approximating fractional divisor inclusion; runtime validation and generation still accept those schemas. |
 | `minLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
 | `maxLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
-| `pattern` | 🟡 | 🟡 | `SchemaNode::accepts_value()` enforces regexes for finite-value checks using a cached matcher per pattern, but `check_compat` does not prove regex-language inclusion between open string schemas. Unsupported ECMAScript regex constructs are preserved as source text but treated as non-matching by the internal evaluator. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
-| `format` | 🟡 | 🟡 | The checker does not prove format-language inclusion between open string schemas. The fuzzer only synthesizes `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`, `hostname`, and `idn-hostname`; unknown formats fall back to generic strings. |
+| `pattern` | 🟡 | 🟡 | `SchemaNode::accepts_value()` enforces regexes for finite-value checks using a cached matcher per pattern. For open string subset proofs, `check_compat` only treats a required comparison-target pattern as preserved when the subset keeps that exact same pattern; different required patterns fail conservatively instead of being approximated. Unsupported ECMAScript regex constructs are preserved as source text but treated as non-matching by the internal evaluator. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
+| `format` | 🟡 | 🟡 | For open string subset proofs, `check_compat` only treats a required comparison-target format as preserved when the subset keeps that exact same format; different required formats fail conservatively instead of being approximated. The fuzzer only synthesizes `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`, `hostname`, and `idn-hostname`; unknown formats fall back to generic strings. |
 | `contentEncoding` | ⚪ | ⚪ | Canonicalized for syntax, then stripped from the semantic IR. |
 | `contentMediaType` | ⚪ | ⚪ | Canonicalized for syntax, then stripped from the semantic IR. |
 | `contentSchema` | ⚪ | ⚪ | Nested schemas are canonicalized and ref-checked, but content decoding/validation is not modeled in the semantic IR. |
@@ -384,9 +384,10 @@ The OpenAPI constructor intentionally accepts a narrow document root: `openapi`,
 document-level OpenAPI fields before lowering, including `servers`, `webhooks`, `security`, `tags`,
 and `externalDocs`, rather than silently accepting metadata or compatibility-bearing surfaces that
 jsoncompat does not model yet. The lowerer likewise rejects remote refs, unsupported OpenAPI versions,
-unsupported document-level `jsonSchemaDialect` values, operation-level `security` requirements,
-operation `callbacks`, and media-type `encoding` surfaces instead of approximating them. Supported
-document-level dialects are applied to lowered request and response contract schemas.
+unsupported document-level `jsonSchemaDialect` values, unsupported path-item or operation fields
+outside the accepted lowering surface, operation-level `security` requirements, operation `callbacks`,
+and media-type `encoding` surfaces instead of approximating them. Supported document-level dialects
+are applied to lowered request and response contract schemas.
 It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON-first input model.
 `--role` and `--fuzz` remain raw-JSON-Schema-only flags; OpenAPI comparisons always check request compatibility in the deserializer direction and response compatibility in the serializer direction together.
 CLI flows fail invalid JSON Schema or OpenAPI inputs before attempting generation, grading, or compatibility reporting.
