@@ -7,7 +7,7 @@
 Check compatibility of evolving JSON schemas and OpenAPI contracts.
 
 jsoncompat supports raw JSON Schema Draft 2020-12 documents, standalone OpenAPI 3.1
-Schema Objects, and OpenAPI 3.1 JSON documents passed to `jsoncompat compat`.
+Schema Objects, and path-operation OpenAPI 3.1 JSON documents passed to `jsoncompat compat`.
 If a schema declares `$schema`, it must be either
 `https://json-schema.org/draft/2020-12/schema` with an optional trailing `#`, or
 `https://spec.openapis.org/oas/3.1/dialect/base`. OpenAPI 3.0-only schema semantics such
@@ -379,7 +379,10 @@ JSON documents and compares:
 - removed operations;
 - local `#/components/...` references for parameters, request bodies, responses, headers, and schema refs under `#/components/schemas/...`.
 
-The OpenAPI lowerer rejects remote refs and unsupported OpenAPI versions rather than approximating them.
+The OpenAPI lowerer rejects remote refs, unsupported OpenAPI versions, unsupported document-level
+`jsonSchemaDialect` values, and `webhooks` surfaces that it cannot yet compare rather than
+approximating them. Supported document-level dialects are applied to lowered request and response
+contract schemas.
 It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON-first input model.
 `--role` and `--fuzz` remain raw-JSON-Schema-only flags; OpenAPI comparisons always check request compatibility in the deserializer direction and response compatibility in the serializer direction together.
 CLI flows fail invalid JSON Schema or OpenAPI inputs before attempting generation, grading, or compatibility reporting.

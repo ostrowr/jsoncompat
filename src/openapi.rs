@@ -10,6 +10,11 @@ use std::collections::{BTreeMap, BTreeSet};
 const OPENAPI_31_PREFIX: &str = "3.1.";
 const COMPONENT_SCHEMA_REF_PREFIX: &str = "#/components/schemas/";
 const SUPPORTED_REF_PREFIX: &str = "#/";
+const JSON_SCHEMA_DRAFT_2020_12: &str = "https://json-schema.org/draft/2020-12/schema";
+const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
+    "https://json-schema.org/draft/2020-12/schema#";
+const OPENAPI_31_SCHEMA_OBJECT_DIALECT: &str = "https://spec.openapis.org/oas/3.1/dialect/base";
+const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base";
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -31,6 +36,14 @@ pub enum OpenApiError {
     UnresolvedReference { pointer: String, reference: String },
     #[error("OpenAPI reference chain at '{pointer}' forms a cycle through '{reference}'")]
     CyclicReference { pointer: String, reference: String },
+    #[error(
+        "unsupported OpenAPI jsonSchemaDialect '{actual}' at '{pointer}': expected '{expected}'"
+    )]
+    UnsupportedSchemaDialect {
+        pointer: String,
+        expected: &'static str,
+        actual: String,
+    },
     #[error("OpenAPI operation '{method} {path}' is missing a responses object")]
     MissingResponses { method: String, path: String },
     #[error("duplicate OpenAPI parameter '{location}:{name}' in '{pointer}'")]
@@ -55,6 +68,7 @@ pub enum OpenApiCompatibilityError {
 #[derive(Debug, Clone)]
 pub struct OpenApiDocument {
     raw: Value,
+    schema_dialect: OpenApiSchemaDialect,
 }
 
 impl OpenApiDocument {
@@ -81,13 +95,11 @@ impl OpenApiDocument {
                 ));
             }
         }
-        if !["paths", "components", "webhooks"]
-            .iter()
-            .any(|field| object.contains_key(*field))
-        {
+        let schema_dialect = OpenApiSchemaDialect::from_document(object)?;
+        if !object.contains_key("paths") {
             return Err(invalid_value(
-                &JsonPointer::root(),
-                "at least one of `paths`, `components`, or `webhooks`",
+                &JsonPointer::root().child("paths"),
+                "an object containing the path operations to compare",
             ));
         }
         if let Some(paths) = object.get("paths")
@@ -106,21 +118,75 @@ impl OpenApiDocument {
                 "an object",
             ));
         }
-        if let Some(webhooks) = object.get("webhooks")
-            && !webhooks.is_object()
-        {
+        if object.contains_key("webhooks") {
             return Err(invalid_value(
                 &JsonPointer::root().child("webhooks"),
-                "an object",
+                "absent until webhook compatibility is supported",
             ));
         }
-        Ok(Self { raw: raw.clone() })
+        Ok(Self {
+            raw: raw.clone(),
+            schema_dialect,
+        })
     }
 
     fn as_object(&self) -> &Map<String, Value> {
         self.raw
             .as_object()
             .expect("OpenApiDocument validates its root object at construction")
+    }
+
+    fn schema_document(
+        &self,
+        mut schema: Value,
+    ) -> Result<SchemaDocument, OpenApiCompatibilityError> {
+        let schema_object = schema.as_object_mut().ok_or_else(|| {
+            invalid_value(
+                &JsonPointer::root(),
+                "an object schema when lowering an OpenAPI contract",
+            )
+        })?;
+        schema_object.insert(
+            "$schema".to_owned(),
+            Value::String(self.schema_dialect.uri().to_owned()),
+        );
+        Ok(SchemaDocument::from_json(&schema)?)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OpenApiSchemaDialect {
+    JsonSchemaDraft202012,
+    OpenApi31SchemaObject,
+}
+
+impl OpenApiSchemaDialect {
+    fn from_document(object: &Map<String, Value>) -> Result<Self, OpenApiError> {
+        let pointer = JsonPointer::root().child("jsonSchemaDialect");
+        let Some(raw_dialect) = object.get("jsonSchemaDialect") else {
+            return Ok(Self::OpenApi31SchemaObject);
+        };
+        let dialect = raw_dialect
+            .as_str()
+            .ok_or_else(|| invalid_value(&pointer, "a string"))?;
+        match dialect {
+            JSON_SCHEMA_DRAFT_2020_12 | JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT => {
+                Ok(Self::JsonSchemaDraft202012)
+            }
+            OPENAPI_31_SCHEMA_OBJECT_DIALECT => Ok(Self::OpenApi31SchemaObject),
+            _ => Err(OpenApiError::UnsupportedSchemaDialect {
+                pointer: pointer.render(),
+                expected: SUPPORTED_SCHEMA_DIALECTS,
+                actual: dialect.to_owned(),
+            }),
+        }
+    }
+
+    const fn uri(self) -> &'static str {
+        match self {
+            Self::JsonSchemaDraft202012 => JSON_SCHEMA_DRAFT_2020_12,
+            Self::OpenApi31SchemaObject => OPENAPI_31_SCHEMA_OBJECT_DIALECT,
+        }
     }
 }
 
@@ -383,8 +449,8 @@ fn lower_operations(
                     path: path.clone(),
                 },
                 LoweredOperation {
-                    request: SchemaDocument::from_json(&request_schema)?,
-                    response: SchemaDocument::from_json(&response_schema)?,
+                    request: document.schema_document(request_schema)?,
+                    response: document.schema_document(response_schema)?,
                 },
             );
         }
@@ -793,16 +859,26 @@ fn lower_response_schema(
         if status.starts_with("x-") {
             continue;
         }
-        let statuses =
-            lowered_response_statuses(status, &explicit_status_codes, &ranged_status_classes);
-        if statuses.is_empty() {
-            continue;
-        }
         let response_pointer = responses_pointer.child(status);
+        let statuses = lowered_response_statuses(
+            status,
+            &explicit_status_codes,
+            &ranged_status_classes,
+        )
+        .ok_or_else(|| {
+            invalid_value(
+                &response_pointer,
+                "a response status code from `100` through `599`, one of `1XX` through `5XX`, or `default`",
+            )
+        })?;
         let raw_response = resolver.resolve_value(raw_response, &response_pointer)?;
         let response = raw_response
             .as_object()
             .ok_or_else(|| invalid_value(&response_pointer, "an object or local reference"))?;
+        response
+            .get("description")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid_value(&response_pointer.child("description"), "a string"))?;
         let body = lower_response_body(
             resolver,
             response.get("content"),
@@ -852,25 +928,29 @@ fn lowered_response_statuses(
     status: &str,
     explicit_status_codes: &BTreeSet<u16>,
     ranged_status_classes: &BTreeSet<u16>,
-) -> Vec<Value> {
+) -> Option<Vec<Value>> {
     if status == "default" {
-        return standard_http_status_codes()
-            .filter(|code| {
-                !explicit_status_codes.contains(code)
-                    && !ranged_status_classes.contains(&(code / 100))
-            })
-            .map(response_status_value)
-            .collect();
+        return Some(
+            standard_http_status_codes()
+                .filter(|code| {
+                    !explicit_status_codes.contains(code)
+                        && !ranged_status_classes.contains(&(code / 100))
+                })
+                .map(response_status_value)
+                .collect(),
+        );
     }
 
     if let Some(status_class) = parse_response_status_range(status) {
-        return standard_http_status_codes()
-            .filter(|code| code / 100 == status_class && !explicit_status_codes.contains(code))
-            .map(response_status_value)
-            .collect();
+        return Some(
+            standard_http_status_codes()
+                .filter(|code| code / 100 == status_class && !explicit_status_codes.contains(code))
+                .map(response_status_value)
+                .collect(),
+        );
     }
 
-    vec![Value::String(status.to_owned())]
+    parse_explicit_response_status(status).map(|code| vec![response_status_value(code)])
 }
 
 fn standard_http_status_codes() -> impl Iterator<Item = u16> {
@@ -1396,9 +1476,12 @@ fn invalid_value(pointer: &JsonPointer, expected: &'static str) -> OpenApiError 
 
 #[cfg(test)]
 mod tests {
-    use super::{lookup_pointer, rewrite_component_schema_reference, rewrite_schema_refs};
+    use super::{
+        OpenApiDocument, lookup_pointer, lower_operations, rewrite_component_schema_reference,
+        rewrite_schema_refs,
+    };
     use crate::json_pointer::JsonPointer;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     #[test]
     fn pointer_lookup_handles_escaped_component_names() {
@@ -1450,5 +1533,43 @@ mod tests {
 
         assert_eq!(lowered["properties"]["$ref"]["anyOf"][0]["type"], "string");
         assert_eq!(lowered["properties"]["pet"]["$ref"], "#/$defs/Pet");
+    }
+
+    #[test]
+    fn lowered_contract_schemas_inherit_the_openapi_document_dialect() {
+        let document = OpenApiDocument::from_json(&json!({
+            "openapi": "3.1.0",
+            "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema#",
+            "info": {
+                "title": "Pets",
+                "version": "1.0.0"
+            },
+            "paths": {
+                "/pets": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok"
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let operations = lower_operations(&document).unwrap();
+        let operation = operations.values().next().unwrap();
+
+        for schema in [&operation.request, &operation.response] {
+            assert_eq!(
+                schema
+                    .canonical_schema_json()
+                    .unwrap()
+                    .get("$schema")
+                    .and_then(Value::as_str),
+                Some("https://json-schema.org/draft/2020-12/schema"),
+            );
+        }
     }
 }

@@ -72,7 +72,7 @@ fn identical_openapi_documents_are_compatible() {
 }
 
 #[test]
-fn openapi_documents_require_info_and_a_contract_surface() {
+fn openapi_documents_require_info_and_path_operations() {
     let missing_info = json!({
         "openapi": "3.1.0",
         "paths": {}
@@ -87,14 +87,55 @@ fn openapi_documents_require_info_and_a_contract_surface() {
         "info": {
             "title": "Pets",
             "version": "1.0.0"
+        },
+        "components": {
+            "schemas": {
+                "Pet": { "type": "object" }
+            }
         }
     });
     let surface_error = OpenApiDocument::from_json(&missing_surface)
-        .expect_err("OpenAPI document without paths/components/webhooks must fail")
+        .expect_err("OpenAPI document without paths must fail")
         .to_string();
     assert!(surface_error.contains("paths"), "{surface_error}");
-    assert!(surface_error.contains("components"), "{surface_error}");
-    assert!(surface_error.contains("webhooks"), "{surface_error}");
+}
+
+#[test]
+fn openapi_documents_reject_webhooks_until_they_are_compared() {
+    let error = OpenApiDocument::from_json(&json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Pets",
+            "version": "1.0.0"
+        },
+        "paths": {},
+        "webhooks": {
+            "petAdded": {}
+        }
+    }))
+    .expect_err("webhooks must not be silently ignored")
+    .to_string();
+
+    assert!(error.contains("#/webhooks"), "{error}");
+    assert!(error.contains("compatibility is supported"), "{error}");
+}
+
+#[test]
+fn openapi_documents_reject_unsupported_document_schema_dialects() {
+    let error = OpenApiDocument::from_json(&json!({
+        "openapi": "3.1.0",
+        "jsonSchemaDialect": "https://json-schema.org/draft-07/schema#",
+        "info": {
+            "title": "Pets",
+            "version": "1.0.0"
+        },
+        "paths": {}
+    }))
+    .expect_err("unsupported document-level schema dialects must fail")
+    .to_string();
+
+    assert!(error.contains("jsonSchemaDialect"), "{error}");
+    assert!(error.contains("draft-07"), "{error}");
 }
 
 #[test]
@@ -710,6 +751,50 @@ fn responses_objects_with_only_extensions_are_rejected() {
         error.contains("responses") && error.contains("at least one response"),
         "{error}"
     );
+}
+
+#[test]
+fn response_status_selectors_must_be_openapi_status_patterns() {
+    for status in ["700", "2xx"] {
+        let error = compat_error(
+            spec(json!({
+                "responses": {
+                    (status): response_schema(json!({ "type": "object" }))
+                }
+            })),
+            spec(get_operation()),
+        );
+
+        assert!(error.contains(status), "{error}");
+        assert!(
+            error.contains("response status code from `100` through `599`"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn response_objects_require_descriptions() {
+    let error = compat_error(
+        spec(json!({
+            "responses": {
+                "200": {
+                    "content": {
+                        "application/json": {
+                            "schema": { "type": "object" }
+                        }
+                    }
+                }
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("#/paths/~1pets/get/responses/200/description"),
+        "{error}"
+    );
+    assert!(error.contains("a string"), "{error}");
 }
 
 #[test]
