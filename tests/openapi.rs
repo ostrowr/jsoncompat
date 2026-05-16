@@ -121,6 +121,66 @@ fn openapi_documents_reject_webhooks_until_they_are_compared() {
 }
 
 #[test]
+fn openapi_documents_reject_security_requirements_until_they_are_compared() {
+    let error = OpenApiDocument::from_json(&json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Pets",
+            "version": "1.0.0"
+        },
+        "paths": {},
+        "security": [{ "bearerAuth": [] }]
+    }))
+    .expect_err("document-level security requirements must not be silently ignored")
+    .to_string();
+
+    assert!(error.contains("#/security"), "{error}");
+    assert!(error.contains("compatibility is supported"), "{error}");
+}
+
+#[test]
+fn openapi_documents_reject_unsupported_root_metadata_before_lowering() {
+    for (field, value) in [
+        ("servers", json!("https://api.example.com")),
+        ("tags", json!("pets")),
+        ("externalDocs", json!("https://docs.example.com")),
+    ] {
+        let error = OpenApiDocument::from_json(&json!({
+            "openapi": "3.1.0",
+            "info": {
+                "title": "Pets",
+                "version": "1.0.0"
+            },
+            "paths": {},
+            (field): value
+        }))
+        .expect_err("unsupported root metadata must fail at document construction")
+        .to_string();
+
+        assert!(error.contains(&format!("#/{field}")), "{field}: {error}");
+        assert!(error.contains("absent until OpenAPI"), "{field}: {error}");
+    }
+}
+
+#[test]
+fn openapi_documents_reject_unknown_non_extension_root_fields() {
+    let error = OpenApiDocument::from_json(&json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Pets",
+            "version": "1.0.0"
+        },
+        "paths": {},
+        "vendorMetadata": { "owner": "pets" }
+    }))
+    .expect_err("unknown non-extension root fields must fail at document construction")
+    .to_string();
+
+    assert!(error.contains("#/vendorMetadata"), "{error}");
+    assert!(error.contains("specification extension"), "{error}");
+}
+
+#[test]
 fn openapi_documents_reject_unsupported_document_schema_dialects() {
     let error = OpenApiDocument::from_json(&json!({
         "openapi": "3.1.0",
@@ -260,6 +320,22 @@ fn compatibility_rejects_callbacks_until_they_are_compared() {
     );
 
     assert!(error.contains("#/paths/~1pets/get/callbacks"), "{error}");
+    assert!(error.contains("compatibility is supported"), "{error}");
+}
+
+#[test]
+fn compatibility_rejects_operation_security_until_it_is_compared() {
+    let error = compat_error(
+        spec(json!({
+            "security": [{ "bearerAuth": [] }],
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(error.contains("#/paths/~1pets/get/security"), "{error}");
     assert!(error.contains("compatibility is supported"), "{error}");
 }
 
@@ -635,18 +711,53 @@ fn parameters_reject_multiple_content_media_types() {
 }
 
 #[test]
+fn content_backed_parameters_reject_schema_serialization_fields() {
+    for (field, value) in [
+        ("style", json!("form")),
+        ("explode", json!(true)),
+        ("allowReserved", json!(true)),
+        ("allowEmptyValue", json!(true)),
+    ] {
+        let error = compat_error(
+            spec(json!({
+                "parameters": [{
+                    "name": "filter",
+                    "in": "query",
+                    (field): value,
+                    "content": {
+                        "application/json": {
+                            "schema": { "type": "string" }
+                        }
+                    }
+                }],
+                "responses": {
+                    "200": response_schema(json!({ "type": "object" }))
+                }
+            })),
+            spec(get_operation()),
+        );
+
+        assert!(error.contains(field), "{field}: {error}");
+        assert!(error.contains("content"), "{field}: {error}");
+    }
+}
+
+#[test]
 fn ignored_reserved_header_parameters_do_not_affect_compatibility() {
     let old = spec(json!({
         "parameters": [{
             "name": "Accept",
-            "in": "header"
+            "in": "header",
+            "schema": { "type": "string" }
         }, {
             "name": "Content-Type",
             "in": "header",
-            "required": true
+            "required": true,
+            "schema": { "type": "string" }
         }, {
             "name": "Authorization",
-            "in": "header"
+            "in": "header",
+            "schema": { "type": "string" }
         }],
         "responses": {
             "200": response_schema(json!({ "type": "object" }))
@@ -655,6 +766,28 @@ fn ignored_reserved_header_parameters_do_not_affect_compatibility() {
     let new = spec(get_operation());
 
     assert!(report(old, new).is_compatible());
+}
+
+#[test]
+fn ignored_reserved_header_parameters_still_require_valid_shapes() {
+    let error = compat_error(
+        spec(json!({
+            "parameters": [{
+                "name": "Accept",
+                "in": "header"
+            }],
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("#/paths/~1pets/get/parameters/0")
+            && error.contains("exactly one of `schema` or `content`"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -784,6 +917,39 @@ fn response_headers_reject_multiple_content_media_types() {
         error.contains("content") && error.contains("exactly one media type"),
         "{error}"
     );
+}
+
+#[test]
+fn content_backed_response_headers_reject_schema_serialization_fields() {
+    for (field, value) in [
+        ("style", json!("simple")),
+        ("explode", json!(true)),
+        ("allowReserved", json!(true)),
+        ("allowEmptyValue", json!(true)),
+    ] {
+        let error = compat_error(
+            spec(json!({
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "headers": {
+                            "X-Meta": {
+                                (field): value,
+                                "content": {
+                                    "application/json": {
+                                        "schema": { "type": "string" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })),
+            spec(get_operation()),
+        );
+
+        assert!(error.contains(field), "{field}: {error}");
+    }
 }
 
 #[test]

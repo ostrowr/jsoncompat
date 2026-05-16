@@ -95,6 +95,7 @@ impl OpenApiDocument {
                 ));
             }
         }
+        reject_unsupported_document_fields(object)?;
         let schema_dialect = OpenApiSchemaDialect::from_document(object)?;
         if !object.contains_key("paths") {
             return Err(invalid_value(
@@ -116,12 +117,6 @@ impl OpenApiDocument {
             return Err(invalid_value(
                 &JsonPointer::root().child("components"),
                 "an object",
-            ));
-        }
-        if object.contains_key("webhooks") {
-            return Err(invalid_value(
-                &JsonPointer::root().child("webhooks"),
-                "absent until webhook compatibility is supported",
             ));
         }
         Ok(Self {
@@ -152,6 +147,36 @@ impl OpenApiDocument {
         );
         Ok(SchemaDocument::from_json(&schema)?)
     }
+}
+
+fn reject_unsupported_document_fields(object: &Map<String, Value>) -> Result<(), OpenApiError> {
+    for field in object.keys() {
+        if field.starts_with("x-")
+            || matches!(
+                field.as_str(),
+                "openapi" | "info" | "jsonSchemaDialect" | "paths" | "components"
+            )
+        {
+            continue;
+        }
+
+        let pointer = JsonPointer::root().child(field);
+        let expected = match field.as_str() {
+            "servers" => "absent until OpenAPI server compatibility is supported",
+            "webhooks" => "absent until webhook compatibility is supported",
+            "security" => "absent until OpenAPI security requirement compatibility is supported",
+            "tags" => "absent until OpenAPI tag metadata is explicitly accepted",
+            "externalDocs" => {
+                "absent until OpenAPI external documentation metadata is explicitly accepted"
+            }
+            _ => {
+                "a supported OpenAPI document field or specification extension beginning with 'x-'"
+            }
+        };
+        return Err(invalid_value(&pointer, expected));
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -530,6 +555,13 @@ fn lower_operations(
                 )
                 .into());
             }
+            if operation.contains_key("security") {
+                return Err(invalid_value(
+                    &operation_pointer.child("security"),
+                    "absent until OpenAPI security requirement compatibility is supported",
+                )
+                .into());
+            }
             let operation_parameters = collect_parameters(
                 &resolver,
                 operation.get("parameters"),
@@ -688,9 +720,7 @@ fn parse_parameter(
             .ok_or_else(|| invalid_value(&pointer.child("in"), "a string"))?,
         &pointer.child("in"),
     )?;
-    if is_ignored_header_parameter(location, &name) {
-        return Ok(None);
-    }
+    let ignored_header = is_ignored_header_parameter(location, &name);
     let required = object
         .get("required")
         .map(|value| {
@@ -708,6 +738,11 @@ fn parse_parameter(
     }
 
     reject_query_only_metadata_outside_query(location, object, pointer)?;
+    reject_content_serialization_fields(
+        object,
+        pointer,
+        &["style", "explode", "allowReserved", "allowEmptyValue"],
+    )?;
     let value = lower_field_value(
         resolver,
         object.get("schema"),
@@ -715,6 +750,10 @@ fn parse_parameter(
         pointer,
         |schema| parameter_schema_value(location, object, pointer, schema),
     )?;
+
+    if ignored_header {
+        return Ok(None);
+    }
 
     Ok(Some(Parameter {
         name,
@@ -816,6 +855,25 @@ fn parse_optional_bool(
                 .ok_or_else(|| invalid_value(&pointer.child(key), "a boolean"))
         })
         .transpose()
+}
+
+fn reject_content_serialization_fields(
+    object: &Map<String, Value>,
+    pointer: &JsonPointer,
+    fields: &[&str],
+) -> Result<(), OpenApiError> {
+    if !object.contains_key("content") {
+        return Ok(());
+    }
+    for field in fields {
+        if object.contains_key(*field) {
+            return Err(invalid_value(
+                &pointer.child(*field),
+                "absent when `content` is present",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn lower_request_schema(
@@ -1274,6 +1332,7 @@ fn lower_response_header_field(
             "not present for response headers",
         ));
     }
+    reject_content_serialization_fields(header, pointer, &["style", "explode"])?;
     let required = parse_optional_bool(header, "required", pointer)?.unwrap_or(false);
     let value = lower_field_value(
         resolver,

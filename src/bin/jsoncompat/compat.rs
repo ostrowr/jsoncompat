@@ -71,11 +71,7 @@ fn looks_like_openapi_document(json: &Value) -> bool {
     let Some(object) = json.as_object() else {
         return false;
     };
-    object.get("openapi").and_then(Value::as_str).is_some()
-        && object.get("info").is_some_and(Value::is_object)
-        && ["paths", "components", "webhooks"]
-            .iter()
-            .any(|field| object.contains_key(*field))
+    object.contains_key("openapi")
 }
 
 fn compat_schemas(
@@ -249,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_schemas_with_openapi_annotations_stay_raw_schemas() {
+    fn malformed_openapi_inputs_do_not_fall_back_to_raw_schema_mode() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -259,10 +255,15 @@ mod tests {
         ));
         fs::write(&path, r#"{"openapi":"3.1.0","type":"string"}"#).unwrap();
 
-        let input = CompatInput::load(&path.to_string_lossy()).unwrap();
+        let error = match CompatInput::load(&path.to_string_lossy()) {
+            Err(error) => error,
+            Ok(_) => panic!("top-level `openapi` must route through OpenAPI validation"),
+        };
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema(_)));
+        let message = format!("{error:#}");
+        assert!(message.contains("building OpenAPI document"), "{message}");
+        assert!(message.contains("#/info"), "{message}");
     }
 
     #[test]
