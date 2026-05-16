@@ -277,11 +277,11 @@ enum FieldValue {
 #[derive(Debug, Clone)]
 enum SchemaSerialization {
     PathParameter {
-        style: String,
+        style: ParameterStyle,
         explode: bool,
     },
     QueryParameter {
-        style: String,
+        style: ParameterStyle,
         explode: bool,
         allow_reserved: bool,
         allow_empty_value: bool,
@@ -290,7 +290,7 @@ enum SchemaSerialization {
         explode: bool,
     },
     CookieParameter {
-        style: String,
+        style: ParameterStyle,
         explode: bool,
     },
 }
@@ -326,10 +326,88 @@ impl ParameterLocation {
         }
     }
 
-    const fn default_style(self) -> &'static str {
+    const fn default_style(self) -> ParameterStyle {
         match self {
-            Self::Path | Self::Header => "simple",
-            Self::Query | Self::Cookie => "form",
+            Self::Path | Self::Header => ParameterStyle::Simple,
+            Self::Query | Self::Cookie => ParameterStyle::Form,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParameterStyle {
+    Matrix,
+    Label,
+    Simple,
+    Form,
+    SpaceDelimited,
+    PipeDelimited,
+    DeepObject,
+}
+
+impl ParameterStyle {
+    fn from_value(
+        location: ParameterLocation,
+        value: &str,
+        pointer: &JsonPointer,
+    ) -> Result<Self, OpenApiError> {
+        let style = match value {
+            "matrix" => Self::Matrix,
+            "label" => Self::Label,
+            "simple" => Self::Simple,
+            "form" => Self::Form,
+            "spaceDelimited" => Self::SpaceDelimited,
+            "pipeDelimited" => Self::PipeDelimited,
+            "deepObject" => Self::DeepObject,
+            _ => {
+                return Err(invalid_value(
+                    pointer,
+                    "a supported OpenAPI parameter style",
+                ));
+            }
+        };
+
+        if style.supports(location) {
+            Ok(style)
+        } else {
+            Err(invalid_value(
+                pointer,
+                match location {
+                    ParameterLocation::Path => "'matrix', 'label', or 'simple' for path parameters",
+                    ParameterLocation::Query => {
+                        "'form', 'spaceDelimited', 'pipeDelimited', or 'deepObject' for query parameters"
+                    }
+                    ParameterLocation::Header => "'simple' for header parameters",
+                    ParameterLocation::Cookie => "'form' for cookie parameters",
+                },
+            ))
+        }
+    }
+
+    const fn supports(self, location: ParameterLocation) -> bool {
+        matches!(
+            (self, location),
+            (
+                Self::Matrix | Self::Label | Self::Simple,
+                ParameterLocation::Path
+            ) | (Self::Simple, ParameterLocation::Header)
+                | (
+                    Self::Form | Self::SpaceDelimited | Self::PipeDelimited | Self::DeepObject,
+                    ParameterLocation::Query
+                )
+                | (Self::Form, ParameterLocation::Cookie)
+        )
+    }
+
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Matrix => "matrix",
+            Self::Label => "label",
+            Self::Simple => "simple",
+            Self::Form => "form",
+            Self::SpaceDelimited => "spaceDelimited",
+            Self::PipeDelimited => "pipeDelimited",
+            Self::DeepObject => "deepObject",
         }
     }
 }
@@ -404,16 +482,27 @@ fn lower_operations(
 ) -> Result<BTreeMap<OperationKey, LoweredOperation>, OpenApiCompatibilityError> {
     let resolver = Resolver::new(document)?;
     let mut operations = BTreeMap::new();
-    let Some(paths) = document.as_object().get("paths") else {
-        return Ok(operations);
-    };
     let paths_pointer = JsonPointer::root().child("paths");
-    let paths = paths
+    let paths = document
         .as_object()
-        .ok_or_else(|| invalid_value(&paths_pointer, "an object"))?;
+        .get("paths")
+        .expect("OpenApiDocument validates the presence of paths")
+        .as_object()
+        .expect("OpenApiDocument validates paths as an object");
 
     for (path, path_item) in paths {
         let path_pointer = paths_pointer.child(path);
+        if path.starts_with("x-") {
+            continue;
+        }
+        if !path.starts_with('/') {
+            return Err(invalid_value(
+                &path_pointer,
+                "a path template key beginning with '/' or a specification extension beginning with 'x-'",
+            )
+            .into());
+        }
+        let path_template_names = path_template_names(path, &path_pointer)?;
         let path_item = resolver.resolve_value(path_item, &path_pointer)?;
         let path_item = path_item
             .as_object()
@@ -422,6 +511,7 @@ fn lower_operations(
             &resolver,
             path_item.get("parameters"),
             &path_pointer.child("parameters"),
+            &path_template_names,
         )?;
 
         for method in HTTP_METHODS {
@@ -433,12 +523,25 @@ fn lower_operations(
             let operation = operation_value
                 .as_object()
                 .ok_or_else(|| invalid_value(&operation_pointer, "an object or local reference"))?;
+            if operation.contains_key("callbacks") {
+                return Err(invalid_value(
+                    &operation_pointer.child("callbacks"),
+                    "absent until callback compatibility is supported",
+                )
+                .into());
+            }
             let operation_parameters = collect_parameters(
                 &resolver,
                 operation.get("parameters"),
                 &operation_pointer.child("parameters"),
+                &path_template_names,
             )?;
             let parameters = merge_parameters(path_parameters.clone(), operation_parameters);
+            require_path_template_parameters(
+                &path_template_names,
+                &parameters,
+                &operation_pointer.child("parameters"),
+            )?;
             let request_schema =
                 lower_request_schema(&resolver, operation, &operation_pointer, &parameters)?;
             let response_schema =
@@ -467,6 +570,7 @@ fn collect_parameters(
     resolver: &Resolver<'_>,
     raw: Option<&Value>,
     pointer: &JsonPointer,
+    path_template_names: &BTreeSet<String>,
 ) -> Result<BTreeMap<(ParameterLocation, String), Parameter>, OpenApiError> {
     let Some(raw) = raw else {
         return Ok(BTreeMap::new());
@@ -480,6 +584,14 @@ fn collect_parameters(
         let Some(parameter) = parse_parameter(resolver, raw_parameter, &parameter_pointer)? else {
             continue;
         };
+        if parameter.location == ParameterLocation::Path
+            && !path_template_names.contains(&parameter.name)
+        {
+            return Err(invalid_value(
+                &parameter_pointer.child("name"),
+                "a template expression that appears in the path key",
+            ));
+        }
         let identity = (
             parameter.location,
             parameter_identity_name(parameter.location, &parameter.name),
@@ -493,6 +605,56 @@ fn collect_parameters(
         }
     }
     Ok(parameters)
+}
+
+fn path_template_names(
+    path: &str,
+    pointer: &JsonPointer,
+) -> Result<BTreeSet<String>, OpenApiError> {
+    let mut names = BTreeSet::new();
+    let mut rest = path;
+    while let Some(open_index) = rest.find('{') {
+        let after_open = &rest[open_index + 1..];
+        let Some(close_index) = after_open.find('}') else {
+            return Err(invalid_value(
+                pointer,
+                "a path key with balanced non-empty template expressions",
+            ));
+        };
+        let name = &after_open[..close_index];
+        if name.is_empty() || name.contains('{') {
+            return Err(invalid_value(
+                pointer,
+                "a path key with balanced non-empty template expressions",
+            ));
+        }
+        names.insert(name.to_owned());
+        rest = &after_open[close_index + 1..];
+    }
+    if rest.contains('}') {
+        return Err(invalid_value(
+            pointer,
+            "a path key with balanced non-empty template expressions",
+        ));
+    }
+    Ok(names)
+}
+
+fn require_path_template_parameters(
+    path_template_names: &BTreeSet<String>,
+    parameters: &BTreeMap<(ParameterLocation, String), Parameter>,
+    pointer: &JsonPointer,
+) -> Result<(), OpenApiError> {
+    for template_name in path_template_names {
+        let identity = (ParameterLocation::Path, template_name.clone());
+        if !parameters.contains_key(&identity) {
+            return Err(invalid_value(
+                pointer,
+                "path parameters covering every template expression in the path key",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn merge_parameters(
@@ -595,9 +757,18 @@ fn parameter_schema_value(
     pointer: &JsonPointer,
     schema: Value,
 ) -> Result<FieldValue, OpenApiError> {
-    let style = parse_optional_string(object, "style", pointer)?
-        .unwrap_or_else(|| location.default_style().to_owned());
-    let explode = parse_optional_bool(object, "explode", pointer)?.unwrap_or(style == "form");
+    let style = match parse_optional_string(object, "style", pointer)? {
+        Some(style) => ParameterStyle::from_value(location, &style, &pointer.child("style"))?,
+        None => location.default_style(),
+    };
+    let explode =
+        parse_optional_bool(object, "explode", pointer)?.unwrap_or(style == ParameterStyle::Form);
+    if style == ParameterStyle::DeepObject && !explode {
+        return Err(invalid_value(
+            &pointer.child("explode"),
+            "true when query parameter style is 'deepObject'",
+        ));
+    }
     let serialization = match location {
         ParameterLocation::Path => SchemaSerialization::PathParameter { style, explode },
         ParameterLocation::Query => SchemaSerialization::QueryParameter {
@@ -607,15 +778,7 @@ fn parameter_schema_value(
             allow_empty_value: parse_optional_bool(object, "allowEmptyValue", pointer)?
                 .unwrap_or(false),
         },
-        ParameterLocation::Header => {
-            if style != "simple" {
-                return Err(invalid_value(
-                    &pointer.child("style"),
-                    "'simple' for header parameters",
-                ));
-            }
-            SchemaSerialization::Header { explode }
-        }
+        ParameterLocation::Header => SchemaSerialization::Header { explode },
         ParameterLocation::Cookie => SchemaSerialization::CookieParameter { style, explode },
     };
     Ok(FieldValue::Schema {
@@ -752,7 +915,12 @@ fn add_schema_serialization_properties(
     match serialization {
         SchemaSerialization::PathParameter { style, explode }
         | SchemaSerialization::CookieParameter { style, explode } => {
-            add_enum_property(properties, required, "style", Value::String(style.clone()));
+            add_enum_property(
+                properties,
+                required,
+                "style",
+                Value::String(style.as_str().to_owned()),
+            );
             add_enum_property(properties, required, "explode", Value::Bool(*explode));
         }
         SchemaSerialization::QueryParameter {
@@ -761,7 +929,12 @@ fn add_schema_serialization_properties(
             allow_reserved,
             allow_empty_value,
         } => {
-            add_enum_property(properties, required, "style", Value::String(style.clone()));
+            add_enum_property(
+                properties,
+                required,
+                "style",
+                Value::String(style.as_str().to_owned()),
+            );
             add_enum_property(properties, required, "explode", Value::Bool(*explode));
             add_enum_property(
                 properties,
@@ -1016,6 +1189,12 @@ fn lower_content_variants(
         let media = media
             .as_object()
             .ok_or_else(|| invalid_value(&media_pointer, "an object or local reference"))?;
+        if media.contains_key("encoding") {
+            return Err(invalid_value(
+                &media_pointer.child("encoding"),
+                "absent until media-type encoding compatibility is supported",
+            ));
+        }
         let schema = media
             .get("schema")
             .map(|schema| rewrite_schema_refs(schema, &media_pointer.child("schema")))

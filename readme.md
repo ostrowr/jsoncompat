@@ -380,9 +380,9 @@ JSON documents and compares:
 - local `#/components/...` references for parameters, request bodies, responses, headers, and schema refs under `#/components/schemas/...`.
 
 The OpenAPI lowerer rejects remote refs, unsupported OpenAPI versions, unsupported document-level
-`jsonSchemaDialect` values, and `webhooks` surfaces that it cannot yet compare rather than
-approximating them. Supported document-level dialects are applied to lowered request and response
-contract schemas.
+`jsonSchemaDialect` values, `webhooks`, operation `callbacks`, and media-type `encoding`
+surfaces that it cannot yet compare rather than approximating them. Supported document-level
+dialects are applied to lowered request and response contract schemas.
 It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON-first input model.
 `--role` and `--fuzz` remain raw-JSON-Schema-only flags; OpenAPI comparisons always check request compatibility in the deserializer direction and response compatibility in the serializer direction together.
 CLI flows fail invalid JSON Schema or OpenAPI inputs before attempting generation, grading, or compatibility reporting.

@@ -139,6 +139,167 @@ fn openapi_documents_reject_unsupported_document_schema_dialects() {
 }
 
 #[test]
+fn compatibility_rejects_path_parameters_that_do_not_match_the_path_template() {
+    let missing_parameter = compat_error(
+        json!({
+            "openapi": "3.1.0",
+            "info": { "title": "Pets", "version": "1.0.0" },
+            "paths": {
+                "/pets/{petId}": {
+                    "get": {
+                        "responses": {
+                            "200": response_schema(json!({ "type": "object" }))
+                        }
+                    }
+                }
+            }
+        }),
+        spec(get_operation()),
+    );
+    assert!(
+        missing_parameter.contains("#/paths/~1pets~1{petId}/get/parameters")
+            && missing_parameter.contains("every template expression"),
+        "{missing_parameter}"
+    );
+
+    let stray_parameter = compat_error(
+        json!({
+            "openapi": "3.1.0",
+            "info": { "title": "Pets", "version": "1.0.0" },
+            "paths": {
+                "/pets/{petId}": {
+                    "get": {
+                        "parameters": [{
+                            "name": "other",
+                            "in": "path",
+                            "required": true,
+                            "schema": { "type": "string" }
+                        }],
+                        "responses": {
+                            "200": response_schema(json!({ "type": "object" }))
+                        }
+                    }
+                }
+            }
+        }),
+        spec(get_operation()),
+    );
+    assert!(
+        stray_parameter.contains("#/paths/~1pets~1{petId}/get/parameters/0/name")
+            && stray_parameter.contains("template expression"),
+        "{stray_parameter}"
+    );
+}
+
+#[test]
+fn compatibility_rejects_invalid_path_template_keys() {
+    let missing_slash = compat_error(
+        json!({
+            "openapi": "3.1.0",
+            "info": { "title": "Pets", "version": "1.0.0" },
+            "paths": {
+                "pets": {
+                    "get": {
+                        "responses": {
+                            "200": response_schema(json!({ "type": "object" }))
+                        }
+                    }
+                }
+            }
+        }),
+        spec(get_operation()),
+    );
+    assert!(
+        missing_slash.contains("#/paths/pets") && missing_slash.contains("beginning with '/'"),
+        "{missing_slash}"
+    );
+
+    let unbalanced_template = compat_error(
+        json!({
+            "openapi": "3.1.0",
+            "info": { "title": "Pets", "version": "1.0.0" },
+            "paths": {
+                "/pets/{petId": {
+                    "get": {
+                        "responses": {
+                            "200": response_schema(json!({ "type": "object" }))
+                        }
+                    }
+                }
+            }
+        }),
+        spec(get_operation()),
+    );
+    assert!(
+        unbalanced_template.contains("#/paths/~1pets~1{petId")
+            && unbalanced_template.contains("balanced non-empty template expressions"),
+        "{unbalanced_template}"
+    );
+}
+
+#[test]
+fn compatibility_rejects_callbacks_until_they_are_compared() {
+    let error = compat_error(
+        spec(json!({
+            "callbacks": {
+                "petCreated": {
+                    "{$request.body#/callbackUrl}": {
+                        "post": {
+                            "responses": {
+                                "200": response_schema(json!({ "type": "object" }))
+                            }
+                        }
+                    }
+                }
+            },
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(error.contains("#/paths/~1pets/get/callbacks"), "{error}");
+    assert!(error.contains("compatibility is supported"), "{error}");
+}
+
+#[test]
+fn compatibility_rejects_media_type_encoding_until_it_is_compared() {
+    let error = compat_error(
+        spec(json!({
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "multipart/form-data": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "file": { "type": "string" }
+                            }
+                        },
+                        "encoding": {
+                            "file": {
+                                "contentType": "application/octet-stream"
+                            }
+                        }
+                    }
+                }
+            },
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("#/paths/~1pets/get/requestBody/content/multipart~1form-data/encoding"),
+        "{error}"
+    );
+    assert!(error.contains("compatibility is supported"), "{error}");
+}
+
+#[test]
 fn adding_a_required_query_parameter_is_incompatible() {
     let old = spec(get_operation());
     let new = spec(json!({
@@ -694,6 +855,72 @@ fn non_query_parameters_reject_query_only_metadata() {
 
     assert!(
         error.contains("allowEmptyValue") && error.contains("a query parameter field"),
+        "{error}"
+    );
+}
+
+#[test]
+fn parameters_reject_styles_that_are_invalid_for_their_location() {
+    let query_error = compat_error(
+        spec(json!({
+            "parameters": [{
+                "name": "filter",
+                "in": "query",
+                "style": "simple",
+                "schema": { "type": "string" }
+            }],
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+    assert!(
+        query_error.contains("#/paths/~1pets/get/parameters/0/style")
+            && query_error.contains("query parameters"),
+        "{query_error}"
+    );
+
+    let cookie_error = compat_error(
+        spec(json!({
+            "parameters": [{
+                "name": "session",
+                "in": "cookie",
+                "style": "pipeDelimited",
+                "schema": { "type": "string" }
+            }],
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+    assert!(
+        cookie_error.contains("#/paths/~1pets/get/parameters/0/style")
+            && cookie_error.contains("cookie parameters"),
+        "{cookie_error}"
+    );
+}
+
+#[test]
+fn deep_object_query_parameters_require_defined_explode_semantics() {
+    let error = compat_error(
+        spec(json!({
+            "parameters": [{
+                "name": "filter",
+                "in": "query",
+                "style": "deepObject",
+                "schema": { "type": "object" }
+            }],
+            "responses": {
+                "200": response_schema(json!({ "type": "object" }))
+            }
+        })),
+        spec(get_operation()),
+    );
+
+    assert!(
+        error.contains("#/paths/~1pets/get/parameters/0/explode") && error.contains("deepObject"),
         "{error}"
     );
 }
