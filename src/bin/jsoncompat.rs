@@ -34,7 +34,6 @@ mod stamp;
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
 pub(crate) struct SchemaDoc {
-    pub(crate) raw: Value,
     pub(crate) schema: backcompat::SchemaDocument,
 }
 
@@ -52,7 +51,7 @@ impl SchemaDoc {
             .validate_source_schema()
             .with_context(|| format!("validating schema for {path}"))?;
 
-        Ok(Self { raw: json, schema })
+        Ok(Self { schema })
     }
 
     #[inline]
@@ -197,7 +196,6 @@ mod tests {
         });
         let schema = SchemaDoc {
             schema: backcompat::SchemaDocument::from_json(&raw).unwrap(),
-            raw,
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -214,7 +212,6 @@ mod tests {
         let raw = json!(false);
         let schema = SchemaDoc {
             schema: backcompat::SchemaDocument::from_json(&raw).unwrap(),
-            raw,
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -229,11 +226,9 @@ mod tests {
         let new_raw = json!(false);
         let old = SchemaDoc {
             schema: backcompat::SchemaDocument::from_json(&old_raw).unwrap(),
-            raw: old_raw,
         };
         let new = SchemaDoc {
             schema: backcompat::SchemaDocument::from_json(&new_raw).unwrap(),
-            raw: new_raw,
         };
         let mut rng = StdRng::seed_from_u64(7);
 

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
 
 use crate::SchemaDoc;
-use jsoncompat_codegen::generate_dataclass_models;
+use jsoncompat_codegen::generate_dataclass_models_from_document;
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 enum CodegenTarget {
@@ -31,7 +31,7 @@ pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
 
     match args.target {
         CodegenTarget::Dataclasses => {
-            let source = generate_dataclass_models(&schema.raw)?;
+            let source = generate_dataclass_models_from_document(&schema.schema)?;
             print!("{source}");
             Ok(())
         }

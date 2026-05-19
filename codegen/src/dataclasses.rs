@@ -521,7 +521,17 @@ impl<'a> DataclassModuleBuilder<'a> {
 
 pub fn generate_dataclass_models(schema: &Value) -> Result<String, DataclassError> {
     let document = SchemaDocument::from_json(schema)?;
-    render_dataclass_module(document.canonical_schema_json()?, schema)
+    generate_dataclass_models_from_document(&document)
+}
+
+/// Generate dataclass models while reusing an already-validated schema document.
+pub fn generate_dataclass_models_from_document(
+    document: &SchemaDocument,
+) -> Result<String, DataclassError> {
+    render_dataclass_module(
+        document.canonical_schema_json()?,
+        document.source_schema_json(),
+    )
 }
 
 fn render_dataclass_module(
@@ -1913,6 +1923,31 @@ mod tests {
         assert!(source.contains("class UserProfile(dc.DataclassModel):"));
         assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
+    }
+
+    #[test]
+    fn prevalidated_documents_match_value_entrypoint_output() {
+        let schema = json!({
+            "title": "profile",
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/$defs/name" }
+            },
+            "required": ["name"],
+            "additionalProperties": false,
+            "$defs": {
+                "name": {
+                    "title": "profile name",
+                    "type": "string"
+                }
+            }
+        });
+        let document = SchemaDocument::from_json(&schema).unwrap();
+
+        assert_eq!(
+            generate_dataclass_models(&schema).unwrap(),
+            generate_dataclass_models_from_document(&document).unwrap(),
+        );
     }
 
     #[test]

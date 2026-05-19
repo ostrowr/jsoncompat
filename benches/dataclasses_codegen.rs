@@ -1,5 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use jsoncompat_codegen::generate_dataclass_models;
+use json_schema_ast::SchemaDocument;
+use jsoncompat_codegen::{generate_dataclass_models, generate_dataclass_models_from_document};
 use serde_json::Value;
 use std::fs;
 use std::hint::black_box;
@@ -29,6 +30,39 @@ fn bench_dataclass_codegen(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_prevalidated_dataclass_codegen(c: &mut Criterion) {
+    let fixtures = load_bench_fixtures();
+    let mut group = c.benchmark_group("dataclasses_codegen_prevalidated");
+
+    for fixture in &fixtures {
+        let document = SchemaDocument::from_json(&fixture.schema).unwrap_or_else(|error| {
+            panic!(
+                "failed to build benchmark schema document for {}: {error}",
+                fixture.name
+            )
+        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(&fixture.name),
+            &document,
+            |b, document| {
+                b.iter(|| {
+                    black_box(
+                        generate_dataclass_models_from_document(black_box(document))
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "prevalidated dataclass codegen failed for {}: {error}",
+                                    fixture.name
+                                )
+                            }),
+                    )
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 fn criterion_config() -> Criterion {
     Criterion::default()
         .sample_size(20)
@@ -39,7 +73,7 @@ fn criterion_config() -> Criterion {
 criterion_group! {
     name = benches;
     config = criterion_config();
-    targets = bench_dataclass_codegen,
+    targets = bench_dataclass_codegen, bench_prevalidated_dataclass_codegen,
 }
 criterion_main!(benches);
 

@@ -7,7 +7,9 @@
 
 mod dataclasses;
 
-pub use dataclasses::{DataclassError, generate_dataclass_models};
+pub use dataclasses::{
+    DataclassError, generate_dataclass_models, generate_dataclass_models_from_document,
+};
 use serde::{Deserialize, Serialize};
 
 pub const JSONCOMPAT_METADATA_KEY: &str = "x-jsoncompat";
