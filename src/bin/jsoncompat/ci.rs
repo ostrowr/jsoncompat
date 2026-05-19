@@ -87,6 +87,15 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
+                    if backcompat::validate_compatibility_input(&old_schema).is_err()
+                        || backcompat::validate_compatibility_input(&new_schema).is_err()
+                    {
+                        return Grade {
+                            id: new.stable_id.clone(),
+                            mode: old.mode,
+                            status: Status::Invalid,
+                        };
+                    }
                     if old.mode == new.mode && old.schema == new.schema {
                         return Grade {
                             id: new.stable_id.clone(),
@@ -418,6 +427,81 @@ mod tests {
             schema: serde_json::json!({
                 "type": "string"
             }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
+
+    #[test]
+    fn ci_grade_marks_backend_invalid_schemas_invalid() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string",
+                "deprecated": "eventually"
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string"
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
+
+    #[test]
+    fn ci_grade_marks_backend_invalid_ref_bearing_schemas_invalid() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "$defs": {
+                    "Value": { "type": "string" }
+                },
+                "$ref": "#/$defs/Value",
+                "deprecated": "eventually"
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string"
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
+
+    #[test]
+    fn ci_grade_marks_identical_but_unsupported_schemas_invalid() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "dependentSchemas": {
+                "kind": {
+                    "required": ["detail"]
+                }
+            }
+        });
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: schema.clone(),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema,
             stable_id: "example".to_owned(),
         };
 

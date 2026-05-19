@@ -1,0 +1,7 @@
+{
+  "type": "object",
+  "patternProperties": {
+    "^(?=x$)x$": true
+  },
+  "additionalProperties": false
+}

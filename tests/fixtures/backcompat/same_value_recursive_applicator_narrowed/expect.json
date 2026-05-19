@@ -1,0 +1,5 @@
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #/properties/value/anyOf/0: property 'value' -> anyOf branch 1: new values may be anyOf-constrained values, but the previous schema only accepted allOf-constrained values"
+}

@@ -11,6 +11,7 @@ readme = "readme.md"
 [workspace]
 members = [
     "fuzz",     # -> json_schema_fuzz
+    "openapi",  # -> jsoncompat_openapi
     "schema",   # -> json_schema_ast
     "python",   # -> jsoncompat Python bindings
     "wasm"      # -> json_schema_wasm bindings
@@ -29,6 +30,7 @@ owo-colors = "4.3"
 # Our own strict Draft‑2020 implementation crate
 json_schema_ast = { path = "schema", version = "0.3.1" }
 json_schema_fuzz = { path = "fuzz", version = "0.3.1" }
+jsoncompat_openapi = { path = "openapi", version = "0.3.1" }
 console = "0.16.3"
 fancy-regex = "0.17"
 percent-encoding = "2.3"

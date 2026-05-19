@@ -1,0 +1,5 @@
+{
+  "serializer": false,
+  "deserializer": true,
+  "expected_serializer_message": "old schema #/contains: array values may contain more than 1 item(s) matching the comparison target's contains schema"
+}

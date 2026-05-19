@@ -1,0 +1,6 @@
+{
+  "serializer": false,
+  "deserializer": false,
+  "expected_serializer_message": "new schema #: enumerated values are not contained by the comparison target",
+  "expected_deserializer_message": "old schema #: new values may be integers, but the previous schema only accepted strings"
+}

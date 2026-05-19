@@ -24,6 +24,8 @@ mod compat;
 mod demo;
 #[path = "jsoncompat/generate.rs"]
 mod generate;
+#[path = "jsoncompat/lower_openapi.rs"]
+mod lower_openapi;
 
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
@@ -38,6 +40,12 @@ impl SchemaDoc {
 
         let schema = backcompat::SchemaDocument::from_json(&json)
             .with_context(|| format!("building schema for {path}"))?;
+        schema
+            .root()
+            .with_context(|| format!("resolving schema for {path}"))?;
+        schema
+            .validate_source_schema()
+            .with_context(|| format!("validating schema for {path}"))?;
 
         Ok(Self { schema })
     }
@@ -122,6 +130,9 @@ enum Command {
     Compat(compat::CompatArgs),
     /// Check compatibility between two golden files.
     CI(ci::CiArgs),
+    /// Print the lowered JSON Schema contracts for an OpenAPI 3.1 document.
+    #[command(name = "lower-openapi")]
+    LowerOpenApi(lower_openapi::LowerOpenApiArgs),
     /// Run a guided end-to-end demo of generate, compat, and ci.
     Demo(demo::DemoArgs),
 }
@@ -150,6 +161,7 @@ fn main() -> Result<()> {
         Command::Generate(a) => generate::cmd(a),
         Command::Compat(a) => compat::cmd(a),
         Command::CI(a) => ci::cmd(a),
+        Command::LowerOpenApi(a) => lower_openapi::cmd(a),
         Command::Demo(a) => demo::cmd(a),
     }
 }

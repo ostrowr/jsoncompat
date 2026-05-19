@@ -1,0 +1,8 @@
+{
+  "old_only": [
+    {}
+  ],
+  "new_only": [
+    { "\u0003": "not an integer" }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #: required allOf branch 1: number bounds [0, +inf] are not contained by required bounds [1, 5]"
+}

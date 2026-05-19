@@ -1,0 +1,6 @@
+{
+  "type": "object",
+  "enum": [
+    { "\u0003": "not an integer" }
+  ]
+}

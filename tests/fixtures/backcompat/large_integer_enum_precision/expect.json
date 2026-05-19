@@ -2,5 +2,5 @@
   "serializer": false,
   "deserializer": false,
   "expected_serializer_message": "new schema #: new values may be enumerated values, but the previous schema only accepted numbers",
-  "expected_deserializer_message": "old schema #: new values may be numbers, but the previous schema only accepted enumerated values"
+  "expected_deserializer_message": "old schema #: enumerated values are not contained by the comparison target"
 }

@@ -1,4 +1,4 @@
-//! Small JSON Pointer builder shared by diagnostics and OpenAPI lowering.
+//! Small JSON Pointer builder shared by compatibility diagnostics.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct JsonPointer {
@@ -10,14 +10,12 @@ impl JsonPointer {
         Self { tokens: Vec::new() }
     }
 
-    pub(crate) fn child(&self, token: impl Into<String>) -> Self {
-        let mut pointer = self.clone();
-        pointer.push(token);
-        pointer
-    }
-
     pub(crate) fn push(&mut self, token: impl Into<String>) {
         self.tokens.push(token.into());
+    }
+
+    pub(crate) fn pop(&mut self) {
+        self.tokens.pop();
     }
 
     pub(crate) fn prepend<'a>(&mut self, tokens: impl IntoIterator<Item = &'a str>) {

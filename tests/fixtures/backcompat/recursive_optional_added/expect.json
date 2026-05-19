@@ -1,6 +1,5 @@
 {
   "serializer": false,
-  "deserializer": false,
-  "expected_serializer_message": "new schema #/properties/metadata: property 'metadata' can appear with values the comparison target rejects",
-  "allowed_failure": true
+  "deserializer": true,
+  "expected_serializer_message": "new schema #/properties/metadata: property 'metadata' can appear with values the comparison target rejects"
 }

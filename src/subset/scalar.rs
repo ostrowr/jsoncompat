@@ -11,7 +11,6 @@ use serde_json::Value;
 pub(super) struct StringConstraints<'a> {
     pub(super) length: CountRange<u64>,
     pub(super) pattern: Option<&'a PatternConstraint>,
-    pub(super) format: Option<&'a str>,
     pub(super) enumeration: Option<&'a [Value]>,
 }
 
@@ -21,7 +20,6 @@ pub(super) fn string_constraints_subsumed(
 ) -> bool {
     sup.length.contains_range(sub.length)
         && required_constraint_is_preserved(sub.pattern, sup.pattern)
-        && required_constraint_is_preserved(sub.format, sup.format)
         && check_enum_inclusion(sub.enumeration, sup.enumeration)
 }
 

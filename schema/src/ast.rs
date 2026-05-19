@@ -71,7 +71,10 @@ impl SchemaDocument {
     /// The resolved graph is built from the canonicalized schema so
     /// compatibility analysis and generation can consume a deterministic IR,
     /// while `is_valid()` intentionally validates against a backend compiled
-    /// from the original raw schema document.
+    /// from the original raw schema document. Raw backend validation happens
+    /// eagerly unless resolver-owned reference features are present, because
+    /// those should keep producing the schema frontend's more precise typed
+    /// reference errors during root resolution.
     pub fn from_json(raw: &Value) -> Result<Self> {
         let canonical = canonicalize_schema(raw)?.as_value().clone();
         let schema = Self {
@@ -86,6 +89,9 @@ impl SchemaDocument {
             .canonical
             .set(canonical)
             .expect("canonical schema cache should be initialized exactly once");
+        if !schema_uses_resolver_owned_reference_features(raw) {
+            schema.validate_source_schema()?;
+        }
         Ok(schema)
     }
 
@@ -117,13 +123,25 @@ impl SchemaDocument {
         })
     }
 
+    /// Return the original JSON Schema document supplied at construction time.
+    ///
+    /// The compatibility crate uses this to detect valid-but-unmodeled
+    /// keywords before the canonical semantic IR intentionally drops them.
+    #[must_use]
+    pub fn source_schema_json(&self) -> &Value {
+        &self.raw
+    }
+
+    /// Ensure the original JSON Schema document is accepted by the backend
+    /// Draft 2020-12 validator before downstream tooling reasons about it.
+    pub fn validate_source_schema(&self) -> Result<()> {
+        self.raw_validator().map(|_| ())
+    }
+
     /// Validate one instance against the backend compiled from the original
     /// raw schema document.
     pub fn is_valid(&self, value: &Value) -> Result<bool> {
-        let validator = get_or_try_init(&self.raw_validator, || {
-            compile(&self.raw).map_err(|source| AstError::RawValidator { source })
-        })?;
-        Ok(validator.is_valid(value))
+        Ok(self.raw_validator()?.is_valid(value))
     }
 
     #[cfg(test)]
@@ -134,6 +152,83 @@ impl SchemaDocument {
         })?;
         Ok(validator.is_valid(value))
     }
+
+    fn raw_validator(&self) -> Result<&JSONSchema> {
+        get_or_try_init(&self.raw_validator, || {
+            compile(&self.raw).map_err(|source| AstError::RawValidator { source })
+        })
+    }
+}
+
+fn schema_uses_resolver_owned_reference_features(schema: &Value) -> bool {
+    let Value::Object(object) = schema else {
+        return false;
+    };
+
+    if object.iter().any(|(key, value)| match key.as_str() {
+        "$id" | "$anchor" | "$dynamicRef" | "$dynamicAnchor" => true,
+        "$ref" => value.is_string(),
+        _ => false,
+    }) {
+        return true;
+    }
+
+    for keyword in [
+        "additionalProperties",
+        "contains",
+        "else",
+        "if",
+        "items",
+        "not",
+        "propertyNames",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "contentSchema",
+    ] {
+        if object
+            .get(keyword)
+            .is_some_and(schema_uses_resolver_owned_reference_features)
+        {
+            return true;
+        }
+    }
+
+    for keyword in [
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+        "patternProperties",
+        "properties",
+    ] {
+        if object
+            .get(keyword)
+            .and_then(Value::as_object)
+            .is_some_and(|children| {
+                children
+                    .values()
+                    .any(schema_uses_resolver_owned_reference_features)
+            })
+        {
+            return true;
+        }
+    }
+
+    for keyword in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+        if object
+            .get(keyword)
+            .and_then(Value::as_array)
+            .is_some_and(|children| {
+                children
+                    .iter()
+                    .any(schema_uses_resolver_owned_reference_features)
+            })
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn get_or_try_init<T>(cell: &OnceCell<T>, init: impl FnOnce() -> Result<T>) -> Result<&T> {
@@ -2595,6 +2690,15 @@ fn parse_object_schema(
     ) else {
         return Ok(graph.bool_schema(false));
     };
+    let Some(property_count) = cap_closed_object_property_count(
+        &properties,
+        &pattern_properties,
+        additional,
+        property_count,
+        graph,
+    ) else {
+        return Ok(graph.bool_schema(false));
+    };
     let dependent_required = parse_dependent_required_keyword(obj)?;
     let enumeration = parse_enum_keyword(obj)?;
 
@@ -2687,6 +2791,26 @@ fn cap_array_item_count_for_false_items(
         .max()
         .map_or(tuple_max_items, |max_items| max_items.min(tuple_max_items));
     Ok(CountRange::new(item_count.min(), Some(max_items)))
+}
+
+fn cap_closed_object_property_count(
+    properties: &HashMap<String, MutableSchemaNode>,
+    pattern_properties: &HashMap<String, PatternProperty<MutableSchemaNode>>,
+    additional: MutableSchemaNode,
+    property_count: CountRange<usize>,
+    graph: &MutableSchemaGraph,
+) -> Option<CountRange<usize>> {
+    if !pattern_properties.is_empty() || !is_false_schema(additional, graph) {
+        return Some(property_count);
+    }
+
+    let explicit_property_capacity = properties.len();
+    let max_properties = property_count
+        .max()
+        .map_or(explicit_property_capacity, |max_properties| {
+            max_properties.min(explicit_property_capacity)
+        });
+    CountRange::new(property_count.min(), Some(max_properties))
 }
 
 fn parse_schema_array_keyword(
@@ -3003,6 +3127,16 @@ fn resolve_refs_internal(
             }
             additional = resolve_refs_internal(additional, graph, root_json, stack, cache)?;
             property_names = resolve_refs_internal(property_names, graph, root_json, stack, cache)?;
+            let Some(property_count) = cap_closed_object_property_count(
+                &properties,
+                &pattern_properties,
+                additional,
+                property_count,
+                graph,
+            ) else {
+                graph.set_kind(node, MutableSchemaNodeKind::BoolSchema(false));
+                return Ok(node);
+            };
             graph.set_kind(
                 node,
                 MutableSchemaNodeKind::Object {

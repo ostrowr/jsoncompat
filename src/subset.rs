@@ -7,15 +7,16 @@
 use crate::{SchemaNode, json_pointer::JsonPointer};
 use json_schema_ast::{
     CountRange, IntegerBounds, IntegerMultipleOf, NodeId, NumberBound, NumberBounds,
-    NumberMultipleOf, SchemaNodeKind, json_values_equal,
+    NumberMultipleOf, PatternSupport, SchemaNodeKind, json_values_equal,
 };
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 mod array;
 mod object;
 mod scalar;
 
+use object::dependent_requirement_is_guaranteed;
 use scalar::{
     StringConstraints, check_enum_inclusion, integer_constraints_subsumed_by_number,
     string_constraints_subsumed,
@@ -23,12 +24,14 @@ use scalar::{
 
 #[derive(Default)]
 pub(super) struct SubschemaCheckContext {
-    active_pairs: HashSet<(NodeId, NodeId)>,
+    active_pairs: HashMap<(NodeId, NodeId), usize>,
+    acceptance_deviations: HashMap<NodeId, AcceptanceDeviation>,
+    productive_depth: usize,
 }
 
 impl SubschemaCheckContext {
     pub(super) fn superset_contains_value(&mut self, sup: &SchemaNode, value: &Value) -> bool {
-        sup.accepts_value(value)
+        !self.schema_may_over_accept_values(sup) && sup.accepts_value(value)
     }
 
     pub(super) fn superset_contains_value_set(
@@ -39,6 +42,10 @@ impl SubschemaCheckContext {
         values
             .iter()
             .all(|value| self.superset_contains_value(sup, value))
+    }
+
+    fn schema_may_over_accept_values(&mut self, schema: &SchemaNode) -> bool {
+        schema_acceptance_deviation_cached(schema, &mut self.acceptance_deviations).may_over_accept
     }
 }
 
@@ -128,6 +135,13 @@ impl SubschemaExplanation {
         self.under("closest previous anyOf branch")
     }
 
+    fn under_superset_all_of_branch(mut self, index: usize) -> Self {
+        if self.schema_side == ExplanationSchemaSide::Superset {
+            self.schema_path.prepend(["allOf", &index.to_string()]);
+        }
+        self.under(format!("required allOf branch {}", index + 1))
+    }
+
     fn under_one_of_branch(mut self, index: usize) -> Self {
         self.schema_path.prepend(["oneOf", &index.to_string()]);
         self.under(format!("oneOf branch {}", index + 1))
@@ -191,13 +205,15 @@ pub(crate) fn explain_subschema_failure(
     sub: &SchemaNode,
     sup: &SchemaNode,
 ) -> Option<SubschemaExplanation> {
-    analyze_subschema_with_context(
-        sub,
-        sup,
-        &mut SubschemaCheckContext::default(),
-        ExplanationMode::Explain,
-    )
-    .explanation
+    explain_subschema_failure_with_context(sub, sup, &mut SubschemaCheckContext::default())
+}
+
+fn explain_subschema_failure_with_context(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> Option<SubschemaExplanation> {
+    analyze_subschema_with_context(sub, sup, context, ExplanationMode::Explain).explanation
 }
 
 pub(super) fn is_subschema_of_with_context(
@@ -206,6 +222,17 @@ pub(super) fn is_subschema_of_with_context(
     context: &mut SubschemaCheckContext,
 ) -> bool {
     analyze_subschema_with_context(sub, sup, context, ExplanationMode::VerdictOnly).is_subschema
+}
+
+pub(super) fn is_subschema_of_with_productive_context(
+    sub: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    context.productive_depth += 1;
+    let is_subschema = is_subschema_of_with_context(sub, sup, context);
+    context.productive_depth -= 1;
+    is_subschema
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,10 +283,40 @@ fn analyze_subschema_with_context(
         return SubschemaAnalysis::compatible();
     }
 
-    let recursion_key = (sub.id(), sup.id());
-    if !context.active_pairs.insert(recursion_key) {
-        return SubschemaAnalysis::compatible();
+    if let Some(values) = constrained_enumeration(sub) {
+        let live_values = if schema_may_under_accept_values(sub) {
+            // The raw validator may still accept these literals even when the
+            // internal evaluator intentionally fails closed.
+            values.iter().collect::<Vec<_>>()
+        } else {
+            values
+                .iter()
+                .filter(|value| sub.accepts_value(value))
+                .collect::<Vec<_>>()
+        };
+        let is_subschema = live_values
+            .iter()
+            .all(|value| context.superset_contains_value(sup, value));
+        return SubschemaAnalysis::from_check(is_subschema, mode, || {
+            Some(SubschemaExplanation::new(
+                "enumerated values are not contained by the comparison target",
+            ))
+        });
     }
+
+    let recursion_key = (sub.id(), sup.id());
+    if let Some(active_depth) = context.active_pairs.get(&recursion_key) {
+        // Productive recursion through object properties or array items can be
+        // assumed coinductively. Same-value applicator cycles cannot: the raw
+        // validator may distinguish `anyOf[self, T]` from `allOf[self, T]`.
+        let is_guarded_reentry = context.productive_depth > *active_depth;
+        return SubschemaAnalysis::from_check(is_guarded_reentry, mode, || {
+            explain_schema_kind_gap(sub, sup)
+        });
+    }
+    context
+        .active_pairs
+        .insert(recursion_key, context.productive_depth);
 
     use SchemaNodeKind::*;
 
@@ -279,7 +336,7 @@ fn analyze_subschema_with_context(
                 analyze_subschema_with_context(branch, sup, context, mode).is_subschema
             });
             SubschemaAnalysis::from_check(is_subschema, mode, || {
-                explain_any_of_to_any_of_failure(subs, sups, sup)
+                explain_any_of_to_any_of_failure(subs, sups, sup, context)
             })
         }
         (OneOf(subs), OneOf(sups)) => {
@@ -287,7 +344,7 @@ fn analyze_subschema_with_context(
                 analyze_subschema_with_context(branch, sup, context, mode).is_subschema
             });
             SubschemaAnalysis::from_check(is_subschema, mode, || {
-                explain_one_of_to_one_of_failure(subs, sups)
+                explain_one_of_to_one_of_failure(subs, sups, context)
             })
         }
         (AnyOf(subs), _) | (OneOf(subs), _) => {
@@ -295,11 +352,11 @@ fn analyze_subschema_with_context(
                 analyze_subschema_with_context(branch, sup, context, mode).is_subschema
             });
             SubschemaAnalysis::from_check(is_subschema, mode, || {
-                explain_subset_union_failure(subs, sup)
+                explain_subset_union_failure(subs, sup, context)
             })
         }
         (AllOf(subs), _) => {
-            let is_subschema = subs.iter().all(|schema| {
+            let is_subschema = subs.iter().any(|schema| {
                 analyze_subschema_with_context(schema, sup, context, mode).is_subschema
             });
             SubschemaAnalysis::from_check(is_subschema, mode, || explain_schema_kind_gap(sub, sup))
@@ -334,7 +391,7 @@ fn analyze_subschema_with_context(
                 analyze_subschema_with_context(sub, branch, context, mode).is_subschema
             });
             SubschemaAnalysis::from_check(is_subschema, mode, || {
-                explain_superset_any_of_failure(sub, sups)
+                explain_superset_any_of_failure(sub, sups, context)
             })
         }
         (_, OneOf(_)) => {
@@ -344,7 +401,9 @@ fn analyze_subschema_with_context(
             let is_subschema = sups.iter().all(|schema| {
                 analyze_subschema_with_context(sub, schema, context, mode).is_subschema
             });
-            SubschemaAnalysis::from_check(is_subschema, mode, || None)
+            SubschemaAnalysis::from_check(is_subschema, mode, || {
+                explain_superset_all_of_failure(sub, sups, context)
+            })
         }
 
         (
@@ -366,7 +425,7 @@ fn analyze_subschema_with_context(
         (Not(sub_negated), _) => match sub_negated.kind() {
             Any | BoolSchema(true) => SubschemaAnalysis::compatible(),
             BoolSchema(false) => SubschemaAnalysis::from_check(
-                !matches!(sup.kind(), Any | BoolSchema(true)),
+                matches!(sup.kind(), Any | BoolSchema(true)),
                 mode,
                 || explain_schema_kind_gap(sub, sup),
             ),
@@ -378,11 +437,7 @@ fn analyze_subschema_with_context(
                     explain_schema_kind_gap(sub, sup)
                 })
             }
-            BoolSchema(false) => SubschemaAnalysis::from_check(
-                matches!(sub.kind(), BoolSchema(true) | Any),
-                mode,
-                || explain_schema_kind_gap(sub, sup),
-            ),
+            BoolSchema(false) => SubschemaAnalysis::compatible(),
             _ => SubschemaAnalysis::from_check(false, mode, || explain_schema_kind_gap(sub, sup)),
         },
 
@@ -395,7 +450,7 @@ fn analyze_subschema_with_context(
         | (Array { .. }, Array { .. }) => SubschemaAnalysis::from_check(
             type_constraints_subsumed_with_context(sub, sup, context),
             mode,
-            || explain_type_constraint_failure(sub, sup),
+            || explain_type_constraint_failure(sub, sup, context),
         ),
 
         (Integer { .. }, Number { .. }) => SubschemaAnalysis::from_check(
@@ -426,20 +481,247 @@ fn analyze_subschema_with_context(
     analysis
 }
 
+fn constrained_enumeration(schema: &SchemaNode) -> Option<&[Value]> {
+    match schema.kind() {
+        SchemaNodeKind::String {
+            enumeration: Some(values),
+            ..
+        }
+        | SchemaNodeKind::Number {
+            enumeration: Some(values),
+            ..
+        }
+        | SchemaNodeKind::Integer {
+            enumeration: Some(values),
+            ..
+        }
+        | SchemaNodeKind::Boolean {
+            enumeration: Some(values),
+        }
+        | SchemaNodeKind::Null {
+            enumeration: Some(values),
+        }
+        | SchemaNodeKind::Object {
+            enumeration: Some(values),
+            ..
+        }
+        | SchemaNodeKind::Array {
+            enumeration: Some(values),
+            ..
+        } => Some(values),
+        _ => None,
+    }
+}
+
+pub(super) fn schema_may_under_accept_values(schema: &SchemaNode) -> bool {
+    schema_acceptance_deviation(schema).may_under_accept
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct AcceptanceDeviation {
+    may_under_accept: bool,
+    may_over_accept: bool,
+}
+
+impl AcceptanceDeviation {
+    const NONE: Self = Self {
+        may_under_accept: false,
+        may_over_accept: false,
+    };
+    const UNDER: Self = Self {
+        may_under_accept: true,
+        may_over_accept: false,
+    };
+    const BOTH: Self = Self {
+        may_under_accept: true,
+        may_over_accept: true,
+    };
+
+    fn combine(self, other: Self) -> Self {
+        Self {
+            may_under_accept: self.may_under_accept || other.may_under_accept,
+            may_over_accept: self.may_over_accept || other.may_over_accept,
+        }
+    }
+
+    fn inverted(self) -> Self {
+        Self {
+            may_under_accept: self.may_over_accept,
+            may_over_accept: self.may_under_accept,
+        }
+    }
+
+    fn is_exact(self) -> bool {
+        !self.may_under_accept && !self.may_over_accept
+    }
+}
+
+fn schema_acceptance_deviation(schema: &SchemaNode) -> AcceptanceDeviation {
+    schema_acceptance_deviation_cached(schema, &mut HashMap::new())
+}
+
+fn schema_acceptance_deviation_cached(
+    schema: &SchemaNode,
+    memo: &mut HashMap<NodeId, AcceptanceDeviation>,
+) -> AcceptanceDeviation {
+    schema_acceptance_deviation_with_state(schema, memo, &mut HashSet::new())
+}
+
+fn schema_acceptance_deviation_with_state(
+    schema: &SchemaNode,
+    memo: &mut HashMap<NodeId, AcceptanceDeviation>,
+    active: &mut HashSet<NodeId>,
+) -> AcceptanceDeviation {
+    if let Some(deviation) = memo.get(&schema.id()) {
+        return *deviation;
+    }
+    if !active.insert(schema.id()) {
+        // The evaluator fails closed on same-value recursive re-entry. That can
+        // matter to anti-monotone parents such as `not`, but the recursive edge
+        // itself does not directly make a positive membership check accept too
+        // much.
+        return AcceptanceDeviation::UNDER;
+    }
+
+    let deviation =
+        match schema.kind() {
+            SchemaNodeKind::String {
+                pattern: Some(pattern),
+                ..
+            } if pattern.support() == PatternSupport::Unsupported => AcceptanceDeviation::UNDER,
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                additional,
+                property_names,
+                ..
+            } => {
+                let mut child_deviation = AcceptanceDeviation::NONE;
+                for property in properties.values() {
+                    child_deviation = child_deviation.combine(
+                        schema_acceptance_deviation_with_state(property, memo, active),
+                    );
+                }
+                for property in pattern_properties.values() {
+                    child_deviation = child_deviation.combine(
+                        schema_acceptance_deviation_with_state(&property.schema, memo, active),
+                    );
+                }
+                child_deviation = child_deviation.combine(schema_acceptance_deviation_with_state(
+                    additional, memo, active,
+                ));
+                child_deviation = child_deviation.combine(schema_acceptance_deviation_with_state(
+                    property_names,
+                    memo,
+                    active,
+                ));
+
+                if pattern_properties
+                    .values()
+                    .any(|property| property.pattern.support() == PatternSupport::Unsupported)
+                {
+                    child_deviation.combine(AcceptanceDeviation::BOTH)
+                } else {
+                    child_deviation
+                }
+            }
+            SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                contains,
+                ..
+            } => {
+                let mut item_deviation = AcceptanceDeviation::NONE;
+                for item in prefix_items {
+                    item_deviation = item_deviation
+                        .combine(schema_acceptance_deviation_with_state(item, memo, active));
+                }
+                item_deviation = item_deviation
+                    .combine(schema_acceptance_deviation_with_state(items, memo, active));
+
+                match contains {
+                    None => item_deviation,
+                    Some(contains) => {
+                        let contains_deviation =
+                            schema_acceptance_deviation_with_state(&contains.schema, memo, active);
+                        let mut contains_effect = AcceptanceDeviation::NONE;
+                        if contains.count().min() > 0 {
+                            contains_effect.may_under_accept = contains_deviation.may_under_accept;
+                            contains_effect.may_over_accept = contains_deviation.may_over_accept;
+                        }
+                        if contains.count().max().is_some() {
+                            contains_effect.may_under_accept |= contains_deviation.may_over_accept;
+                            contains_effect.may_over_accept |= contains_deviation.may_under_accept;
+                        }
+                        item_deviation.combine(contains_effect)
+                    }
+                }
+            }
+            SchemaNodeKind::AllOf(children) | SchemaNodeKind::AnyOf(children) => children
+                .iter()
+                .map(|child| schema_acceptance_deviation_with_state(child, memo, active))
+                .fold(AcceptanceDeviation::NONE, AcceptanceDeviation::combine),
+            SchemaNodeKind::OneOf(children) => {
+                let child_deviation = children
+                    .iter()
+                    .map(|child| schema_acceptance_deviation_with_state(child, memo, active))
+                    .fold(AcceptanceDeviation::NONE, AcceptanceDeviation::combine);
+                if child_deviation.is_exact() {
+                    AcceptanceDeviation::NONE
+                } else {
+                    AcceptanceDeviation::BOTH
+                }
+            }
+            SchemaNodeKind::Not(child) => {
+                schema_acceptance_deviation_with_state(child, memo, active).inverted()
+            }
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => {
+                let if_deviation = schema_acceptance_deviation_with_state(if_schema, memo, active);
+                let branch_deviation =
+                    then_schema
+                        .as_ref()
+                        .map(|schema| schema_acceptance_deviation_with_state(schema, memo, active))
+                        .into_iter()
+                        .chain(else_schema.as_ref().map(|schema| {
+                            schema_acceptance_deviation_with_state(schema, memo, active)
+                        }))
+                        .fold(AcceptanceDeviation::NONE, AcceptanceDeviation::combine);
+
+                if if_deviation.is_exact() {
+                    branch_deviation
+                } else {
+                    branch_deviation.combine(AcceptanceDeviation::BOTH)
+                }
+            }
+            _ => AcceptanceDeviation::NONE,
+        };
+
+    active.remove(&schema.id());
+    memo.insert(schema.id(), deviation);
+    deviation
+}
+
 fn explain_any_of_to_any_of_failure(
     subs: &[SchemaNode],
     sups: &[SchemaNode],
     sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     subs.iter().enumerate().find_map(|(index, branch)| {
         (!sups
             .iter()
-            .any(|sup_branch| is_subschema_of(branch, sup_branch)))
+            .any(|sup_branch| is_subschema_of_with_context(branch, sup_branch, context)))
         .then(|| {
             sups.get(index)
-                .and_then(|sup_branch| explain_subschema_failure(branch, sup_branch))
-                .or_else(|| explain_branch_against_union(branch, sups))
-                .or_else(|| explain_subschema_failure(branch, sup))
+                .and_then(|sup_branch| {
+                    explain_subschema_failure_with_context(branch, sup_branch, context)
+                })
+                .or_else(|| explain_branch_against_union(branch, sups, context))
+                .or_else(|| explain_subschema_failure_with_context(branch, sup, context))
                 .unwrap_or_else(|| {
                     SubschemaExplanation::new("union branch is not accepted by the previous schema")
                 })
@@ -451,10 +733,13 @@ fn explain_any_of_to_any_of_failure(
 fn explain_one_of_to_one_of_failure(
     subs: &[SchemaNode],
     sups: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     subs.iter().enumerate().find_map(|(index, branch)| {
         sups.get(index)
-            .and_then(|sup_branch| explain_subschema_failure(branch, sup_branch))
+            .and_then(|sup_branch| {
+                explain_subschema_failure_with_context(branch, sup_branch, context)
+            })
             .map(|detail| detail.under_one_of_branch(index))
     })
 }
@@ -462,10 +747,11 @@ fn explain_one_of_to_one_of_failure(
 fn explain_subset_union_failure(
     subs: &[SchemaNode],
     sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     subs.iter().enumerate().find_map(|(index, branch)| {
-        (!is_subschema_of(branch, sup)).then(|| {
-            explain_branch_against_sup(branch, sup)
+        (!is_subschema_of_with_context(branch, sup, context)).then(|| {
+            explain_branch_against_sup(branch, sup, context)
                 .unwrap_or_else(|| {
                     SubschemaExplanation::new("union branch is not accepted by the previous schema")
                 })
@@ -477,28 +763,31 @@ fn explain_subset_union_failure(
 fn explain_branch_against_sup(
     branch: &SchemaNode,
     sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     match sup.kind() {
-        SchemaNodeKind::AnyOf(sups) => explain_branch_against_union(branch, sups),
-        _ => explain_subschema_failure(branch, sup),
+        SchemaNodeKind::AnyOf(sups) => explain_branch_against_union(branch, sups, context),
+        _ => explain_subschema_failure_with_context(branch, sup, context),
     }
 }
 
 fn explain_branch_against_union(
     branch: &SchemaNode,
     sups: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
-    explain_superset_any_of_failure(branch, sups)
+    explain_superset_any_of_failure(branch, sups, context)
 }
 
 fn explain_superset_any_of_failure(
     sub: &SchemaNode,
     sups: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     sups.iter()
         .enumerate()
         .find_map(|(index, branch)| {
-            explain_subschema_failure(sub, branch)
+            explain_subschema_failure_with_context(sub, branch, context)
                 .map(|detail| detail.under_superset_any_of_branch(index))
         })
         .or_else(|| {
@@ -508,9 +797,28 @@ fn explain_superset_any_of_failure(
         })
 }
 
+fn explain_superset_all_of_failure(
+    sub: &SchemaNode,
+    sups: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> Option<SubschemaExplanation> {
+    sups.iter().enumerate().find_map(|(index, branch)| {
+        (!is_subschema_of_with_context(sub, branch, context)).then(|| {
+            explain_subschema_failure_with_context(sub, branch, context)
+                .unwrap_or_else(|| {
+                    SubschemaExplanation::new(
+                        "value shape does not satisfy one required allOf branch",
+                    )
+                })
+                .under_superset_all_of_branch(index)
+        })
+    })
+}
+
 fn explain_type_constraint_failure(
     sub: &SchemaNode,
     sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
 ) -> Option<SubschemaExplanation> {
     use SchemaNodeKind::*;
 
@@ -519,26 +827,24 @@ fn explain_type_constraint_failure(
             String {
                 length: sub_length,
                 pattern: sub_pattern,
-                format: sub_format,
                 enumeration: sub_enum,
+                ..
             },
             String {
                 length: sup_length,
                 pattern: sup_pattern,
-                format: sup_format,
                 enumeration: sup_enum,
+                ..
             },
         ) => explain_string_constraints(
             StringConstraints {
                 length: *sub_length,
                 pattern: sub_pattern.as_ref(),
-                format: sub_format.as_deref(),
                 enumeration: sub_enum.as_deref(),
             },
             StringConstraints {
                 length: *sup_length,
                 pattern: sup_pattern.as_ref(),
-                format: sup_format.as_deref(),
                 enumeration: sup_enum.as_deref(),
             },
         ),
@@ -604,7 +910,7 @@ fn explain_type_constraint_failure(
                 additional: sub_additional,
                 property_names: sub_property_names,
                 property_count: sub_property_count,
-                dependent_required: _,
+                dependent_required: sub_dependent_required,
                 enumeration: sub_enum,
                 ..
             },
@@ -629,13 +935,6 @@ fn explain_type_constraint_failure(
                     .at_keyword("required"),
                 );
             }
-            if !sup_property_count.contains_range(*sub_property_count) {
-                return Some(SubschemaExplanation::new(format!(
-                    "object property count range {} is not contained by required range {}",
-                    format_count_range(*sub_property_count),
-                    format_count_range(*sup_property_count),
-                )));
-            }
             if let Some(detail) = explain_enumeration_gap(sub_enum.as_deref(), sup_enum.as_deref())
             {
                 return Some(detail);
@@ -645,7 +944,8 @@ fn explain_type_constraint_failure(
                 if sup_properties.contains_key(property) {
                     continue;
                 }
-                if sup_pattern_properties.is_empty() && !is_subschema_of(sub_schema, sup_additional)
+                if sup_pattern_properties.is_empty()
+                    && !is_subschema_of_with_context(sub_schema, sup_additional, context)
                 {
                     return Some(SubschemaExplanation::new(format!(
                         "property '{property}' can appear with values the comparison target rejects",
@@ -654,17 +954,57 @@ fn explain_type_constraint_failure(
                 }
             }
 
+            for (trigger, dependencies) in sup_dependent_required {
+                if let Some(dependency) = dependencies.iter().find(|dependency| {
+                    !dependent_requirement_is_guaranteed(
+                        trigger,
+                        dependency,
+                        sub_required,
+                        sub_dependent_required,
+                    )
+                }) {
+                    return Some(
+                        SubschemaExplanation::new(format!(
+                            "property '{trigger}' may appear without dependent property '{dependency}'",
+                        ))
+                        .in_superset()
+                        .at_dependent_required(trigger),
+                    );
+                }
+            }
+
+            for (property, sup_schema) in sup_properties {
+                if sub_properties.contains_key(property) {
+                    continue;
+                }
+                if !object::implicit_property_conjuncts_subsume_schema(
+                    property,
+                    sub_pattern_properties,
+                    sub_additional,
+                    sup_schema,
+                ) {
+                    return Some(
+                        SubschemaExplanation::new(format!(
+                            "property '{property}' can appear with values the comparison target rejects",
+                        ))
+                        .in_superset()
+                        .at_property(property),
+                    );
+                }
+            }
+
             let mut best_property_failure = None;
             for (property, sub_schema) in sub_properties {
                 if let Some(sup_schema) = sup_properties.get(property)
-                    && !is_subschema_of(sub_schema, sup_schema)
+                    && !is_subschema_of_with_context(sub_schema, sup_schema, context)
                 {
                     let detail =
-                        explain_subschema_failure(sub_schema, sup_schema).unwrap_or_else(|| {
-                            SubschemaExplanation::new(
-                                "property schema widened beyond the previous contract",
-                            )
-                        });
+                        explain_subschema_failure_with_context(sub_schema, sup_schema, context)
+                            .unwrap_or_else(|| {
+                                SubschemaExplanation::new(
+                                    "property schema widened beyond the previous contract",
+                                )
+                            });
                     let detail = detail.under_property(property);
                     let replace = best_property_failure
                         .as_ref()
@@ -685,15 +1025,35 @@ fn explain_type_constraint_failure(
                     .map_or(sup_additional, |sup_pattern_property| {
                         &sup_pattern_property.schema
                     });
-                if !is_subschema_of(&sub_pattern_property.schema, sup_schema) {
+                if !is_subschema_of_with_context(&sub_pattern_property.schema, sup_schema, context)
+                {
                     return Some(SubschemaExplanation::new(format!(
                         "pattern property '{pattern}' can accept values the comparison target rejects",
                     ))
                     .at_pattern_property(pattern));
                 }
+
+                for (sup_pattern, sup_pattern_property) in sup_pattern_properties {
+                    if sup_pattern == pattern {
+                        continue;
+                    }
+                    if !is_subschema_of_with_context(
+                        &sub_pattern_property.schema,
+                        &sup_pattern_property.schema,
+                        context,
+                    ) {
+                        return Some(
+                            SubschemaExplanation::new(format!(
+                                "pattern property '{pattern}' may overlap comparison pattern '{sup_pattern}' with values the comparison target rejects",
+                            ))
+                            .in_superset()
+                            .at_pattern_property(sup_pattern),
+                        );
+                    }
+                }
             }
 
-            if !is_subschema_of(sub_additional, sup_additional) {
+            if !is_subschema_of_with_context(sub_additional, sup_additional, context) {
                 return Some(
                     SubschemaExplanation::new(
                         "additional properties can accept values the comparison target rejects",
@@ -706,7 +1066,11 @@ fn explain_type_constraint_failure(
                 if sub_pattern_properties.contains_key(pattern) {
                     continue;
                 }
-                if !is_subschema_of(sub_additional, &sup_pattern_property.schema) {
+                if !is_subschema_of_with_context(
+                    sub_additional,
+                    &sup_pattern_property.schema,
+                    context,
+                ) {
                     return Some(SubschemaExplanation::new(format!(
                         "additional properties matching pattern '{pattern}' may violate the required pattern-property schema",
                     ))
@@ -715,27 +1079,26 @@ fn explain_type_constraint_failure(
                 }
             }
 
-            if !is_subschema_of(sub_property_names, sup_property_names) {
-                let detail = explain_subschema_failure(sub_property_names, sup_property_names)
-                    .unwrap_or_else(|| {
-                        SubschemaExplanation::new(
-                            "property names are not contained by the comparison target",
-                        )
-                    });
+            if !is_subschema_of_with_context(sub_property_names, sup_property_names, context) {
+                let detail = explain_subschema_failure_with_context(
+                    sub_property_names,
+                    sup_property_names,
+                    context,
+                )
+                .unwrap_or_else(|| {
+                    SubschemaExplanation::new(
+                        "property names are not contained by the comparison target",
+                    )
+                });
                 return Some(detail.under_property_names());
             }
 
-            for (trigger, dependencies) in sup_dependent_required {
-                if let Some(dependency) = dependencies
-                    .iter()
-                    .find(|dependency| !sub_required.contains(*dependency))
-                {
-                    return Some(SubschemaExplanation::new(format!(
-                        "property '{trigger}' may appear without dependent property '{dependency}'",
-                    ))
-                    .in_superset()
-                    .at_dependent_required(trigger));
-                }
+            if !sup_property_count.contains_range(*sub_property_count) {
+                return Some(SubschemaExplanation::new(format!(
+                    "object property count range {} is not contained by required range {}",
+                    format_count_range(*sub_property_count),
+                    format_count_range(*sup_property_count),
+                )));
             }
 
             None
@@ -785,13 +1148,14 @@ fn explain_type_constraint_failure(
 
                 let sub_item = sub_prefix_items.get(index).unwrap_or(sub_items);
                 let sup_item = sup_prefix_items.get(index).unwrap_or(sup_items);
-                if !is_subschema_of(sub_item, sup_item) {
+                if !is_subschema_of_with_context(sub_item, sup_item, context) {
                     let detail =
-                        explain_subschema_failure(sub_item, sup_item).unwrap_or_else(|| {
-                            SubschemaExplanation::new(
-                                "array item schema widened beyond the comparison target",
-                            )
-                        });
+                        explain_subschema_failure_with_context(sub_item, sup_item, context)
+                            .unwrap_or_else(|| {
+                                SubschemaExplanation::new(
+                                    "array item schema widened beyond the comparison target",
+                                )
+                            });
                     return Some(detail.under_array_item(
                         index,
                         index < sub_prefix_items.len(),
@@ -801,13 +1165,14 @@ fn explain_type_constraint_failure(
             }
 
             if array_index_can_exist(sub_item_count.max(), checked_prefix_len)
-                && !is_subschema_of(sub_items, sup_items)
+                && !is_subschema_of_with_context(sub_items, sup_items, context)
             {
-                let detail = explain_subschema_failure(sub_items, sup_items).unwrap_or_else(|| {
-                    SubschemaExplanation::new(
-                        "array item schema widened beyond the comparison target",
-                    )
-                });
+                let detail = explain_subschema_failure_with_context(sub_items, sup_items, context)
+                    .unwrap_or_else(|| {
+                        SubschemaExplanation::new(
+                            "array item schema widened beyond the comparison target",
+                        )
+                    });
                 return Some(detail.under_array_items());
             }
 
@@ -816,15 +1181,20 @@ fn explain_type_constraint_failure(
                 let lower_bound_ok = sup_count.min() == 0
                     || sub_contains.as_ref().is_some_and(|sub_contains| {
                         sub_contains.count().min() >= sup_count.min()
-                            && is_subschema_of(&sub_contains.schema, &sup_contains.schema)
+                            && is_subschema_of_with_context(
+                                &sub_contains.schema,
+                                &sup_contains.schema,
+                                context,
+                            )
                     })
-                    || (sub_item_count.min() >= sup_count.min()
-                        && all_array_item_schemas_subsumed_by_for_explanation(
-                            sub_prefix_items,
-                            sub_items,
-                            sub_item_count.max(),
-                            &sup_contains.schema,
-                        ));
+                    || guaranteed_array_item_matches_at_least_for_explanation(
+                        sub_prefix_items,
+                        sub_items,
+                        sub_item_count.min(),
+                        &sup_contains.schema,
+                        sup_count.min(),
+                        context,
+                    );
                 if !lower_bound_ok {
                     return Some(SubschemaExplanation::new(format!(
                         "array values do not guarantee at least {} item(s) matching the required contains schema",
@@ -832,6 +1202,35 @@ fn explain_type_constraint_failure(
                     ))
                     .in_superset()
                     .at_keyword("contains"));
+                }
+
+                if let Some(sup_max_contains) = sup_count.max() {
+                    let upper_bound_ok =
+                        sub_contains.as_ref().is_some_and(|sub_contains| {
+                            sub_contains.count().max().is_some_and(|sub_max_contains| {
+                                sub_max_contains <= sup_max_contains
+                            }) && is_subschema_of_with_context(
+                                &sup_contains.schema,
+                                &sub_contains.schema,
+                                context,
+                            )
+                        }) || (sub_item_count
+                            .max()
+                            .is_some_and(|sub_max_items| sub_max_items <= sup_max_contains)
+                            && all_array_item_schemas_subsumed_by_for_explanation(
+                                sub_prefix_items,
+                                sub_items,
+                                sub_item_count.max(),
+                                &sup_contains.schema,
+                                context,
+                            ));
+                    if !upper_bound_ok {
+                        return Some(SubschemaExplanation::new(format!(
+                            "array values may contain more than {sup_max_contains} item(s) matching the comparison target's contains schema",
+                        ))
+                        .in_superset()
+                        .at_keyword("contains"));
+                    }
                 }
             }
 
@@ -872,11 +1271,6 @@ fn explain_string_constraints(
     if sup.pattern.is_some() && sub.pattern != sup.pattern {
         return Some(SubschemaExplanation::new(
             "string pattern does not preserve the comparison target's required pattern",
-        ));
-    }
-    if sup.format.is_some() && sub.format != sup.format {
-        return Some(SubschemaExplanation::new(
-            "string format does not preserve the comparison target's required format",
         ));
     }
     explain_enumeration_gap(sub.enumeration, sup.enumeration)
@@ -1048,17 +1442,51 @@ fn all_array_item_schemas_subsumed_by_for_explanation(
     items: &SchemaNode,
     max_items: Option<u64>,
     sup_schema: &SchemaNode,
+    context: &mut SubschemaCheckContext,
 ) -> bool {
     for (index, prefix_item) in prefix_items.iter().enumerate() {
         if !array_index_can_exist(max_items, index) {
             return true;
         }
-        if !is_subschema_of(prefix_item, sup_schema) {
+        if !is_subschema_of_with_context(prefix_item, sup_schema, context) {
             return false;
         }
     }
 
-    !array_index_can_exist(max_items, prefix_items.len()) || is_subschema_of(items, sup_schema)
+    !array_index_can_exist(max_items, prefix_items.len())
+        || is_subschema_of_with_context(items, sup_schema, context)
+}
+
+fn guaranteed_array_item_matches_at_least_for_explanation(
+    prefix_items: &[SchemaNode],
+    items: &SchemaNode,
+    guaranteed_items: u64,
+    sup_schema: &SchemaNode,
+    required_matches: u64,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if required_matches == 0 {
+        return true;
+    }
+
+    let guaranteed_prefix_items = prefix_items
+        .len()
+        .min(usize::try_from(guaranteed_items).unwrap_or(usize::MAX));
+    let mut guaranteed_matches = 0_u64;
+    for prefix_item in &prefix_items[..guaranteed_prefix_items] {
+        if is_subschema_of_with_context(prefix_item, sup_schema, context) {
+            guaranteed_matches += 1;
+            if guaranteed_matches >= required_matches {
+                return true;
+            }
+        }
+    }
+
+    let guaranteed_tail_items =
+        guaranteed_items.saturating_sub(u64::try_from(guaranteed_prefix_items).unwrap_or(u64::MAX));
+    guaranteed_tail_items > 0
+        && is_subschema_of_with_context(items, sup_schema, context)
+        && guaranteed_matches.saturating_add(guaranteed_tail_items) >= required_matches
 }
 
 fn schema_kind_name(kind: &SchemaNodeKind) -> &'static str {
@@ -1096,26 +1524,24 @@ fn type_constraints_subsumed_with_context(
             String {
                 length: sub_length,
                 pattern: sub_pattern,
-                format: sub_format,
                 enumeration: sub_enum,
+                ..
             },
             String {
                 length: sup_length,
                 pattern: sup_pattern,
-                format: sup_format,
                 enumeration: sup_enum,
+                ..
             },
         ) => string_constraints_subsumed(
             StringConstraints {
                 length: *sub_length,
                 pattern: sub_pattern.as_ref(),
-                format: sub_format.as_deref(),
                 enumeration: sub_enum.as_deref(),
             },
             StringConstraints {
                 length: *sup_length,
                 pattern: sup_pattern.as_ref(),
-                format: sup_format.as_deref(),
                 enumeration: sup_enum.as_deref(),
             },
         ),
@@ -1294,6 +1720,76 @@ mod tests {
     }
 
     #[test]
+    fn allof_subset_can_be_proven_by_a_single_conjunct() {
+        let old = resolve(json!({
+            "type": "number",
+            "minimum": 0
+        }));
+        let new = resolve(json!({
+            "allOf": [
+                { "type": "number", "minimum": 1, "maximum": 5 },
+                { "type": "number", "maximum": 10 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn allof_subset_proof_can_ignore_an_unhelpful_sibling_conjunct() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+        }));
+        let new = resolve(json!({
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" }
+                    },
+                    "required": ["id"],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "trace": { "type": "string" }
+                    }
+                }
+            ]
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn allof_subset_proof_does_not_invent_a_useful_conjunct() {
+        let old = resolve(json!({ "type": "string" }));
+        let new = resolve(json!({
+            "allOf": [
+                { "minLength": 1 },
+                { "pattern": "^x$" }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn not_false_behaves_like_any_schema_for_subset_checks() {
+        let any = resolve(json!({ "not": false }));
+        let string = resolve(json!({ "type": "string" }));
+
+        assert!(is_subschema_of(&string, &any));
+        assert!(!is_subschema_of(&any, &string));
+    }
+
+    #[test]
     fn exclusive_bounds_subset() {
         let old = resolve(json!({
             "minimum": 1,
@@ -1319,6 +1815,348 @@ mod tests {
         }));
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn constrained_number_enum_ignores_dead_literals_when_proving_subset() {
+        let old = resolve(json!({
+            "type": "number",
+            "enum": [1]
+        }));
+        let new = resolve(json!({
+            "type": "number",
+            "enum": [0, 1],
+            "minimum": 1
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+        assert!(is_subschema_of(&old, &new));
+    }
+
+    #[test]
+    fn large_number_bounds_do_not_prune_live_enum_literals() {
+        let raw = json!({
+            "type": "number",
+            "minimum": 9_007_199_254_740_993_i64,
+            "enum": [9_007_199_254_740_993_i64]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(
+            sub_document
+                .is_valid(&json!(9_007_199_254_740_993_i64))
+                .unwrap()
+        );
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({ "type": "integer", "enum": [0] }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn constrained_enum_with_unsupported_pattern_is_not_treated_as_empty() {
+        let raw = json!({
+            "type": "string",
+            "pattern": "^\\cC$",
+            "enum": ["\u{3}"]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!("\u{3}")).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({ "type": "integer" }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn nested_unsupported_patterns_keep_object_enum_literals_live() {
+        let raw = json!({
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "pattern": "^\\cC$"
+                }
+            },
+            "required": ["value"],
+            "additionalProperties": false,
+            "enum": [{ "value": "\u{3}" }]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!({ "value": "\u{3}" })).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({
+            "type": "object",
+            "properties": {
+                "value": { "type": "integer" }
+            },
+            "required": ["value"],
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn nested_unsupported_patterns_keep_array_enum_literals_live() {
+        let raw = json!({
+            "type": "array",
+            "prefixItems": [{
+                "type": "string",
+                "pattern": "^\\cC$"
+            }],
+            "items": false,
+            "enum": [["\u{3}"]]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!(["\u{3}"])).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({
+            "type": "array",
+            "prefixItems": [{ "type": "integer" }],
+            "items": false
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn unsupported_contains_patterns_keep_array_enum_literals_live() {
+        let raw = json!({
+            "type": "array",
+            "contains": {
+                "type": "string",
+                "pattern": "^\\cC$"
+            },
+            "minContains": 1,
+            "enum": [["\u{3}"]]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!(["\u{3}"])).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({
+            "type": "array",
+            "contains": { "type": "integer" },
+            "minContains": 1
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn unsupported_pattern_property_matchers_keep_object_enum_literals_live() {
+        let raw = json!({
+            "type": "object",
+            "patternProperties": {
+                "^\\cC$": { "type": "integer" }
+            },
+            "additionalProperties": false,
+            "enum": [{ "\u{3}": 1 }]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!({ "\u{3}": 1 })).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^\\cC$": { "type": "string" }
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn unsupported_superset_pattern_properties_do_not_overaccept_object_enum_literals() {
+        let sub_document = SchemaDocument::from_json(&json!({
+            "type": "object",
+            "enum": [{ "\u{3}": "not an integer" }]
+        }))
+        .unwrap();
+        let sup_document = SchemaDocument::from_json(&json!({
+            "type": "object",
+            "patternProperties": {
+                "^\\cC$": { "type": "integer" }
+            },
+            "additionalProperties": true
+        }))
+        .unwrap();
+        let witness = json!({ "\u{3}": "not an integer" });
+
+        assert!(sub_document.is_valid(&witness).unwrap());
+        assert!(!sup_document.is_valid(&witness).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = sup_document.root().unwrap().clone();
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_unsupported_patterns_do_not_overaccept_enum_literals() {
+        let sub_document = SchemaDocument::from_json(&json!({
+            "type": "string",
+            "enum": ["\u{3}"]
+        }))
+        .unwrap();
+        let sup_document = SchemaDocument::from_json(&json!({
+            "not": {
+                "type": "string",
+                "pattern": "^\\cC$"
+            }
+        }))
+        .unwrap();
+        let witness = json!("\u{3}");
+
+        assert!(sub_document.is_valid(&witness).unwrap());
+        assert!(!sup_document.is_valid(&witness).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = sup_document.root().unwrap().clone();
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn one_of_with_unsupported_patterns_does_not_overaccept_enum_literals() {
+        let sub_document = SchemaDocument::from_json(&json!({
+            "type": "string",
+            "enum": ["\u{3}"]
+        }))
+        .unwrap();
+        let sup_document = SchemaDocument::from_json(&json!({
+            "oneOf": [
+                {
+                    "type": "string",
+                    "pattern": "^\\cC$"
+                },
+                { "const": "\u{3}" }
+            ]
+        }))
+        .unwrap();
+        let witness = json!("\u{3}");
+
+        assert!(sub_document.is_valid(&witness).unwrap());
+        assert!(!sup_document.is_valid(&witness).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = sup_document.root().unwrap().clone();
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditionals_with_unsupported_patterns_do_not_overaccept_enum_literals() {
+        let sub_document = SchemaDocument::from_json(&json!({
+            "type": "string",
+            "enum": ["\u{3}"]
+        }))
+        .unwrap();
+        let sup_document = SchemaDocument::from_json(&json!({
+            "if": {
+                "type": "string",
+                "pattern": "^\\cC$"
+            },
+            "then": false,
+            "else": true
+        }))
+        .unwrap();
+        let witness = json!("\u{3}");
+
+        assert!(sub_document.is_valid(&witness).unwrap());
+        assert!(!sup_document.is_valid(&witness).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = sup_document.root().unwrap().clone();
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn max_contains_with_unsupported_patterns_does_not_overaccept_enum_literals() {
+        let sub_document = SchemaDocument::from_json(&json!({
+            "type": "array",
+            "enum": [["\u{3}"]]
+        }))
+        .unwrap();
+        let sup_document = SchemaDocument::from_json(&json!({
+            "type": "array",
+            "contains": {
+                "type": "string",
+                "pattern": "^\\cC$"
+            },
+            "maxContains": 0
+        }))
+        .unwrap();
+        let witness = json!(["\u{3}"]);
+
+        assert!(sub_document.is_valid(&witness).unwrap());
+        assert!(!sup_document.is_valid(&witness).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = sup_document.root().unwrap().clone();
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn recursive_enum_schemas_do_not_recurse_forever_while_scanning_patterns() {
+        let raw = json!({
+            "$defs": {
+                "node": {
+                    "type": "object",
+                    "properties": {
+                        "next": { "$ref": "#/$defs/node" }
+                    },
+                    "additionalProperties": false,
+                    "enum": [{}]
+                }
+            },
+            "$ref": "#/$defs/node"
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!({})).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({ "type": "integer" }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn recursive_allof_enum_literals_stay_live_when_raw_validation_accepts_them() {
+        let raw = json!({
+            "$defs": {
+                "Value": {
+                    "allOf": [
+                        { "$ref": "#/$defs/Value" },
+                        { "type": "string" }
+                    ]
+                }
+            },
+            "type": "object",
+            "properties": {
+                "value": { "$ref": "#/$defs/Value" }
+            },
+            "required": ["value"],
+            "additionalProperties": false,
+            "enum": [{ "value": "leaf" }]
+        });
+        let sub_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(sub_document.is_valid(&json!({ "value": "leaf" })).unwrap());
+
+        let sub = sub_document.root().unwrap().clone();
+        let sup = resolve(json!({
+            "type": "object",
+            "properties": {
+                "value": { "type": "integer" }
+            },
+            "required": ["value"],
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
     }
 
     #[test]
@@ -1465,6 +2303,34 @@ mod tests {
     }
 
     #[test]
+    fn same_value_recursive_anyof_is_not_subsumed_by_same_value_recursive_allof() {
+        let sub = resolve(json!({
+            "$defs": {
+                "Node": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/Node" },
+                        { "type": "string" }
+                    ]
+                }
+            },
+            "$ref": "#/$defs/Node"
+        }));
+        let sup = resolve(json!({
+            "$defs": {
+                "Node": {
+                    "allOf": [
+                        { "$ref": "#/$defs/Node" },
+                        { "type": "string" }
+                    ]
+                }
+            },
+            "$ref": "#/$defs/Node"
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
     fn array_contains_lower_bound_must_hold_for_every_subset_instance() {
         let old = resolve(json!({
             "type": "array",
@@ -1491,6 +2357,26 @@ mod tests {
             "type": "array",
             "items": { "type": "string" },
             "minItems": 2
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn guaranteed_prefix_items_can_witness_contains_lower_bounds() {
+        let old = resolve(json!({
+            "type": "array",
+            "contains": { "type": "integer" },
+            "minContains": 1
+        }));
+        let new = resolve(json!({
+            "type": "array",
+            "prefixItems": [
+                { "type": "integer" },
+                { "type": "string" }
+            ],
+            "items": false,
+            "minItems": 1
         }));
 
         assert!(is_subschema_of(&new, &old));
@@ -1604,6 +2490,35 @@ mod tests {
     }
 
     #[test]
+    fn dependent_required_transitive_chain_preserves_a_required_dependency() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "a": true,
+                "c": true
+            },
+            "dependentRequired": {
+                "a": ["c"]
+            }
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "properties": {
+                "a": true,
+                "b": true,
+                "c": true,
+                "extra": { "type": "string" }
+            },
+            "dependentRequired": {
+                "a": ["b"],
+                "b": ["c"]
+            }
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
     fn dependent_required_trigger_forbidden_by_subset_property_names_is_vacuous() {
         let old = resolve(json!({
             "type": "object",
@@ -1615,6 +2530,91 @@ mod tests {
             "type": "object",
             "propertyNames": {
                 "pattern": "^z$"
+            }
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn dependent_required_trigger_with_unsupported_property_name_pattern_is_not_vacuous() {
+        let old = resolve(json!({
+            "type": "object",
+            "dependentRequired": {
+                "x": ["y"]
+            }
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "propertyNames": {
+                "pattern": "^(?=x$)x$"
+            }
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn dependent_required_trigger_with_recursive_property_names_is_not_vacuous() {
+        let old = resolve(json!({
+            "type": "object",
+            "dependentRequired": {
+                "x": ["y"]
+            }
+        }));
+        let raw = json!({
+            "$defs": {
+                "Name": {
+                    "allOf": [
+                        { "$ref": "#/$defs/Name" },
+                        { "type": "string" }
+                    ]
+                }
+            },
+            "type": "object",
+            "propertyNames": { "$ref": "#/$defs/Name" }
+        });
+        let new_document = SchemaDocument::from_json(&raw).unwrap();
+        assert!(new_document.is_valid(&json!({ "x": 1 })).unwrap());
+        let new = new_document.root().unwrap().clone();
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn dependent_required_trigger_admitted_by_unsupported_pattern_properties_is_not_vacuous() {
+        let old = resolve(json!({
+            "type": "object",
+            "dependentRequired": {
+                "x": ["y"]
+            }
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^(?=x$)x$": true
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn dependent_required_trigger_forbidden_by_matching_pattern_property_is_vacuous() {
+        let old = resolve(json!({
+            "type": "object",
+            "dependentRequired": {
+                "x": ["y"]
+            }
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": true
+            },
+            "patternProperties": {
+                "^x$": false
             }
         }));
 
@@ -1639,6 +2639,95 @@ mod tests {
         }));
 
         assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn unsupported_superset_pattern_properties_may_constrain_explicit_subset_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^(?=x$)x$": { "type": "integer" }
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": true
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn overlapping_pattern_properties_must_preserve_every_superset_constraint() {
+        let old = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x": { "type": "string" },
+                "x$": { "type": "integer" }
+            },
+            "additionalProperties": false
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^x": { "type": "string" }
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn closed_object_property_capacity_must_respect_implicit_max_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": true
+            },
+            "maxProperties": 1,
+            "additionalProperties": false
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": true
+            },
+            "maxProperties": 3,
+            "additionalProperties": false
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn unsupported_subset_pattern_properties_cannot_fall_back_to_additional_properties() {
+        let old = resolve(json!({
+            "type": "object",
+            "properties": {
+                "x": { "type": "string" }
+            },
+            "additionalProperties": true
+        }));
+        let new = resolve(json!({
+            "type": "object",
+            "patternProperties": {
+                "^\\cC$": { "type": "integer" }
+            },
+            "additionalProperties": false
+        }));
+
+        assert!(!is_subschema_of(&new, &old));
+        assert_eq!(
+            explain_subschema_failure(&new, &old)
+                .expect("failure should be explainable")
+                .render("new", "old"),
+            "old schema #/properties/x: property 'x' can appear with values the comparison target rejects",
+        );
     }
 
     #[test]
@@ -1816,7 +2905,7 @@ mod tests {
     }
 
     #[test]
-    fn differing_string_formats_are_not_treated_as_subsumed() {
+    fn differing_string_formats_remain_subsumed_as_annotations() {
         let old = resolve(json!({
             "type": "string",
             "format": "email"
@@ -1826,20 +2915,18 @@ mod tests {
             "format": "uuid"
         }));
 
-        assert!(!is_subschema_of(&new, &old));
+        assert!(is_subschema_of(&new, &old));
     }
 
     #[test]
     fn identical_string_language_constraints_remain_subsumed() {
         let old = resolve(json!({
             "type": "string",
-            "pattern": "^a+$",
-            "format": "email"
+            "pattern": "^a+$"
         }));
         let new = resolve(json!({
             "type": "string",
             "pattern": "^a+$",
-            "format": "email",
             "minLength": 1
         }));
 

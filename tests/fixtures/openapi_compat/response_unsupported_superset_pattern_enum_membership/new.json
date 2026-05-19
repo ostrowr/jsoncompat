@@ -1,0 +1,28 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Unsupported superset pattern enum API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/payload": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "enum": [
+                    { "\u0003": "not an integer" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

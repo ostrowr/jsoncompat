@@ -1,0 +1,6 @@
+{
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^(?=x$)x$"
+  }
+}

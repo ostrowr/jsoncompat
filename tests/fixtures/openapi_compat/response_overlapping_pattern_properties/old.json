@@ -1,0 +1,30 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Pattern overlap API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/payload": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^x": { "type": "string" },
+                    "x$": { "type": "integer" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

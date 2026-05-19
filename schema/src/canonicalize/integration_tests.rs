@@ -340,6 +340,21 @@ fn canonicalize_expands_implicit_object_constraints() {
 }
 
 #[test]
+fn canonicalize_rejects_closed_objects_whose_minimum_exceeds_property_capacity() {
+    let canonical = canonicalize_schema(&json!({
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "minProperties": 2,
+        "additionalProperties": false
+    }))
+    .unwrap();
+
+    assert_eq!(canonical.as_value(), &json!({ "not": true }));
+}
+
+#[test]
 fn canonicalize_preserves_local_ref_targets_in_object_keywords() {
     let raw = json!({
         "properties": {

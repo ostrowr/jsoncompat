@@ -750,6 +750,66 @@ fn nested_format_only_schema_uses_string_branch_in_implicit_union() {
 }
 
 #[test]
+fn closed_objects_cap_property_count_to_explicit_properties() {
+    let ast = build_and_resolve_schema(&json!({
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "maxProperties": 3,
+        "additionalProperties": false
+    }))
+    .unwrap();
+
+    let guard = ast.kind();
+    let SchemaNodeKind::Object { property_count, .. } = guard else {
+        panic!("expected object schema, got {guard:?}");
+    };
+
+    assert_eq!(*property_count, CountRange::new(0, Some(1)).unwrap());
+}
+
+#[test]
+fn closed_object_property_caps_apply_after_additional_properties_refs_resolve() {
+    let ast = build_and_resolve_schema(&json!({
+        "$defs": {
+            "closed": false
+        },
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "maxProperties": 3,
+        "additionalProperties": {
+            "$ref": "#/$defs/closed"
+        }
+    }))
+    .unwrap();
+
+    let guard = ast.kind();
+    let SchemaNodeKind::Object { property_count, .. } = guard else {
+        panic!("expected object schema, got {guard:?}");
+    };
+
+    assert_eq!(*property_count, CountRange::new(0, Some(1)).unwrap());
+}
+
+#[test]
+fn closed_objects_with_unreachable_min_properties_resolve_to_false() {
+    let ast = build_and_resolve_schema(&json!({
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "minProperties": 2,
+        "additionalProperties": false
+    }))
+    .unwrap();
+
+    assert!(matches!(ast.kind(), SchemaNodeKind::BoolSchema(false)));
+}
+
+#[test]
 fn bare_multiple_of_under_conditional_gets_the_same_implicit_union_as_root() {
     let ast = build_schema(&json!({
         "if": { "type": "boolean" },
@@ -1114,6 +1174,51 @@ fn raw_validation_does_not_force_ast_resolution() {
 
     assert!(schema.is_valid(&json!("value")).unwrap());
     assert!(!schema.is_valid(&json!(123)).unwrap());
+
+    let error = schema.root().unwrap_err();
+    assert!(matches!(error, AstError::UnsupportedReference { .. }));
+}
+
+#[test]
+fn schema_documents_reject_backend_invalid_schemas_at_construction() {
+    let error = SchemaDocument::from_json(&json!({
+        "type": "string",
+        "deprecated": "eventually"
+    }))
+    .expect_err("backend-invalid schemas must fail during document construction")
+    .to_string();
+
+    assert!(
+        error.contains("failed to compile raw schema validator"),
+        "{error}"
+    );
+}
+
+#[test]
+fn schema_documents_do_not_treat_ref_shaped_const_payloads_as_resolver_features() {
+    let error = SchemaDocument::from_json(&json!({
+        "deprecated": "eventually",
+        "const": {
+            "$ref": "#/literal-payload"
+        }
+    }))
+    .expect_err("ref-shaped data payloads must not postpone raw-schema validation")
+    .to_string();
+
+    assert!(
+        error.contains("failed to compile raw schema validator"),
+        "{error}"
+    );
+}
+
+#[test]
+fn schema_documents_preserve_resolver_owned_reference_errors_at_resolution_time() {
+    let schema = SchemaDocument::from_json(&json!({
+        "$id": "https://example.com/schemas/node.json",
+        "type": "string",
+        "deprecated": "eventually"
+    }))
+    .expect("resolver-owned reference features keep construction focused on shape validation");
 
     let error = schema.root().unwrap_err();
     assert!(matches!(error, AstError::UnsupportedReference { .. }));

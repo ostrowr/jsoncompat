@@ -1671,8 +1671,9 @@ fn pointer_is_strict_ancestor_of_local_ref_target(
 ) -> bool {
     let prefix = format!("{pointer}/");
     local_ref_targets
-        .iter()
-        .any(|reference| reference.starts_with(&prefix))
+        .range(prefix.clone()..)
+        .next()
+        .is_some_and(|reference| reference.starts_with(&prefix))
 }
 
 fn lower_type_array_to_any_of(schema: &mut Map<String, Value>, pointer: &str) -> Result<()> {
@@ -1835,10 +1836,15 @@ fn preserve_unknown_keyword_at_pointer(
     pointer: &str,
     local_ref_targets: &BTreeSet<String>,
 ) -> bool {
+    if local_ref_targets.contains(pointer) {
+        return true;
+    }
+
     let prefix = format!("{pointer}/");
     local_ref_targets
-        .iter()
-        .any(|reference| reference == pointer || reference.starts_with(&prefix))
+        .range(prefix.clone()..)
+        .next()
+        .is_some_and(|reference| reference.starts_with(&prefix))
 }
 
 fn normalize_local_ref_target(reference: &str) -> Option<String> {
@@ -1900,7 +1906,13 @@ fn rewrite_unsatisfiable_object(
                 .get("minProperties")
                 .and_then(Value::as_u64)
                 .unwrap_or(required_count as u64);
-            if let Some(max_properties) = schema.get("maxProperties").and_then(Value::as_u64)
+            let max_properties = schema
+                .get("maxProperties")
+                .and_then(Value::as_u64)
+                .into_iter()
+                .chain(closed_explicit_property_capacity(schema))
+                .min();
+            if let Some(max_properties) = max_properties
                 && min_properties > max_properties
             {
                 return Some(Value::Object(unsatisfiable_object(schema)));
@@ -2019,6 +2031,25 @@ fn fill_implicit_constraints(schema: &mut Map<String, Value>) {
         }
         _ => {}
     }
+}
+
+fn closed_explicit_property_capacity(schema: &Map<String, Value>) -> Option<u64> {
+    if schema.get("additionalProperties") != Some(&Value::Bool(false)) {
+        return None;
+    }
+    if schema
+        .get("patternProperties")
+        .and_then(Value::as_object)
+        .is_some_and(|patterns| !patterns.is_empty())
+    {
+        return None;
+    }
+
+    let property_count = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .map_or(0, Map::len);
+    u64::try_from(property_count).ok()
 }
 
 fn value_matches_type(value: &Value, type_value: &Value) -> bool {

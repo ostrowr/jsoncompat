@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^(?=x$)x$"
+  },
+  "dependentRequired": {
+    "x": ["y"]
+  }
+}

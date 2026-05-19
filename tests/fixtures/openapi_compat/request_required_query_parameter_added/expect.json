@@ -1,0 +1,7 @@
+{
+  "compatible": false,
+  "surfaces": [
+    "Request"
+  ],
+  "expected_message": "new schema #/properties/query/required: property 'query': property 'limit' is no longer guaranteed to be present"
+}

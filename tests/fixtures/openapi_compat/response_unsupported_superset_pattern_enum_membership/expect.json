@@ -1,0 +1,7 @@
+{
+  "compatible": false,
+  "surfaces": [
+    "Response"
+  ],
+  "expected_message": "new schema #/properties/body/properties/value: property 'body' -> property 'value': new values may be enumerated values, but the previous schema only accepted objects"
+}
