@@ -74,6 +74,15 @@ struct PreparedOperation {
     response: crate::SchemaDocument,
 }
 
+struct OperationSurface<'a> {
+    old: &'a crate::SchemaDocument,
+    new: &'a crate::SchemaDocument,
+    changed: bool,
+    surface: OpenApiCompatibilitySurface,
+    role: Role,
+    fallback_message: &'static str,
+}
+
 impl<'a> OpenApiCompatibilityInput<'a> {
     fn new(document: &'a OpenApiDocument) -> Result<Self, OpenApiCompatibilityError> {
         let mut operations = BTreeMap::new();
@@ -127,46 +136,51 @@ pub fn check_openapi_compat(
             );
             continue;
         };
-        if (old_operation.lowered.request != new_operation.lowered.request || dialects_differ)
-            && !check_compat(
-                &old_operation.request,
-                &new_operation.request,
-                Role::Deserializer,
-            )?
-        {
-            let detail = explain_compat_failure(
-                &old_operation.request,
-                &new_operation.request,
-                Role::Deserializer,
-            )?;
-            report.push(
-                key,
-                OpenApiCompatibilitySurface::Request,
-                detail.unwrap_or_else(|| "request contract became incompatible".to_owned()),
-            );
-        }
-
-        if (old_operation.lowered.response != new_operation.lowered.response || dialects_differ)
-            && !check_compat(
-                &old_operation.response,
-                &new_operation.response,
-                Role::Serializer,
-            )?
-        {
-            let detail = explain_compat_failure(
-                &old_operation.response,
-                &new_operation.response,
-                Role::Serializer,
-            )?;
-            report.push(
-                key,
-                OpenApiCompatibilitySurface::Response,
-                detail.unwrap_or_else(|| "response contract became incompatible".to_owned()),
-            );
+        for surface in [
+            OperationSurface {
+                old: &old_operation.request,
+                new: &new_operation.request,
+                changed: old_operation.lowered.request != new_operation.lowered.request
+                    || dialects_differ,
+                surface: OpenApiCompatibilitySurface::Request,
+                role: Role::Deserializer,
+                fallback_message: "request contract became incompatible",
+            },
+            OperationSurface {
+                old: &old_operation.response,
+                new: &new_operation.response,
+                changed: old_operation.lowered.response != new_operation.lowered.response
+                    || dialects_differ,
+                surface: OpenApiCompatibilitySurface::Response,
+                role: Role::Serializer,
+                fallback_message: "response contract became incompatible",
+            },
+        ] {
+            surface.report_if_incompatible(&mut report, key)?;
         }
     }
 
     Ok(report)
+}
+
+impl OperationSurface<'_> {
+    fn report_if_incompatible(
+        self,
+        report: &mut OpenApiCompatibilityReport,
+        operation: &OperationKey,
+    ) -> Result<(), OpenApiCompatibilityError> {
+        if !self.changed || check_compat(self.old, self.new, self.role)? {
+            return Ok(());
+        }
+
+        let detail = explain_compat_failure(self.old, self.new, self.role)?;
+        report.push(
+            operation,
+            self.surface,
+            detail.unwrap_or_else(|| self.fallback_message.to_owned()),
+        );
+        Ok(())
+    }
 }
 
 fn prepare_lowered_contract(

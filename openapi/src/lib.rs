@@ -4190,17 +4190,17 @@ fn lower_request_schema(
 }
 
 fn lower_parameter_group<'a>(parameters: impl Iterator<Item = &'a Parameter>) -> Value {
+    contract_fields_object_schema(parameters.map(ContractField::from))
+}
+
+fn contract_fields_object_schema(fields: impl IntoIterator<Item = ContractField>) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
-    for parameter in parameters {
-        let field = ContractField::from(parameter);
+    for field in fields {
         if field.required {
-            let key = field.name.clone();
-            required.push(Value::String(key.clone()));
-            properties.insert(key, contract_field_schema(&field));
-        } else {
-            properties.insert(field.name.clone(), contract_field_schema(&field));
+            required.push(Value::String(field.name.clone()));
         }
+        properties.insert(field.name.clone(), contract_field_schema(&field));
     }
     required.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
     json!({
@@ -5262,18 +5262,12 @@ fn lower_response_headers(
     pointer: &JsonPointer,
 ) -> Result<Value, OpenApiError> {
     let Some(raw) = raw else {
-        return Ok(json!({
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        }));
+        return Ok(contract_fields_object_schema(Vec::new()));
     };
     let headers = raw
         .as_object()
         .ok_or_else(|| invalid_value(pointer, "an object"))?;
-    let mut properties = Map::new();
-    let mut required = Vec::new();
+    let mut fields = Vec::new();
     let mut canonical_names = BTreeSet::new();
     for (name, raw_header) in headers {
         if name.eq_ignore_ascii_case("content-type") {
@@ -5288,19 +5282,10 @@ fn lower_response_headers(
         }
         let header_pointer = pointer.child(name);
         let field = lower_response_header_field(resolver, name, raw_header, &header_pointer)?;
-        if field.required {
-            required.push(Value::String(field.name.clone()));
-        }
-        properties.insert(field.name.clone(), contract_field_schema(&field));
+        fields.push(field);
     }
-    required.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
 
-    Ok(json!({
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": false
-    }))
+    Ok(contract_fields_object_schema(fields))
 }
 
 fn lower_response_header_field(
