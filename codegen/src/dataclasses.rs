@@ -355,7 +355,7 @@ impl<'a> DataclassModuleBuilder<'a> {
 
     fn ref_annotation(&mut self, ref_value: &str, pointer: &str) -> Result<String, DataclassError> {
         let declaration_name = resolve_local_ref_name(&self.named_refs, ref_value, pointer)?;
-        let Some(target) = resolve_json_pointer(self.codegen_root, ref_value).cloned() else {
+        let Some(target) = resolve_json_pointer(self.codegen_root, ref_value) else {
             return Ok(declaration_name);
         };
         let Value::Object(target_obj) = target else {
@@ -365,17 +365,17 @@ impl<'a> DataclassModuleBuilder<'a> {
         if target_obj.contains_key("$ref")
             || target_obj.contains_key("oneOf")
             || target_obj.contains_key("anyOf")
-            || is_object_schema(&target_obj)
-            || is_array_schema(&target_obj)
+            || is_object_schema(target_obj)
+            || is_array_schema(target_obj)
         {
             return Ok(declaration_name);
         }
 
-        if let Some(literal) = parse_literal_annotation(&target_obj) {
+        if let Some(literal) = parse_literal_annotation(target_obj) {
             return Ok(literal);
         }
 
-        if let Some(type_annotation) = parse_type_annotation(&target_obj, ref_value)? {
+        if let Some(type_annotation) = parse_type_annotation(target_obj, ref_value)? {
             return Ok(type_annotation);
         }
 
@@ -947,39 +947,41 @@ fn parse_object_fields(
     let mut fields = Vec::new();
     let mut used_py_names = BTreeSet::from([EXTRA_FIELD_NAME.to_owned()]);
     let properties = match obj.get("properties") {
-        None => Map::new(),
-        Some(properties) => properties.as_object().cloned().ok_or_else(|| {
+        None => None,
+        Some(properties) => Some(properties.as_object().ok_or_else(|| {
             invalid_schema(
                 join_pointer(pointer, "properties"),
                 "properties must be an object",
             )
-        })?,
+        })?),
     };
 
-    for (property_name, schema) in &properties {
-        let property_pointer = join_pointer(
-            &join_pointer(pointer, "properties"),
-            &escape_pointer_token(property_name),
-        );
-        let py_name = unique_name(&python_field_name(property_name), &used_py_names);
-        used_py_names.insert(py_name.clone());
-        fields.push(FieldSpec {
-            json_name: property_name.clone(),
-            py_name,
-            annotation: builder.inline_annotation(
-                schema,
-                &property_pointer,
-                scope_name,
-                property_name,
-            )?,
-            required: required.contains(property_name),
-        });
+    if let Some(properties) = properties {
+        for (property_name, schema) in properties {
+            let property_pointer = join_pointer(
+                &join_pointer(pointer, "properties"),
+                &escape_pointer_token(property_name),
+            );
+            let py_name = unique_name(&python_field_name(property_name), &used_py_names);
+            used_py_names.insert(py_name.clone());
+            fields.push(FieldSpec {
+                json_name: property_name.clone(),
+                py_name,
+                annotation: builder.inline_annotation(
+                    schema,
+                    &property_pointer,
+                    scope_name,
+                    property_name,
+                )?,
+                required: required.contains(property_name),
+            });
+        }
     }
 
     let fallback_annotation =
         required_property_fallback_annotation(builder, obj, pointer, scope_name)?;
     for property_name in required {
-        if properties.contains_key(&property_name) {
+        if properties.is_some_and(|properties| properties.contains_key(&property_name)) {
             continue;
         }
         let py_name = unique_name(&python_field_name(&property_name), &used_py_names);

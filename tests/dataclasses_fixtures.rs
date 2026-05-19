@@ -161,8 +161,8 @@ fn assert_snapshot(
         )
     });
     assert_eq!(
-        current,
-        snapshot.contents,
+        normalized_newlines(&current),
+        normalized_newlines(&snapshot.contents),
         "dataclass snapshot is stale: {}. Run `just regen-dataclasses-fixtures`.",
         snapshot_path.display()
     );
@@ -170,6 +170,10 @@ fn assert_snapshot(
     if matches!(snapshot.kind, SnapshotKind::Python) {
         assert_python_syntax(&snapshot_path);
     }
+}
+
+fn normalized_newlines(contents: &str) -> String {
+    contents.replace("\r\n", "\n")
 }
 
 impl Snapshot {

@@ -9,6 +9,7 @@ from typing import (
     ClassVar,
     Literal,
     NoReturn,
+    TypeVar,
     Union,
     cast,
     get_args,
@@ -41,6 +42,7 @@ JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
 _JSONCOMPAT_MISSING_TYPE_HINT = object()
+JSONCOMPAT_ADDITIONAL_T = TypeVar("JSONCOMPAT_ADDITIONAL_T")
 
 
 class JsoncompatMissingType:

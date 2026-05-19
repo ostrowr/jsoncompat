@@ -14,6 +14,7 @@ fn packaged_dataclasses_runtime_helpers_construct_validate_and_guard_directional
     command.arg("-B").arg("-c").arg(
         r###"
 from dataclasses import dataclass
+import typing
 from typing import ClassVar, Literal
 
 from jsoncompat.codegen.dataclasses import (
@@ -38,6 +39,9 @@ class Profile(DataclassAdditionalModel[str]):
     age: int | None = field("age", omittable=True)
     __jsoncompat_extra__: dict[str, str] = extra_field()
 
+
+profile_hints = typing.get_type_hints(Profile)
+assert profile_hints["__jsoncompat_extra__"] == dict[str, str]
 
 profile = Profile.from_json({"name": "Ada", "nickname": "ace"})
 assert profile.name == "Ada"
