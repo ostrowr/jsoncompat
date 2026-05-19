@@ -60,6 +60,8 @@ where
             index,
             schema_json,
         };
+        let mut generated_round_tripper =
+            round_tripper_factory.build_round_tripper(&schema_case)?;
         let schema = match SchemaDocument::from_json(schema_json) {
             Ok(schema) => schema,
             Err(AstError::Schema(SchemaError::UnsupportedSchemaDialect { .. }))
@@ -83,8 +85,6 @@ where
             }
             Err(error) => return Err(error.into()),
         };
-        let mut generated_round_tripper =
-            round_tripper_factory.build_round_tripper(&schema_case)?;
         let is_whitelisted = allowed.map(|set| set.contains(&index)).unwrap_or(false);
         let generation_config = GenerationConfig::new(6);
 

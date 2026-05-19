@@ -35,7 +35,10 @@ impl GeneratedValueRoundTripperFactory for DataclassGeneratedValueRoundTripperFa
     ) -> Result<Option<Self::RoundTripper>, Box<dyn Error>> {
         let source = match generate_dataclass_models(schema_case.schema_json) {
             Ok(source) => source,
-            Err(_) => return Ok(None),
+            Err(error) => {
+                assert_codegen_error_snapshot(schema_case, &error.to_string())?;
+                return Ok(None);
+            }
         };
         let module_path = write_generated_module(schema_case, &source)?;
         Ok(Some(DataclassGeneratedValueRoundTripper::spawn(
@@ -164,6 +167,37 @@ fn write_generated_module(
     ));
     fs::write(&module_path, source)?;
     Ok(module_path)
+}
+
+fn assert_codegen_error_snapshot(
+    schema_case: &FuzzSchemaCase<'_>,
+    error: &str,
+) -> Result<(), Box<dyn Error>> {
+    let fixture_relative = Path::new(schema_case.rel_path);
+    let snapshot_path = Path::new("tests/fixtures/dataclasses/fuzz")
+        .join(fixture_relative.with_extension(""))
+        .join(format!("{:03}.error.txt", schema_case.index));
+    let expected = fs::read_to_string(&snapshot_path).map_err(|read_error| {
+        format!(
+            "dataclass fuzz skipped schema #{} in {} without an explicit error snapshot {}: {read_error}",
+            schema_case.index,
+            schema_case.rel_path,
+            snapshot_path.display(),
+        )
+    })?;
+    let actual = format!("{error}\n");
+    if expected != actual {
+        return Err(format!(
+            "dataclass fuzz codegen error snapshot is stale for schema #{} in {}: {}\n\nexpected:\n{}\nactual:\n{}",
+            schema_case.index,
+            schema_case.rel_path,
+            snapshot_path.display(),
+            expected,
+            actual,
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn python_identifier_fragment(value: &str) -> String {

@@ -860,13 +860,16 @@ fn emit_nested_defs(
         .as_object()
         .ok_or_else(|| invalid_schema(join_pointer(pointer, "$defs"), "$defs must be an object"))?;
     for (def_key, schema) in defs {
-        builder.register_named_declaration(
-            schema,
-            &join_pointer(
-                &join_pointer(pointer, "$defs"),
-                &escape_pointer_token(def_key),
-            ),
-        )?;
+        let def_pointer = join_pointer(
+            &join_pointer(pointer, "$defs"),
+            &escape_pointer_token(def_key),
+        );
+        // Union branches can inherit context `$defs` while their annotations are
+        // being planned. Those synthetic copies are not declaration sites.
+        if !builder.named_refs.contains_key(&def_pointer) {
+            continue;
+        }
+        builder.register_named_declaration(schema, &def_pointer)?;
     }
     Ok(())
 }
@@ -2060,5 +2063,35 @@ mod tests {
 
         assert!(source.contains("class Labels(dc.DataclassAdditionalModel[int]):"));
         assert!(source.contains("__jsoncompat_extra__: dict[str, int] = dc.extra_field()"));
+    }
+
+    #[test]
+    fn inherited_union_context_defs_do_not_raise_spurious_declaration_errors() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "http://localhost:1234/draft2020-12/root",
+            "$ref": "http://localhost:1234/draft2020-12/nested.json#foo",
+            "$defs": {
+                "A": {
+                    "$id": "nested.json",
+                    "$defs": {
+                        "B": {
+                            "$anchor": "foo",
+                            "type": "integer"
+                        }
+                    }
+                }
+            }
+        });
+
+        let error = generate_dataclass_models(&schema).unwrap_err();
+
+        assert!(matches!(
+            error,
+            DataclassError::UnsupportedRef {
+                ref ref_value,
+                ..
+            } if ref_value == "http://localhost:1234/draft2020-12/nested.json#foo"
+        ));
     }
 }
