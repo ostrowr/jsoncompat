@@ -1,0 +1,7 @@
+{
+  "compatible": false,
+  "surfaces": [
+    "Response"
+  ],
+  "expected_message": "new schema #/properties/body/properties/value: property 'body' -> property 'value': enumerated values are not contained by the comparison target"
+}

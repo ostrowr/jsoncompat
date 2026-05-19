@@ -2,15 +2,30 @@
 //!
 //! The extension module exposes `check_compat`, `generate_value`, and a `Role`
 //! constants module. Both functions accept JSON schemas as strings and report
-//! invalid inputs or unsupported core-library cases as `ValueError`.
+//! invalid inputs or hard unsupported core-library cases as `ValueError`.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use ::jsoncompat::{Role, SchemaDocument, check_compat};
+use ::jsoncompat::{Role, SchemaDocument, check_compat, validate_compatibility_input};
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 use serde_json::Value as JsonValue;
+
+fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
+    let schema = SchemaDocument::from_json(raw).map_err(|error| error.to_string())?;
+    schema.root().map_err(|error| error.to_string())?;
+    schema
+        .validate_source_schema()
+        .map_err(|error| error.to_string())?;
+    Ok(schema)
+}
+
+fn compatibility_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
+    let schema = SchemaDocument::from_json(raw).map_err(|error| error.to_string())?;
+    validate_compatibility_input(&schema).map_err(|error| error.to_string())?;
+    Ok(schema)
+}
 
 /// Parse a JSON string into a serde_json::Value, converting any error into a Python ValueError.
 fn parse_json(s: &str) -> PyResult<JsonValue> {
@@ -52,9 +67,9 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
 
-    let old_schema = SchemaDocument::from_json(&old_raw)
+    let old_schema = compatibility_schema(&old_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid old schema: {e}")))?;
-    let new_schema = SchemaDocument::from_json(&new_raw)
+    let new_schema = compatibility_schema(&new_raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid new schema: {e}")))?;
 
     check_compat(&old_schema, &new_schema, role_e)
@@ -78,7 +93,7 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
 #[pyo3(signature = (schema_json, depth=5), name = "generate_value")]
 fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     let raw = parse_json(schema_json)?;
-    let schema = SchemaDocument::from_json(&raw)
+    let schema = validated_schema(&raw)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
 
     let mut rng = rand::rng();
@@ -114,4 +129,38 @@ fn jsoncompat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&role_constants)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compatibility_schema, validated_schema};
+    use serde_json::json;
+
+    #[test]
+    fn compatibility_schema_validation_accepts_unmodeled_keywords_for_modeled_comparison() {
+        compatibility_schema(&json!({
+            "type": "object",
+            "dependentSchemas": {
+                "kind": { "required": ["detail"] }
+            }
+        }))
+        .expect("compatibility bindings should accept warning-only schema keywords");
+    }
+
+    #[test]
+    fn generation_schema_validation_rejects_backend_invalid_ref_bearing_schemas_up_front() {
+        let error = validated_schema(&json!({
+            "$defs": {
+                "Value": { "type": "string" }
+            },
+            "$ref": "#/$defs/Value",
+            "deprecated": "eventually"
+        }))
+        .expect_err("generation bindings must validate raw ref-bearing schemas before work");
+
+        assert!(
+            error.contains("schema failed Draft 2020-12 validator compilation"),
+            "unexpected error: {error}"
+        );
+    }
 }

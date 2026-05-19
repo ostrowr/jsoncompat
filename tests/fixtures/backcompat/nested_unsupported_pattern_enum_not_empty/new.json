@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "value": {
+      "type": "string",
+      "pattern": "^\\cC$"
+    }
+  },
+  "required": ["value"],
+  "additionalProperties": false,
+  "enum": [
+    { "value": "\u0003" }
+  ]
+}

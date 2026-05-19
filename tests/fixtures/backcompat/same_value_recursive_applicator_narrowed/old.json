@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Value": {
+      "anyOf": [
+        { "$ref": "#/$defs/Value" },
+        { "type": "string" }
+      ]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "value": { "$ref": "#/$defs/Value" }
+  },
+  "additionalProperties": false
+}

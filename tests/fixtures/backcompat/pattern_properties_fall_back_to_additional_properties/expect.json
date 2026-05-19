@@ -1,1 +1,5 @@
-{"serializer":true,"deserializer":false}
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "new schema #/patternProperties/^x$: additional properties matching pattern '^x$' may violate the required pattern-property schema"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "patternProperties": {
+    "^\\cC$": {
+      "type": "integer"
+    }
+  },
+  "additionalProperties": false
+}

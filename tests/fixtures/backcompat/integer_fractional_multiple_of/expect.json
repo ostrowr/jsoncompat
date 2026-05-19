@@ -1,1 +1,5 @@
-{"serializer": false, "deserializer": true}
+{
+  "serializer": false,
+  "deserializer": true,
+  "expected_serializer_message": "new schema #: integer multipleOf 1 is not at least as restrictive as required multipleOf 1.5"
+}

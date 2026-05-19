@@ -1,4 +1,5 @@
 {
   "serializer": true,
-  "deserializer": false
+  "deserializer": false,
+  "expected_deserializer_message": "new schema #/uniqueItems: arrays may contain duplicate items, but the comparison target requires unique items"
 }

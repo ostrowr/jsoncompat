@@ -1,0 +1,5 @@
+{
+  "compatible": false,
+  "surfaces": ["Operation"],
+  "expected_message": "operation was removed"
+}

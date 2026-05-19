@@ -76,6 +76,28 @@ struct Grade {
     id: String,
     mode: RoleCli,
     status: Status,
+    warnings: Vec<String>,
+}
+
+fn grade(id: String, mode: RoleCli, status: Status, warnings: Vec<String>) -> Grade {
+    Grade {
+        id,
+        mode,
+        status,
+        warnings,
+    }
+}
+
+fn compatibility_warnings(
+    label: &str,
+    schema: &backcompat::SchemaDocument,
+) -> Result<Vec<String>, backcompat::CompatibilityError> {
+    backcompat::compatibility_warnings(schema).map(|warnings| {
+        warnings
+            .into_iter()
+            .map(|warning| format!("{label}: {warning}"))
+            .collect()
+    })
 }
 
 fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
@@ -87,21 +109,35 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
             );
             match (old_schema, new_schema) {
                 (Ok(old_schema), Ok(new_schema)) => {
+                    if backcompat::validate_compatibility_input(&old_schema).is_err()
+                        || backcompat::validate_compatibility_input(&new_schema).is_err()
+                    {
+                        return grade(new.stable_id.clone(), old.mode, Status::Invalid, Vec::new());
+                    }
+                    let warnings = match (
+                        compatibility_warnings("old", &old_schema),
+                        compatibility_warnings("new", &new_schema),
+                    ) {
+                        (Ok(mut old_warnings), Ok(new_warnings)) => {
+                            old_warnings.extend(new_warnings);
+                            old_warnings
+                        }
+                        _ => {
+                            return grade(
+                                new.stable_id.clone(),
+                                old.mode,
+                                Status::Invalid,
+                                Vec::new(),
+                            );
+                        }
+                    };
                     if old.mode == new.mode && old.schema == new.schema {
-                        return Grade {
-                            id: new.stable_id.clone(),
-                            mode: old.mode,
-                            status: Status::Identical,
-                        };
+                        return grade(new.stable_id.clone(), old.mode, Status::Identical, warnings);
                     }
                     let Ok(ok) =
                         backcompat::check_compat(&old_schema, &new_schema, old.mode.into())
                     else {
-                        return Grade {
-                            id: new.stable_id.clone(),
-                            mode: old.mode,
-                            status: Status::Invalid,
-                        };
+                        return grade(new.stable_id.clone(), old.mode, Status::Invalid, warnings);
                     };
                     if !ok {
                         let mut rng = rand::rng();
@@ -115,49 +151,46 @@ fn grade_entry(old: Option<&GoldenEntry>, new: Option<&GoldenEntry>) -> Grade {
                         ) {
                             Ok(example) => example,
                             Err(_) => {
-                                return Grade {
-                                    id: new.stable_id.clone(),
-                                    mode: old.mode,
-                                    status: Status::Invalid,
-                                };
+                                return grade(
+                                    new.stable_id.clone(),
+                                    old.mode,
+                                    Status::Invalid,
+                                    warnings,
+                                );
                             }
                         };
-                        Grade {
-                            id: new.stable_id.clone(),
-                            mode: old.mode,
-                            status: Status::Incompatible { example },
-                        }
+                        grade(
+                            new.stable_id.clone(),
+                            old.mode,
+                            Status::Incompatible { example },
+                            warnings,
+                        )
                     } else if old.mode != new.mode {
-                        Grade {
-                            id: new.stable_id.clone(),
-                            mode: old.mode,
-                            status: Status::ModeChanged,
-                        }
+                        grade(
+                            new.stable_id.clone(),
+                            old.mode,
+                            Status::ModeChanged,
+                            warnings,
+                        )
                     } else {
-                        Grade {
-                            id: new.stable_id.clone(),
-                            mode: old.mode,
-                            status: Status::Ok,
-                        }
+                        grade(new.stable_id.clone(), old.mode, Status::Ok, warnings)
                     }
                 }
-                _ => Grade {
-                    id: new.stable_id.clone(),
-                    mode: old.mode,
-                    status: Status::Invalid,
-                },
+                _ => grade(new.stable_id.clone(), old.mode, Status::Invalid, Vec::new()),
             }
         }
-        (Some(old), None) => Grade {
-            id: old.stable_id.clone(),
-            mode: old.mode,
-            status: Status::MissingNew,
-        },
-        (None, Some(new)) => Grade {
-            id: new.stable_id.clone(),
-            mode: new.mode,
-            status: Status::MissingOld,
-        },
+        (Some(old), None) => grade(
+            old.stable_id.clone(),
+            old.mode,
+            Status::MissingNew,
+            Vec::new(),
+        ),
+        (None, Some(new)) => grade(
+            new.stable_id.clone(),
+            new.mode,
+            Status::MissingOld,
+            Vec::new(),
+        ),
         (None, None) => unreachable!(
             "grade_entry called with both old and new as None; this should never happen"
         ),
@@ -169,6 +202,7 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
     let header_mode = "Mode";
     let header_status = "Status";
     let header_example = "Example";
+    let header_warnings = "Warnings";
 
     let id_width = grades
         .iter()
@@ -213,9 +247,21 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
         .max()
         .unwrap_or(7)
         .max(header_example.len());
+    let warnings_width = grades
+        .iter()
+        .map(|g| {
+            if g.warnings.is_empty() {
+                "N/A".len()
+            } else {
+                g.warnings.join("; ").len()
+            }
+        })
+        .max()
+        .unwrap_or(8)
+        .max(header_warnings.len());
 
     println!(
-        "{}  {}  {}  {}",
+        "{}  {}  {}  {}  {}",
         pad_str(
             &header_id.bold().to_string(),
             id_width,
@@ -239,15 +285,22 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
             example_width,
             Alignment::Left,
             None
+        ),
+        pad_str(
+            &header_warnings.bold().to_string(),
+            warnings_width,
+            Alignment::Left,
+            None
         )
     );
 
     println!(
-        "{}  {}  {}  {}",
+        "{}  {}  {}  {}  {}",
         pad_str("", id_width, Alignment::Left, Some("-")),
         pad_str("", mode_width, Alignment::Left, Some("-")),
         pad_str("", status_width, Alignment::Left, Some("-")),
-        pad_str("", example_width, Alignment::Left, Some("-"))
+        pad_str("", example_width, Alignment::Left, Some("-")),
+        pad_str("", warnings_width, Alignment::Left, Some("-"))
     );
 
     for grade in grades {
@@ -271,9 +324,14 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
 
         let mode = grade.mode;
         let mode_str = format!("{mode:?}");
+        let warnings_str = if grade.warnings.is_empty() {
+            "N/A".to_owned()
+        } else {
+            grade.warnings.join("; ")
+        };
 
         println!(
-            "{}  {}  {}  {}",
+            "{}  {}  {}  {}  {}",
             pad_str(&grade.id, id_width, Alignment::Left, None),
             pad_str(
                 &mode_str.cyan().to_string(),
@@ -285,6 +343,12 @@ fn print_grades_table(grades: &Vec<Grade>) -> Result<()> {
             pad_str(
                 &example_str.bright_black().to_string(),
                 example_width,
+                Alignment::Left,
+                None
+            ),
+            pad_str(
+                &warnings_str.yellow().to_string(),
+                warnings_width,
                 Alignment::Left,
                 None
             )
@@ -401,5 +465,120 @@ mod tests {
         let grade = grade_entry(Some(&old), Some(&new));
 
         assert!(matches!(grade.status, Status::Incompatible { .. }));
+    }
+
+    #[test]
+    fn ci_grade_marks_invalid_schemas_before_compatibility_checks() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string",
+                "maxLength": "x"
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string"
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
+
+    #[test]
+    fn ci_grade_marks_backend_invalid_schemas_invalid() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string",
+                "deprecated": "eventually"
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string"
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
+
+    #[test]
+    fn ci_grade_marks_backend_invalid_ref_bearing_schemas_invalid() {
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "$defs": {
+                    "Value": { "type": "string" }
+                },
+                "$ref": "#/$defs/Value",
+                "deprecated": "eventually"
+            }),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: serde_json::json!({
+                "type": "string"
+            }),
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Invalid);
+    }
+
+    #[test]
+    fn ci_grade_keeps_identical_unmodeled_schemas_nonfatal_with_warnings() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "dependentSchemas": {
+                "kind": {
+                    "required": ["detail"]
+                }
+            }
+        });
+        let old = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema: schema.clone(),
+            stable_id: "example".to_owned(),
+        };
+        let new = GoldenEntry {
+            mode: RoleCli::Serializer,
+            schema,
+            stable_id: "example".to_owned(),
+        };
+
+        let grade = grade_entry(Some(&old), Some(&new));
+
+        assert_eq!(grade.status, Status::Identical);
+        assert_eq!(grade.warnings.len(), 2);
+        assert!(
+            grade
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("old:")),
+            "expected an old-schema warning: {:?}",
+            grade.warnings
+        );
+        assert!(
+            grade
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("new:")),
+            "expected a new-schema warning: {:?}",
+            grade.warnings
+        );
     }
 }

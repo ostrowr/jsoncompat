@@ -1,4 +1,5 @@
-//! Strict Draft 2020-12 schema documents, validation, and resolved schema IR.
+//! Strict Draft 2020-12 JSON Schema and OpenAPI 3.1 Schema Object documents,
+//! validation, and resolved schema IR.
 //!
 //! The main entry point is [`SchemaDocument`]. Build one from raw JSON with
 //! [`SchemaDocument::from_json`], validate instances with [`SchemaDocument::is_valid`],
@@ -10,6 +11,7 @@ mod ast;
 mod canonicalize;
 mod constraints;
 mod json_semantics;
+mod schema_children;
 
 mod schema_metadata;
 
@@ -25,6 +27,10 @@ pub use constraints::{
     PatternProperty, PatternSupport,
 };
 pub use json_semantics::json_values_equal;
+pub use schema_children::{
+    SCHEMA_ARRAY_CHILD_KEYWORDS, SCHEMA_MAP_CHILD_KEYWORDS, SINGLE_SCHEMA_CHILD_KEYWORDS,
+    is_schema_array_child_keyword, is_schema_map_child_keyword, is_single_schema_child_keyword,
+};
 
 #[cfg(test)]
 use canonicalize::CanonicalSchema;

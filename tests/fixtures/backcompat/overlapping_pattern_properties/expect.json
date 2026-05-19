@@ -1,0 +1,6 @@
+{
+  "serializer": false,
+  "deserializer": false,
+  "expected_serializer_message": "old schema #/patternProperties/x$: pattern property '^x' may overlap comparison pattern 'x$' with values the comparison target rejects",
+  "expected_deserializer_message": "old schema #/patternProperties/x$: pattern property 'x$' can accept values the comparison target rejects"
+}

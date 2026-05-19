@@ -1,4 +1,5 @@
 {
   "serializer": true,
-  "deserializer": false
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #: number bounds [0, 10] are not contained by required bounds (0, 10)"
 }

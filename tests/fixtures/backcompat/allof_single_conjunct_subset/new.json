@@ -1,0 +1,1 @@
+{"allOf":[{"type":"number","minimum":1,"maximum":5},{"type":"number","maximum":10}]}

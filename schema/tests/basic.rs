@@ -72,7 +72,7 @@ fn resolved_schema_validates_with_raw_backend_and_exposes_canonicalized_debug_js
 }
 
 #[test]
-fn compile_rejects_non_2020_12_schema_uri_before_validator_backend() {
+fn compile_rejects_unsupported_schema_uri_before_validator_backend() {
     let raw = json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "string"
@@ -84,10 +84,47 @@ fn compile_rejects_non_2020_12_schema_uri_before_validator_backend() {
         error,
         CompileError::Schema(SchemaError::UnsupportedSchemaDialect {
             pointer,
-            expected_uri: "https://json-schema.org/draft/2020-12/schema",
+            expected_uri: "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base",
             actual_uri,
         }) if pointer == "#/$schema" && actual_uri == "http://json-schema.org/draft-07/schema#"
     ));
+}
+
+#[test]
+fn compile_accepts_openapi_31_schema_object_dialect() {
+    let raw = json!({
+        "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
+        "type": ["string", "null"],
+        "format": "email"
+    });
+
+    let compiled = compile(&raw).unwrap();
+
+    assert!(compiled.is_valid(&json!("ada@example.com")));
+    assert!(compiled.is_valid(&json!(null)));
+    assert!(!compiled.is_valid(&json!(42)));
+}
+
+#[test]
+fn resolved_schema_from_json_preserves_openapi_31_schema_object_dialect() {
+    let raw = json!({
+        "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
+        "type": "string",
+        "minLength": 2
+    });
+
+    let schema = SchemaDocument::from_json(&raw).unwrap();
+
+    assert_eq!(
+        schema
+            .canonical_schema_json()
+            .unwrap()
+            .get("$schema")
+            .and_then(Value::as_str),
+        Some("https://spec.openapis.org/oas/3.1/dialect/base"),
+    );
+    assert!(schema.is_valid(&json!("ok")).unwrap());
+    assert!(!schema.is_valid(&json!("x")).unwrap());
 }
 
 #[test]
@@ -713,6 +750,66 @@ fn nested_format_only_schema_uses_string_branch_in_implicit_union() {
 }
 
 #[test]
+fn closed_objects_cap_property_count_to_explicit_properties() {
+    let ast = build_and_resolve_schema(&json!({
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "maxProperties": 3,
+        "additionalProperties": false
+    }))
+    .unwrap();
+
+    let guard = ast.kind();
+    let SchemaNodeKind::Object { property_count, .. } = guard else {
+        panic!("expected object schema, got {guard:?}");
+    };
+
+    assert_eq!(*property_count, CountRange::new(0, Some(1)).unwrap());
+}
+
+#[test]
+fn closed_object_property_caps_apply_after_additional_properties_refs_resolve() {
+    let ast = build_and_resolve_schema(&json!({
+        "$defs": {
+            "closed": false
+        },
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "maxProperties": 3,
+        "additionalProperties": {
+            "$ref": "#/$defs/closed"
+        }
+    }))
+    .unwrap();
+
+    let guard = ast.kind();
+    let SchemaNodeKind::Object { property_count, .. } = guard else {
+        panic!("expected object schema, got {guard:?}");
+    };
+
+    assert_eq!(*property_count, CountRange::new(0, Some(1)).unwrap());
+}
+
+#[test]
+fn closed_objects_with_unreachable_min_properties_resolve_to_false() {
+    let ast = build_and_resolve_schema(&json!({
+        "type": "object",
+        "properties": {
+            "x": true
+        },
+        "minProperties": 2,
+        "additionalProperties": false
+    }))
+    .unwrap();
+
+    assert!(matches!(ast.kind(), SchemaNodeKind::BoolSchema(false)));
+}
+
+#[test]
 fn bare_multiple_of_under_conditional_gets_the_same_implicit_union_as_root() {
     let ast = build_schema(&json!({
         "if": { "type": "boolean" },
@@ -1077,6 +1174,51 @@ fn raw_validation_does_not_force_ast_resolution() {
 
     assert!(schema.is_valid(&json!("value")).unwrap());
     assert!(!schema.is_valid(&json!(123)).unwrap());
+
+    let error = schema.root().unwrap_err();
+    assert!(matches!(error, AstError::UnsupportedReference { .. }));
+}
+
+#[test]
+fn schema_documents_reject_backend_invalid_schemas_at_construction() {
+    let error = SchemaDocument::from_json(&json!({
+        "type": "string",
+        "deprecated": "eventually"
+    }))
+    .expect_err("backend-invalid schemas must fail during document construction")
+    .to_string();
+
+    assert!(
+        error.contains("failed to compile raw schema validator"),
+        "{error}"
+    );
+}
+
+#[test]
+fn schema_documents_do_not_treat_ref_shaped_const_payloads_as_resolver_features() {
+    let error = SchemaDocument::from_json(&json!({
+        "deprecated": "eventually",
+        "const": {
+            "$ref": "#/literal-payload"
+        }
+    }))
+    .expect_err("ref-shaped data payloads must not postpone raw-schema validation")
+    .to_string();
+
+    assert!(
+        error.contains("failed to compile raw schema validator"),
+        "{error}"
+    );
+}
+
+#[test]
+fn schema_documents_preserve_resolver_owned_reference_errors_at_resolution_time() {
+    let schema = SchemaDocument::from_json(&json!({
+        "$id": "https://example.com/schemas/node.json",
+        "type": "string",
+        "deprecated": "eventually"
+    }))
+    .expect("resolver-owned reference features keep construction focused on shape validation");
 
     let error = schema.root().unwrap_err();
     assert!(matches!(error, AstError::UnsupportedReference { .. }));

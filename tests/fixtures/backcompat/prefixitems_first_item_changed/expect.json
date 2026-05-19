@@ -1,4 +1,6 @@
 {
   "serializer": false,
-  "deserializer": false
+  "deserializer": false,
+  "expected_serializer_message": "new schema #/prefixItems/0: array item 1: new values may be integers, but the previous schema only accepted strings",
+  "expected_deserializer_message": "old schema #/prefixItems/0: array item 1: new values may be strings, but the previous schema only accepted integers"
 }

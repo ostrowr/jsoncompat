@@ -1,0 +1,7 @@
+{
+  "compatible": false,
+  "surfaces": [
+    "Response"
+  ],
+  "expected_message": "old schema #/properties/body/properties/value/patternProperties/x$: property 'body' -> property 'value': pattern property '^x' may overlap comparison pattern 'x$' with values the comparison target rejects"
+}

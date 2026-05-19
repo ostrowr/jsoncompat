@@ -1,0 +1,7 @@
+{
+  "compatible": false,
+  "surfaces": [
+    "Request"
+  ],
+  "expected_message": "old schema #/properties/path/properties/petId/properties/value: property 'path' -> property 'petId' -> property 'value': new values may be strings, but the previous schema only accepted enumerated values"
+}

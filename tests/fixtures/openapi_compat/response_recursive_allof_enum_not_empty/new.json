@@ -1,0 +1,43 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Recursive enum API",
+    "version": "1.0.0"
+  },
+  "components": {
+    "schemas": {
+      "Value": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Value" },
+          { "type": "string" }
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/payload": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "value": { "$ref": "#/components/schemas/Value" }
+                  },
+                  "required": ["value"],
+                  "additionalProperties": false,
+                  "enum": [
+                    { "value": "leaf" }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

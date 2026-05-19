@@ -1,1 +1,6 @@
-{"serializer": false, "deserializer": false}
+{
+  "serializer": false,
+  "deserializer": false,
+  "expected_serializer_message": "new schema #: new values may be numbers, but the previous schema only accepted strings",
+  "expected_deserializer_message": "old schema #: new values may be strings, but the previous schema only accepted numbers"
+}

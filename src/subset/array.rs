@@ -1,7 +1,7 @@
 //! Array subset helpers.
 
 use crate::SchemaNode;
-use crate::subset::{SubschemaCheckContext, is_subschema_of_with_context};
+use crate::subset::{SubschemaCheckContext, is_subschema_of_with_productive_context};
 use json_schema_ast::{ContainsConstraint, CountRange};
 use serde_json::Value;
 
@@ -60,13 +60,13 @@ fn array_item_constraints_subsumed(
 
         let sub_item = sub_prefix_items.get(index).unwrap_or(sub_items);
         let sup_item = sup_prefix_items.get(index).unwrap_or(sup_items);
-        if !is_subschema_of_with_context(sub_item, sup_item, context) {
+        if !is_subschema_of_with_productive_context(sub_item, sup_item, context) {
             return false;
         }
     }
 
     !array_index_can_exist(sub_max_items, checked_prefix_len)
-        || is_subschema_of_with_context(sub_items, sup_items, context)
+        || is_subschema_of_with_productive_context(sub_items, sup_items, context)
 }
 
 fn array_contains_constraints_subsumed(
@@ -87,16 +87,20 @@ fn array_contains_constraints_subsumed(
     let lower_bound_ok = sup_contains_count.min() == 0
         || sub_contains.is_some_and(|sub_contains| {
             sub_contains.count().min() >= sup_contains_count.min()
-                && is_subschema_of_with_context(&sub_contains.schema, &sup_contains.schema, context)
+                && is_subschema_of_with_productive_context(
+                    &sub_contains.schema,
+                    &sup_contains.schema,
+                    context,
+                )
         })
-        || (sub_item_count.min() >= sup_contains_count.min()
-            && all_array_item_schemas_subsumed_by(
-                sub_prefix_items,
-                sub_items,
-                sub_max_items,
-                &sup_contains.schema,
-                context,
-            ));
+        || guaranteed_array_item_matches_at_least(
+            sub_prefix_items,
+            sub_items,
+            sub_item_count.min(),
+            &sup_contains.schema,
+            sup_contains_count.min(),
+            context,
+        );
 
     if !lower_bound_ok {
         return false;
@@ -112,7 +116,11 @@ fn array_contains_constraints_subsumed(
                 .count()
                 .max()
                 .is_some_and(|sub_max_contains| sub_max_contains <= sup_max_contains)
-                && is_subschema_of_with_context(&sup_contains.schema, &sub_contains.schema, context)
+                && is_subschema_of_with_productive_context(
+                    &sup_contains.schema,
+                    &sub_contains.schema,
+                    context,
+                )
         })
         .is_some()
         || (sub_max_items.is_some_and(|sub_max_items| sub_max_items <= sup_max_contains)
@@ -136,13 +144,45 @@ fn all_array_item_schemas_subsumed_by(
         if !array_index_can_exist(max_items, index) {
             return true;
         }
-        if !is_subschema_of_with_context(prefix_item, sup_schema, context) {
+        if !is_subschema_of_with_productive_context(prefix_item, sup_schema, context) {
             return false;
         }
     }
 
     !array_index_can_exist(max_items, prefix_items.len())
-        || is_subschema_of_with_context(items, sup_schema, context)
+        || is_subschema_of_with_productive_context(items, sup_schema, context)
+}
+
+fn guaranteed_array_item_matches_at_least(
+    prefix_items: &[SchemaNode],
+    items: &SchemaNode,
+    guaranteed_items: u64,
+    sup_schema: &SchemaNode,
+    required_matches: u64,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if required_matches == 0 {
+        return true;
+    }
+
+    let guaranteed_prefix_items = prefix_items
+        .len()
+        .min(usize::try_from(guaranteed_items).unwrap_or(usize::MAX));
+    let mut guaranteed_matches = 0_u64;
+    for prefix_item in &prefix_items[..guaranteed_prefix_items] {
+        if is_subschema_of_with_productive_context(prefix_item, sup_schema, context) {
+            guaranteed_matches += 1;
+            if guaranteed_matches >= required_matches {
+                return true;
+            }
+        }
+    }
+
+    let guaranteed_tail_items =
+        guaranteed_items.saturating_sub(u64::try_from(guaranteed_prefix_items).unwrap_or(u64::MAX));
+    guaranteed_tail_items > 0
+        && is_subschema_of_with_productive_context(items, sup_schema, context)
+        && guaranteed_matches.saturating_add(guaranteed_tail_items) >= required_matches
 }
 
 fn array_index_can_exist(max_items: Option<u64>, index: usize) -> bool {

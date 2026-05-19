@@ -1,1 +1,5 @@
-{"serializer": false, "deserializer": true}
+{
+  "serializer": false,
+  "deserializer": true,
+  "expected_serializer_message": "new schema #/anyOf/1: anyOf branch 2: enumerated values are not contained by the comparison target"
+}

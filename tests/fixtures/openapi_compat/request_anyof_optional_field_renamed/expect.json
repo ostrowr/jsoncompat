@@ -1,0 +1,5 @@
+{
+  "compatible": false,
+  "surfaces": ["Request"],
+  "expected_message": "old schema #/properties/body/properties/value/anyOf/1/properties/beta_old: property 'body' -> property 'value' -> anyOf branch 2: property 'beta_old' can appear with values the comparison target rejects"
+}
