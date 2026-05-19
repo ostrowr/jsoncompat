@@ -536,14 +536,16 @@ fn annotate_payload_declarations(
         Value::Object(obj) => {
             let mut annotated = Map::new();
             for (key, value) in obj {
-                if key == "$defs" {
-                    let defs = value.as_object().expect("$defs is validated as an object");
+                if matches!(key.as_str(), "$defs" | "definitions") {
+                    let defs = value
+                        .as_object()
+                        .expect("definition maps are validated as objects");
                     let mut annotated_defs = Map::new();
                     for (def_key, nested_schema) in defs {
                         let nested_name =
                             allocate_payload_declaration_name(scope_name, def_key, used_names);
                         let nested_pointer =
-                            format!("{pointer}/$defs/{}", escape_pointer_token(def_key));
+                            format!("{pointer}/{key}/{}", escape_pointer_token(def_key));
                         let nested_schema = annotate_payload_declarations(
                             nested_schema.clone(),
                             stable_id,
@@ -906,6 +908,50 @@ mod tests {
         assert_eq!(
             result.bundle.writer["$defs"]["v1"]["$defs"]["Node"]["properties"]["next"]["$ref"],
             json!("#/$defs/v1/$defs/Node")
+        );
+    }
+
+    #[test]
+    fn stamp_preserves_metadata_for_legacy_definition_refs() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "node": { "$ref": "#/definitions/Node" }
+            },
+            "required": ["node"],
+            "additionalProperties": false,
+            "definitions": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "value": { "type": "integer" },
+                        "next": { "$ref": "#/definitions/Node" }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": false
+                }
+            }
+        });
+
+        let result = stamp_schema(&StampManifest::empty(), "legacy-node", schema).unwrap();
+
+        assert_eq!(
+            result.bundle.writer["$defs"]["v1"]["properties"]["node"]["$ref"],
+            json!("#/$defs/v1/definitions/Node")
+        );
+        assert_eq!(
+            result.bundle.writer["$defs"]["v1"]["definitions"]["Node"]["properties"]["next"]["$ref"],
+            json!("#/$defs/v1/definitions/Node")
+        );
+        assert_eq!(
+            result.bundle.writer["$defs"]["v1"]["definitions"]["Node"]["x-jsoncompat"],
+            json!({
+                "kind": "declaration",
+                "stable_id": "legacy-node",
+                "name": "LegacyNodeV1Node",
+                "version": 1,
+                "schema_ref": "#/$defs/v1/definitions/Node"
+            })
         );
     }
 

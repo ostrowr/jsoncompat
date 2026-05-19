@@ -366,3 +366,158 @@ for factory in (
         String::from_utf8_lossy(&validation.stderr)
     );
 }
+
+#[test]
+fn stamped_legacy_definitions_codegen_round_trips_nested_models() {
+    let dir = temp_dir("dataclasses-stamped-legacy-definitions");
+    let manifest_path = dir.join("manifest.json");
+    let schema_path = dir.join("schema.json");
+    let writer_module_path = dir.join("generated_writer.py");
+    let reader_module_path = dir.join("generated_reader.py");
+    fs::write(
+        &schema_path,
+        r##"{"type":"object","properties":{"profile":{"$ref":"#/definitions/Profile"}},"required":["profile"],"additionalProperties":false,"definitions":{"Profile":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":false}}}"##,
+    )
+    .expect("write legacy definitions schema");
+
+    let writer_schema = Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        .args([
+            "stamp",
+            "--manifest",
+            manifest_path.to_str().expect("utf-8 path"),
+            "--id",
+            "legacy-profile",
+            "--display",
+            "writer",
+            schema_path.to_str().expect("utf-8 path"),
+        ])
+        .output()
+        .expect("run jsoncompat stamp writer");
+    assert!(
+        writer_schema.status.success(),
+        "stamp writer failed: {}",
+        String::from_utf8_lossy(&writer_schema.stderr)
+    );
+
+    let reader_schema = Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        .args([
+            "stamp",
+            "--manifest",
+            manifest_path.to_str().expect("utf-8 path"),
+            "--id",
+            "legacy-profile",
+            "--display",
+            "reader",
+            schema_path.to_str().expect("utf-8 path"),
+        ])
+        .output()
+        .expect("run jsoncompat stamp reader");
+    assert!(
+        reader_schema.status.success(),
+        "stamp reader failed: {}",
+        String::from_utf8_lossy(&reader_schema.stderr)
+    );
+
+    let mut writer_codegen = Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        .args(["codegen", "--target", "dataclasses", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn writer codegen");
+    writer_codegen
+        .stdin
+        .as_mut()
+        .expect("stdin pipe")
+        .write_all(&writer_schema.stdout)
+        .expect("write writer schema to stdin");
+    let writer_codegen_output = writer_codegen
+        .wait_with_output()
+        .expect("wait for writer codegen");
+    assert!(
+        writer_codegen_output.status.success(),
+        "writer codegen failed: {}",
+        String::from_utf8_lossy(&writer_codegen_output.stderr)
+    );
+    fs::write(&writer_module_path, &writer_codegen_output.stdout)
+        .expect("write generated writer module");
+
+    let mut reader_codegen = Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        .args(["codegen", "--target", "dataclasses", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn reader codegen");
+    reader_codegen
+        .stdin
+        .as_mut()
+        .expect("stdin pipe")
+        .write_all(&reader_schema.stdout)
+        .expect("write reader schema to stdin");
+    let reader_codegen_output = reader_codegen
+        .wait_with_output()
+        .expect("wait for reader codegen");
+    assert!(
+        reader_codegen_output.status.success(),
+        "reader codegen failed: {}",
+        String::from_utf8_lossy(&reader_codegen_output.stderr)
+    );
+    fs::write(&reader_module_path, &reader_codegen_output.stdout)
+        .expect("write generated reader module");
+
+    let validation = python_env::python_command()
+        .arg("-B")
+        .arg("-c")
+        .arg(
+            r#"
+import importlib.util
+import sys
+
+writer_spec = importlib.util.spec_from_file_location("generated_writer_legacy", sys.argv[1])
+writer_module = importlib.util.module_from_spec(writer_spec)
+assert writer_spec.loader is not None
+sys.modules[writer_spec.name] = writer_module
+writer_spec.loader.exec_module(writer_module)
+
+reader_spec = importlib.util.spec_from_file_location("generated_reader_legacy", sys.argv[2])
+reader_module = importlib.util.module_from_spec(reader_spec)
+assert reader_spec.loader is not None
+sys.modules[reader_spec.name] = reader_module
+reader_spec.loader.exec_module(reader_module)
+
+profile = writer_module.LegacyProfileV1Profile(name="Ada")
+payload = writer_module.LegacyProfileV1(profile=profile)
+writer = writer_module.LegacyProfileWriter(version=1, data=payload)
+assert writer.to_json() == {"version": 1, "data": {"profile": {"name": "Ada"}}}
+
+reader = reader_module.LegacyProfileReader.from_json(
+    {"version": 1, "data": {"profile": {"name": "Ada"}}}
+)
+assert reader.root.version == 1
+assert reader.root.data.profile.name == "Ada"
+
+for factory in (
+    lambda: writer_module.LegacyProfileV1Profile(name=1),
+    lambda: reader_module.LegacyProfileReader.from_json(
+        {"version": 1, "data": {"profile": {"name": 1}}}
+    ),
+):
+    try:
+        factory()
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("stamped legacy definitions should reject invalid nested payloads")
+"#,
+        )
+        .arg(writer_module_path.to_str().expect("utf-8 writer path"))
+        .arg(reader_module_path.to_str().expect("utf-8 reader path"))
+        .output()
+        .expect("run stamped legacy definitions dataclass validation");
+    assert!(
+        validation.status.success(),
+        "stamped legacy definitions validation failed: {}",
+        String::from_utf8_lossy(&validation.stderr)
+    );
+}
