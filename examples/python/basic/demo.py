@@ -47,6 +47,43 @@ def main() -> None:
     example = jsc.generate_value(old_schema, 3)
     print("example value:", example)
 
+    print("\n=== Reusable validation ===")
+    validator = jsc.validator_for(old_schema)
+    assert validator.is_valid_json(example)
+    assert validator.is_valid_value({"name": "Robbie", "age": 37})
+    assert not validator.is_valid_value({"name": True})
+
+    try:
+        validator.is_valid_value({"age": float("nan")})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("non-finite JSON numbers must be rejected")
+
+    try:
+        validator.is_valid_value({1: "invalid"})
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("JSON object keys must be strings")
+
+    integer_validator = jsc.validator_for('{"type": "integer"}')
+    assert integer_validator.is_valid_value(1)
+    assert not integer_validator.is_valid_value(True)
+
+    try:
+        integer_validator.is_valid_value(2**2000)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("oversized Python integers must be rejected")
+
+    print("generated JSON is valid:", validator.is_valid_json(example))
+    print(
+        "Python value is valid:",
+        validator.is_valid_value({"name": "Robbie", "age": 37}),
+    )
+
 
 if __name__ == "__main__":
     main()

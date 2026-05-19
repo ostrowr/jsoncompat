@@ -4,13 +4,39 @@
 //! constants module. Both functions accept JSON schemas as strings and report
 //! invalid inputs or hard unsupported core-library cases as `ValueError`.
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 use ::jsoncompat::{Role, SchemaDocument, check_compat, validate_compatibility_input};
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
-use serde_json::Value as JsonValue;
+use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
+
+#[pyclass(name = "Validator", module = "jsoncompat", unsendable)]
+struct ValidatorPy {
+    schema: SchemaDocument,
+}
+
+#[pymethods]
+impl ValidatorPy {
+    /// Check whether a JSON value encoded as a string satisfies this validator's schema.
+    fn is_valid(&self, instance_json: &str) -> PyResult<bool> {
+        self.is_valid_json(instance_json)
+    }
+
+    /// Check whether a JSON value encoded as a string satisfies this validator's schema.
+    fn is_valid_json(&self, instance_json: &str) -> PyResult<bool> {
+        let instance = parse_json(instance_json)?;
+        validate_value_for_schema(&self.schema, &instance)
+    }
+
+    /// Check whether a Python JSON-compatible value satisfies this validator's schema.
+    fn is_valid_value(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let instance = py_to_json_value(instance)?;
+        validate_value_for_schema(&self.schema, &instance)
+    }
+}
 
 fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
     let schema = SchemaDocument::from_json(raw).map_err(|error| error.to_string())?;
@@ -25,6 +51,82 @@ fn compatibility_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
     let schema = SchemaDocument::from_json(raw).map_err(|error| error.to_string())?;
     validate_compatibility_input(&schema).map_err(|error| error.to_string())?;
     Ok(schema)
+}
+
+fn validate_value_for_schema(schema: &SchemaDocument, instance: &JsonValue) -> PyResult<bool> {
+    schema
+        .is_valid(instance)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
+}
+
+fn py_to_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
+    if value.is_none() {
+        return Ok(JsonValue::Null);
+    }
+    if value.is_instance_of::<PyBool>() {
+        return Ok(JsonValue::Bool(value.extract::<bool>()?));
+    }
+    if value.is_instance_of::<PyInt>() {
+        return py_int_to_json_value(value);
+    }
+    if value.is_instance_of::<PyFloat>() {
+        let number = value.extract::<f64>()?;
+        if !number.is_finite() {
+            return Err(PyErr::new::<PyValueError, _>("JSON numbers must be finite"));
+        }
+        let Some(number) = JsonNumber::from_f64(number) else {
+            return Err(PyErr::new::<PyValueError, _>(
+                "failed to convert Python float to JSON number",
+            ));
+        };
+        return Ok(JsonValue::Number(number));
+    }
+    if value.is_instance_of::<PyString>() {
+        return Ok(JsonValue::String(value.extract::<String>()?));
+    }
+    if let Ok(list) = value.cast::<PyList>() {
+        return list
+            .iter()
+            .map(|item| py_to_json_value(&item))
+            .collect::<PyResult<Vec<_>>>()
+            .map(JsonValue::Array);
+    }
+    if let Ok(tuple) = value.cast::<PyTuple>() {
+        return tuple
+            .iter()
+            .map(|item| py_to_json_value(&item))
+            .collect::<PyResult<Vec<_>>>()
+            .map(JsonValue::Array);
+    }
+    if let Ok(dict) = value.cast::<PyDict>() {
+        let mut object = JsonMap::with_capacity(dict.len());
+        for (key, item) in dict {
+            if !key.is_instance_of::<PyString>() {
+                return Err(PyErr::new::<PyTypeError, _>(
+                    "JSON object keys must be strings",
+                ));
+            }
+            object.insert(key.extract::<String>()?, py_to_json_value(&item)?);
+        }
+        return Ok(JsonValue::Object(object));
+    }
+
+    Err(PyErr::new::<PyTypeError, _>(format!(
+        "expected a JSON-compatible value, got {}",
+        value.get_type().name()?
+    )))
+}
+
+fn py_int_to_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
+    if let Ok(number) = value.extract::<i64>() {
+        return Ok(JsonValue::Number(JsonNumber::from(number)));
+    }
+    if let Ok(number) = value.extract::<u64>() {
+        return Ok(JsonValue::Number(JsonNumber::from(number)));
+    }
+    Err(PyErr::new::<PyValueError, _>(
+        "JSON integer is outside the supported range",
+    ))
 }
 
 /// Parse a JSON string into a serde_json::Value, converting any error into a Python ValueError.
@@ -115,12 +217,24 @@ fn generate_value_py(schema_json: &str, depth: u8) -> PyResult<String> {
     })
 }
 
+/// Build a reusable validator for one JSON Schema document.
+#[pyfunction]
+#[pyo3(signature = (schema_json), name = "validator_for")]
+fn validator_for_py(schema_json: &str) -> PyResult<ValidatorPy> {
+    let raw = parse_json(schema_json)?;
+    let schema = validated_schema(&raw)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Invalid schema: {e}")))?;
+    Ok(ValidatorPy { schema })
+}
+
 /// Python module definition
 #[pymodule]
 #[pyo3(name = "jsoncompat")]
 fn jsoncompat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
+    m.add_function(wrap_pyfunction!(validator_for_py, m)?)?;
+    m.add_class::<ValidatorPy>()?;
 
     let role_constants = PyModule::new(py, "Role")?;
     role_constants.add("SERIALIZER", "serializer")?;
