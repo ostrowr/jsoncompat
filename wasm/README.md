@@ -1,6 +1,6 @@
 # jsoncompat (JavaScript/WebAssembly)
 
-WebAssembly bindings for checking compatibility of evolving JSON schemas and
+WebAssembly bindings for checking compatibility of evolving JSON Schemas and
 generating example values from JavaScript.
 
 ## Installation
@@ -36,6 +36,8 @@ For full documentation and examples, see:
 
 - https://jsoncompat.com
 - https://github.com/ostrowr/jsoncompat
+- [Repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md)
+- [Developer guide](https://github.com/ostrowr/jsoncompat/blob/main/developing.md)
 
 ## License
 

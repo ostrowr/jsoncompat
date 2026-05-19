@@ -4,22 +4,22 @@
 
 [![crates.io](https://img.shields.io/crates/v/jsoncompat)](https://crates.io/crates/jsoncompat) [![docs.rs](https://docs.rs/jsoncompat/badge.svg)](https://docs.rs/jsoncompat) [![PyPI](https://img.shields.io/pypi/v/jsoncompat.svg)](https://pypi.org/project/jsoncompat/) [![npm](https://img.shields.io/npm/v/jsoncompat.svg)](https://www.npmjs.com/package/jsoncompat) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Check compatibility of evolving JSON schemas and OpenAPI contracts.
+Check whether evolving JSON Schemas and OpenAPI 3.1 contracts stay backward-compatible.
 
-jsoncompat supports raw JSON Schema Draft 2020-12 documents, standalone OpenAPI 3.1
-Schema Objects, and path-operation OpenAPI 3.1 JSON documents passed to `jsoncompat compat`
-or `jsoncompat lower-openapi`.
-If a schema declares `$schema`, it must be either
-`https://json-schema.org/draft/2020-12/schema` with an optional trailing `#`, or
-`https://spec.openapis.org/oas/3.1/dialect/base`. OpenAPI 3.0-only schema semantics such
-as `nullable` are not interpreted; use the OpenAPI 3.1 / JSON Schema form instead.
+jsoncompat supports:
+
+- raw JSON Schema Draft 2020-12 documents;
+- OpenAPI 3.1 Schema Objects;
+- JSON OpenAPI 3.1 documents with path operations.
+
+If a schema declares `$schema`, it must use either Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. OpenAPI 3.0-only schema shortcuts such as `nullable` are not reinterpreted.
 
 > [!WARNING]
-> Docs and examples at [jsoncompat.com](https://jsoncompat.com)
+> jsoncompat is alpha software. It is intentionally conservative in places, and it can still miss incompatible changes or report false positives.
 >
-> This is alpha software. Not all incompatible changes are detected, and there may be false positives. Contributions are welcome!
+> The full docs and examples live at [jsoncompat.com](https://jsoncompat.com).
 
-## Installation and basic usage
+## Install
 
 Install the CLI with Cargo:
 
@@ -27,128 +27,84 @@ Install the CLI with Cargo:
 cargo install jsoncompat
 ```
 
-Check whether a schema change is compatible for a serializer:
+Python and JavaScript/WebAssembly packages are documented separately:
+
+- [Python bindings](python/README.md)
+- [JavaScript/WebAssembly bindings](wasm/README.md)
+
+## Quick start
+
+Check a serializer-facing schema change:
 
 ```bash
 jsoncompat compat old-schema.json new-schema.json --role serializer
 ```
 
-Check whether a schema change is compatible in both serializer and deserializer directions, with fuzzing enabled to look for a concrete counterexample:
+Check both serializer and deserializer compatibility, and ask for fuzzed counterexamples when static analysis finds a problem:
 
 ```bash
 jsoncompat compat old-schema.json new-schema.json --role both --fuzz 1000 --depth 8
 ```
 
-Check whether an OpenAPI 3.1 contract change is backward-compatible:
+Check an OpenAPI 3.1 contract:
 
 ```bash
 jsoncompat compat old-openapi.json new-openapi.json
 ```
 
-Inspect the synthetic JSON Schema contracts produced from an OpenAPI 3.1 document:
-
-```bash
-jsoncompat lower-openapi openapi.json
-```
-
-Generate example JSON values accepted by a schema:
+Generate example values accepted by a schema:
 
 ```bash
 jsoncompat generate schema.json --count 5 --pretty
 ```
 
-Compare two golden schema files in CI:
+Compare schema golden files in CI:
 
 ```bash
 jsoncompat ci old-golden.json new-golden.json --display table
 ```
 
-Warning-only compatibility gaps are reported in the CI output without turning
-the grade into an `Invalid` failure.
+Inspect the per-operation request and response schemas generated from an OpenAPI document:
 
-Run the guided CLI smoke test:
+```bash
+jsoncompat lower-openapi openapi.json
+```
+
+Run the guided CLI demo:
 
 ```bash
 jsoncompat demo --noninteractive
 ```
 
-## Motivation
+## Choose a role
 
-Imagine you have an API that returns some JSON data, or JSON that you're storing in a database or file. You need to ensure that new code can read old data and that old code can read new data.
+Compatibility is directional:
 
-It's difficult to version JSON schemas in a traditional sense, because they can break in two directions:
+| Role | Question jsoncompat answers |
+| --- | --- |
+| `serializer` | Can old readers still accept every value the new producer may emit? |
+| `deserializer` | Can the new reader still accept every value older producers may have emitted? |
+| `both` | Are both directions safe? |
 
-1. If a schema is used by the party generating the data, or "serializer", then a change to the schema that can break clients using an older version of the schema should be considered "breaking." For example, removing a required property from a serializer schema should be considered a breaking change for a schema with the serializer role.
+That is why making a previously required response field optional can be breaking for a serializer, while making a previously optional stored field required can be breaking for a deserializer.
 
-   More formally, consider a serializer schema $S_A$ which is changed to $S_B$. This change should be considered breaking if there exists some JSON value that is valid against $S_B$ but invalid against $S_A$.
+## OpenAPI contracts
 
-   As a concrete example, if you're a webserver that returns JSON data with the following schema:
+For OpenAPI 3.1 documents, jsoncompat checks:
 
-   ```json
-   {
-     "type": "object",
-     "properties": {
-       "id": { "type": "integer" },
-       "name": { "type": "string" }
-     },
-     "required": ["id", "name"]
-   }
-   ```
+- path, query, header, and cookie parameters;
+- request bodies and media types;
+- response statuses, media types, bodies, and headers;
+- removed operations;
+- supported local `#/components/...` references.
 
-   and you make `name` optional:
+OpenAPI comparisons always check requests in the deserializer direction and responses in the serializer direction. `--role` and `--fuzz` are raw-JSON-Schema-only flags.
 
-   ```json
-   {
-     "type": "object",
-     "properties": {
-       "id": { "type": "integer" },
-       "name": { "type": "string" }
-     },
-     "required": ["id"]
-   }
-   ```
-
-   then you've made a breaking change for any client that is using the old schema.
-
-   We assume that the serializer will not write additional properties that are not in the schema, even if additionalProperties is true. This allows us to consider a change to the schema that adds an optional property of some type not to be a breaking change.
-
-1. If a schema is used by a party receiving the data, or "deserializer", then a change to the schema that might fail to deserialize existing data should be considered "breaking." For example, adding a required property to a deserializer should be considered a breaking change.
-
-   More formally, consider a deserializer schema $S_A$ which is changed to $S_B$. This change should be considered breaking if there exists some JSON value that is valid against $S_A$ but invalid against $S_B$.
-
-   As a concrete example, imagine that you've been writing code that saves JSON data to a database with the following schema:
-
-   ```json
-   {
-     "type": "object",
-     "properties": {
-       "id": { "type": "integer" },
-       "name": { "type": "string" }
-     },
-     "required": ["id"]
-   }
-   ```
-
-   and you make `name` required, attempting to load that data into memory by deserializing it with the following schema:
-
-   ```json
-   {
-     "type": "object",
-     "properties": {
-       "id": { "type": "integer" },
-       "name": { "type": "string" }
-     },
-     "required": ["id", "name"]
-   }
-   ```
-
-   you'll be unable to deserialize any data that doesn't have a `name` property, which is a breaking change for the `deserializer` role.
-
-   If a schema is used by both a serializer and a deserializer, then a change to the schema that can break either should be considered "breaking."
+See [openapi/README.md](openapi/README.md) for the OpenAPI user guide.
 
 ## Rust API
 
-The `jsoncompat` crate has a small document-level API:
+Schema compatibility:
 
 ```rust
 use jsoncompat::{Role, SchemaDocument, check_compat};
@@ -160,12 +116,7 @@ let new = SchemaDocument::from_json(&json!({ "type": ["string", "null"] })).unwr
 let compatible = check_compat(&old, &new, Role::Deserializer).unwrap();
 ```
 
-- `SchemaDocument::from_json(&Value)` builds and canonicalizes a Draft 2020-12 schema document or OpenAPI 3.1 Schema Object.
-- `check_compat(&old, &new, Role::Serializer | Role::Deserializer | Role::Both)` returns whether the schema change is compatible for that role.
-- `CompatibilityError` reports schema construction failures and compatibility features that are intentionally rejected instead of approximated.
-- `json_schema_fuzz::ValueGenerator::generate(&schema, GenerationConfig::new(depth), rng)` is the separate Rust value-generation API.
-
-OpenAPI contract compatibility uses a parallel typed entrypoint:
+OpenAPI compatibility:
 
 ```rust
 use jsoncompat::{OpenApiDocument, check_openapi_compat};
@@ -182,307 +133,25 @@ let report = check_openapi_compat(&old, &new).unwrap();
 assert!(report.is_compatible());
 ```
 
-- `OpenApiDocument::from_json(&Value)` validates the OpenAPI 3.1 document shape and builds a typed contract document.
-- `validate_openapi_compatibility_input(&document)` checks whether that already-valid document can be lowered losslessly into the supported request and response envelope schemas.
-- `check_openapi_compat(&old, &new)` lowers each shared operation into synthetic request and response schemas, then reuses the normal compatibility checker underneath.
-- `jsoncompat lower-openapi openapi.json` prints those validated per-operation request and response schemas as deterministic JSON for inspection or post-processing.
-- `OpenApiCompatibilityReport::issues()` lists operation removals plus request- and response-surface incompatibilities.
-- `explain_compat_failure(&old, &new, role)` returns a best-effort structural explanation for schema incompatibilities; `jsoncompat compat` includes the same style of explanation in CLI output for both raw JSON Schema and OpenAPI inputs when it can. Explanations start with a role-aware schema JSON Pointer such as `new schema #/properties/status`; OpenAPI comparisons use the lowered per-operation request or response schema that the compatibility engine checks.
+The Rust API also exposes structured compatibility errors, OpenAPI issue reports, best-effort incompatibility explanations, and schema-guided value generation.
 
-## Support checklist
+## Warnings and hard errors
 
-Legend:
+jsoncompat distinguishes unsupported-but-valid schema details from inputs it cannot reason about safely:
 
-- ✅: the backcompat checker has an explicit subset rule, or the fuzzer has direct
-  schema-guided candidate construction for that keyword.
-- 🟡: the feature is parsed/evaluated, but the checker is conservative or the fuzzer is
-  heuristic/retry-based for that keyword.
-- ⚪: the keyword is accepted or stripped, but it is not represented in the resolved IR and does
-  not contribute checker/fuzzer semantics.
-- ⛔: schema construction fails with a typed error before the checker/fuzzer runs.
+- raw JSON Schema keywords such as `dependentSchemas`, `dependencies`, `additionalItems`, `contentEncoding`, `contentMediaType`, `contentSchema`, `unevaluatedItems`, and `unevaluatedProperties` produce warnings and the modeled comparison continues;
+- hard compatibility errors remain hard errors when the checker would otherwise risk an unsound verdict, including unsupported reference-scope features such as `$id`, `$anchor`, `$dynamicRef`, and `$dynamicAnchor`, non-integral `number.multipleOf`, and precision-unsafe number bounds;
+- unsupported OpenAPI contract surfaces fail before comparison rather than being silently ignored.
 
-Important global caveats:
+The CLI prints warnings with exact pointers so you can see what was ignored.
 
-- `jsoncompat::check_compat` is a document-level structural subset checker over the resolved AST. It can return
-  false negatives for conservative subset proofs, including string-language cases where a required
-  `pattern` changes rather than staying exactly the same.
-- Compatibility checks reject non-integral `number.multipleOf` constraints with a typed
-  `CompatibilityError` instead of approximating fractional divisor inclusion with `f64`.
-- Runtime validation (`SchemaDocument::is_valid`) always delegates to the `jsonschema`
-  backend compiled from the raw schema document, so non-`f64` numeric schemas/values follow
-  the backend's support limits rather than the compatibility checker's exact numeric model.
-- For serializer compatibility, the checker assumes serializers do not emit undeclared extra
-  properties, even when `additionalProperties: true`.
-- `json_schema_fuzz::ValueGenerator::generate` walks the resolved AST heuristically, then validates every
-  candidate with the raw `jsonschema` backend. If the resolved schema is known to have no valid
-  instances, it returns `GenerateError::Unsatisfiable` deterministically; otherwise, if no valid
-  candidate is found within the retry budget, it returns `GenerateError::ExhaustedAttempts`.
-- Boolean schema documents `true` and `false` are supported directly. `false` has no valid
-  instances, so generation returns `Unsatisfiable`.
-- Unknown extension keywords are preserved only when needed to keep local ref targets addressable;
-  otherwise they are ignored by both the checker and the fuzzer.
+## What to read next
 
-### Scalar schemas
+- [jsoncompat.com](https://jsoncompat.com) for polished documentation and examples
+- [openapi/README.md](openapi/README.md) for OpenAPI-specific usage
+- [developing.md](developing.md) for repository layout, internals, tests, fixtures, benchmarks, and release notes
+- [docs.rs](https://docs.rs/jsoncompat) for the Rust API reference
 
-| Keyword | Compat | Fuzz | Notes |
-| --- | :-: | :-: | --- |
-| `type` | ✅ | ✅ | Supports `null`, `boolean`, `object`, `array`, `string`, `number`, `integer`, and unions of those primitive types. |
-| `enum` | ✅ | ✅ | Numeric equality follows JSON Schema semantics, so `1` and `1.0` are treated as equal. |
-| `const` | ✅ | ✅ | Same semantic numeric equality as `enum`. |
-| `minimum` | ✅ | ✅ | Integer bounds are normalized exactly where possible. Number-bound compatibility rejects endpoints outside the adjacent-integer-safe `f64` range `[-9007199254740991, 9007199254740991]` instead of risking rounded subset proofs. |
-| `maximum` | ✅ | ✅ | Integer bounds are normalized exactly where possible. Number-bound compatibility rejects endpoints outside the adjacent-integer-safe `f64` range `[-9007199254740991, 9007199254740991]` instead of risking rounded subset proofs. |
-| `exclusiveMinimum` | ✅ | 🟡 | Integer exclusives are canonicalized into inclusive integer bounds; number-bound compatibility uses the same exact-range guard, and number generation may rely on validator retries around open lower bounds. |
-| `exclusiveMaximum` | ✅ | 🟡 | Integer exclusives are canonicalized into inclusive integer bounds; number-bound compatibility uses the same exact-range guard, and number generation may rely on validator retries around open upper bounds. |
-| `multipleOf` | 🟡 | ✅ | Exact integer divisibility is supported for `integer` schemas and integer-valued `number.multipleOf`. Compatibility checks reject non-integral `number.multipleOf` constraints instead of approximating fractional divisor inclusion; runtime validation and generation still accept those schemas. |
-| `minLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
-| `maxLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
-| `pattern` | 🟡 | 🟡 | `SchemaNode::accepts_value()` enforces regexes for finite-value checks using a cached matcher per pattern. For open string subset proofs, `check_compat` only treats a required comparison-target pattern as preserved when the subset keeps that exact same pattern; different required patterns fail conservatively instead of being approximated. Unsupported ECMAScript regex constructs are preserved as source text but treated as non-matching by the internal evaluator. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
-| `format` | ⚪ | 🟡 | Draft 2020-12 and the OpenAPI 3.1 base dialect treat the default `format` vocabulary as annotation-only, so `check_compat` does not turn format-only edits into compatibility breaks. The fuzzer only synthesizes `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`, `hostname`, and `idn-hostname`; unknown formats fall back to generic strings. |
-| `contentEncoding` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword, then compares the modeled portion of the schema. |
-| `contentMediaType` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword, then compares the modeled portion of the schema. |
-| `contentSchema` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword, then compares the modeled portion of the schema. |
+## License
 
-### Object schemas
-
-| Keyword | Compat | Fuzz | Notes |
-| --- | :-: | :-: | --- |
-| `properties` | ✅ | ✅ | Property schemas are compared recursively and generated directly. |
-| `required` | ✅ | ✅ | Missing required properties are synthesized before generation returns a candidate. |
-| `additionalProperties` | ✅ | ✅ | Checker support is subject to the serializer assumption above; the fuzzer generates additional keys only when this schema is not `false`. |
-| `patternProperties` | 🟡 | 🟡 | Exact same regex keys are compared structurally, and property values are checked against every matching pattern schema. If the superset has no `patternProperties`, subset patterns fall back to `additionalProperties`; otherwise the checker does not prove regex-language inclusion between different patterns. The fuzzer does not synthesize property names from regexes. |
-| `propertyNames` | 🟡 | 🟡 | Checker support depends on subset reasoning for the property-name schema itself, so regex/format caveats still apply. The fuzzer can generate keys from string/enum schemas and otherwise falls back to random names plus acceptance checks. |
-| `minProperties` | ✅ | ✅ | Canonicalization raises `minProperties` to at least the number of required keys. |
-| `maxProperties` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
-| `dependentRequired` | ✅ | 🟡 | The checker accounts for trigger keys admitted by `properties`, `patternProperties`, or `additionalProperties`, including direct and transitive dependency chains. The fuzzer does not proactively synthesize dependencies, but invalid candidates are rejected by the final validator pass. |
-| `dependentSchemas` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword; static compat does not approximate its conditional object semantics. |
-| `unevaluatedProperties` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword; static compat does not approximate evaluated-location bookkeeping. |
-| `dependencies` | ⚪ | ⚪ | Legacy keyword accepted by the parser; `jsoncompat compat` emits a precise warning because the modeled verdict ignores that contract-relevant legacy constraint. Use `dependentRequired` / `dependentSchemas` for Draft 2020-12 semantics. |
-
-### Array schemas
-
-| Keyword | Compat | Fuzz | Notes |
-| --- | :-: | :-: | --- |
-| `items` | ✅ | ✅ | Schema-form `items` is compared recursively and used for tail-item generation. Tuple arrays must use Draft 2020-12 `prefixItems`; legacy tuple-form `items: [...]` is rejected. |
-| `prefixItems` | ✅ | ✅ | Compared positionally and generated positionally. |
-| `additionalItems` | ⚪ | ⚪ | Legacy keyword accepted by the parser; `jsoncompat compat` emits a precise warning because the modeled verdict ignores that contract-relevant legacy tuple constraint. |
-| `minItems` | ✅ | ✅ | Defaults to `minContains` (or `1`) when `contains` is present, otherwise `0`. |
-| `maxItems` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
-| `contains` | ✅ | 🟡 | Checker reasoning handles item-match count constraints structurally. The fuzzer tries to force or avoid matching items, but this is heuristic and may rely on retries. |
-| `minContains` | ✅ | 🟡 | Participates in structural count reasoning for `contains`; the fuzzer uses best-effort witness construction plus validator retries. |
-| `maxContains` | ✅ | 🟡 | Participates in structural count reasoning for `contains`; the fuzzer uses best-effort witness avoidance plus validator retries. |
-| `uniqueItems` | ✅ | 🟡 | The checker handles the common sound cases; the fuzzer retries and then uses a synthetic fallback object for unconstrained item schemas if duplicates persist. |
-| `unevaluatedItems` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword; static compat does not approximate evaluated-location bookkeeping. |
-
-### Applicators and conditionals
-
-| Keyword | Compat | Fuzz | Notes |
-| --- | :-: | :-: | --- |
-| `allOf` | 🟡 | 🟡 | Canonicalization simplifies trivial boolean branches. The checker can prove subset-side intersections when any one conjunct alone is already contained by the target, and it proves superset-side intersections branch-by-branch; it can still miss proofs that require combining multiple subset conjuncts simultaneously. The fuzzer merges object branches heuristically and otherwise picks one non-trivial branch. |
-| `anyOf` | 🟡 | 🟡 | The checker requires every `sub` branch to fit `sup`, and for `sup anyOf` it looks for one branch containing all of `sub`; that is conservative and can miss valid disjunctive proofs. The fuzzer samples one branch and retries. |
-| `oneOf` | 🟡 | 🟡 | Canonicalization rewrites provably disjoint `oneOf` branches to `anyOf`. Outside that case, checker reasoning is conservative and does not symbolically prove exact-one exclusivity, and the fuzzer uses retry-based witness counting. |
-| `not` | 🟡 | 🟡 | The checker only handles shallow boolean/`Any` cases symbolically; other `not` proofs fall back to conservative `false`. The fuzzer generates type-mismatch and fixed candidate witnesses, then retries against the full schema. |
-| `if` | 🟡 | 🟡 | `SchemaNode::accepts_value()` evaluates the condition and the fuzzer samples branches, but the subset checker has no dedicated symbolic rule for conditional implication beyond exact-node equality and finite `const`/`enum` probes. |
-| `then` | 🟡 | 🟡 | Stored and evaluated only as part of `if` / `then` / `else`; checker reasoning inherits the same conditional caveat as `if`. |
-| `else` | 🟡 | 🟡 | Stored and evaluated only as part of `if` / `then` / `else`; checker reasoning inherits the same conditional caveat as `if`. |
-
-### Document shape, references, and metadata
-
-| Keyword | Compat | Fuzz | Notes |
-| --- | :-: | :-: | --- |
-| `$ref` | ✅ | 🟡 | Same-document refs to `"#"` and `"#/..."` are supported, including recursive graphs. Pure alias cycles and non-local refs are rejected with typed resolver errors. Generation is depth-limited. |
-| `$anchor` | ⛔ | ⛔ | Plain-name fragment anchors are rejected; `jsoncompat compat` reports the exact unsupported keyword pointer, while generation rejects them during schema resolution. |
-| `$dynamicRef` | ⛔ | ⛔ | Dynamic refs are rejected; `jsoncompat compat` reports the exact unsupported keyword pointer, while generation rejects them during schema resolution. |
-| `$dynamicAnchor` | ⛔ | ⛔ | Dynamic anchors are rejected; `jsoncompat compat` reports the exact unsupported keyword pointer, while generation rejects them during schema resolution. |
-| `$id` | ⛔ | ⛔ | Resource-scope identifiers are rejected because reference resolution is currently same-document only; `jsoncompat compat` reports the exact unsupported keyword pointer. |
-| `$defs` | ✅ | 🟡 | Acts as a local ref target container; nested schemas are canonicalized and resolved, but `$defs` is not a semantic node by itself. |
-| `definitions` | ✅ | 🟡 | Legacy ref target container with the same caveat as `$defs`. |
-| `title` | ⚪ | ⚪ | Preserved as metadata in canonical JSON, but not used by checker/fuzzer semantics. |
-| `$comment` | ⚪ | ⚪ | Stripped or preserved only as metadata; no compatibility or generation semantics. |
-| `description` | ⚪ | ⚪ | Stripped or preserved only as metadata; no compatibility or generation semantics. |
-| `default` | ⚪ | ⚪ | Stripped or preserved only as metadata; default values are not synthesized or used for compatibility. |
-| `examples` | ⚪ | ⚪ | Stripped or preserved only as metadata; examples do not guide fuzzing. |
-| `deprecated` | ⚪ | ⚪ | Annotation only; ignored by checker and fuzzer semantics. |
-| `readOnly` | ⚪ | ⚪ | Annotation only; ignored by checker and fuzzer semantics. |
-| `writeOnly` | ⚪ | ⚪ | Annotation only; ignored by checker and fuzzer semantics. |
-| `$vocabulary` | ⚪ | ⚪ | Annotation only; no dialect negotiation semantics are modeled. |
-
-## Rust workspace architecture
-
-The Rust code is split into five crates and one CLI binary. The website under `web/` is a separate frontend and is not part of the compatibility engine.
-
-| Path | Package | Responsibility |
-| --- | --- | --- |
-| `schema/` | `json_schema_ast` | Draft 2020-12 dialect checks, schema canonicalization, AST construction, local `$ref` resolution, and direct validator compilation via `jsonschema` |
-| `src/` | `jsoncompat` | Backward-compatibility checking over resolved ASTs, plus the `jsoncompat` CLI in `src/bin/jsoncompat.rs` |
-| `fuzz/` | `json_schema_fuzz` | Schema-guided JSON instance generation for fuzz tests and example values |
-| `python/` | `jsoncompat_py` | PyO3 bindings that expose `check_compat`, `generate_value`, and role constants |
-| `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings that expose `check_compat` and `generate_value` to JavaScript |
-
-The primary schema APIs are:
-
-- `json_schema_ast::compile(&raw_schema)`, which compiles the original schema document directly with the `jsonschema` validator backend. Before compilation, this crate rejects any `$schema` declaration other than Draft 2020-12 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing `#`) or the OpenAPI 3.1 Schema Object dialect (`https://spec.openapis.org/oas/3.1/dialect/base`).
-- `json_schema_ast::SchemaDocument::from_json(&raw_schema)` (alias: `SchemaDocument::from_json`), which eagerly stores the original raw schema JSON, eagerly canonicalizes the schema document, and eagerly compiles the raw validator when no resolver-owned reference features are present. Ref-bearing schemas defer raw-validator compilation until validation callers such as `is_valid()`, `validate_source_schema()`, compatibility checks, or the CLI have preserved the frontend's more precise typed reference errors first:
-  - `SchemaDocument::is_valid(&value) -> Result<bool, SchemaBuildError>` lazily compiles a validator from the original raw schema document.
-  - `SchemaDocument::canonical_schema_json() -> Result<&Value, SchemaBuildError>` returns the cached canonicalized schema document as JSON so humans can inspect the rewrite directly.
-- `json_schema_fuzz::ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng) -> Result<Value, GenerateError>`, which is the Rust generation API.
-- `jsoncompat::OpenApiDocument::from_json(&raw_openapi)`, `jsoncompat::validate_openapi_compatibility_input(&document)`, and `jsoncompat::check_openapi_compat(&old, &new)`, which first validate OpenAPI 3.1 document shape, then validate lowerability into request/response envelope schemas, and finally invoke the same subset checker over those lowered contracts.
-
-The resolved IR extension API is public because `jsoncompat` and
-`json_schema_fuzz` are separate crates. `SchemaDocument::root()` lazily resolves
-local refs from the canonicalized JSON and exposes the immutable graph used by
-compatibility analysis and generation. Each `SchemaNode` has an opaque `NodeId`
-for cycle-safe identity. `SchemaNodeKind` only contains post-resolution semantic
-variants; parser-only `$ref` and declaration metadata variants are private
-implementation details. Scalar/object/array constraints are represented with
-normalized typed domains (`IntegerBounds`, `NumberBounds`, `CountRange`,
-`ContainsConstraint`, `PatternConstraint`) instead of loose keyword pairs, and
-regex support is explicit via `PatternSupport`.
-
-At a high level, the runtime flow is:
-
-```mermaid
-flowchart TD
-    raw["Raw JSON Schema document"]
-    compile_raw["json_schema_ast::compile(raw)\nlazily compile raw validator"]
-    validate_raw["SchemaDocument::is_valid(value)\nvalidate against raw schema"]
-    canonicalize["schema/src/canonicalize.rs\neagerly canonicalize syntax, validate keyword shapes,\nand fill implicit constraints"]
-    canonical_json["SchemaDocument::canonical_schema_json()\ndebug canonical JSON output"]
-    compile_canonical["compile(canonicalized)\nparity/debug validator"]
-    validate_canonical["compiled canonical validator\nparity/debug validation"]
-    parse["schema/src/ast.rs\nparse canonical JSON into a private arena-backed graph"]
-    resolve["schema/src/ast.rs\nresolve local # / #/... refs by node ID and freeze to SchemaNodeKind"]
-    compat["src/subset.rs + src/subset/*.rs\njsoncompat::check_compat(old_doc, new_doc, role)"]
-    fuzz["fuzz/src/lib.rs\njson_schema_fuzz::ValueGenerator::generate(&SchemaDocument, ...)"]
-
-    raw --> compile_raw --> validate_raw
-    raw --> canonicalize --> parse --> resolve
-    canonicalize --> canonical_json
-    canonicalize --> compile_canonical --> validate_canonical
-    resolve --> compat
-    resolve --> fuzz
-```
-
-### What each crate owns
-
-- `json_schema_ast` is the schema frontend and resolved IR crate. `schema/src/ast.rs` stores the raw input schema immediately and canonicalizes it once inside `SchemaDocument::from_json()` so keyword-shape validation happens at schema construction without maintaining a second validator path. Raw backend validation is also eager for schemas without resolver-owned reference features; ref-bearing schemas defer that backend compile until root resolution has had a chance to emit the frontend's more precise typed reference errors. The resolved graph is still built lazily by parsing that cached canonical JSON into a private arena-backed graph, resolving local recursive references, normalizing applicators, and freezing it into `SchemaNodeKind`. Unsupported or non-productive refs fail with typed resolver errors. `SchemaDocument::is_valid()` is intentionally backed by the validator compiled from the original raw schema. `SchemaNode::accepts_value()` is the low-level evaluator for canonicalized AST subgraphs used by compatibility/fuzzing heuristics.
-- `jsoncompat` is the static compatibility checker. `src/lib.rs` defines `Role`, document-level `check_compat`, and the OpenAPI compatibility reporting layer. `src/subset.rs` plus `src/subset/{scalar,object,array}.rs` implement the actual inclusion relation (`sub ⊆ sup`) over `SchemaNode`. The checker uses `SchemaNode::accepts_value()` for finite-value membership checks and keeps a cycle guard for recursive subset proofs.
-- [`jsoncompat_openapi`](openapi/README.md) is the OpenAPI frontend crate. It validates the supported OpenAPI 3.1 document surface, rejects unsupported or malformed contract features before comparison, and lowers operations into synthetic request/response JSON Schemas that preserve parameters, request bodies, status/media variants, response headers, local component refs, and operation removal semantics for the root checker.
-- `json_schema_fuzz` is the value-generation engine. Its public value-generation API is `ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng)` and it only returns values accepted by `SchemaDocument::is_valid()`; if the resolved schema is known to be empty, generation returns a typed `GenerateError::Unsatisfiable`, and if the internal candidate generator cannot find a value within its retry budget, generation returns a typed `GenerateError::ExhaustedAttempts`. Internally it walks the canonicalized `SchemaNode` graph and uses `SchemaNode::accepts_value()` only as a pruning heuristic for recursive subgraphs.
-- `jsoncompat_py` and `jsoncompat_wasm` are thin adapters. They parse JSON strings, call the Rust core crates, and map Rust errors/results into Python or JavaScript types.
-
-### Test strategy
-
-- `tests/backcompat.rs` checks expected serializer/deserializer compatibility outcomes for hand-authored old/new schema pairs, then fuzzes each direction to look for concrete counterexamples.
-- `tests/fuzz.rs` runs the JSON-Schema-Test-Suite fixture corpus through `SchemaDocument::from_json`, asks `json_schema_fuzz::ValueGenerator` for raw-valid examples, compiles `SchemaDocument::canonical_schema_json()` to assert canonicalization parity, and additionally checks `SchemaNode::accepts_value()` against the canonicalized validator on schemas that stay within the internal evaluator's supported subset. Fixtures that rely on unsupported reference-resource features are skipped when schema build returns a typed resolver error, and known generation gaps are tracked by explicit `GenerateError::ExhaustedAttempts` whitelist entries.
-- `tests/openapi_fixtures.rs` runs the OpenAPI contract regression corpus under `tests/fixtures/openapi_compat`, including focused `anyOf` request/response evolution cases where shallow diffing can miss serializer- or deserializer-side incompatibilities.
-- `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` test canonicalization and AST round-tripping directly.
-
-## Debugging canonicalization
-
-To inspect the canonicalized schema document that backs compatibility checks and generation, compare the raw schema you passed to `SchemaDocument::from_json()` with `SchemaDocument::canonical_schema_json()`, and compile the canonical JSON with `json_schema_ast::compile()` if you need validator-level parity checks on representative instances. Canonicalization is an internal library facility, not a `jsoncompat` CLI subcommand.
-
-### OpenAPI compatibility
-
-`jsoncompat compat old-openapi.json new-openapi.json` auto-detects structurally
-OpenAPI-like 3.1 JSON documents, validates them as OpenAPI, and compares:
-
-- path, query, header, and cookie parameters, including requiredness, schema/content shape, and serialization controls (`style`, `explode`, `allowReserved`, and `allowEmptyValue`);
-- request bodies, their requiredness, media types, and schemas;
-- response status/media/body variants and response headers, including header requiredness;
-- removed operations;
-- local `#/components/...` references for parameters, request bodies, responses, headers, and schema refs under `#/components/schemas/...`.
-
-`jsoncompat lower-openapi openapi.json` runs the same OpenAPI lowerability and compatibility-readiness checks, then prints the validated per-operation request and response JSON Schemas instead of comparing two documents.
-
-The dedicated [`jsoncompat_openapi`](openapi/README.md) crate owns this document-validation and lowering boundary.
-Its document-validation step accepts common OpenAPI document, info, path-item, operation, server, security, tag, security-scheme,
-parameter, request-body, response-header, callback, response-link, media-type, encoding, and example metadata so real 3.1 documents can still be represented,
-while keeping those non-value-language fields outside the compatibility verdict. That first step also rejects malformed contract containers such as non-object path items, webhook entries, invalid inline parameter/request/response/header/media contract shapes, invalid content media-type keys, location-invalid parameter serialization metadata, invalid response-header-only field combinations, non-concrete or multi-media parameter/header `content`, `encoding` outside request-body `multipart/*` or `application/x-www-form-urlencoded` media types, encoding entries that miss a directly declared inline media-schema property, bad example/link/callback/encoding objects, operation request/response holders, duplicate operation identifiers across path/webhook/callback/component-path-item operations, undeclared root/path/webhook/callback/component-path-item security requirement names, and invalid component collection names or entries before lowering begins.
-Info/contact email metadata is validated as an email address during that first step.
-OpenAPI 3.1 Reference Object `$ref` URI syntax, `summary` / `description` metadata, plus any other sibling properties the spec says consumers should ignore, are validated without changing the lowered contract.
-OpenAPI URL-valued metadata is validated as URL references during that document-validation step, including balanced server URL templates. URI-valued metadata such as `jsonSchemaDialect`, example `externalValue`, and link `operationRef` is likewise checked before lowering; local `operationRef` fragments must also resolve to an in-document Operation Object. XML namespaces must be absolute URIs, and `xml.wrapped` is rejected when an explicit sibling schema `type` excludes `array`.
-The later compatibility-readiness step finishes validation that depends on supported local references, including encoding entries that miss a directly declared property on a supported referenced media schema, and then rejects valid OpenAPI inputs that cannot yet be lowered without approximation:
-`webhooks`, callbacks, response links, media-type `encoding`,
-remote refs, unsupported document-level `jsonSchemaDialect` values during lowering, and OpenAPI schemas
-that use `additionalItems`, `contentEncoding`, `contentMediaType`, `contentSchema`, `dependencies`,
-`dependentSchemas`, `unevaluatedItems`, or `unevaluatedProperties` before those compatibility
-semantics are modeled by the checker.
-Unsupported OpenAPI versions remain document-validation errors, not lowering errors.
-Valid OpenAPI `discriminator` objects, including the composite-keyword adjacency check, plus `readOnly` / `writeOnly` annotations are shape-checked and stay outside the
-value-language verdict.
-Supported document-level dialects are applied to lowered request and response contract schemas.
-Concrete media types and OpenAPI media-type ranges are compared directionally, more-specific media entries shadow broader ranges during lowering, and media-type parameters are accepted and normalized away for compatibility unless that normalization would collapse two content keys onto the same selector, in which case the OpenAPI input is rejected before comparison.
-It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON-first input model.
-`--role` and `--fuzz` remain raw-JSON-Schema-only flags; OpenAPI comparisons always check request compatibility in the deserializer direction and response compatibility in the serializer direction together.
-CLI flows fail invalid JSON Schema or OpenAPI inputs before attempting generation, grading, or compatibility reporting.
-For compatibility-only gaps, the CLI distinguishes invalid input from valid-but-unmodeled contract surfaces: raw JSON
-Schema warnings name the unmodeled keyword and schema pointer, while OpenAPI errors name the unsupported surface and
-OpenAPI pointer. The CLI keeps those diagnostics in three predictable families:
-
-- raw JSON Schema warnings start with `warning: <path>:`;
-- invalid OpenAPI document-shape failures start with `building OpenAPI document for <path>`;
-- valid-shape OpenAPI documents that use an unsupported lowering or compatibility surface start with
-  `validating OpenAPI compatibility input for <path>`.
-
-Warnings still allow the modeled JSON Schema verdict to run; OpenAPI readiness failures remain hard errors before any
-compatibility verdict is attempted.
-For example:
-
-- `warning: old.json: JSON Schema compatibility checks do not model keyword 'dependentSchemas' at '#/dependentSchemas'; comparison ignores that keyword`
-- `validating OpenAPI compatibility input for old.json: OpenAPI compatibility checks do not support webhooks at '#/webhooks' yet`
-- `validating OpenAPI compatibility input for old.json: OpenAPI compatibility checks do not support JSON Schema keyword 'dependentSchemas' at '#/paths/~1pets/post/requestBody/content/application~1json/schema/dependentSchemas' yet`
-
-Within the shared structural surface, jsoncompat treats serializer expansion directionally:
-response media-type or status additions expand what a server may emit and are treated as risky, while
-removals of response media types, statuses, or optional response headers are serializer-compatible.
-
-## Development
-
-Requirements:
-
-Run [bootstrap.sh](bootstrap.sh) to install the necessary dependencies.
-
-Run tests:
-
-```bash
-just check
-```
-
-Run the end-to-end CLI demo/smoke test:
-
-```bash
-cargo run --bin jsoncompat -- demo
-```
-
-By default the demo pauses before each step. For CI/non-interactive runs, pass:
-
-```bash
-cargo run --bin jsoncompat -- demo --noninteractive
-```
-
-Run the performance benchmark harnesses:
-
-```bash
-just bench
-```
-
-The schema operation benchmarks use a fixed handpicked corpus under
-[benches/fixtures](benches/fixtures) so broad fuzz fixture changes do not move
-the benchmark baseline.
-
-For a fast smoke check of the benchmark binary:
-
-```bash
-just bench-check
-```
-
-See the [Justfile](Justfile) for more commands
-
-## Releasing
-
-`just release` will dry-run the release process for a patch release.
-
-Right now, releases to PyPI and npm are done in CI via manual dispatch of the `CI` workflow
-on a tag. Releases to cargo are done manually for now.
-
-Merging to main will trigger a release of the website.
+MIT License. See [LICENSE](LICENSE).
