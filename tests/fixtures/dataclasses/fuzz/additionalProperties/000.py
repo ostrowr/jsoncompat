@@ -17,7 +17,7 @@ class GeneratedSchemaBranch2Foo(dc.DataclassRootModel):
     root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch2(dc.DataclassModel):
+class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -33,6 +33,7 @@ class GeneratedSchemaBranch2(dc.DataclassModel):
 }"""
     bar: dc.Omittable[GeneratedSchemaBranch2Bar] = dc.field("bar", omittable=True)
     foo: dc.Omittable[GeneratedSchemaBranch2Foo] = dc.field("foo", omittable=True)
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):

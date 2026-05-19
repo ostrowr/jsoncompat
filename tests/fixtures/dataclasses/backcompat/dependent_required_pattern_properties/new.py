@@ -7,7 +7,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(dc.DataclassModel):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "additionalProperties": false,
   "patternProperties": {
@@ -15,6 +15,6 @@ class GeneratedSchema(dc.DataclassModel):
   },
   "type": "object"
 }"""
-    pass
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

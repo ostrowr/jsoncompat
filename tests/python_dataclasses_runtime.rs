@@ -273,6 +273,52 @@ for factory in (
 }
 
 #[test]
+fn generated_dataclasses_preserve_pattern_properties_even_when_additional_properties_are_closed() {
+    let source = generate_dataclass_models(&json!({
+        "title": "LabeledRecord",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "patternProperties": {
+            "^x-": {"type": "integer"},
+        },
+        "required": ["name"],
+        "additionalProperties": false,
+    }))
+    .expect("generate dataclasses from patternProperties schema");
+    let module_path = write_temp_module("pattern_properties", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("pattern_property_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+record = module.LabeledRecord.from_json({"name": "Ada", "x-rank": 7})
+assert record.__jsoncompat_extra__ == {"x-rank": 7}
+assert record.to_json() == {"name": "Ada", "x-rank": 7}
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass patternProperties test");
+    assert!(
+        output.status.success(),
+        "generated dataclass patternProperties test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn python_api_exposes_reusable_schema_tools_and_deprecates_one_shot_helpers() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(

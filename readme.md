@@ -116,8 +116,9 @@ carry the original input schema in `__jsoncompat_schema__`, cache a
   deserialization;
 - `to_json(...)` / `to_json_string(...)` serializers that validate emitted
   JSON against the attached schema;
-- `__jsoncompat_extra__` for unknown object properties when
-  `additionalProperties` is allowed;
+- `__jsoncompat_extra__` for schema-admitted object properties that are not
+  declared under `properties`, including `additionalProperties` and
+  `patternProperties`;
 - `JSONCOMPAT_MISSING` for omitted optional fields so absent and explicit
   `null` stay distinguishable.
 

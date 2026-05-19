@@ -943,20 +943,70 @@ fn parse_extra_annotation(
     pointer: &str,
     scope_name: &str,
 ) -> Result<Option<String>, DataclassError> {
-    let Some(additional_properties) = obj.get("additionalProperties") else {
-        return Ok(Some(typing_symbol("Any")));
-    };
+    let mut annotations = parse_pattern_property_annotations(builder, obj, pointer, scope_name)?;
 
-    match additional_properties {
-        Value::Bool(true) => Ok(Some(typing_symbol("Any"))),
-        Value::Bool(false) => Ok(None),
-        schema => Ok(Some(builder.inline_annotation(
-            schema,
-            &join_pointer(pointer, "additionalProperties"),
-            scope_name,
-            "ExtraValue",
-        )?)),
+    match obj.get("additionalProperties") {
+        None | Some(Value::Bool(true)) => Ok(Some(typing_symbol("Any"))),
+        Some(Value::Bool(false)) => Ok(merge_extra_annotations(annotations)),
+        Some(schema) => {
+            annotations.push(builder.inline_annotation(
+                schema,
+                &join_pointer(pointer, "additionalProperties"),
+                scope_name,
+                "ExtraValue",
+            )?);
+            Ok(merge_extra_annotations(annotations))
+        }
     }
+}
+
+fn parse_pattern_property_annotations(
+    builder: &mut DataclassModuleBuilder,
+    obj: &Map<String, Value>,
+    pointer: &str,
+    scope_name: &str,
+) -> Result<Vec<String>, DataclassError> {
+    let Some(pattern_properties) = obj.get("patternProperties") else {
+        return Ok(Vec::new());
+    };
+    let pattern_properties = pattern_properties.as_object().ok_or_else(|| {
+        invalid_schema(
+            join_pointer(pointer, "patternProperties"),
+            "patternProperties must be an object",
+        )
+    })?;
+
+    let mut annotations = Vec::new();
+    for (pattern, schema) in pattern_properties {
+        match schema {
+            Value::Bool(false) => {}
+            Value::Bool(true) => annotations.push(typing_symbol("Any")),
+            _ => annotations.push(builder.inline_annotation(
+                schema,
+                &join_pointer(
+                    &join_pointer(pointer, "patternProperties"),
+                    &escape_pointer_token(pattern),
+                ),
+                scope_name,
+                "PatternPropertyValue",
+            )?),
+        }
+    }
+    Ok(annotations)
+}
+
+fn merge_extra_annotations(annotations: Vec<String>) -> Option<String> {
+    if annotations.is_empty() {
+        return None;
+    }
+    let any_annotation = typing_symbol("Any");
+    if annotations
+        .iter()
+        .any(|annotation| annotation == &any_annotation)
+    {
+        return Some(any_annotation);
+    }
+    Some(union_annotation(&annotations))
 }
 
 fn required_property_fallback_annotation(
@@ -1171,6 +1221,27 @@ fn collect_schema_refs(
             refs,
             used_names,
         )?;
+    }
+
+    if let Some(pattern_properties) = obj.get("patternProperties") {
+        let pattern_properties = pattern_properties.as_object().ok_or_else(|| {
+            invalid_schema(
+                join_pointer(pointer, "patternProperties"),
+                "patternProperties must be an object",
+            )
+        })?;
+        for (pattern, schema) in pattern_properties {
+            collect_schema_refs(
+                schema,
+                &join_pointer(
+                    &join_pointer(pointer, "patternProperties"),
+                    &escape_pointer_token(pattern),
+                ),
+                scope_name,
+                refs,
+                used_names,
+            )?;
+        }
     }
 
     for keyword in ["oneOf", "anyOf"] {
@@ -1972,5 +2043,22 @@ mod tests {
 
         assert!(source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
         assert!(!source.contains("PrefixItem"));
+    }
+
+    #[test]
+    fn pattern_properties_with_closed_additional_properties_keep_typed_extras() {
+        let schema = json!({
+            "title": "labels",
+            "type": "object",
+            "patternProperties": {
+                "^x-": { "type": "integer" }
+            },
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[int]):"));
+        assert!(source.contains("__jsoncompat_extra__: dict[str, int] = dc.extra_field()"));
     }
 }

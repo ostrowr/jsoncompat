@@ -146,6 +146,75 @@ InventoryItem(
     Ok(())
 }
 
+#[test]
+fn patterned_additional_properties_keep_precise_extra_types() -> Result<(), Box<dyn Error>> {
+    let schema = json!({
+        "title": "LabeledRecord",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "patternProperties": {
+            "^x-": {"type": "integer"},
+        },
+        "required": ["name"],
+        "additionalProperties": false,
+    });
+    let source = generate_dataclass_models(&schema)?;
+    let work_dir = write_typecheck_files(
+        &source,
+        r#"
+# pyright: strict
+
+from typing import assert_type
+
+from generated_models import LabeledRecord
+from jsoncompat.codegen.dataclasses import JsoncompatMissingType
+
+
+record = LabeledRecord.from_json({"name": "Ada", "x-rank": 7})
+assert_type(record.__jsoncompat_extra__, dict[str, int])
+assert_type(
+    record.get_additional_property("x-rank"),
+    int | JsoncompatMissingType,
+)
+
+constructed = LabeledRecord(name="Ada", __jsoncompat_extra__={"x-rank": 7})
+assert_type(constructed, LabeledRecord)
+"#,
+        r#"
+# pyright: strict
+
+from generated_models import LabeledRecord
+
+
+LabeledRecord(name="Ada", __jsoncompat_extra__={"x-rank": "high"})
+"#,
+    )?;
+
+    let valid_output = run_pyright(&work_dir, "valid_usage.py")?;
+    assert!(
+        valid_output.status.success(),
+        "pyright rejected valid patterned extras usage:\n{}\n{}",
+        String::from_utf8_lossy(&valid_output.stdout),
+        String::from_utf8_lossy(&valid_output.stderr),
+    );
+
+    let invalid_output = run_pyright(&work_dir, "invalid_usage.py")?;
+    assert!(
+        !invalid_output.status.success(),
+        "pyright accepted invalid patterned extras usage"
+    );
+    let invalid_stdout = String::from_utf8_lossy(&invalid_output.stdout);
+    assert!(
+        invalid_stdout.contains("__jsoncompat_extra__")
+            && invalid_stdout.contains("dict[str, int]"),
+        "pyright failure did not report the patterned extra value mismatch:\n{invalid_stdout}",
+    );
+
+    Ok(())
+}
+
 fn write_typecheck_files(
     source: &str,
     valid_usage: &str,

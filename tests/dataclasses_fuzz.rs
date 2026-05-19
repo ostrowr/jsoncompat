@@ -195,6 +195,15 @@ for raw_line in sys.stdin:
             print("accepted", flush=True)
             continue
         emitted = model.to_json()
+        candidate_json = json.dumps(candidate, separators=(",", ":"), sort_keys=True)
+        emitted_json = json.dumps(emitted, separators=(",", ":"), sort_keys=True)
+        if candidate_json != emitted_json:
+            print(
+                "err\tgenerated dataclass changed parsed JSON during round-trip: "
+                + f"{candidate_json} -> {emitted_json}",
+                flush=True,
+            )
+            continue
     except Exception as error:
         if mode == "reject_invalid":
             print("rejected", flush=True)
