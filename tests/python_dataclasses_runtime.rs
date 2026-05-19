@@ -451,7 +451,7 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-payload = module.CollisionV1(name=module.CollisionV1V1(root="Ada"))
+payload = module.CollisionV1(name="Ada")
 assert payload.to_json() == {"name": "Ada"}
 
 writer = module.CollisionWriter(version=1, data=payload)

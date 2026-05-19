@@ -40,7 +40,7 @@ class GeneratedSchemaB(dc.DataclassRootModel):
   },
   "$ref": "#/$defs/a"
 }"""
-    root: GeneratedSchemaA = dc.root_field()
+    root: int = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaC(dc.DataclassRootModel):

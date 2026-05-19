@@ -28,9 +28,17 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "warehouseCode": {
+                "$ref": "#/$defs/warehouseCode",
+            },
         },
         "required": ["sku", "metadata"],
         "additionalProperties": {"type": "number"},
+        "$defs": {
+            "warehouseCode": {
+                "type": "string",
+            }
+        }
     });
     let source = generate_dataclass_models(&schema)?;
     let work_dir = write_typecheck_files(
@@ -59,6 +67,7 @@ assert_type(item.quantity, Omittable[int])
 assert_type(item.metadata, InventoryItemMetadata)
 assert_type(item.metadata.warehouse, str)
 assert_type(item.tags, Omittable[list[str]])
+assert_type(item.warehouseCode, Omittable[str])
 assert_type(item.__jsoncompat_extra__, dict[str, float])
 assert_type(
     item.get_additional_property("priority"),
@@ -70,6 +79,7 @@ item_from_constructor = InventoryItem(
     metadata=InventoryItemMetadata(warehouse="east"),
     quantity=JSONCOMPAT_MISSING,
     tags=["dry"],
+    warehouseCode="WH-123",
     __jsoncompat_extra__={"priority": 2.5},
 )
 assert_type(item_from_constructor, InventoryItem)

@@ -68,6 +68,7 @@ struct DataclassModuleBuilder {
     classes: Vec<ClassSpec>,
     class_names: BTreeMap<String, String>,
     named_refs: BTreeMap<String, String>,
+    codegen_root: Value,
     validation_root: Value,
     validation_root_defs: Option<Map<String, Value>>,
     inline_names: BTreeMap<String, String>,
@@ -75,7 +76,11 @@ struct DataclassModuleBuilder {
 }
 
 impl DataclassModuleBuilder {
-    fn new(named_refs: BTreeMap<String, String>, validation_root: Value) -> Self {
+    fn new(
+        named_refs: BTreeMap<String, String>,
+        codegen_root: Value,
+        validation_root: Value,
+    ) -> Self {
         let class_names = [
             DATACLASSES_RUNTIME_MODULE,
             DATACLASS_ADDITIONAL_MODEL_CLASS,
@@ -94,6 +99,7 @@ impl DataclassModuleBuilder {
             classes: Vec::new(),
             class_names,
             named_refs,
+            codegen_root,
             validation_root_defs: validation_root
                 .as_object()
                 .and_then(|obj| obj.get("$defs"))
@@ -298,7 +304,7 @@ impl DataclassModuleBuilder {
             let ref_value = ref_value.as_str().ok_or_else(|| {
                 invalid_schema(join_pointer(pointer, "$ref"), "$ref must be a string")
             })?;
-            return resolve_local_ref_name(&self.named_refs, ref_value, pointer);
+            return self.ref_annotation(ref_value, pointer);
         }
 
         if obj.contains_key("oneOf") {
@@ -333,6 +339,35 @@ impl DataclassModuleBuilder {
         }
 
         Ok(typing_symbol("Any"))
+    }
+
+    fn ref_annotation(&mut self, ref_value: &str, pointer: &str) -> Result<String, DataclassError> {
+        let declaration_name = resolve_local_ref_name(&self.named_refs, ref_value, pointer)?;
+        let Some(target) = resolve_json_pointer(&self.codegen_root, ref_value).cloned() else {
+            return Ok(declaration_name);
+        };
+        let Value::Object(target_obj) = target else {
+            return Ok(declaration_name);
+        };
+
+        if target_obj.contains_key("$ref")
+            || target_obj.contains_key("oneOf")
+            || target_obj.contains_key("anyOf")
+            || is_object_schema(&target_obj)
+            || is_array_schema(&target_obj)
+        {
+            return Ok(declaration_name);
+        }
+
+        if let Some(literal) = parse_literal_annotation(&target_obj) {
+            return Ok(literal);
+        }
+
+        if let Some(type_annotation) = parse_type_annotation(&target_obj, ref_value)? {
+            return Ok(type_annotation);
+        }
+
+        Ok(declaration_name)
     }
 
     fn inline_annotation(
@@ -431,7 +466,8 @@ fn render_dataclass_module(
     })?;
 
     let root_metadata = parse_optional_metadata(schema, "#")?;
-    let mut builder = DataclassModuleBuilder::new(named_refs, validation_schema.clone());
+    let mut builder =
+        DataclassModuleBuilder::new(named_refs, schema.clone(), validation_schema.clone());
     match &root_metadata {
         Some(JsoncompatMetadata::Writer { .. }) | Some(JsoncompatMetadata::Reader { .. }) => {
             emit_root_defs(&mut builder, schema)?;
@@ -1809,5 +1845,30 @@ mod tests {
         assert!(source.contains("class GeneratedSchema(dc.DataclassModel):"));
         assert!(source.contains("value: str = dc.field(\"value\")"));
         assert!(!source.contains("class GeneratedSchema(dc.DataclassRootModel):"));
+    }
+
+    #[test]
+    fn scalar_refs_use_scalar_field_annotations_without_losing_named_declarations() {
+        let schema = json!({
+            "title": "profile",
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/$defs/name" }
+            },
+            "required": ["name"],
+            "additionalProperties": false,
+            "$defs": {
+                "name": {
+                    "title": "profile name",
+                    "type": "string"
+                }
+            }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class ProfileName(dc.DataclassRootModel):"));
+        assert!(source.contains("name: str = dc.field(\"name\")"));
+        assert!(!source.contains("name: ProfileName = dc.field(\"name\")"));
     }
 }

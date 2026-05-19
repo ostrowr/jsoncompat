@@ -30,6 +30,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/foo",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaFoo = dc.root_field()
+    root: float = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
