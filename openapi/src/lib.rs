@@ -6080,23 +6080,83 @@ fn strip_schema_array_deferred_references(
     }
 }
 
+#[derive(Clone, Copy)]
+enum SchemaReferenceRewrite {
+    Validation,
+    Lowering,
+}
+
+impl SchemaReferenceRewrite {
+    fn validate_schema_object(
+        self,
+        object: &Map<String, Value>,
+        pointer: &JsonPointer,
+    ) -> Result<(), OpenApiError> {
+        if matches!(self, Self::Lowering) {
+            reject_unsafe_number_bounds_in_schema_object(object, pointer)?;
+        }
+        validate_optional_external_docs_field(object, pointer)?;
+        validate_optional_xml_field(object, pointer)
+    }
+
+    fn reject_keyword_if_needed(
+        self,
+        keyword: &str,
+        pointer: &JsonPointer,
+    ) -> Result<(), OpenApiError> {
+        if !matches!(self, Self::Lowering) {
+            return Ok(());
+        }
+        let Some(feature) = unsupported_lowering_schema_keyword_feature(keyword) else {
+            return Ok(());
+        };
+        Err(unsupported_compatibility_feature(pointer, feature))
+    }
+
+    fn rewrite_reference(
+        self,
+        reference: &str,
+        pointer: &JsonPointer,
+    ) -> Result<String, OpenApiError> {
+        match self {
+            Self::Validation => Ok(rewrite_component_schema_reference_for_validation(reference)),
+            Self::Lowering => rewrite_component_schema_reference_for_lowering(reference, pointer),
+        }
+    }
+}
+
 fn rewrite_schema_refs_for_validation(
     schema: &Value,
     pointer: &JsonPointer,
 ) -> Result<Value, OpenApiError> {
+    rewrite_schema_refs(schema, pointer, SchemaReferenceRewrite::Validation)
+}
+
+fn rewrite_schema_refs_for_lowering(
+    schema: &Value,
+    pointer: &JsonPointer,
+) -> Result<Value, OpenApiError> {
+    rewrite_schema_refs(schema, pointer, SchemaReferenceRewrite::Lowering)
+}
+
+fn rewrite_schema_refs(
+    schema: &Value,
+    pointer: &JsonPointer,
+    rewrite: SchemaReferenceRewrite,
+) -> Result<Value, OpenApiError> {
     match schema {
         Value::Object(object) => {
-            validate_optional_external_docs_field(object, pointer)?;
-            validate_optional_xml_field(object, pointer)?;
+            rewrite.validate_schema_object(object, pointer)?;
             let mut rewritten = Map::new();
             for (key, value) in object {
                 let child_pointer = pointer.child(key);
+                rewrite.reject_keyword_if_needed(key, &child_pointer)?;
                 let rewritten_value = match key.as_str() {
                     "$ref" => {
                         let reference = value
                             .as_str()
                             .ok_or_else(|| invalid_value(&child_pointer, "a string"))?;
-                        Value::String(rewrite_component_schema_reference_for_validation(reference))
+                        Value::String(rewrite.rewrite_reference(reference, &child_pointer)?)
                     }
                     "discriminator" => {
                         validate_discriminator(object, value, &child_pointer)?;
@@ -6109,13 +6169,13 @@ fn rewrite_schema_refs_for_validation(
                         value.clone()
                     }
                     key if is_single_schema_child_keyword(key) => {
-                        rewrite_schema_refs_for_validation(value, &child_pointer)?
+                        rewrite_schema_refs(value, &child_pointer, rewrite)?
                     }
                     key if is_schema_map_child_keyword(key) => {
-                        rewrite_schema_map_refs_for_validation(value, &child_pointer)?
+                        rewrite_schema_map_refs(value, &child_pointer, rewrite)?
                     }
                     key if is_schema_array_child_keyword(key) => {
-                        rewrite_schema_array_refs_for_validation(value, &child_pointer)?
+                        rewrite_schema_array_refs(value, &child_pointer, rewrite)?
                     }
                     _ => value.clone(),
                 };
@@ -6128,135 +6188,21 @@ fn rewrite_schema_refs_for_validation(
     }
 }
 
-fn rewrite_schema_refs_for_lowering(
-    schema: &Value,
-    pointer: &JsonPointer,
-) -> Result<Value, OpenApiError> {
-    match schema {
-        Value::Object(object) => {
-            reject_unsafe_number_bounds_in_schema_object(object, pointer)?;
-            validate_optional_external_docs_field(object, pointer)?;
-            validate_optional_xml_field(object, pointer)?;
-            let mut rewritten = Map::new();
-            for (key, value) in object {
-                let child_pointer = pointer.child(key);
-                match key.as_str() {
-                    "$id" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword '$id'",
-                        ));
-                    }
-                    "$anchor" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword '$anchor'",
-                        ));
-                    }
-                    "$dynamicRef" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword '$dynamicRef'",
-                        ));
-                    }
-                    "$dynamicAnchor" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword '$dynamicAnchor'",
-                        ));
-                    }
-                    "additionalItems" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'additionalItems'",
-                        ));
-                    }
-                    "contentEncoding" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'contentEncoding'",
-                        ));
-                    }
-                    "contentMediaType" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'contentMediaType'",
-                        ));
-                    }
-                    "contentSchema" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'contentSchema'",
-                        ));
-                    }
-                    "dependencies" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'dependencies'",
-                        ));
-                    }
-                    "dependentSchemas" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'dependentSchemas'",
-                        ));
-                    }
-                    "unevaluatedItems" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'unevaluatedItems'",
-                        ));
-                    }
-                    "unevaluatedProperties" => {
-                        return Err(unsupported_compatibility_feature(
-                            &child_pointer,
-                            "JSON Schema keyword 'unevaluatedProperties'",
-                        ));
-                    }
-                    _ => {}
-                }
-                let rewritten_value = match key.as_str() {
-                    "$ref" => {
-                        let reference = value
-                            .as_str()
-                            .ok_or_else(|| invalid_value(&child_pointer, "a string"))?;
-                        Value::String(rewrite_component_schema_reference_for_lowering(
-                            reference,
-                            &child_pointer,
-                        )?)
-                    }
-                    "discriminator" => {
-                        validate_discriminator(object, value, &child_pointer)?;
-                        value.clone()
-                    }
-                    "readOnly" | "writeOnly" => {
-                        if !value.is_boolean() {
-                            return Err(invalid_value(&child_pointer, "a boolean"));
-                        }
-                        value.clone()
-                    }
-                    "additionalProperties"
-                    | "contains"
-                    | "else"
-                    | "if"
-                    | "items"
-                    | "not"
-                    | "propertyNames"
-                    | "then" => rewrite_schema_refs_for_lowering(value, &child_pointer)?,
-                    "$defs" | "definitions" | "patternProperties" | "properties" => {
-                        rewrite_schema_map_refs_for_lowering(value, &child_pointer)?
-                    }
-                    "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
-                        rewrite_schema_array_refs_for_lowering(value, &child_pointer)?
-                    }
-                    _ => value.clone(),
-                };
-                rewritten.insert(key.clone(), rewritten_value);
-            }
-            Ok(Value::Object(rewritten))
-        }
-        Value::Bool(_) => Ok(schema.clone()),
-        _ => Err(invalid_value(pointer, "an object or boolean schema")),
+fn unsupported_lowering_schema_keyword_feature(keyword: &str) -> Option<&'static str> {
+    match keyword {
+        "$id" => Some("JSON Schema keyword '$id'"),
+        "$anchor" => Some("JSON Schema keyword '$anchor'"),
+        "$dynamicRef" => Some("JSON Schema keyword '$dynamicRef'"),
+        "$dynamicAnchor" => Some("JSON Schema keyword '$dynamicAnchor'"),
+        "additionalItems" => Some("JSON Schema keyword 'additionalItems'"),
+        "contentEncoding" => Some("JSON Schema keyword 'contentEncoding'"),
+        "contentMediaType" => Some("JSON Schema keyword 'contentMediaType'"),
+        "contentSchema" => Some("JSON Schema keyword 'contentSchema'"),
+        "dependencies" => Some("JSON Schema keyword 'dependencies'"),
+        "dependentSchemas" => Some("JSON Schema keyword 'dependentSchemas'"),
+        "unevaluatedItems" => Some("JSON Schema keyword 'unevaluatedItems'"),
+        "unevaluatedProperties" => Some("JSON Schema keyword 'unevaluatedProperties'"),
+        _ => None,
     }
 }
 
@@ -6355,9 +6301,10 @@ fn number_bound_is_outside_exact_f64_integer_range(value: &Value) -> bool {
         .is_some_and(|value| value.is_finite() && value.abs() > MAX_EXACT_F64_INTEGER)
 }
 
-fn rewrite_schema_map_refs_for_validation(
+fn rewrite_schema_map_refs(
     value: &Value,
     pointer: &JsonPointer,
+    rewrite: SchemaReferenceRewrite,
 ) -> Result<Value, OpenApiError> {
     let object = value
         .as_object()
@@ -6365,16 +6312,17 @@ fn rewrite_schema_map_refs_for_validation(
     object
         .iter()
         .map(|(key, schema)| {
-            rewrite_schema_refs_for_validation(schema, &pointer.child(key))
+            rewrite_schema_refs(schema, &pointer.child(key), rewrite)
                 .map(|schema| (key.clone(), schema))
         })
         .collect::<Result<Map<_, _>, _>>()
         .map(Value::Object)
 }
 
-fn rewrite_schema_array_refs_for_validation(
+fn rewrite_schema_array_refs(
     value: &Value,
     pointer: &JsonPointer,
+    rewrite: SchemaReferenceRewrite,
 ) -> Result<Value, OpenApiError> {
     let items = value
         .as_array()
@@ -6383,7 +6331,7 @@ fn rewrite_schema_array_refs_for_validation(
         .iter()
         .enumerate()
         .map(|(index, schema)| {
-            rewrite_schema_refs_for_validation(schema, &pointer.child(index.to_string()))
+            rewrite_schema_refs(schema, &pointer.child(index.to_string()), rewrite)
         })
         .collect::<Result<Vec<_>, _>>()
         .map(Value::Array)
@@ -6396,40 +6344,6 @@ fn rewrite_component_schema_reference_for_validation(reference: &str) -> String 
             || reference.to_owned(),
             |component_path| format!("#/$defs/{component_path}"),
         )
-}
-
-fn rewrite_schema_map_refs_for_lowering(
-    value: &Value,
-    pointer: &JsonPointer,
-) -> Result<Value, OpenApiError> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| invalid_value(pointer, "an object of schemas"))?;
-    object
-        .iter()
-        .map(|(key, schema)| {
-            rewrite_schema_refs_for_lowering(schema, &pointer.child(key))
-                .map(|schema| (key.clone(), schema))
-        })
-        .collect::<Result<Map<_, _>, _>>()
-        .map(Value::Object)
-}
-
-fn rewrite_schema_array_refs_for_lowering(
-    value: &Value,
-    pointer: &JsonPointer,
-) -> Result<Value, OpenApiError> {
-    let items = value
-        .as_array()
-        .ok_or_else(|| invalid_value(pointer, "an array of schemas"))?;
-    items
-        .iter()
-        .enumerate()
-        .map(|(index, schema)| {
-            rewrite_schema_refs_for_lowering(schema, &pointer.child(index.to_string()))
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Value::Array)
 }
 
 fn rewrite_component_schema_reference_for_lowering(
