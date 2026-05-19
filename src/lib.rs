@@ -205,10 +205,10 @@ fn collect_source_keyword_warnings(
         schema.source_schema_json(),
         &mut JsonPointer::root(),
     )?;
-    Ok(collect_unsupported_keyword_family(
+    collect_unsupported_keyword_family(
         schema.source_schema_json(),
         UNSUPPORTED_COMPATIBILITY_KEYWORDS,
-    ))
+    )
 }
 
 fn reject_unsupported_reference_keywords_after_source_validation(
@@ -225,7 +225,7 @@ fn reject_unsupported_keyword_family(
     keywords: &[&str],
 ) -> Result<(), CompatibilityError> {
     if let Some(CompatibilityWarning::UnsupportedKeyword { pointer, keyword }) =
-        collect_unsupported_keyword_family(schema, keywords)
+        collect_unsupported_keyword_family(schema, keywords)?
             .into_iter()
             .next()
     {
@@ -238,15 +238,13 @@ fn reject_unsupported_keyword_family(
 fn collect_unsupported_keyword_family(
     schema: &Value,
     keywords: &[&str],
-) -> Vec<CompatibilityWarning> {
+) -> Result<Vec<CompatibilityWarning>, CompatibilityError> {
     let mut warnings = Vec::new();
-    collect_unsupported_keywords_in_schema_value(
-        schema,
-        &mut JsonPointer::root(),
-        keywords,
-        &mut warnings,
-    );
-    warnings
+    walk_source_schema_objects(schema, &mut JsonPointer::root(), &mut |object, pointer| {
+        collect_unsupported_keywords_in_schema_object(object, pointer, keywords, &mut warnings);
+        Ok(())
+    })?;
+    Ok(warnings)
 }
 
 fn validate_source_schema_ignoring_non_local_refs(
@@ -313,24 +311,57 @@ fn strip_non_local_schema_ref_array(value: &Value) -> Value {
     }
 }
 
-fn collect_unsupported_keywords_in_schema_value(
+fn walk_source_schema_objects(
     schema: &Value,
     pointer: &mut JsonPointer,
-    keywords: &[&str],
-    warnings: &mut Vec<CompatibilityWarning>,
-) {
+    visit: &mut impl FnMut(&Map<String, Value>, &JsonPointer) -> Result<(), CompatibilityError>,
+) -> Result<(), CompatibilityError> {
     match schema {
-        Value::Bool(_) => {}
+        Value::Bool(_) => Ok(()),
         Value::Object(object) => {
-            collect_unsupported_keywords_in_schema_object(object, pointer, keywords, warnings)
+            visit(object, pointer)?;
+
+            for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
+                if let Some(child) = object.get(keyword) {
+                    pointer.push(keyword);
+                    walk_source_schema_objects(child, pointer, visit)?;
+                    pointer.pop();
+                }
+            }
+
+            for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
+                if let Some(children) = object.get(keyword).and_then(Value::as_object) {
+                    pointer.push(keyword);
+                    for (name, child) in children {
+                        pointer.push(name);
+                        walk_source_schema_objects(child, pointer, visit)?;
+                        pointer.pop();
+                    }
+                    pointer.pop();
+                }
+            }
+
+            for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
+                if let Some(children) = object.get(keyword).and_then(Value::as_array) {
+                    pointer.push(keyword);
+                    for (index, child) in children.iter().enumerate() {
+                        pointer.push(index.to_string());
+                        walk_source_schema_objects(child, pointer, visit)?;
+                        pointer.pop();
+                    }
+                    pointer.pop();
+                }
+            }
+
+            Ok(())
         }
-        _ => {}
+        _ => Ok(()),
     }
 }
 
 fn collect_unsupported_keywords_in_schema_object(
     object: &Map<String, Value>,
-    pointer: &mut JsonPointer,
+    pointer: &JsonPointer,
     keywords: &[&str],
     warnings: &mut Vec<CompatibilityWarning>,
 ) {
@@ -344,90 +375,17 @@ fn collect_unsupported_keywords_in_schema_object(
             });
         }
     }
-
-    for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
-        if let Some(child) = object.get(keyword) {
-            pointer.push(keyword);
-            collect_unsupported_keywords_in_schema_value(child, pointer, keywords, warnings);
-            pointer.pop();
-        }
-    }
-
-    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
-        if let Some(children) = object.get(keyword).and_then(Value::as_object) {
-            pointer.push(keyword);
-            for (name, child) in children {
-                pointer.push(name);
-                collect_unsupported_keywords_in_schema_value(child, pointer, keywords, warnings);
-                pointer.pop();
-            }
-            pointer.pop();
-        }
-    }
-
-    for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
-        if let Some(children) = object.get(keyword).and_then(Value::as_array) {
-            pointer.push(keyword);
-            for (index, child) in children.iter().enumerate() {
-                pointer.push(index.to_string());
-                collect_unsupported_keywords_in_schema_value(child, pointer, keywords, warnings);
-                pointer.pop();
-            }
-            pointer.pop();
-        }
-    }
 }
 
 fn reject_unsafe_number_bounds_in_schema_value(
     schema: &Value,
     pointer: &mut JsonPointer,
 ) -> Result<(), CompatibilityError> {
-    match schema {
-        Value::Bool(_) => Ok(()),
-        Value::Object(object) => reject_unsafe_number_bounds_in_schema_object_tree(object, pointer),
-        _ => Ok(()),
-    }
-}
-
-fn reject_unsafe_number_bounds_in_schema_object_tree(
-    object: &Map<String, Value>,
-    pointer: &mut JsonPointer,
-) -> Result<(), CompatibilityError> {
-    reject_unsafe_number_bounds_in_schema_object(object, pointer)?;
-
-    for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
-        if let Some(child) = object.get(keyword) {
-            pointer.push(keyword);
-            reject_unsafe_number_bounds_in_schema_value(child, pointer)?;
-            pointer.pop();
-        }
-    }
-
-    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
-        if let Some(children) = object.get(keyword).and_then(Value::as_object) {
-            pointer.push(keyword);
-            for (name, child) in children {
-                pointer.push(name);
-                reject_unsafe_number_bounds_in_schema_value(child, pointer)?;
-                pointer.pop();
-            }
-            pointer.pop();
-        }
-    }
-
-    for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
-        if let Some(children) = object.get(keyword).and_then(Value::as_array) {
-            pointer.push(keyword);
-            for (index, child) in children.iter().enumerate() {
-                pointer.push(index.to_string());
-                reject_unsafe_number_bounds_in_schema_value(child, pointer)?;
-                pointer.pop();
-            }
-            pointer.pop();
-        }
-    }
-
-    Ok(())
+    walk_source_schema_objects(
+        schema,
+        pointer,
+        &mut reject_unsafe_number_bounds_in_schema_object,
+    )
 }
 
 fn reject_unsafe_number_bounds_in_schema_object(

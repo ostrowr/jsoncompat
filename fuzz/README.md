@@ -39,7 +39,7 @@ println!("{}", value);
 
 For repeated generation from the same schema, reuse the same `SchemaDocument`.
 
-## Public Interface
+## API
 
 - `ValueGenerator::generate(&SchemaDocument, GenerationConfig, rng) -> Result<Value, GenerateError>` is the value-generation entry point.
 - `GenerationConfig::default()` uses the default recursion depth and retry budget.
@@ -48,8 +48,7 @@ For repeated generation from the same schema, reuse the same `SchemaDocument`.
 - `GenerateError::Unsatisfiable` means the resolved schema is known to have no valid instances.
 - `GenerateError::ExhaustedAttempts` means the schema may still be satisfiable, but the heuristic generator did not find a raw-valid candidate within the configured retry budget.
 
-Every returned value is accepted by `SchemaDocument::is_valid()` against the
-original raw schema.
+Every returned value is accepted by `SchemaDocument::is_valid()` against the original raw schema.
 
 ## More detail
 

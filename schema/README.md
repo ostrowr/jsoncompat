@@ -37,7 +37,7 @@ let validator = compile(&raw).unwrap();
 assert!(validator.is_valid(&json!({ "id": 42 })));
 ```
 
-## Public Interface
+## API
 
 Most callers only need:
 
@@ -45,15 +45,7 @@ Most callers only need:
 - `SchemaDocument::is_valid(&Value)` validates instances against the original raw schema.
 - `compile(&Value)` returns a ready-to-use validator after this crate's dialect checks.
 
-For lower-level analysis tools:
-
-- `SchemaDocument::canonical_schema_json()` returns the normalized schema JSON.
-- `SchemaDocument::root()` returns the lazily resolved immutable `SchemaNode` graph.
-- `SchemaNode::kind()` exposes the non-exhaustive `SchemaNodeKind` IR for downstream analyzers.
-- `SchemaNode::id()` exposes opaque node identity for cycle guards.
-- `SchemaNode::accepts_value()` is a low-level evaluator for resolved subgraphs; use `SchemaDocument::is_valid()` for user-visible validation.
-- `json_values_equal(&Value, &Value)` compares JSON values using JSON Schema's numeric equality rule.
-- `AstError`, `SchemaBuildError`, `SchemaError`, and `CompileError` are the typed error surfaces.
+Lower-level APIs for canonicalized schema access, resolved graph traversal, and typed errors are documented on [docs.rs](https://docs.rs/json_schema_ast). [developing.md](../developing.md) explains how this repository uses them internally.
 
 If a schema document sets `$schema`, it must be either Draft 2020-12
 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing

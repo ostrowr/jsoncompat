@@ -6,13 +6,13 @@
 
 Check whether evolving JSON Schemas and OpenAPI 3.1 contracts stay backward-compatible.
 
-jsoncompat supports:
+jsoncompat compares:
 
 - raw JSON Schema Draft 2020-12 documents;
 - OpenAPI 3.1 Schema Objects;
 - JSON OpenAPI 3.1 documents with path operations.
 
-If a schema declares `$schema`, it must use either Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. OpenAPI 3.0-only schema shortcuts such as `nullable` are not reinterpreted.
+If a schema declares `$schema`, it must use Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. OpenAPI 3.0-only shortcuts such as `nullable` are not reinterpreted.
 
 > [!WARNING]
 > jsoncompat is alpha software. It is intentionally conservative in places, and it can still miss incompatible changes or report false positives.
@@ -90,7 +90,7 @@ That is why making a previously required response field optional can be breaking
 
 ## OpenAPI contracts
 
-For OpenAPI 3.1 documents, jsoncompat checks:
+When the inputs are OpenAPI documents, pass `--openapi`. jsoncompat compares:
 
 - path, query, header, and cookie parameters;
 - request bodies and media types;
@@ -98,7 +98,7 @@ For OpenAPI 3.1 documents, jsoncompat checks:
 - removed operations;
 - supported local `#/components/...` references.
 
-Pass `--openapi` when the inputs are OpenAPI documents. OpenAPI comparisons always check requests in the deserializer direction and responses in the serializer direction. `--role` and `--fuzz` are raw-JSON-Schema-only flags.
+Requests are checked in the deserializer direction. Responses are checked in the serializer direction. `--role` and `--fuzz` are raw-JSON-Schema-only flags.
 
 See [openapi/README.md](openapi/README.md) for the OpenAPI user guide.
 
@@ -133,17 +133,17 @@ let report = check_openapi_compat(&old, &new).unwrap();
 assert!(report.is_compatible());
 ```
 
-The Rust API also exposes structured compatibility errors, OpenAPI issue reports, best-effort incompatibility explanations, and schema-guided value generation.
+The Rust API also exposes structured compatibility errors, OpenAPI issue reports, incompatibility explanations, and schema-guided value generation.
 
 ## Warnings and hard errors
 
-jsoncompat distinguishes unsupported-but-valid schema details from inputs it cannot reason about safely:
+jsoncompat keeps warnings and hard errors separate:
 
-- raw JSON Schema keywords such as `dependentSchemas`, `dependencies`, `additionalItems`, `contentEncoding`, `contentMediaType`, `contentSchema`, `unevaluatedItems`, and `unevaluatedProperties` produce warnings and the modeled comparison continues;
-- hard compatibility errors remain hard errors when the checker would otherwise risk an unsound verdict, including unsupported reference-scope features such as `$id`, `$anchor`, `$dynamicRef`, and `$dynamicAnchor`, non-integral `number.multipleOf`, and precision-unsafe number bounds;
+- unsupported-but-valid schema details produce warnings and the modeled comparison continues;
+- inputs that would make a verdict unsafe fail before comparison;
 - unsupported OpenAPI contract surfaces fail before comparison rather than being silently ignored.
 
-The CLI prints warnings with exact pointers so you can see what was ignored.
+The CLI prints warnings with exact pointers so you can see what was ignored. See [developing.md](developing.md) for the detailed support boundaries and the reasoning behind them.
 
 ## What to read next
 

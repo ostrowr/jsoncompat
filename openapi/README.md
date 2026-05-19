@@ -1,6 +1,6 @@
 # OpenAPI support in jsoncompat
 
-Most users should start with the [repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md). This page focuses on how jsoncompat treats OpenAPI 3.1 documents.
+Most users should start with the [repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md). This page covers the OpenAPI-specific workflow.
 
 jsoncompat can compare JSON OpenAPI 3.1 documents with path operations:
 
@@ -31,27 +31,21 @@ OpenAPI compatibility is directional by surface:
 
 `--role` and `--fuzz` are raw-JSON-Schema-only flags. `--openapi` selects the OpenAPI contract path explicitly, and those comparisons always use the paired request/response interpretation above.
 
-## Supported inputs
+## Scope and limits
 
-jsoncompat accepts JSON OpenAPI 3.1 documents. It supports the OpenAPI 3.1 Schema Object dialect and Draft 2020-12 schema dialects already supported by the root library.
+jsoncompat accepts JSON OpenAPI 3.1 documents and the schema dialects supported by the root library.
 
-Common OpenAPI metadata is allowed when it does not affect the contract being compared. That includes ordinary info, tags, security metadata, descriptions, examples, reference-object metadata, and shape-checked schema annotations such as `readOnly`, `writeOnly`, and `discriminator`.
-
-## Unsupported contract surfaces
-
-jsoncompat fails early when a valid OpenAPI feature could affect compatibility but is not modeled yet. Current examples include:
+It fails early when a valid OpenAPI feature could affect compatibility but is not modeled yet. Common examples include:
 
 - document-level `webhooks`;
 - path-item `$ref` entries;
 - operation callbacks;
 - response links;
-- unsupported component collections such as callback/path-item/link/example collections;
 - media-type `encoding`;
 - unsupported remote references;
-- content maps whose media keys collapse to the same normalized selector;
-- unsupported schema compatibility surfaces inside OpenAPI contracts.
+- unsupported component collections that carry contract-bearing behavior.
 
-Those inputs fail before a compatibility verdict is reported, rather than being silently ignored.
+Those inputs fail before a compatibility verdict is reported, rather than being silently ignored. [developing.md](https://github.com/ostrowr/jsoncompat/blob/main/developing.md) records the detailed lowerability boundary and test strategy.
 
 ## Rust API
 

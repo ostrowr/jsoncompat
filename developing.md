@@ -1,6 +1,6 @@
 # Developing jsoncompat
 
-This guide is for contributors and maintainers. The user-facing entrypoint is [readme.md](readme.md).
+This guide is for contributors and maintainers. The user-facing entrypoint is [readme.md](readme.md); package READMEs should stay short, practical, and caller-facing.
 
 ## Local setup
 
@@ -34,8 +34,7 @@ The benchmark fixtures under [benches/fixtures](benches/fixtures) are fixed on p
 | `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings |
 | `web/` | website | Documentation site and interactive frontend |
 
-Package READMEs stay user-facing on purpose. Deeper implementation notes live
-here so the crates' front doors remain short and practical.
+Package READMEs stay user-facing on purpose. Deeper implementation notes live here so the crates' front doors remain short and practical.
 
 ## Architecture
 

@@ -10,7 +10,7 @@ Install from PyPI:
 pip install jsoncompat==0.3.1
 ```
 
-## Usage
+## Quick start
 
 ```python
 import jsoncompat as jsc
@@ -25,7 +25,7 @@ example = jsc.generate_value(old_schema, depth=5)
 print(example)
 ```
 
-## Public Interface
+## API
 
 - `check_compat(old_schema_json: str, new_schema_json: str, role: str = "both") -> bool`
   - `role` must be `"serializer"`, `"deserializer"`, or `"both"`.
@@ -37,11 +37,9 @@ print(example)
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 
-## Examples
+## More detail
 
-See the basic demo:
-
-- https://github.com/ostrowr/jsoncompat/blob/main/examples/python/basic/demo.py
+- [Basic demo](https://github.com/ostrowr/jsoncompat/blob/main/examples/python/basic/demo.py)
 - https://jsoncompat.com
 - [Repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md)
 - [Developer guide](https://github.com/ostrowr/jsoncompat/blob/main/developing.md)
