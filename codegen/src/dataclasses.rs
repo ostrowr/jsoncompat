@@ -71,6 +71,7 @@ struct DataclassModuleBuilder<'a> {
     codegen_root: &'a Value,
     validation_root: &'a Value,
     validation_root_defs: Option<&'a Map<String, Value>>,
+    validation_root_legacy_defs: Option<&'a Map<String, Value>>,
     inline_names: BTreeMap<String, String>,
     inline_name_counters: BTreeMap<String, u32>,
 }
@@ -103,6 +104,10 @@ impl<'a> DataclassModuleBuilder<'a> {
             validation_root_defs: validation_root
                 .as_object()
                 .and_then(|obj| obj.get("$defs"))
+                .and_then(Value::as_object),
+            validation_root_legacy_defs: validation_root
+                .as_object()
+                .and_then(|obj| obj.get("definitions"))
                 .and_then(Value::as_object),
             validation_root,
             inline_names: BTreeMap::new(),
@@ -284,9 +289,17 @@ impl<'a> DataclassModuleBuilder<'a> {
         let validation_schema = resolve_json_pointer(self.validation_root, pointer)
             .unwrap_or(fallback_schema)
             .clone();
-        let schema = match (&validation_schema, self.validation_root_defs) {
-            (Value::Object(obj), Some(root_defs)) => {
-                Value::Object(schema_object_with_root_defs(obj, root_defs)?)
+        let schema = match (
+            &validation_schema,
+            has_definition_entries(self.validation_root_defs),
+            has_definition_entries(self.validation_root_legacy_defs),
+        ) {
+            (Value::Object(obj), true, _) | (Value::Object(obj), _, true) => {
+                Value::Object(schema_object_with_root_definition_maps(
+                    obj,
+                    self.validation_root_defs,
+                    self.validation_root_legacy_defs,
+                )?)
             }
             _ => validation_schema,
         };
@@ -757,7 +770,11 @@ fn render_reader_variants(
             output,
             "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
             python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
-                schema_object_with_root_defs(validation_branch, root_defs(validation_reader)?)?
+                schema_object_with_root_definition_maps(
+                    validation_branch,
+                    Some(root_defs(validation_reader)?),
+                    None,
+                )?
             ))?)
         )
         .expect("writing to String cannot fail");
@@ -778,24 +795,37 @@ fn render_reader_variants(
     Ok(())
 }
 
-fn schema_object_with_root_defs(
+fn schema_object_with_root_definition_maps(
     schema: &Map<String, Value>,
-    root_defs: &Map<String, Value>,
+    root_defs: Option<&Map<String, Value>>,
+    root_legacy_defs: Option<&Map<String, Value>>,
 ) -> Result<Map<String, Value>, DataclassError> {
     let mut schema = schema.clone();
-    if root_defs.is_empty() {
-        return Ok(schema);
-    }
+    merge_root_definition_map(&mut schema, "$defs", root_defs);
+    merge_root_definition_map(&mut schema, "definitions", root_legacy_defs);
+    Ok(schema)
+}
 
-    let mut defs = schema
-        .remove("$defs")
+fn merge_root_definition_map(
+    schema: &mut Map<String, Value>,
+    keyword: &str,
+    root_definitions: Option<&Map<String, Value>>,
+) {
+    let Some(root_definitions) = root_definitions.filter(|defs| !defs.is_empty()) else {
+        return;
+    };
+    let mut definitions = schema
+        .remove(keyword)
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
-    for (key, value) in root_defs {
-        defs.insert(key.clone(), value.clone());
+    for (key, value) in root_definitions {
+        definitions.insert(key.clone(), value.clone());
     }
-    schema.insert("$defs".to_owned(), Value::Object(defs));
-    Ok(schema)
+    schema.insert(keyword.to_owned(), Value::Object(definitions));
+}
+
+fn has_definition_entries(definitions: Option<&Map<String, Value>>) -> bool {
+    definitions.is_some_and(|defs| !defs.is_empty())
 }
 
 fn render_reader_root_class(
@@ -855,19 +885,32 @@ fn emit_nested_defs(
     obj: &Map<String, Value>,
     pointer: &str,
 ) -> Result<(), DataclassError> {
-    let Some(defs) = obj.get("$defs") else {
+    emit_nested_definition_classes(builder, obj, pointer, "$defs")?;
+    emit_nested_definition_classes(builder, obj, pointer, "definitions")
+}
+
+fn emit_nested_definition_classes(
+    builder: &mut DataclassModuleBuilder<'_>,
+    obj: &Map<String, Value>,
+    pointer: &str,
+    keyword: &str,
+) -> Result<(), DataclassError> {
+    let Some(defs) = obj.get(keyword) else {
         return Ok(());
     };
-    let defs = defs
-        .as_object()
-        .ok_or_else(|| invalid_schema(join_pointer(pointer, "$defs"), "$defs must be an object"))?;
+    let defs = defs.as_object().ok_or_else(|| {
+        invalid_schema(
+            join_pointer(pointer, keyword),
+            format!("{keyword} must be an object"),
+        )
+    })?;
     for (def_key, schema) in defs {
         let def_pointer = join_pointer(
-            &join_pointer(pointer, "$defs"),
+            &join_pointer(pointer, keyword),
             &escape_pointer_token(def_key),
         );
-        // Union branches can inherit context `$defs` while their annotations are
-        // being planned. Those synthetic copies are not declaration sites.
+        // Union branches can inherit context definitions while their annotations
+        // are being planned. Those synthetic copies are not declaration sites.
         if !builder.named_refs.contains_key(&def_pointer) {
             continue;
         }
@@ -1171,21 +1214,8 @@ fn collect_schema_refs(
         return Ok(());
     };
 
-    if let Some(defs) = obj.get("$defs") {
-        let defs = defs.as_object().ok_or_else(|| {
-            invalid_schema(join_pointer(pointer, "$defs"), "$defs must be an object")
-        })?;
-        for (def_key, schema) in defs {
-            let def_pointer = join_pointer(
-                &join_pointer(pointer, "$defs"),
-                &escape_pointer_token(def_key),
-            );
-            let def_name =
-                declaration_ref_name(schema, &def_pointer, scope_name, def_key, used_names)?;
-            reserve_named_ref(refs, used_names, &def_pointer, &def_name)?;
-            collect_schema_refs(schema, &def_pointer, &def_name, refs, used_names)?;
-        }
-    }
+    collect_definition_refs(obj, pointer, scope_name, refs, used_names, "$defs")?;
+    collect_definition_refs(obj, pointer, scope_name, refs, used_names, "definitions")?;
 
     if let Some(properties) = obj.get("properties") {
         let properties = properties.as_object().ok_or_else(|| {
@@ -1273,6 +1303,35 @@ fn collect_schema_refs(
     Ok(())
 }
 
+fn collect_definition_refs(
+    obj: &Map<String, Value>,
+    pointer: &str,
+    scope_name: &str,
+    refs: &mut BTreeMap<String, String>,
+    used_names: &mut BTreeSet<String>,
+    keyword: &str,
+) -> Result<(), DataclassError> {
+    let Some(defs) = obj.get(keyword) else {
+        return Ok(());
+    };
+    let defs = defs.as_object().ok_or_else(|| {
+        invalid_schema(
+            join_pointer(pointer, keyword),
+            format!("{keyword} must be an object"),
+        )
+    })?;
+    for (def_key, schema) in defs {
+        let def_pointer = join_pointer(
+            &join_pointer(pointer, keyword),
+            &escape_pointer_token(def_key),
+        );
+        let def_name = declaration_ref_name(schema, &def_pointer, scope_name, def_key, used_names)?;
+        reserve_named_ref(refs, used_names, &def_pointer, &def_name)?;
+        collect_schema_refs(schema, &def_pointer, &def_name, refs, used_names)?;
+    }
+    Ok(())
+}
+
 fn reserve_named_ref(
     refs: &mut BTreeMap<String, String>,
     used_names: &mut BTreeSet<String>,
@@ -1356,22 +1415,26 @@ fn resolve_ref_pointer<'a>(
     ref_value: &str,
     pointer: &str,
 ) -> Result<&'a Value, DataclassError> {
-    if !ref_value.starts_with("#/$defs/") {
+    let (keyword, prefix) = if ref_value.starts_with("#/$defs/") {
+        ("$defs", "#/$defs/")
+    } else if ref_value.starts_with("#/definitions/") {
+        ("definitions", "#/definitions/")
+    } else {
         return Err(DataclassError::UnsupportedRef {
             pointer: join_pointer(pointer, "$ref"),
             ref_value: ref_value.to_owned(),
         });
-    }
+    };
 
     let mut current = root
-        .get("$defs")
+        .get(keyword)
         .ok_or_else(|| DataclassError::UnsupportedRef {
             pointer: join_pointer(pointer, "$ref"),
             ref_value: ref_value.to_owned(),
         })?;
 
     for segment in ref_value
-        .trim_start_matches("#/$defs/")
+        .trim_start_matches(prefix)
         .split('/')
         .map(unescape_pointer_token)
     {
@@ -1516,18 +1579,21 @@ fn merge_union_branch_schema(
         Value::Object(branch_obj) => {
             let mut merged = context.clone();
             for (key, value) in branch_obj {
-                if key == "$defs" {
+                if matches!(key.as_str(), "$defs" | "definitions") {
                     let mut defs = merged
-                        .remove("$defs")
+                        .remove(key)
                         .and_then(|existing| existing.as_object().cloned())
                         .unwrap_or_default();
                     let branch_defs = value.as_object().ok_or_else(|| {
-                        invalid_schema(join_pointer(pointer, "$defs"), "$defs must be an object")
+                        invalid_schema(
+                            join_pointer(pointer, key),
+                            format!("{key} must be an object"),
+                        )
                     })?;
                     for (def_key, def_value) in branch_defs {
                         defs.insert(def_key.clone(), def_value.clone());
                     }
-                    merged.insert("$defs".to_owned(), Value::Object(defs));
+                    merged.insert(key.clone(), Value::Object(defs));
                 } else {
                     merged.insert(key.clone(), value.clone());
                 }
@@ -2003,6 +2069,31 @@ mod tests {
             "required": ["name"],
             "additionalProperties": false,
             "$defs": {
+                "name": {
+                    "title": "profile name",
+                    "type": "string"
+                }
+            }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class ProfileName(dc.DataclassRootModel):"));
+        assert!(source.contains("name: str = dc.field(\"name\")"));
+        assert!(!source.contains("name: ProfileName = dc.field(\"name\")"));
+    }
+
+    #[test]
+    fn legacy_definition_refs_keep_typed_declarations() {
+        let schema = json!({
+            "title": "profile",
+            "type": "object",
+            "properties": {
+                "name": { "$ref": "#/definitions/name" }
+            },
+            "required": ["name"],
+            "additionalProperties": false,
+            "definitions": {
                 "name": {
                     "title": "profile name",
                     "type": "string"

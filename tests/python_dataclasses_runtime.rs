@@ -258,6 +258,53 @@ else:
 }
 
 #[test]
+fn generated_dataclasses_follow_legacy_definition_ref_chains() {
+    let source = generate_dataclass_models(&json!({
+        "definitions": {
+            "A": {"$ref": "#/definitions/B"},
+            "B": {"type": "string"},
+        },
+        "$ref": "#/definitions/A",
+    }))
+    .expect("generate dataclasses from legacy definitions refs");
+    let module_path = write_temp_module("legacy_definition_refs", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("legacy_definition_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+value = module.JSONCOMPAT_MODEL.from_json("Ada")
+assert value.to_json() == "Ada"
+
+try:
+    module.JSONCOMPAT_MODEL.from_json(42)
+except ValueError:
+    pass
+else:
+    raise AssertionError("legacy definition ref models accepted an invalid payload")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass legacy definitions ref test");
+    assert!(
+        output.status.success(),
+        "generated dataclass legacy definitions ref test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_keep_conditionally_evaluated_object_properties_constructible() {
     let source = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",

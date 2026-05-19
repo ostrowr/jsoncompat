@@ -60,7 +60,7 @@ name = "dataclasses_fuzz"
 harness = false
 
 [[test]]
-name = "dataclasses_backcompat_examples"
+name = "dataclasses_backcompat"
 harness = false
 
 [[bench]]

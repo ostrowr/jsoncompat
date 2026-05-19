@@ -124,7 +124,8 @@ carry the original input schema in `__jsoncompat_schema__`, cache a
 
 When the schema structure makes it honest, code generation also keeps Python
 annotations narrow rather than collapsing to `Any`, including primitive local
-`$ref` fields and constrained tuple-like arrays built from `prefixItems`.
+`$ref` fields rooted under `$defs` or legacy `definitions`, plus constrained
+tuple-like arrays built from `prefixItems`.
 
 If the input schema contains `x-jsoncompat` metadata from `jsoncompat stamp`,
 generated writer envelopes inherit from `WriterDataclassModel`, which disables

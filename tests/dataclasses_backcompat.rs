@@ -5,7 +5,9 @@ mod python_env;
 
 use dataclass_round_trip::{DataclassGeneratedValueRoundTripper, write_generated_module};
 use json_schema_ast::SchemaDocument;
+use json_schema_fuzz::{GenerationConfig, ValueGenerator};
 use jsoncompat_codegen::generate_dataclass_models;
+use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::Value;
 use std::error::Error;
@@ -13,8 +15,10 @@ use std::fs;
 use std::path::Path;
 
 datatest_stable::harness! {
-    { test = fixture, root = "tests/fixtures/backcompat", pattern = r".*[/\\]examples\.json$" },
+    { test = fixture, root = "tests/fixtures/backcompat", pattern = r".*[/\\]expect\.json$" },
 }
+
+const GENERATED_VALUE_ITERATIONS: usize = 100;
 
 #[derive(Deserialize, Default)]
 struct SampleSets {
@@ -26,23 +30,67 @@ struct SampleSets {
     both: Vec<Value>,
 }
 
-fn fixture(examples_file: &Path) -> Result<(), Box<dyn Error>> {
-    let fixture_dir = examples_file
+fn fixture(expect_file: &Path) -> Result<(), Box<dyn Error>> {
+    let fixture_dir = expect_file
         .parent()
-        .expect("backcompat examples have a fixture directory");
+        .expect("backcompat fixtures have a fixture directory");
     let case_name = fixture_dir
         .file_name()
         .and_then(|name| name.to_str())
         .expect("utf-8 fixture directory name");
     let old_raw = read_json(&fixture_dir.join("old.json"))?;
     let new_raw = read_json(&fixture_dir.join("new.json"))?;
-    let samples: SampleSets = serde_json::from_slice(&fs::read(examples_file)?)?;
-
     let old_schema = SchemaDocument::from_json(&old_raw)?;
     let new_schema = SchemaDocument::from_json(&new_raw)?;
     let mut old_round_tripper = build_round_tripper(case_name, "old", &old_raw)?;
     let mut new_round_tripper = build_round_tripper(case_name, "new", &new_raw)?;
 
+    let examples_file = fixture_dir.join("examples.json");
+    if examples_file.exists() {
+        let samples: SampleSets = serde_json::from_slice(&fs::read(examples_file)?)?;
+        round_trip_curated_samples(
+            case_name,
+            &old_schema,
+            &new_schema,
+            old_round_tripper.as_mut(),
+            new_round_tripper.as_mut(),
+            &samples,
+        )?;
+    }
+
+    let mut rng = StdRng::seed_from_u64(0xDADA_CAFE + case_name.len() as u64);
+    round_trip_generated_samples(
+        case_name,
+        "old",
+        &old_schema,
+        old_round_tripper.as_mut(),
+        "new",
+        &new_schema,
+        new_round_tripper.as_mut(),
+        &mut rng,
+    )?;
+    round_trip_generated_samples(
+        case_name,
+        "new",
+        &new_schema,
+        new_round_tripper.as_mut(),
+        "old",
+        &old_schema,
+        old_round_tripper.as_mut(),
+        &mut rng,
+    )?;
+
+    Ok(())
+}
+
+fn round_trip_curated_samples(
+    case_name: &str,
+    old_schema: &SchemaDocument,
+    new_schema: &SchemaDocument,
+    mut old_round_tripper: Option<&mut DataclassGeneratedValueRoundTripper>,
+    mut new_round_tripper: Option<&mut DataclassGeneratedValueRoundTripper>,
+    samples: &SampleSets,
+) -> Result<(), Box<dyn Error>> {
     for sample in &samples.old_only {
         assert!(
             old_schema.is_valid(sample)?,
@@ -55,11 +103,11 @@ fn fixture(examples_file: &Path) -> Result<(), Box<dyn Error>> {
         round_trip_valid(
             case_name,
             "old",
-            &old_schema,
-            old_round_tripper.as_mut(),
+            old_schema,
+            old_round_tripper.as_deref_mut(),
             sample,
         )?;
-        reject_invalid(case_name, "new", new_round_tripper.as_mut(), sample);
+        reject_invalid(case_name, "new", new_round_tripper.as_deref_mut(), sample);
     }
 
     for sample in &samples.new_only {
@@ -74,11 +122,11 @@ fn fixture(examples_file: &Path) -> Result<(), Box<dyn Error>> {
         round_trip_valid(
             case_name,
             "new",
-            &new_schema,
-            new_round_tripper.as_mut(),
+            new_schema,
+            new_round_tripper.as_deref_mut(),
             sample,
         )?;
-        reject_invalid(case_name, "old", old_round_tripper.as_mut(), sample);
+        reject_invalid(case_name, "old", old_round_tripper.as_deref_mut(), sample);
     }
 
     for sample in &samples.both {
@@ -89,19 +137,65 @@ fn fixture(examples_file: &Path) -> Result<(), Box<dyn Error>> {
         round_trip_valid(
             case_name,
             "old",
-            &old_schema,
-            old_round_tripper.as_mut(),
+            old_schema,
+            old_round_tripper.as_deref_mut(),
             sample,
         )?;
         round_trip_valid(
             case_name,
             "new",
-            &new_schema,
-            new_round_tripper.as_mut(),
+            new_schema,
+            new_round_tripper.as_deref_mut(),
             sample,
         )?;
     }
 
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn round_trip_generated_samples(
+    case_name: &str,
+    source_side: &str,
+    source_schema: &SchemaDocument,
+    mut source_round_tripper: Option<&mut DataclassGeneratedValueRoundTripper>,
+    counterpart_side: &str,
+    counterpart_schema: &SchemaDocument,
+    mut counterpart_round_tripper: Option<&mut DataclassGeneratedValueRoundTripper>,
+    rng: &mut StdRng,
+) -> Result<(), Box<dyn Error>> {
+    let config = GenerationConfig::new(4);
+    for _ in 0..GENERATED_VALUE_ITERATIONS {
+        let sample = ValueGenerator::generate(source_schema, config, rng)?;
+        assert!(
+            source_schema.is_valid(&sample)?,
+            "{case_name}/{source_side} generator emitted an invalid sample: {sample:?}"
+        );
+        round_trip_valid(
+            case_name,
+            source_side,
+            source_schema,
+            source_round_tripper.as_deref_mut(),
+            &sample,
+        )?;
+
+        if counterpart_schema.is_valid(&sample)? {
+            round_trip_valid(
+                case_name,
+                counterpart_side,
+                counterpart_schema,
+                counterpart_round_tripper.as_deref_mut(),
+                &sample,
+            )?;
+        } else {
+            reject_invalid(
+                case_name,
+                counterpart_side,
+                counterpart_round_tripper.as_deref_mut(),
+                &sample,
+            );
+        }
+    }
     Ok(())
 }
 
@@ -161,7 +255,7 @@ fn round_trip_valid(
         .round_trip_value(sample)
         .unwrap_or_else(|message| {
             panic!(
-                "{case_name}/{side} generated dataclass rejected a valid curated sample {sample:?}: {message}"
+                "{case_name}/{side} generated dataclass rejected a valid sample {sample:?}: {message}"
             )
         });
     assert!(
@@ -184,7 +278,7 @@ fn reject_invalid(
         .reject_invalid_value(sample)
         .unwrap_or_else(|message| {
             panic!(
-                "{case_name}/{side} generated dataclass accepted a curated invalid sample {sample:?}: {message}"
+                "{case_name}/{side} generated dataclass accepted an invalid sample {sample:?}: {message}"
             )
         });
 }
