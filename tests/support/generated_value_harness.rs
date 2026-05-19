@@ -20,6 +20,7 @@ pub struct FuzzSchemaCase<'a> {
 
 pub trait GeneratedValueRoundTripper {
     fn round_trip(&mut self, candidate: &Value) -> Result<Value, String>;
+    fn reject_invalid(&mut self, candidate: &Value) -> Result<(), String>;
 }
 
 pub trait GeneratedValueRoundTripperFactory {
@@ -52,11 +53,8 @@ where
     let whitelist = load_whitelist();
     let allowed = whitelist.get::<str>(rel_str.as_ref());
 
-    for (index, schema_json) in schemas.iter().enumerate() {
-        if schema_json == &Value::Bool(false) {
-            continue;
-        }
-
+    for (index, fixture_schema) in schemas.iter().enumerate() {
+        let schema_json = &fixture_schema.schema;
         let schema_case = FuzzSchemaCase {
             rel_path: &rel_str,
             index,
@@ -85,13 +83,34 @@ where
             }
             Err(error) => return Err(error.into()),
         };
-        if matches!(root.kind(), SchemaNodeKind::BoolSchema(false)) {
-            continue;
-        }
         let mut generated_round_tripper =
             round_tripper_factory.build_round_tripper(&schema_case)?;
         let is_whitelisted = allowed.map(|set| set.contains(&index)).unwrap_or(false);
         let generation_config = GenerationConfig::new(6);
+
+        if let Some(round_tripper) = generated_round_tripper.as_mut() {
+            for fixture_test in fixture_schema.tests.iter().filter(|test| !test.valid) {
+                if schema.is_valid(&fixture_test.data)? {
+                    continue;
+                }
+                if let Err(message) = round_tripper.reject_invalid(&fixture_test.data) {
+                    panic!(
+                        "{}",
+                        format_rejection_failure(
+                            &rel_str,
+                            index,
+                            schema_json,
+                            fixture_test,
+                            &message,
+                        )?,
+                    );
+                }
+            }
+        }
+
+        if matches!(root.kind(), SchemaNodeKind::BoolSchema(false)) {
+            continue;
+        }
 
         let mut success = true;
         for _ in 0..GENERATED_VALUE_ITERATIONS {
@@ -178,14 +197,50 @@ where
     Ok(())
 }
 
-fn collect_embedded_schemas(root: &Value) -> Vec<Value> {
+#[derive(Debug)]
+struct FixtureSchema {
+    schema: Value,
+    tests: Vec<FixtureTest>,
+}
+
+#[derive(Debug)]
+struct FixtureTest {
+    description: String,
+    data: Value,
+    valid: bool,
+}
+
+fn collect_embedded_schemas(root: &Value) -> Vec<FixtureSchema> {
     match root {
         Value::Array(items) => items
             .iter()
-            .filter_map(|item| item.get("schema").cloned())
+            .filter_map(|item| {
+                Some(FixtureSchema {
+                    schema: item.get("schema")?.clone(),
+                    tests: collect_fixture_tests(item),
+                })
+            })
             .collect(),
-        schema => vec![schema.clone()],
+        schema => vec![FixtureSchema {
+            schema: schema.clone(),
+            tests: Vec::new(),
+        }],
     }
+}
+
+fn collect_fixture_tests(item: &Value) -> Vec<FixtureTest> {
+    item.get("tests")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|test| {
+            Some(FixtureTest {
+                description: test.get("description")?.as_str()?.to_owned(),
+                data: test.get("data")?.clone(),
+                valid: test.get("valid")?.as_bool()?,
+            })
+        })
+        .collect()
 }
 
 fn format_validation_failure(
@@ -215,6 +270,21 @@ fn format_round_trip_failure(
         serde_json::to_string_pretty(schema_json)?,
         serde_json::to_string_pretty(candidate)?,
         serde_json::to_string_pretty(emitted)?,
+    ))
+}
+
+fn format_rejection_failure(
+    rel_path: &str,
+    schema_index: usize,
+    schema_json: &Value,
+    fixture_test: &FixtureTest,
+    message: &str,
+) -> Result<String, Box<dyn Error>> {
+    Ok(format!(
+        "Generated dataclass accepted invalid fixture input for schema #{schema_index} in {rel_path}\n\nTest:\n{}\n\n{message}\n\nSchema:\n{}\n\nInvalid fixture instance:\n{}",
+        fixture_test.description,
+        serde_json::to_string_pretty(schema_json)?,
+        serde_json::to_string_pretty(&fixture_test.data)?,
     ))
 }
 

@@ -115,6 +115,13 @@ reader = ProfileReader.from_json({"version": 1, "data": {"name": "Ada"}})
 assert reader.root.version == 1
 assert reader.root.data.name == "Ada"
 
+try:
+    ProfileWriter(version=1, data={"name": "Ada"})
+except TypeError:
+    pass
+else:
+    raise AssertionError("constructor accepted raw nested JSON instead of a Profile")
+
 for forbidden in (
     lambda: ProfileWriter.from_json({"version": 1, "data": {"name": "Ada"}}),
     lambda: ProfileWriter.from_json_string('{"version":1,"data":{"name":"Ada"}}'),
@@ -444,7 +451,7 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-payload = module.CollisionV1(name="Ada")
+payload = module.CollisionV1(name=module.CollisionV1V1(root="Ada"))
 assert payload.to_json() == {"name": "Ada"}
 
 writer = module.CollisionWriter(version=1, data=payload)

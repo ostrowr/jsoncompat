@@ -1410,12 +1410,9 @@ fn is_array_schema(obj: &Map<String, Value>) -> bool {
 }
 
 fn union_annotation(annotations: &[String]) -> String {
-    let mut unique = Vec::new();
-    for annotation in annotations {
-        if !unique.contains(annotation) {
-            unique.push(annotation.clone());
-        }
-    }
+    let mut unique = annotations.to_vec();
+    unique.sort();
+    unique.dedup();
     unique.sort_by(
         |left, right| match (left.as_str() == "None", right.as_str() == "None") {
             (true, false) => std::cmp::Ordering::Greater,

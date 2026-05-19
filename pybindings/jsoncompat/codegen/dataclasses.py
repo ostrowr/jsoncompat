@@ -101,6 +101,7 @@ class DataclassModel:
         schema_json = _jsoncompat_schema_for(type(self))
         if schema_json is None:
             return
+        _jsoncompat_validate_model_instance(self)
         value = self.jsoncompat_to_json_unchecked()
         instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
         if not _jsoncompat_validator_for(type(self)).is_valid(instance_json):
@@ -358,12 +359,7 @@ def _jsoncompat_root_annotation_for(model_type: type[DataclassRootModel]) -> Any
 
 
 def _jsoncompat_construct_extra(annotation: Any, value: dict[str, Any]) -> dict[str, Any]:
-    origin = get_origin(annotation)
-    if origin is dict:
-        args = get_args(annotation)
-        value_annotation = args[1] if len(args) == 2 else Any
-    else:
-        value_annotation = Any
+    value_annotation = _jsoncompat_extra_value_annotation(annotation)
     return {
         key: _jsoncompat_construct_value(value_annotation, item)
         for key, item in value.items()
@@ -440,6 +436,121 @@ def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
         except (TypeError, ValueError):
             continue
     raise TypeError(f"value {value!r} does not match any union branch")
+
+
+def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
+    if isinstance(model, DataclassRootModel):
+        _jsoncompat_validate_python_value(
+            _jsoncompat_root_annotation_for(type(model)),
+            model.root,
+        )
+        return
+
+    object_spec = _jsoncompat_object_spec_for(type(model))
+    for field_spec in object_spec.fields:
+        field_value = getattr(model, field_spec.py_name)
+        if field_value is JSONCOMPAT_MISSING:
+            if field_spec.omittable:
+                continue
+            raise TypeError(
+                f"{type(model).__name__}.{field_spec.py_name} cannot be JSONCOMPAT_MISSING"
+            )
+        try:
+            _jsoncompat_validate_python_value(field_spec.annotation, field_value)
+        except TypeError as error:
+            raise TypeError(
+                f"{type(model).__name__}.{field_spec.py_name}: {error}"
+            ) from None
+
+    if object_spec.extra_annotation is None:
+        return
+
+    extra = getattr(model, JSONCOMPAT_EXTRA_FIELD)
+    if not isinstance(extra, dict):
+        raise TypeError(
+            f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} expected dict, "
+            f"got {type(extra).__name__}"
+        )
+
+    extra_values = cast(dict[Any, Any], extra)
+    value_annotation = _jsoncompat_extra_value_annotation(object_spec.extra_annotation)
+    for json_name, item in extra_values.items():
+        if not isinstance(json_name, str):
+            raise TypeError(
+                f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} keys must be str"
+            )
+        try:
+            _jsoncompat_validate_python_value(value_annotation, item)
+        except TypeError as error:
+            raise TypeError(
+                f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD}[{json_name!r}]: {error}"
+            ) from None
+
+
+def _jsoncompat_extra_value_annotation(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    if origin is dict:
+        args = get_args(annotation)
+        return args[1] if len(args) == 2 else Any
+    return Any
+
+
+def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
+    if annotation is Any:
+        return
+    if annotation is JsoncompatMissingType:
+        if value is JSONCOMPAT_MISSING:
+            return
+        raise TypeError("expected JSONCOMPAT_MISSING sentinel")
+    if annotation is str:
+        if isinstance(value, str):
+            return
+        raise TypeError(f"expected str, got {type(value).__name__}")
+    if annotation is int:
+        if isinstance(value, int) and not isinstance(value, bool):
+            return
+        raise TypeError(f"expected int, got {type(value).__name__}")
+    if annotation is float:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return
+        raise TypeError(f"expected number, got {type(value).__name__}")
+    if annotation is bool:
+        if isinstance(value, bool):
+            return
+        raise TypeError(f"expected bool, got {type(value).__name__}")
+    if annotation is type(None):
+        if value is None:
+            return
+        raise TypeError(f"expected null, got {type(value).__name__}")
+    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
+        if isinstance(value, annotation):
+            return
+        raise TypeError(
+            f"expected {annotation.__name__}, got {type(value).__name__}"
+        )
+
+    origin = get_origin(annotation)
+    if origin is list:
+        args = get_args(annotation)
+        item_annotation = args[0] if args else Any
+        if not isinstance(value, list):
+            raise TypeError(f"expected list, got {type(value).__name__}")
+        value_items = cast(list[Any], value)
+        for item in value_items:
+            _jsoncompat_validate_python_value(item_annotation, item)
+        return
+    if origin in {types.UnionType, Union}:
+        for branch in get_args(annotation):
+            try:
+                _jsoncompat_validate_python_value(branch, value)
+            except TypeError:
+                continue
+            return
+        raise TypeError(f"value {value!r} does not match any union branch")
+    if origin is Literal:
+        if value in get_args(annotation):
+            return
+        raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
 
 
 def _jsoncompat_new_unchecked[JSONCOMPAT_MODEL_T: DataclassModel](

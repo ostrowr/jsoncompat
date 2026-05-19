@@ -82,14 +82,47 @@ impl DataclassGeneratedValueRoundTripper {
 
 impl GeneratedValueRoundTripper for DataclassGeneratedValueRoundTripper {
     fn round_trip(&mut self, candidate: &Value) -> Result<Value, String> {
+        self.write_request("round_trip", candidate)?;
+        let line = self.read_response()?;
+        match line.strip_prefix("err\t") {
+            Some(message) => Err(message.to_owned()),
+            None => {
+                let emitted = line
+                    .strip_prefix("ok\t")
+                    .ok_or_else(|| format!("unexpected validator response: {line:?}"))?;
+                serde_json::from_str(emitted)
+                    .map_err(|error| format!("validator returned invalid JSON: {error}"))
+            }
+        }
+    }
+
+    fn reject_invalid(&mut self, candidate: &Value) -> Result<(), String> {
+        self.write_request("reject_invalid", candidate)?;
+        let line = self.read_response()?;
+        match line.as_str() {
+            "rejected" => Ok(()),
+            "accepted" => Err("generated dataclass accepted invalid fixture input".to_owned()),
+            _ => Err(format!("unexpected invalid-input response: {line:?}")),
+        }
+    }
+}
+
+impl DataclassGeneratedValueRoundTripper {
+    fn write_request(&mut self, mode: &str, candidate: &Value) -> Result<(), String> {
         let stdin = self
             .stdin
             .as_mut()
             .ok_or_else(|| "dataclass validator stdin is closed".to_owned())?;
+        stdin
+            .write_all(mode.as_bytes())
+            .map_err(|error| error.to_string())?;
+        stdin.write_all(b"\t").map_err(|error| error.to_string())?;
         serde_json::to_writer(&mut *stdin, candidate).map_err(|error| error.to_string())?;
         stdin.write_all(b"\n").map_err(|error| error.to_string())?;
-        stdin.flush().map_err(|error| error.to_string())?;
+        stdin.flush().map_err(|error| error.to_string())
+    }
 
+    fn read_response(&mut self) -> Result<String, String> {
         let mut line = String::new();
         let bytes_read = self
             .stdout
@@ -103,18 +136,7 @@ impl GeneratedValueRoundTripper for DataclassGeneratedValueRoundTripper {
                 stderr_text
             });
         }
-
-        let line = line.trim_end();
-        match line.strip_prefix("err\t") {
-            Some(message) => Err(message.to_owned()),
-            None => {
-                let emitted = line
-                    .strip_prefix("ok\t")
-                    .ok_or_else(|| format!("unexpected validator response: {line:?}"))?;
-                serde_json::from_str(emitted)
-                    .map_err(|error| format!("validator returned invalid JSON: {error}"))
-            }
-        }
+        Ok(line.trim_end().to_owned())
     }
 }
 
@@ -165,11 +187,19 @@ spec.loader.exec_module(module)
 reader_model = module.JSONCOMPAT_MODEL
 
 for raw_line in sys.stdin:
+    mode, raw_json = raw_line.split("\t", 1)
+    candidate = json.loads(raw_json)
     try:
-        model = reader_model.from_json(json.loads(raw_line))
+        model = reader_model.from_json(candidate)
+        if mode == "reject_invalid":
+            print("accepted", flush=True)
+            continue
         emitted = model.to_json()
     except Exception as error:
-        print(f"err\t{type(error).__name__}: {error}", flush=True)
+        if mode == "reject_invalid":
+            print("rejected", flush=True)
+        else:
+            print(f"err\t{type(error).__name__}: {error}", flush=True)
     else:
         print(
             "ok\t" + json.dumps(emitted, separators=(",", ":"), sort_keys=True),
