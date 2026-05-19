@@ -130,6 +130,7 @@ pub(super) fn object_constraints_subsumed(
                 sub.pattern_properties,
                 sub.property_names,
                 sub.additional,
+                context,
             ) || dependencies.iter().all(|dependency| {
                 dependent_requirement_is_guaranteed(
                     trigger,
@@ -243,7 +244,8 @@ fn subset_property_conjuncts_subsume_schema(
 
     sub.property.is_none()
         && !has_maybe_matching_pattern
-        && is_subschema_of_with_productive_context(sub.additional, sup_schema, context)
+        && (context.assume_subset_omits_undeclared_properties
+            || is_subschema_of_with_productive_context(sub.additional, sup_schema, context))
 }
 
 pub(super) fn implicit_property_conjuncts_subsume_schema(
@@ -270,6 +272,7 @@ fn object_property_name_can_be_present(
     pattern_properties: &HashMap<String, PatternProperty<SchemaNode>>,
     property_names: &SchemaNode,
     additional: &SchemaNode,
+    context: &SubschemaCheckContext,
 ) -> bool {
     if !property_name_schema_may_accept(property_names, property_name) {
         return false;
@@ -302,7 +305,9 @@ fn object_property_name_can_be_present(
         return true;
     }
 
-    if !matches!(additional.kind(), SchemaNodeKind::BoolSchema(false)) {
+    if !context.assume_subset_omits_undeclared_properties
+        && !matches!(additional.kind(), SchemaNodeKind::BoolSchema(false))
+    {
         return true;
     }
 
@@ -327,6 +332,10 @@ fn object_additional_schema_is_subsumed(
     sup_additional: &SchemaNode,
     context: &mut SubschemaCheckContext,
 ) -> bool {
+    if context.assume_subset_omits_undeclared_properties {
+        return true;
+    }
+
     if !is_subschema_of_with_productive_context(sub_additional, sup_additional, context) {
         return false;
     }

@@ -28,7 +28,10 @@ pub use openapi_compat::{
     OpenApiCompatibilityError, OpenApiCompatibilityIssue, OpenApiCompatibilityReport,
     OpenApiCompatibilitySurface, check_openapi_compat, validate_openapi_compatibility_input,
 };
-use subset::{explain_subschema_failure, is_subschema_of};
+use subset::{
+    explain_subschema_failure, explain_subschema_failure_emitted_values, is_subschema_of,
+    is_subschema_of_emitted_values,
+};
 
 /// The role under which a compatibility check is performed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -37,7 +40,7 @@ pub enum Role {
     /// produced by the _new_ schema is still accepted by the _old_ one.
     Serializer,
     /// Evolving the *consumer* (deserializer).  A change is safe if every value
-    /// accepted by the _old_ schema is still valid under the _new_ one.
+    /// the old serializer could emit is still valid under the _new_ schema.
     Deserializer,
     /// We need to maintain full equivalence in both directions.
     Both,
@@ -90,9 +93,13 @@ pub enum CompatibilityWarning {
 ///
 /// * [`Role::Serializer`] checks `new ⊆ old`: every value produced under the
 ///   new schema must still be accepted by clients using the old schema.
-/// * [`Role::Deserializer`] checks `old ⊆ new`: every previously accepted
-///   value must still be accepted by the new schema.
+/// * [`Role::Deserializer`] checks whether every value the old serializer
+///   could emit is still accepted by the new schema.
 /// * [`Role::Both`] requires both directions.
+///
+/// For [`Role::Deserializer`], object schemas are interpreted under the
+/// assumption that serializers do not emit undeclared properties solely because
+/// `additionalProperties` would permit them.
 ///
 /// A return value of `Ok(false)` is a proven or conservative incompatibility.
 /// A return value of `Err(_)` means the checker cannot soundly run on the input
@@ -107,8 +114,8 @@ pub fn check_compat(
 
     match role {
         Role::Serializer => Ok(is_subschema_of(new, old)),
-        Role::Deserializer => Ok(is_subschema_of(old, new)),
-        Role::Both => Ok(is_subschema_of(new, old) && is_subschema_of(old, new)),
+        Role::Deserializer => Ok(is_subschema_of_emitted_values(old, new)),
+        Role::Both => Ok(is_subschema_of(new, old) && is_subschema_of_emitted_values(old, new)),
     }
 }
 
@@ -126,19 +133,19 @@ pub fn explain_compat_failure(
     let old = compatibility_input(old)?.root;
     let new = compatibility_input(new)?.root;
 
-    let explanation =
-        match role {
-            Role::Serializer => explain_subschema_failure(new, old)
-                .map(|explanation| explanation.render("new", "old")),
-            Role::Deserializer => explain_subschema_failure(old, new)
-                .map(|explanation| explanation.render("old", "new")),
-            Role::Both => explain_subschema_failure(new, old)
-                .map(|explanation| explanation.render("new", "old"))
-                .or_else(|| {
-                    explain_subschema_failure(old, new)
-                        .map(|explanation| explanation.render("old", "new"))
-                }),
-        };
+    let explanation = match role {
+        Role::Serializer => {
+            explain_subschema_failure(new, old).map(|explanation| explanation.render("new", "old"))
+        }
+        Role::Deserializer => explain_subschema_failure_emitted_values(old, new)
+            .map(|explanation| explanation.render("old", "new")),
+        Role::Both => explain_subschema_failure(new, old)
+            .map(|explanation| explanation.render("new", "old"))
+            .or_else(|| {
+                explain_subschema_failure_emitted_values(old, new)
+                    .map(|explanation| explanation.render("old", "new"))
+            }),
+    };
     Ok(explanation)
 }
 
@@ -860,6 +867,36 @@ mod tests {
         assert!(
             check_compat(&old, &new, Role::Both)
                 .expect("const payload keys are data, not schema keywords")
+        );
+    }
+
+    #[test]
+    fn check_compat_treats_optional_added_property_as_deserializer_compatible() {
+        let old = schema(json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "age": { "type": "integer" }
+            },
+            "required": ["name", "age"]
+        }));
+        let new = schema(json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "age": { "type": "integer" },
+                "is_active": { "type": "boolean", "default": true }
+            },
+            "required": ["name", "age"]
+        }));
+
+        assert!(
+            check_compat(&old, &new, Role::Deserializer)
+                .expect("optional added property should remain deserializer-compatible")
+        );
+        assert!(
+            check_compat(&old, &new, Role::Both)
+                .expect("optional added property should remain compatible in both directions")
         );
     }
 }
