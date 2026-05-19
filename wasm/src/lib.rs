@@ -1,8 +1,8 @@
 //! WebAssembly bindings for the `jsoncompat` compatibility checker and value generator.
 //!
-//! JavaScript callers get two exported functions: `check_compat` and
-//! `generate_value`. Both accept schemas as JSON strings and return JavaScript
-//! values or string errors through `wasm-bindgen`.
+//! JavaScript callers get exported compatibility helpers plus one-shot
+//! generation and reusable validation. Public functions accept schemas as JSON
+//! strings and return JavaScript values or string errors through `wasm-bindgen`.
 
 use wasm_bindgen::prelude::*;
 
@@ -44,6 +44,28 @@ fn parse_role(role: &str) -> Result<Role, JsValue> {
         _ => Err(JsValue::from_str(
             "role must be 'serializer', 'deserializer' or 'both'",
         )),
+    }
+}
+
+fn validate_json_for_schema(schema: &SchemaDocument, instance_json: &str) -> Result<bool, JsValue> {
+    let instance = parse_json(instance_json)?;
+    schema
+        .is_valid(&instance)
+        .map_err(|e| JsValue::from_str(&format!("validation failed: {e}")))
+}
+
+/// Reusable validator for one JSON Schema document.
+#[wasm_bindgen]
+pub struct Validator {
+    schema: SchemaDocument,
+}
+
+#[wasm_bindgen]
+impl Validator {
+    /// Check whether a JSON value encoded as a string satisfies this validator's schema.
+    #[wasm_bindgen(js_name = is_valid)]
+    pub fn is_valid_js(&self, instance_json: &str) -> Result<bool, JsValue> {
+        validate_json_for_schema(&self.schema, instance_json)
     }
 }
 
@@ -93,6 +115,18 @@ pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue
         },
     )?;
     serde_json::to_string(&v).map_err(|e| JsValue::from_str(&format!("serialization failure: {e}")))
+}
+
+/// Build a reusable validator for a JSON Schema.
+///
+/// * `schema_json` – schema as JSON string
+/// Exported to JavaScript as `validator_for`.
+#[wasm_bindgen(js_name = validator_for)]
+pub fn validator_for_js(schema_json: &str) -> Result<Validator, JsValue> {
+    let raw = parse_json(schema_json)?;
+    let schema =
+        validated_schema(&raw).map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))?;
+    Ok(Validator { schema })
 }
 
 #[cfg(test)]

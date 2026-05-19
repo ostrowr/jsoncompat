@@ -15,7 +15,7 @@
     <script type="module">
       // The Wasm package is built into `pkg/` by `just wasm-demo` with
       //   wasm-pack build wasm --target web --out-dir examples/wasm/pkg
-      import init, { check_compat, generate_value } from "../../wasm/pkg/jsoncompat_wasm.js";
+      import init, { check_compat, generate_value, validator_for } from "../../wasm/pkg/jsoncompat_wasm.js";
 
       const out = document.getElementById('out');
 
@@ -47,6 +47,15 @@
         lines.push('\n=== Example value generation ===');
         const sample = await generate_value(oldSchema, 3);
         lines.push(sample);
+        const validator = validator_for(oldSchema);
+        if (!validator.is_valid(sample)) {
+          throw new Error("generated sample failed reusable validation");
+        }
+        if (validator.is_valid('{"name": 1}')) {
+          throw new Error("invalid sample passed reusable validation");
+        }
+        lines.push('\n=== Reusable validation ===');
+        lines.push(`generated JSON is valid: ${validator.is_valid(sample)}`);
 
         out.textContent = lines.join('\n');
       })();
