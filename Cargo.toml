@@ -63,6 +63,10 @@ harness = false
 name = "dataclasses_backcompat"
 harness = false
 
+[[test]]
+name = "dataclasses_stamp_backcompat"
+harness = false
+
 [[bench]]
 name = "validator_cache"
 harness = false
