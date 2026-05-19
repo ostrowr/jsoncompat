@@ -4,7 +4,7 @@ mod generated_value_harness;
 mod python_env;
 
 use generated_value_harness::{
-    FuzzSchemaCase, GeneratedValueValidator, GeneratedValueValidatorFactory,
+    FuzzSchemaCase, GeneratedValueRoundTripper, GeneratedValueRoundTripperFactory,
     run_generated_value_fixture,
 };
 use jsoncompat_codegen::generate_dataclass_models;
@@ -21,34 +21,36 @@ datatest_stable::harness! {
 }
 
 fn fixture(file: &Path) -> Result<(), Box<dyn Error>> {
-    run_generated_value_fixture(file, &DataclassGeneratedValueValidatorFactory)
+    run_generated_value_fixture(file, &DataclassGeneratedValueRoundTripperFactory)
 }
 
-struct DataclassGeneratedValueValidatorFactory;
+struct DataclassGeneratedValueRoundTripperFactory;
 
-impl GeneratedValueValidatorFactory for DataclassGeneratedValueValidatorFactory {
-    type Validator = DataclassGeneratedValueValidator;
+impl GeneratedValueRoundTripperFactory for DataclassGeneratedValueRoundTripperFactory {
+    type RoundTripper = DataclassGeneratedValueRoundTripper;
 
-    fn build_validator(
+    fn build_round_tripper(
         &self,
         schema_case: &FuzzSchemaCase<'_>,
-    ) -> Result<Option<Self::Validator>, Box<dyn Error>> {
+    ) -> Result<Option<Self::RoundTripper>, Box<dyn Error>> {
         let source = match generate_dataclass_models(schema_case.schema_json) {
             Ok(source) => source,
             Err(_) => return Ok(None),
         };
         let module_path = write_generated_module(schema_case, &source)?;
-        Ok(Some(DataclassGeneratedValueValidator::spawn(module_path)?))
+        Ok(Some(DataclassGeneratedValueRoundTripper::spawn(
+            module_path,
+        )?))
     }
 }
 
-struct DataclassGeneratedValueValidator {
+struct DataclassGeneratedValueRoundTripper {
     child: Child,
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
 }
 
-impl DataclassGeneratedValueValidator {
+impl DataclassGeneratedValueRoundTripper {
     fn spawn(module_path: PathBuf) -> Result<Self, Box<dyn Error>> {
         let mut command = python_env::python_command();
         command
@@ -78,8 +80,8 @@ impl DataclassGeneratedValueValidator {
     }
 }
 
-impl GeneratedValueValidator for DataclassGeneratedValueValidator {
-    fn validate(&mut self, candidate: &Value) -> Result<(), String> {
+impl GeneratedValueRoundTripper for DataclassGeneratedValueRoundTripper {
+    fn round_trip(&mut self, candidate: &Value) -> Result<Value, String> {
         let stdin = self
             .stdin
             .as_mut()
@@ -102,15 +104,21 @@ impl GeneratedValueValidator for DataclassGeneratedValueValidator {
             });
         }
 
-        match line.trim_end().strip_prefix("err\t") {
+        let line = line.trim_end();
+        match line.strip_prefix("err\t") {
             Some(message) => Err(message.to_owned()),
-            None if line.trim_end() == "ok" => Ok(()),
-            None => Err(format!("unexpected validator response: {line:?}")),
+            None => {
+                let emitted = line
+                    .strip_prefix("ok\t")
+                    .ok_or_else(|| format!("unexpected validator response: {line:?}"))?;
+                serde_json::from_str(emitted)
+                    .map_err(|error| format!("validator returned invalid JSON: {error}"))
+            }
         }
     }
 }
 
-impl Drop for DataclassGeneratedValueValidator {
+impl Drop for DataclassGeneratedValueRoundTripper {
     fn drop(&mut self) {
         drop(self.stdin.take());
         let _ = self.child.wait();
@@ -158,9 +166,13 @@ reader_model = module.JSONCOMPAT_MODEL
 
 for raw_line in sys.stdin:
     try:
-        reader_model.from_json(json.loads(raw_line))
+        model = reader_model.from_json(json.loads(raw_line))
+        emitted = model.to_json()
     except Exception as error:
         print(f"err\t{type(error).__name__}: {error}", flush=True)
     else:
-        print("ok", flush=True)
+        print(
+            "ok\t" + json.dumps(emitted, separators=(",", ":"), sort_keys=True),
+            flush=True,
+        )
 "#;

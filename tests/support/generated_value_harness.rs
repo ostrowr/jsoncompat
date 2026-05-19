@@ -18,25 +18,25 @@ pub struct FuzzSchemaCase<'a> {
     pub schema_json: &'a Value,
 }
 
-pub trait GeneratedValueValidator {
-    fn validate(&mut self, candidate: &Value) -> Result<(), String>;
+pub trait GeneratedValueRoundTripper {
+    fn round_trip(&mut self, candidate: &Value) -> Result<Value, String>;
 }
 
-pub trait GeneratedValueValidatorFactory {
-    type Validator: GeneratedValueValidator;
+pub trait GeneratedValueRoundTripperFactory {
+    type RoundTripper: GeneratedValueRoundTripper;
 
-    fn build_validator(
+    fn build_round_tripper(
         &self,
         schema_case: &FuzzSchemaCase<'_>,
-    ) -> Result<Option<Self::Validator>, Box<dyn Error>>;
+    ) -> Result<Option<Self::RoundTripper>, Box<dyn Error>>;
 }
 
 pub fn run_generated_value_fixture<Factory>(
     file: &Path,
-    validator_factory: &Factory,
+    round_tripper_factory: &Factory,
 ) -> Result<(), Box<dyn Error>>
 where
-    Factory: GeneratedValueValidatorFactory,
+    Factory: GeneratedValueRoundTripperFactory,
 {
     let bytes = fs::read(file)?;
     let root: Value = serde_json::from_slice(&bytes)?;
@@ -88,7 +88,8 @@ where
         if matches!(root.kind(), SchemaNodeKind::BoolSchema(false)) {
             continue;
         }
-        let mut generated_validator = validator_factory.build_validator(&schema_case)?;
+        let mut generated_round_tripper =
+            round_tripper_factory.build_round_tripper(&schema_case)?;
         let is_whitelisted = allowed.map(|set| set.contains(&index)).unwrap_or(false);
         let generation_config = GenerationConfig::new(6);
 
@@ -129,13 +130,35 @@ where
                 break;
             }
 
-            if let Some(validator) = generated_validator.as_mut()
-                && let Err(message) = validator.validate(&candidate)
-            {
-                panic!(
-                    "{}",
-                    format_validation_failure(&rel_str, index, schema_json, &candidate, &message,)?,
-                );
+            if let Some(round_tripper) = generated_round_tripper.as_mut() {
+                let emitted = match round_tripper.round_trip(&candidate) {
+                    Ok(emitted) => emitted,
+                    Err(message) => {
+                        panic!(
+                            "{}",
+                            format_validation_failure(
+                                &rel_str,
+                                index,
+                                schema_json,
+                                &candidate,
+                                &message,
+                            )?,
+                        );
+                    }
+                };
+                if !schema.is_valid(&emitted)? {
+                    panic!(
+                        "{}",
+                        format_round_trip_failure(
+                            &rel_str,
+                            index,
+                            schema_json,
+                            &candidate,
+                            &emitted,
+                            "generated dataclass emitted a value rejected by the raw schema validator",
+                        )?,
+                    );
+                }
             }
         }
 
@@ -176,6 +199,22 @@ fn format_validation_failure(
         "Generated validator rejected schema #{schema_index} in {rel_path}\n\n{message}\n\nSchema:\n{}\n\nInstance:\n{}",
         serde_json::to_string_pretty(schema_json)?,
         serde_json::to_string_pretty(candidate)?,
+    ))
+}
+
+fn format_round_trip_failure(
+    rel_path: &str,
+    schema_index: usize,
+    schema_json: &Value,
+    candidate: &Value,
+    emitted: &Value,
+    message: &str,
+) -> Result<String, Box<dyn Error>> {
+    Ok(format!(
+        "Generated dataclass round-trip rejected schema #{schema_index} in {rel_path}\n\n{message}\n\nSchema:\n{}\n\nInput instance:\n{}\n\nEmitted instance:\n{}",
+        serde_json::to_string_pretty(schema_json)?,
+        serde_json::to_string_pretty(candidate)?,
+        serde_json::to_string_pretty(emitted)?,
     ))
 }
 
