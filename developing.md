@@ -34,6 +34,9 @@ The benchmark fixtures under [benches/fixtures](benches/fixtures) are fixed on p
 | `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings |
 | `web/` | website | Documentation site and interactive frontend |
 
+Package READMEs stay user-facing on purpose. Deeper implementation notes live
+here so the crates' front doors remain short and practical.
+
 ## Architecture
 
 `SchemaDocument::from_json()` stores the raw source JSON, canonicalizes it once, and preserves precise frontend errors. The raw `jsonschema` backend remains the source of truth for user-facing value validation through `SchemaDocument::is_valid()`.
@@ -46,6 +49,13 @@ The compatibility layer works over the resolved schema graph:
 - `explain_compat_failure()` reports the first useful structural reason the subset check can identify.
 
 The resolved IR is public because the compatibility checker and the fuzzer are separate crates, but the parser-only details stay private. Typed domains such as `IntegerBounds`, `NumberBounds`, `CountRange`, `ContainsConstraint`, and `PatternConstraint` keep impossible states out of the core model where practical.
+
+For `json_schema_ast`, the user-facing validation surface is intentionally
+smaller than the resolved IR surface:
+
+- `SchemaDocument::from_json()` and `SchemaDocument::is_valid()` cover ordinary callers;
+- `SchemaDocument::canonical_schema_json()` and `SchemaDocument::root()` exist for analyzers, the compatibility checker, and fuzzing;
+- the structured bound and pattern types keep invalid internal states from leaking into downstream reasoning.
 
 ## Compatibility diagnostics
 
@@ -123,6 +133,19 @@ For OpenAPI, the practical rules are:
 - compatibility readiness catches valid but unsupported lowerability surfaces;
 - local component references are supported where the lowerer models them;
 - media-type ranges, status ranges, and header identity are normalized directionally so serializer/deserializer compatibility stays meaningful.
+
+## Website and package README boundaries
+
+The repository has several public-facing READMEs:
+
+- [readme.md](readme.md) is the general end-user entrypoint;
+- [openapi/README.md](openapi/README.md) is the OpenAPI usage guide;
+- [python/README.md](python/README.md), [wasm/README.md](wasm/README.md), [schema/README.md](schema/README.md), and [fuzz/README.md](fuzz/README.md) describe installable packages from a caller's perspective;
+- [web/jsoncompatdotcom/README.md](web/jsoncompatdotcom/README.md) only covers running and validating the website locally.
+
+Keep repo architecture, internal invariants, test design, fixture policy, and
+maintenance workflow in this guide instead of duplicating them across those
+entrypoints.
 
 ## Releases
 

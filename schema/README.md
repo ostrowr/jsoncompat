@@ -1,6 +1,6 @@
 # json_schema_ast
 
-Strict Draft 2020-12 JSON Schema and OpenAPI 3.1 Schema Object documents, validation, and resolved schema IR.
+Build, validate, and resolve Draft 2020-12 JSON Schema and OpenAPI 3.1 Schema Object documents.
 
 [![crates.io](https://img.shields.io/crates/v/json_schema_ast)](https://crates.io/crates/json_schema_ast) [![docs.rs](https://docs.rs/json_schema_ast/badge.svg)](https://docs.rs/json_schema_ast) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
@@ -28,44 +28,32 @@ let raw = json!({
     "required": ["id"]
 });
 
-// Build a document. Construction canonicalizes the schema and checks keyword shapes.
 let schema = SchemaDocument::from_json(&raw).unwrap();
 
-// Validate instances with the raw-schema validator backend.
 assert!(schema.is_valid(&json!({ "id": 42 })).unwrap());
 assert!(!schema.is_valid(&json!({ "name": "Ada" })).unwrap());
 
-// Compile a validator directly if you need to own the backend type.
 let validator = compile(&raw).unwrap();
 assert!(validator.is_valid(&json!({ "id": 42 })));
 ```
 
 ## Public Interface
 
-For validation callers:
+Most callers only need:
 
 - `SchemaDocument::from_json(&Value)` builds a document from a raw Draft 2020-12 JSON Schema or OpenAPI 3.1 Schema Object.
 - `SchemaDocument::is_valid(&Value)` validates instances against the original raw schema.
-- `SchemaDocument::canonical_schema_json()` exposes the canonicalized schema used for IR construction and debugging.
-- `compile(&Value)` returns the underlying `jsonschema::JSONSchema` validator after this crate's dialect checks.
-- `AstError`, `SchemaBuildError`, `SchemaError`, and `CompileError` are the typed error surfaces.
+- `compile(&Value)` returns a ready-to-use validator after this crate's dialect checks.
 
-For resolved-IR consumers:
+For lower-level analysis tools:
 
+- `SchemaDocument::canonical_schema_json()` returns the normalized schema JSON.
 - `SchemaDocument::root()` returns the lazily resolved immutable `SchemaNode` graph.
 - `SchemaNode::kind()` exposes the non-exhaustive `SchemaNodeKind` IR for downstream analyzers.
 - `SchemaNode::id()` exposes opaque node identity for cycle guards.
 - `SchemaNode::accepts_value()` is a low-level evaluator for resolved subgraphs; use `SchemaDocument::is_valid()` for user-visible validation.
 - `json_values_equal(&Value, &Value)` compares JSON values using JSON Schema's numeric equality rule.
-
-The supporting constraint types exposed through `SchemaNodeKind` are deliberately
-structured: `IntegerBounds`, `NumberBounds`, and `CountRange` reject empty
-intervals at construction; `ContainsConstraint` keeps the `contains` schema and
-match-count range together; and `PatternConstraint` records whether the internal
-Rust matcher can evaluate a JSON Schema pattern.
-
-The resolved IR entrypoints are public because `jsoncompat` and
-`json_schema_fuzz` are separate crates; most users only need the validation API.
+- `AstError`, `SchemaBuildError`, `SchemaError`, and `CompileError` are the typed error surfaces.
 
 If a schema document sets `$schema`, it must be either Draft 2020-12
 (`https://json-schema.org/draft/2020-12/schema`, with an optional trailing
@@ -78,6 +66,12 @@ instead.
 Same-document refs to `"#"` and `"#/..."` are supported, including recursive
 graphs. Pure alias cycles, remote refs, plain-name fragments, and dynamic refs
 are rejected with typed resolver errors.
+
+## More detail
+
+- [Developer guide](../developing.md) for resolved-IR internals and constraint design
+- [Repository README](../readme.md) for the broader `jsoncompat` workflow
+- [docs.rs](https://docs.rs/json_schema_ast) for API reference
 
 ## License
 
