@@ -470,6 +470,7 @@ fn python_api_exposes_reusable_schema_tools_and_deprecates_one_shot_helpers() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
+import json
 import warnings
 
 import jsoncompat
@@ -479,12 +480,28 @@ valid_json = '{"name":"Ada"}'
 invalid_json = '{"name":1}'
 
 validator = jsoncompat.validator_for(schema_json)
-assert validator.is_valid(valid_json)
-assert not validator.is_valid(invalid_json)
+assert validator.is_valid_json(valid_json)
+assert not validator.is_valid_json(invalid_json)
+assert validator.is_valid_value({"name": "Ada"})
+assert not validator.is_valid_value({"name": 1})
+
+array_validator = jsoncompat.validator_for('{"type":"array","items":{"type":"integer"}}')
+assert array_validator.is_valid_value((1, 2, 3))
+assert not array_validator.is_valid_value((1, "two", 3))
+
+integer_validator = jsoncompat.validator_for('{"type":"integer"}')
+big_integer = 10 ** 80
+assert integer_validator.is_valid_json(str(big_integer))
+assert integer_validator.is_valid_value(big_integer)
+
+exclusive_validator = jsoncompat.validator_for('{"exclusiveMaximum":9.727837981879871e+26}')
+exclusive_boundary = 9.727837981879871e+26
+assert not exclusive_validator.is_valid_json(json.dumps(exclusive_boundary))
+assert not exclusive_validator.is_valid_value(exclusive_boundary)
 
 generator = jsoncompat.generator_for(schema_json)
 generated = generator.generate_value(3)
-assert validator.is_valid(generated)
+assert validator.is_valid_json(generated)
 
 try:
     jsoncompat.validator_for('{"type": 1}')
@@ -494,11 +511,32 @@ else:
     raise AssertionError("invalid schema was accepted")
 
 try:
-    validator.is_valid("{")
+    validator.is_valid_json("{")
 except ValueError:
     pass
 else:
     raise AssertionError("invalid instance JSON was accepted")
+
+try:
+    validator.is_valid_value({"name": object()})
+except TypeError:
+    pass
+else:
+    raise AssertionError("non-JSON Python values were accepted")
+
+try:
+    validator.is_valid_value({1: "not-json"})
+except TypeError:
+    pass
+else:
+    raise AssertionError("non-string JSON object keys were accepted")
+
+try:
+    validator.is_valid_value({"name": float("inf")})
+except ValueError:
+    pass
+else:
+    raise AssertionError("non-finite JSON numbers were accepted")
 
 try:
     jsoncompat.generator_for('{"type": 1}')
@@ -517,7 +555,7 @@ assert "validator_for" in str(caught[0].message)
 
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always", DeprecationWarning)
-    assert validator.is_valid(jsoncompat.generate_value(schema_json, 3))
+    assert validator.is_valid_json(jsoncompat.generate_value(schema_json, 3))
 
 assert len(caught) == 1
 assert issubclass(caught[0].category, DeprecationWarning)

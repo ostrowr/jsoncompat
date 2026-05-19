@@ -177,14 +177,24 @@ def main() -> None:
     instance = from_json()
     validator = validator_for(BenchEvent.__jsoncompat_schema__)
     assert instance.to_json() == PAYLOAD
-    assert validator.is_valid(PAYLOAD_JSON)
+    assert validator.is_valid_json(PAYLOAD_JSON)
+    assert validator.is_valid_value(PAYLOAD)
 
     bench("cold spec inference", args.iterations, cold_spec_inference)
     clear_runtime_caches()
     infer_all_specs()
     from_json()
     bench("cached spec lookup", args.iterations, cached_spec_lookup)
-    bench("validator.is_valid", args.iterations, lambda: validator.is_valid(PAYLOAD_JSON))
+    bench(
+        "validator.is_valid_json",
+        args.iterations,
+        lambda: validator.is_valid_json(PAYLOAD_JSON),
+    )
+    bench(
+        "validator.is_valid_value",
+        args.iterations,
+        lambda: validator.is_valid_value(PAYLOAD),
+    )
     bench("from_json", args.iterations, from_json)
     bench("to_json", args.iterations, lambda: to_json(instance))
 

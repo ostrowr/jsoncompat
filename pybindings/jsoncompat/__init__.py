@@ -3,12 +3,23 @@ from __future__ import annotations
 import importlib
 import importlib.machinery
 import importlib.util
+import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Callable, Literal, NoReturn, Protocol, cast
+from typing import Callable, Literal, NoReturn, Protocol, TypeAlias, cast
 
 RoleLiteral = Literal["serializer", "deserializer", "both"]
+JsonValue: TypeAlias = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | list["JsonValue"]
+    | tuple["JsonValue", ...]
+    | dict[str, "JsonValue"]
+)
 CheckCompatFn = Callable[[str, str, RoleLiteral], bool]
 GenerateValueFn = Callable[[str, int], str]
 IsValidFn = Callable[[str, str], bool]
@@ -21,7 +32,8 @@ class Generator(Protocol):
 
 
 class Validator(Protocol):
-    def is_valid(self, instance_json: str) -> bool: ...
+    def is_valid_json(self, instance_json: str) -> bool: ...
+    def is_valid_value(self, instance: JsonValue) -> bool: ...
 
 
 class NativeModule(Protocol):
@@ -94,34 +106,45 @@ def _missing_validator_for(schema_json: str) -> NoReturn:
 def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
-    for build_dir in ("debug", "release"):
-        for filename in ("libjsoncompat.dylib", "libjsoncompat.so", "jsoncompat.dll"):
-            native_path = repo_root / "target" / build_dir / "deps" / filename
-            if not native_path.exists():
-                continue
+    target_roots = [repo_root / "target"]
+    if cargo_target_dir := os.environ.get("CARGO_TARGET_DIR"):
+        target_roots.insert(0, Path(cargo_target_dir).expanduser())
 
-            loader = importlib.machinery.ExtensionFileLoader(
-                "jsoncompat._native",
-                str(native_path),
-            )
-            spec = importlib.util.spec_from_file_location(
-                "jsoncompat._native",
-                str(native_path),
-                loader=loader,
-            )
-            if spec is None or spec.loader is None:
-                continue
+    for target_root in target_roots:
+        for build_dir in ("debug", "release"):
+            for filename in ("libjsoncompat.dylib", "libjsoncompat.so", "jsoncompat.dll"):
+                native_path = target_root / build_dir / "deps" / filename
+                if not native_path.exists():
+                    continue
 
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-            return cast(NativeModule, module)
+                loader = importlib.machinery.ExtensionFileLoader(
+                    "jsoncompat._native",
+                    str(native_path),
+                )
+                spec = importlib.util.spec_from_file_location(
+                    "jsoncompat._native",
+                    str(native_path),
+                    loader=loader,
+                )
+                if spec is None or spec.loader is None:
+                    continue
+
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
+                return cast(NativeModule, module)
 
     raise ModuleNotFoundError("jsoncompat._native")
 
 
 def _has_reusable_schema_api(module: object) -> bool:
-    return hasattr(module, "generator_for") and hasattr(module, "validator_for")
+    validator = getattr(module, "Validator", None)
+    return (
+        hasattr(module, "generator_for")
+        and hasattr(module, "validator_for")
+        and hasattr(validator, "is_valid_json")
+        and hasattr(validator, "is_valid_value")
+    )
 
 
 try:
@@ -186,7 +209,7 @@ def validator_for(schema_json: str) -> Validator:
 def is_valid(schema_json: str, instance_json: str) -> bool:
     warnings.warn(
         "jsoncompat.is_valid(schema_json, instance_json) is deprecated; "
-        "use jsoncompat.validator_for(schema_json).is_valid(instance_json) instead.",
+        "use jsoncompat.validator_for(schema_json).is_valid_json(instance_json) instead.",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -197,6 +220,7 @@ def is_valid(schema_json: str, instance_json: str) -> bool:
 __all__ = [
     "Role",
     "RoleLiteral",
+    "JsonValue",
     "Generator",
     "Validator",
     "check_compat",
