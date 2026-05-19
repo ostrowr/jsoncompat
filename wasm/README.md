@@ -12,7 +12,7 @@ npm install jsoncompat@0.3.1
 ## Quick start
 
 ```js
-import init, { check_compat, generate_value } from "jsoncompat";
+import init, { check_compat, generate_value, validator_for } from "jsoncompat";
 
 await init();
 
@@ -21,6 +21,8 @@ const newSchema = '{"type":["string","null"]}';
 
 const ok = check_compat(oldSchema, newSchema, "deserializer");
 const valueJson = generate_value(newSchema, 5);
+const validator = validator_for(newSchema);
+const valueOk = validator.is_valid(valueJson);
 ```
 
 ## API
@@ -29,6 +31,10 @@ const valueJson = generate_value(newSchema, 5);
   accepts `"serializer"`, `"deserializer"`, or `"both"` for `role`.
 - `generate_value(schema_json, depth) -> string` returns one generated JSON value
   encoded as a string.
+- `validator_for(schema_json) -> Validator` parses a schema once and returns a
+  reusable validator.
+  - `Validator.is_valid(instance_json) -> boolean` validates a JSON string
+    against the parsed schema.
 
 Both functions accept schemas as JSON strings and throw string-backed
 `wasm-bindgen` errors for invalid JSON, invalid schemas, hard unsupported
