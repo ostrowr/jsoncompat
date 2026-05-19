@@ -50,8 +50,8 @@ pub enum CompatibilityError {
     /// The old or new schema document failed canonicalization or resolution.
     #[error(transparent)]
     Schema(#[from] SchemaBuildError),
-    /// The schema is valid input, but this keyword is intentionally outside
-    /// the static compatibility model.
+    /// Reference-scope keywords change how the document resolves names. They
+    /// stay hard errors until the resolver models those scopes precisely.
     #[error(
         "JSON Schema compatibility checks do not support keyword '{keyword}' at '{pointer}' yet"
     )]
@@ -67,6 +67,20 @@ pub enum CompatibilityError {
     /// inclusion with floating-point arithmetic.
     #[error("non-integral number multipleOf constraints are not supported by compatibility checks")]
     UnsupportedNonIntegralNumberMultipleOf,
+}
+
+/// Compatibility diagnostics that do not prevent a modeled comparison.
+///
+/// These warnings mean a schema uses valid JSON Schema syntax whose semantics
+/// are not represented by the subset checker yet. Callers that need a complete
+/// contract verdict should surface the warning alongside the modeled result.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum CompatibilityWarning {
+    #[error(
+        "JSON Schema compatibility checks do not model keyword '{keyword}' at '{pointer}'; comparison ignores that keyword"
+    )]
+    UnsupportedKeyword { pointer: String, keyword: String },
 }
 
 /// Return whether `new` is backward-compatible with `old` under `role`.
@@ -88,8 +102,8 @@ pub fn check_compat(
     new: &SchemaDocument,
     role: Role,
 ) -> Result<bool, CompatibilityError> {
-    let old = compatibility_root(old)?;
-    let new = compatibility_root(new)?;
+    let old = compatibility_input(old)?.root;
+    let new = compatibility_input(new)?.root;
 
     match role {
         Role::Serializer => Ok(is_subschema_of(new, old)),
@@ -109,8 +123,8 @@ pub fn explain_compat_failure(
     new: &SchemaDocument,
     role: Role,
 ) -> Result<Option<String>, CompatibilityError> {
-    let old = compatibility_root(old)?;
-    let new = compatibility_root(new)?;
+    let old = compatibility_input(old)?.root;
+    let new = compatibility_input(new)?.root;
 
     let explanation =
         match role {
@@ -131,21 +145,35 @@ pub fn explain_compat_failure(
 /// Return whether this schema can participate in compatibility checks.
 ///
 /// `SchemaDocument::from_json` accepts the full document-level schema surface
-/// modeled by the schema frontend. Compatibility is intentionally narrower:
-/// it rejects valid-but-unmodeled keywords and resolved AST features that the
-/// subset checker does not compare soundly yet.
+/// modeled by the schema frontend. Compatibility still rejects inputs that
+/// would make the subset check unsound; valid-but-unmodeled keywords are
+/// reported separately through [`compatibility_warnings`].
 pub fn validate_compatibility_input(schema: &SchemaDocument) -> Result<(), CompatibilityError> {
-    compatibility_root(schema).map(|_| ())
+    compatibility_input(schema).map(|_| ())
 }
 
-fn compatibility_root(schema: &SchemaDocument) -> Result<&SchemaNode, CompatibilityError> {
-    reject_unsupported_source_keywords(schema)?;
+/// Return non-fatal compatibility diagnostics for one schema document.
+pub fn compatibility_warnings(
+    schema: &SchemaDocument,
+) -> Result<Vec<CompatibilityWarning>, CompatibilityError> {
+    compatibility_input(schema).map(|input| input.warnings)
+}
+
+struct CompatibilityInput<'a> {
+    root: &'a SchemaNode,
+    warnings: Vec<CompatibilityWarning>,
+}
+
+fn compatibility_input(
+    schema: &SchemaDocument,
+) -> Result<CompatibilityInput<'_>, CompatibilityError> {
+    let warnings = collect_source_keyword_warnings(schema)?;
     match schema.root() {
         Ok(root) => {
             schema.validate_source_schema()?;
             reject_unsupported_reference_keywords_after_source_validation(schema)?;
             reject_unsupported_compatibility_features(root)?;
-            Ok(root)
+            Ok(CompatibilityInput { root, warnings })
         }
         Err(source @ SchemaBuildError::UnsupportedReference { .. }) => {
             validate_source_schema_ignoring_non_local_refs(schema)?;
@@ -170,15 +198,17 @@ const UNSUPPORTED_COMPATIBILITY_REFERENCE_KEYWORDS: &[&str] =
     &["$id", "$anchor", "$dynamicRef", "$dynamicAnchor"];
 const MAX_EXACT_F64_INTEGER: f64 = 9_007_199_254_740_991.0;
 
-fn reject_unsupported_source_keywords(schema: &SchemaDocument) -> Result<(), CompatibilityError> {
-    reject_unsupported_keyword_family(
-        schema.source_schema_json(),
-        UNSUPPORTED_COMPATIBILITY_KEYWORDS,
-    )?;
+fn collect_source_keyword_warnings(
+    schema: &SchemaDocument,
+) -> Result<Vec<CompatibilityWarning>, CompatibilityError> {
     reject_unsafe_number_bounds_in_schema_value(
         schema.source_schema_json(),
         &mut JsonPointer::root(),
-    )
+    )?;
+    Ok(collect_unsupported_keyword_family(
+        schema.source_schema_json(),
+        UNSUPPORTED_COMPATIBILITY_KEYWORDS,
+    ))
 }
 
 fn reject_unsupported_reference_keywords_after_source_validation(
@@ -194,13 +224,29 @@ fn reject_unsupported_keyword_family(
     schema: &Value,
     keywords: &[&str],
 ) -> Result<(), CompatibilityError> {
-    if let Some((pointer, keyword)) =
-        find_unsupported_keyword_in_schema_value(schema, &mut JsonPointer::root(), keywords)
+    if let Some(CompatibilityWarning::UnsupportedKeyword { pointer, keyword }) =
+        collect_unsupported_keyword_family(schema, keywords)
+            .into_iter()
+            .next()
     {
         return Err(CompatibilityError::UnsupportedCompatibilityKeyword { pointer, keyword });
     }
 
     Ok(())
+}
+
+fn collect_unsupported_keyword_family(
+    schema: &Value,
+    keywords: &[&str],
+) -> Vec<CompatibilityWarning> {
+    let mut warnings = Vec::new();
+    collect_unsupported_keywords_in_schema_value(
+        schema,
+        &mut JsonPointer::root(),
+        keywords,
+        &mut warnings,
+    );
+    warnings
 }
 
 fn validate_source_schema_ignoring_non_local_refs(
@@ -267,41 +313,43 @@ fn strip_non_local_schema_ref_array(value: &Value) -> Value {
     }
 }
 
-fn find_unsupported_keyword_in_schema_value(
+fn collect_unsupported_keywords_in_schema_value(
     schema: &Value,
     pointer: &mut JsonPointer,
     keywords: &[&str],
-) -> Option<(String, String)> {
+    warnings: &mut Vec<CompatibilityWarning>,
+) {
     match schema {
-        Value::Bool(_) => None,
+        Value::Bool(_) => {}
         Value::Object(object) => {
-            find_unsupported_keyword_in_schema_object(object, pointer, keywords)
+            collect_unsupported_keywords_in_schema_object(object, pointer, keywords, warnings)
         }
-        _ => None,
+        _ => {}
     }
 }
 
-fn find_unsupported_keyword_in_schema_object(
+fn collect_unsupported_keywords_in_schema_object(
     object: &Map<String, Value>,
     pointer: &mut JsonPointer,
     keywords: &[&str],
-) -> Option<(String, String)> {
+    warnings: &mut Vec<CompatibilityWarning>,
+) {
     for keyword in keywords {
         if object.contains_key(*keyword) {
             let mut keyword_pointer = pointer.clone();
             keyword_pointer.push(*keyword);
-            return Some((keyword_pointer.render(), (*keyword).to_owned()));
+            warnings.push(CompatibilityWarning::UnsupportedKeyword {
+                pointer: keyword_pointer.render(),
+                keyword: (*keyword).to_owned(),
+            });
         }
     }
 
     for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
         if let Some(child) = object.get(keyword) {
             pointer.push(keyword);
-            let unsupported = find_unsupported_keyword_in_schema_value(child, pointer, keywords);
+            collect_unsupported_keywords_in_schema_value(child, pointer, keywords, warnings);
             pointer.pop();
-            if unsupported.is_some() {
-                return unsupported;
-            }
         }
     }
 
@@ -310,13 +358,8 @@ fn find_unsupported_keyword_in_schema_object(
             pointer.push(keyword);
             for (name, child) in children {
                 pointer.push(name);
-                let unsupported =
-                    find_unsupported_keyword_in_schema_value(child, pointer, keywords);
+                collect_unsupported_keywords_in_schema_value(child, pointer, keywords, warnings);
                 pointer.pop();
-                if unsupported.is_some() {
-                    pointer.pop();
-                    return unsupported;
-                }
             }
             pointer.pop();
         }
@@ -327,19 +370,12 @@ fn find_unsupported_keyword_in_schema_object(
             pointer.push(keyword);
             for (index, child) in children.iter().enumerate() {
                 pointer.push(index.to_string());
-                let unsupported =
-                    find_unsupported_keyword_in_schema_value(child, pointer, keywords);
+                collect_unsupported_keywords_in_schema_value(child, pointer, keywords, warnings);
                 pointer.pop();
-                if unsupported.is_some() {
-                    pointer.pop();
-                    return unsupported;
-                }
             }
             pointer.pop();
         }
     }
-
-    None
 }
 
 fn reject_unsafe_number_bounds_in_schema_value(
@@ -528,7 +564,10 @@ fn reject_unsupported_node(
 
 #[cfg(test)]
 mod tests {
-    use super::{CompatibilityError, Role, SchemaBuildError, SchemaDocument, check_compat};
+    use super::{
+        CompatibilityError, CompatibilityWarning, Role, SchemaBuildError, SchemaDocument,
+        check_compat, compatibility_warnings,
+    };
     use serde_json::json;
 
     fn schema(raw: serde_json::Value) -> SchemaDocument {
@@ -600,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn check_compat_rejects_valid_but_unmodeled_schema_keywords_with_precise_pointers() {
+    fn compatibility_warnings_report_valid_but_unmodeled_schema_keywords_with_precise_pointers() {
         for (raw, pointer, keyword) in [
             (
                 json!({
@@ -635,22 +674,20 @@ mod tests {
             ),
         ] {
             let old = schema(raw);
-            let new = schema(json!({}));
+            let warnings = compatibility_warnings(&old).expect("warning collection should succeed");
 
-            let error = check_compat(&old, &new, Role::Both)
-                .expect_err("compat must reject valid-but-unmodeled schema keywords");
-            assert!(matches!(
-                error,
-                CompatibilityError::UnsupportedCompatibilityKeyword {
-                    pointer: ref actual_pointer,
-                    keyword: ref actual_keyword,
-                } if actual_pointer == pointer && actual_keyword == keyword
-            ));
+            assert_eq!(
+                warnings,
+                vec![CompatibilityWarning::UnsupportedKeyword {
+                    pointer: pointer.to_owned(),
+                    keyword: keyword.to_owned(),
+                }]
+            );
         }
     }
 
     #[test]
-    fn check_compat_rejects_valid_reference_scope_keywords_with_precise_pointers() {
+    fn check_compat_rejects_reference_scope_keywords_with_precise_pointers() {
         for (raw, pointer, keyword) in [
             (
                 json!({
@@ -689,7 +726,7 @@ mod tests {
             let new = schema(json!({}));
 
             let error = check_compat(&old, &new, Role::Both)
-                .expect_err("compat must reject unresolved reference-scope keywords precisely");
+                .expect_err("reference-scope keywords must remain hard compatibility errors");
             assert!(matches!(
                 error,
                 CompatibilityError::UnsupportedCompatibilityKeyword {
@@ -725,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn check_compat_rejects_valid_but_unmodeled_keywords_inside_unused_defs() {
+    fn compatibility_warnings_report_valid_but_unmodeled_keywords_inside_unused_defs() {
         let old = schema(json!({
             "$defs": {
                 "Unused": {
@@ -737,18 +774,37 @@ mod tests {
             },
             "type": "string"
         }));
-        let new = schema(json!({ "type": "string" }));
+        let warnings =
+            compatibility_warnings(&old).expect("warning collection should inspect unused defs");
 
-        let error = check_compat(&old, &new, Role::Both)
-            .expect_err("unused defs must not hide unsupported schema keywords");
-        assert!(matches!(
-            error,
-            CompatibilityError::UnsupportedCompatibilityKeyword {
-                pointer: ref actual_pointer,
-                keyword: ref actual_keyword,
-            } if actual_pointer == "#/$defs/Unused/dependentSchemas"
-                && actual_keyword == "dependentSchemas"
-        ));
+        assert_eq!(
+            warnings,
+            vec![CompatibilityWarning::UnsupportedKeyword {
+                pointer: "#/$defs/Unused/dependentSchemas".to_owned(),
+                keyword: "dependentSchemas".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn check_compat_accepts_identical_schemas_with_unmodeled_keyword_warnings() {
+        let old = schema(json!({
+            "type": "object",
+            "dependentSchemas": {
+                "kind": { "required": ["detail"] }
+            }
+        }));
+        let new = schema(json!({
+            "type": "object",
+            "dependentSchemas": {
+                "kind": { "required": ["detail"] }
+            }
+        }));
+
+        assert!(
+            check_compat(&old, &new, Role::Both)
+                .expect("unmodeled keywords should warn instead of failing the modeled verdict")
+        );
     }
 
     #[test]

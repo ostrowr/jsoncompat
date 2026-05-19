@@ -29,7 +29,7 @@ const valueJson = generate_value(newSchema, 5);
   encoded as a string.
 
 Both functions accept schemas as JSON strings and throw string-backed
-`wasm-bindgen` errors for invalid JSON, invalid schemas, unsupported
+`wasm-bindgen` errors for invalid JSON, invalid schemas, hard unsupported
 compatibility features, known-unsatisfiable schemas, or retry exhaustion.
 
 For full documentation and examples, see:

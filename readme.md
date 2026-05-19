@@ -63,6 +63,9 @@ Compare two golden schema files in CI:
 jsoncompat ci old-golden.json new-golden.json --display table
 ```
 
+Warning-only compatibility gaps are reported in the CI output without turning
+the grade into an `Invalid` failure.
+
 Run the guided CLI smoke test:
 
 ```bash
@@ -235,9 +238,9 @@ Important global caveats:
 | `maxLength` | ✅ | 🟡 | The generic string generator respects this bound, but the `format` and `pattern` paths may ignore it and rely on validator retries. |
 | `pattern` | 🟡 | 🟡 | `SchemaNode::accepts_value()` enforces regexes for finite-value checks using a cached matcher per pattern. For open string subset proofs, `check_compat` only treats a required comparison-target pattern as preserved when the subset keeps that exact same pattern; different required patterns fail conservatively instead of being approximated. Unsupported ECMAScript regex constructs are preserved as source text but treated as non-matching by the internal evaluator. Regex generation is best-effort and does not guarantee coverage for complex constructs. |
 | `format` | ⚪ | 🟡 | Draft 2020-12 and the OpenAPI 3.1 base dialect treat the default `format` vocabulary as annotation-only, so `check_compat` does not turn format-only edits into compatibility breaks. The fuzzer only synthesizes `date`, `date-time`, `time`, `email`, `idn-email`, `uri`, `iri`, `uri-reference`, `iri-reference`, `uuid`, `ipv4`, `ipv6`, `hostname`, and `idn-hostname`; unknown formats fall back to generic strings. |
-| `contentEncoding` | ⚪ | ⚪ | `jsoncompat compat` rejects this valid-but-unmodeled keyword with a precise pointer instead of silently comparing an incomplete value-language model. |
-| `contentMediaType` | ⚪ | ⚪ | `jsoncompat compat` rejects this valid-but-unmodeled keyword with a precise pointer instead of silently comparing an incomplete value-language model. |
-| `contentSchema` | ⚪ | ⚪ | `jsoncompat compat` rejects this valid-but-unmodeled keyword with a precise pointer instead of silently comparing an incomplete value-language model. |
+| `contentEncoding` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword, then compares the modeled portion of the schema. |
+| `contentMediaType` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword, then compares the modeled portion of the schema. |
+| `contentSchema` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword, then compares the modeled portion of the schema. |
 
 ### Object schemas
 
@@ -251,9 +254,9 @@ Important global caveats:
 | `minProperties` | ✅ | ✅ | Canonicalization raises `minProperties` to at least the number of required keys. |
 | `maxProperties` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
 | `dependentRequired` | ✅ | 🟡 | The checker accounts for trigger keys admitted by `properties`, `patternProperties`, or `additionalProperties`, including direct and transitive dependency chains. The fuzzer does not proactively synthesize dependencies, but invalid candidates are rejected by the final validator pass. |
-| `dependentSchemas` | ⚪ | ⚪ | `jsoncompat compat` rejects this valid-but-unmodeled keyword with a precise pointer; static compat does not approximate its conditional object semantics. |
-| `unevaluatedProperties` | ⚪ | ⚪ | `jsoncompat compat` rejects this valid-but-unmodeled keyword with a precise pointer; static compat does not approximate evaluated-location bookkeeping. |
-| `dependencies` | ⚪ | ⚪ | Legacy keyword accepted by the parser, but `jsoncompat compat` rejects it with a precise pointer instead of silently ignoring a contract-relevant legacy constraint; use `dependentRequired` / `dependentSchemas` for Draft 2020-12 semantics. |
+| `dependentSchemas` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword; static compat does not approximate its conditional object semantics. |
+| `unevaluatedProperties` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword; static compat does not approximate evaluated-location bookkeeping. |
+| `dependencies` | ⚪ | ⚪ | Legacy keyword accepted by the parser; `jsoncompat compat` emits a precise warning because the modeled verdict ignores that contract-relevant legacy constraint. Use `dependentRequired` / `dependentSchemas` for Draft 2020-12 semantics. |
 
 ### Array schemas
 
@@ -261,14 +264,14 @@ Important global caveats:
 | --- | :-: | :-: | --- |
 | `items` | ✅ | ✅ | Schema-form `items` is compared recursively and used for tail-item generation. Tuple arrays must use Draft 2020-12 `prefixItems`; legacy tuple-form `items: [...]` is rejected. |
 | `prefixItems` | ✅ | ✅ | Compared positionally and generated positionally. |
-| `additionalItems` | ⚪ | ⚪ | Legacy keyword accepted by the parser, but `jsoncompat compat` rejects it with a precise pointer instead of silently ignoring a contract-relevant legacy tuple constraint. |
+| `additionalItems` | ⚪ | ⚪ | Legacy keyword accepted by the parser; `jsoncompat compat` emits a precise warning because the modeled verdict ignores that contract-relevant legacy tuple constraint. |
 | `minItems` | ✅ | ✅ | Defaults to `minContains` (or `1`) when `contains` is present, otherwise `0`. |
 | `maxItems` | ✅ | ✅ | Checked structurally and used as a hard upper bound during generation. |
 | `contains` | ✅ | 🟡 | Checker reasoning handles item-match count constraints structurally. The fuzzer tries to force or avoid matching items, but this is heuristic and may rely on retries. |
 | `minContains` | ✅ | 🟡 | Participates in structural count reasoning for `contains`; the fuzzer uses best-effort witness construction plus validator retries. |
 | `maxContains` | ✅ | 🟡 | Participates in structural count reasoning for `contains`; the fuzzer uses best-effort witness avoidance plus validator retries. |
 | `uniqueItems` | ✅ | 🟡 | The checker handles the common sound cases; the fuzzer retries and then uses a synthetic fallback object for unconstrained item schemas if duplicates persist. |
-| `unevaluatedItems` | ⚪ | ⚪ | `jsoncompat compat` rejects this valid-but-unmodeled keyword with a precise pointer; static compat does not approximate evaluated-location bookkeeping. |
+| `unevaluatedItems` | ⚪ | ⚪ | `jsoncompat compat` emits a precise warning for this valid-but-unmodeled keyword; static compat does not approximate evaluated-location bookkeeping. |
 
 ### Applicators and conditionals
 
@@ -413,19 +416,19 @@ It currently accepts JSON OpenAPI documents, matching the rest of the CLI's JSON
 `--role` and `--fuzz` remain raw-JSON-Schema-only flags; OpenAPI comparisons always check request compatibility in the deserializer direction and response compatibility in the serializer direction together.
 CLI flows fail invalid JSON Schema or OpenAPI inputs before attempting generation, grading, or compatibility reporting.
 For compatibility-only gaps, the CLI distinguishes invalid input from valid-but-unmodeled contract surfaces: raw JSON
-Schema errors name the unsupported keyword and schema pointer, while OpenAPI errors name the unsupported surface and
-OpenAPI pointer. The CLI keeps those failures in three predictable families:
+Schema warnings name the unmodeled keyword and schema pointer, while OpenAPI errors name the unsupported surface and
+OpenAPI pointer. The CLI keeps those diagnostics in three predictable families:
 
-- raw JSON Schema compatibility-input failures start with `validating JSON Schema compatibility input for <path>`;
+- raw JSON Schema warnings start with `warning: <path>:`;
 - invalid OpenAPI document-shape failures start with `building OpenAPI document for <path>`;
 - valid-shape OpenAPI documents that use an unsupported lowering or compatibility surface start with
   `validating OpenAPI compatibility input for <path>`.
 
-In each case, the chained cause names the unsupported keyword or surface plus its exact JSON Pointer before any
+Warnings still allow the modeled JSON Schema verdict to run; OpenAPI readiness failures remain hard errors before any
 compatibility verdict is attempted.
 For example:
 
-- `validating JSON Schema compatibility input for old.json: JSON Schema compatibility checks do not support keyword 'dependentSchemas' at '#/dependentSchemas' yet`
+- `warning: old.json: JSON Schema compatibility checks do not model keyword 'dependentSchemas' at '#/dependentSchemas'; comparison ignores that keyword`
 - `validating OpenAPI compatibility input for old.json: OpenAPI compatibility checks do not support webhooks at '#/webhooks' yet`
 - `validating OpenAPI compatibility input for old.json: OpenAPI compatibility checks do not support JSON Schema keyword 'dependentSchemas' at '#/paths/~1pets/post/requestBody/content/application~1json/schema/dependentSchemas' yet`
 

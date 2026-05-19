@@ -2,7 +2,7 @@
 //!
 //! The extension module exposes `check_compat`, `generate_value`, and a `Role`
 //! constants module. Both functions accept JSON schemas as strings and report
-//! invalid inputs or unsupported core-library cases as `ValueError`.
+//! invalid inputs or hard unsupported core-library cases as `ValueError`.
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -137,21 +137,14 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn compatibility_schema_validation_rejects_unsupported_keywords_up_front() {
-        let error = compatibility_schema(&json!({
+    fn compatibility_schema_validation_accepts_unmodeled_keywords_for_modeled_comparison() {
+        compatibility_schema(&json!({
             "type": "object",
             "dependentSchemas": {
                 "kind": { "required": ["detail"] }
             }
         }))
-        .expect_err("compatibility bindings must reject unsupported keywords before comparison");
-
-        assert!(
-            error.contains(
-                "JSON Schema compatibility checks do not support keyword 'dependentSchemas' at '#/dependentSchemas' yet"
-            ),
-            "unexpected error: {error}"
-        );
+        .expect("compatibility bindings should accept warning-only schema keywords");
     }
 
     #[test]

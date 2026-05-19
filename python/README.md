@@ -20,7 +20,7 @@ old_schema = '{"type": "string"}'
 new_schema = '{"type": "number"}'
 
 # Check compatibility (role: "serializer", "deserializer", or "both").
-# Raises ValueError for invalid schemas or unsupported compatibility features.
+# Raises ValueError for invalid schemas or hard unsupported compatibility features.
 is_compatible = jsc.check_compat(old_schema, new_schema, jsc.Role.BOTH)
 print(is_compatible)
 
@@ -33,7 +33,7 @@ print(example)
 
 - `check_compat(old_schema_json: str, new_schema_json: str, role: str = "both") -> bool`
   - `role` must be `"serializer"`, `"deserializer"`, or `"both"`.
-  - Raises `ValueError` for invalid schemas or unsupported compatibility features such as non-integral `number.multipleOf`.
+  - Raises `ValueError` for invalid schemas or hard unsupported compatibility features such as non-integral `number.multipleOf`.
 - `generate_value(schema_json: str, depth: int = 5) -> str`
   - Returns a JSON string for one generated value accepted by the schema.
   - Raises `ValueError` when the schema is invalid, known to be unsatisfiable, or generation exhausts its retry budget.

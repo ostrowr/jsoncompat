@@ -26,9 +26,11 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
     let old = CompatInput::load(&args.old)?;
     let new = CompatInput::load(&args.new)?;
     let role: backcompat::Role = args.role.into();
+    old.print_warnings(&args.old);
+    new.print_warnings(&args.new);
 
     match (old, new) {
-        (CompatInput::Schema(old), CompatInput::Schema(new)) => {
+        (CompatInput::Schema { document: old, .. }, CompatInput::Schema { document: new, .. }) => {
             compat_schemas(old, new, role, args.fuzz, args.depth)
         }
         (CompatInput::OpenApi(old), CompatInput::OpenApi(new)) => {
@@ -47,7 +49,10 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
 }
 
 enum CompatInput {
-    Schema(SchemaDoc),
+    Schema {
+        document: SchemaDoc,
+        warnings: Vec<backcompat::CompatibilityWarning>,
+    },
     OpenApi(backcompat::OpenApiDocument),
 }
 
@@ -67,7 +72,20 @@ impl CompatInput {
             .with_context(|| format!("building schema for {path}"))?;
         backcompat::validate_compatibility_input(&schema)
             .with_context(|| format!("validating JSON Schema compatibility input for {path}"))?;
-        Ok(Self::Schema(SchemaDoc { schema }))
+        let warnings = backcompat::compatibility_warnings(&schema)
+            .with_context(|| format!("collecting JSON Schema compatibility warnings for {path}"))?;
+        Ok(Self::Schema {
+            document: SchemaDoc { schema },
+            warnings,
+        })
+    }
+
+    fn print_warnings(&self, path: &str) {
+        if let Self::Schema { warnings, .. } = self {
+            for warning in warnings {
+                eprintln!("{} {path}: {warning}", "warning:".yellow());
+            }
+        }
     }
 }
 
@@ -376,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn compat_command_rejects_valid_but_unmodeled_schema_keywords_before_reporting_a_verdict() {
+    fn compat_command_accepts_valid_but_unmodeled_schema_keywords_with_warnings() {
         for (keyword, old_schema) in [
             (
                 "dependentSchemas",
@@ -387,16 +405,6 @@ mod tests {
                 r#"{"type":"object","dependencies":{"kind":["detail"]}}"#,
             ),
             ("additionalItems", r#"{"additionalItems":false}"#),
-            (
-                "$id",
-                r#"{"$id":"https://example.com/schemas/value.json","type":"string"}"#,
-            ),
-            ("$anchor", r#"{"$anchor":"value","type":"string"}"#),
-            ("$dynamicRef", r##"{"$dynamicRef":"#","type":"string"}"##),
-            (
-                "$dynamicAnchor",
-                r#"{"$dynamicAnchor":"value","type":"string"}"#,
-            ),
         ] {
             let unique = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -407,31 +415,22 @@ mod tests {
             let new_path = dir.join(format!("jsoncompat-unsupported-new-{unique}.json"));
 
             fs::write(&old_path, old_schema).unwrap();
-            fs::write(&new_path, r#"{"type":"object"}"#).unwrap();
+            fs::write(&new_path, old_schema).unwrap();
 
-            let error = cmd(CompatArgs {
+            let result = cmd(CompatArgs {
                 old: old_path.to_string_lossy().into_owned(),
                 new: new_path.to_string_lossy().into_owned(),
                 role: RoleCli::Both,
                 fuzz: 0,
                 depth: 8,
-            })
-            .unwrap_err();
+            });
 
             fs::remove_file(old_path).unwrap();
             fs::remove_file(new_path).unwrap();
 
-            let message = format!("{error:#}");
-            assert!(
-                message.contains("validating JSON Schema compatibility input for"),
-                "{keyword}: unexpected error: {message}"
-            );
-            assert!(
-                message.contains(&format!(
-                    "JSON Schema compatibility checks do not support keyword '{keyword}' at '#/{keyword}' yet"
-                )),
-                "{keyword}: unexpected error: {message}"
-            );
+            result.unwrap_or_else(|error| {
+                panic!("{keyword}: compatibility warnings must not reject the CLI: {error:#}")
+            });
         }
     }
 
@@ -496,7 +495,7 @@ mod tests {
             .expect("annotation-only raw schemas should stay in raw schema mode");
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema(_)));
+        assert!(matches!(input, CompatInput::Schema { .. }));
     }
 
     #[test]
@@ -518,7 +517,7 @@ mod tests {
             .expect("annotation-like OpenAPI metadata on a raw schema should stay in schema mode");
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema(_)));
+        assert!(matches!(input, CompatInput::Schema { .. }));
     }
 
     #[test]
@@ -559,7 +558,7 @@ mod tests {
             .expect("ambiguous annotation-only inputs should stay in raw schema mode");
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema(_)));
+        assert!(matches!(input, CompatInput::Schema { .. }));
     }
 
     #[test]
