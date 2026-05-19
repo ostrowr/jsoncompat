@@ -79,7 +79,7 @@ fn assert_codegen_error_snapshot(
         )
     })?;
     let actual = format!("{error}\n");
-    if expected != actual {
+    if normalized_newlines(&expected) != normalized_newlines(&actual) {
         return Err(format!(
             "dataclass fuzz codegen error snapshot is stale for schema #{} in {}: {}\n\nexpected:\n{}\nactual:\n{}",
             schema_case.index,
@@ -91,4 +91,8 @@ fn assert_codegen_error_snapshot(
         .into());
     }
     Ok(())
+}
+
+fn normalized_newlines(contents: &str) -> String {
+    contents.replace("\r\n", "\n")
 }

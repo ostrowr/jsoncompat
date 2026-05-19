@@ -5,6 +5,7 @@ use std::process::Command;
 pub fn python_command() -> Command {
     let mut command = Command::new("uv");
     command.env_remove("VIRTUAL_ENV");
+    configure_utf8_python_io(&mut command);
     command
         .arg("run")
         .arg("--project")
@@ -18,6 +19,7 @@ pub fn python_command() -> Command {
 pub fn pyright_command() -> Command {
     let mut command = Command::new("uv");
     command.env_remove("VIRTUAL_ENV");
+    configure_utf8_python_io(&mut command);
     command
         .arg("run")
         .arg("--project")
@@ -38,6 +40,12 @@ pub fn add_repo_python_path(command: &mut Command) -> &mut Command {
         "PYTHONPATH",
         std::env::join_paths(paths).expect("build PYTHONPATH"),
     )
+}
+
+fn configure_utf8_python_io(command: &mut Command) -> &mut Command {
+    command
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
 }
 
 fn repo_pybindings_path() -> PathBuf {

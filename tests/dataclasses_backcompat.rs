@@ -233,12 +233,16 @@ fn assert_codegen_error_snapshot(
     });
     let actual = format!("{error}\n");
     assert_eq!(
-        expected,
-        actual,
+        normalized_newlines(&expected),
+        normalized_newlines(&actual),
         "dataclass backcompat example codegen error snapshot is stale for {case_name}/{side}: {}",
         snapshot_path.display(),
     );
     Ok(())
+}
+
+fn normalized_newlines(contents: &str) -> String {
+    contents.replace("\r\n", "\n")
 }
 
 fn round_trip_valid(

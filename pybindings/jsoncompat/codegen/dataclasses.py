@@ -390,7 +390,7 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
         if isinstance(value, bool):
             return value
         raise TypeError(f"expected bool, got {type(value).__name__}")
-    if annotation is type(None):
+    if annotation is None or annotation is type(None):
         if value is None:
             return None
         raise TypeError(f"expected null, got {type(value).__name__}")
@@ -408,6 +408,18 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
             _jsoncompat_construct_value(item_annotation, item)
             for item in value_items
         ]
+    if origin is dict:
+        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
+        if not isinstance(value, dict):
+            raise TypeError(f"expected dict, got {type(value).__name__}")
+        value_object = cast(dict[Any, Any], value)
+        return {
+            _jsoncompat_construct_value(key_annotation, key): _jsoncompat_construct_value(
+                value_annotation,
+                item,
+            )
+            for key, item in value_object.items()
+        }
     if origin in {types.UnionType, Union}:
         return _jsoncompat_construct_union(get_args(annotation), value)
     if origin is Literal:
@@ -415,7 +427,7 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
             return value
         raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
 
-    return value
+    raise TypeError(f"unsupported runtime annotation {annotation!r}")
 
 
 def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
@@ -504,6 +516,13 @@ def _jsoncompat_extra_value_annotation(annotation: Any) -> Any:
     return Any
 
 
+def _jsoncompat_dict_annotations(annotation: Any) -> tuple[Any, Any]:
+    args = get_args(annotation)
+    if len(args) == 2:
+        return args[0], args[1]
+    return Any, Any
+
+
 def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
     if annotation is Any:
         return
@@ -527,7 +546,7 @@ def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
         if isinstance(value, bool):
             return
         raise TypeError(f"expected bool, got {type(value).__name__}")
-    if annotation is type(None):
+    if annotation is None or annotation is type(None):
         if value is None:
             return
         raise TypeError(f"expected null, got {type(value).__name__}")
@@ -548,6 +567,15 @@ def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
         for item in value_items:
             _jsoncompat_validate_python_value(item_annotation, item)
         return
+    if origin is dict:
+        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
+        if not isinstance(value, dict):
+            raise TypeError(f"expected dict, got {type(value).__name__}")
+        value_object = cast(dict[Any, Any], value)
+        for key, item in value_object.items():
+            _jsoncompat_validate_python_value(key_annotation, key)
+            _jsoncompat_validate_python_value(value_annotation, item)
+        return
     if origin in {types.UnionType, Union}:
         for branch in get_args(annotation):
             try:
@@ -560,6 +588,8 @@ def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
         if value in get_args(annotation):
             return
         raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
+
+    raise TypeError(f"unsupported runtime annotation {annotation!r}")
 
 
 def _jsoncompat_new_unchecked[JSONCOMPAT_MODEL_T: DataclassModel](

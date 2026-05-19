@@ -74,6 +74,47 @@ for factory in (
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class AuditContext(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tags":{"type":"object","additionalProperties":{"type":"string"}}},"required":["tags"],"additionalProperties":false}'
+
+    tags: dict[str, str] = field("tags")
+
+
+context = AuditContext(tags={"team": "schema"})
+assert context.to_json() == {"tags": {"team": "schema"}}
+assert AuditContext.from_json({"tags": {"team": "schema"}}).tags == {
+    "team": "schema"
+}
+
+for factory in (
+    lambda: AuditContext(tags="oops"),
+    lambda: AuditContext(tags={1: "schema"}),
+    lambda: AuditContext(tags={"team": 1}),
+):
+    try:
+        factory()
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("mapping annotations accepted an invalid value")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UnsupportedRuntimeAnnotation(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}}},"required":["tags"],"additionalProperties":false}'
+
+    tags: tuple[str, ...] = field("tags")
+
+
+try:
+    UnsupportedRuntimeAnnotation(tags=("schema",))
+except TypeError as error:
+    assert "unsupported runtime annotation" in str(error)
+else:
+    raise AssertionError("unsupported runtime annotations must fail loudly")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileRoot(DataclassRootModel):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"string","minLength":1}'
 
