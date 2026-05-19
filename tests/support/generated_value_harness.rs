@@ -89,6 +89,46 @@ where
         let generation_config = GenerationConfig::new(6);
 
         if let Some(round_tripper) = generated_round_tripper.as_mut() {
+            for fixture_test in fixture_schema.tests.iter().filter(|test| test.valid) {
+                if !schema.is_valid(&fixture_test.data)? {
+                    continue;
+                }
+                let emitted = match round_tripper.round_trip(&fixture_test.data) {
+                    Ok(emitted) => emitted,
+                    Err(message) => {
+                        panic!(
+                            "{}",
+                            format_validation_failure(
+                                &rel_str,
+                                index,
+                                schema_json,
+                                &fixture_test.data,
+                                &format!(
+                                    "generated dataclass rejected valid fixture test {:?}: {message}",
+                                    fixture_test.description,
+                                ),
+                            )?,
+                        );
+                    }
+                };
+                if !schema.is_valid(&emitted)? {
+                    panic!(
+                        "{}",
+                        format_round_trip_failure(
+                            &rel_str,
+                            index,
+                            schema_json,
+                            &fixture_test.data,
+                            &emitted,
+                            &format!(
+                                "generated dataclass emitted invalid JSON for valid fixture test {:?}",
+                                fixture_test.description,
+                            ),
+                        )?,
+                    );
+                }
+            }
+
             for fixture_test in fixture_schema.tests.iter().filter(|test| !test.valid) {
                 if schema.is_valid(&fixture_test.data)? {
                     continue;

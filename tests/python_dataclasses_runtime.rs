@@ -207,6 +207,106 @@ for value in invalid_values:
 }
 
 #[test]
+fn generated_dataclasses_normalize_integer_valued_json_numbers_into_python_ints() {
+    let source = generate_dataclass_models(&json!({
+        "title": "Counter",
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer"},
+        },
+        "required": ["count"],
+        "additionalProperties": false,
+    }))
+    .expect("generate dataclasses from integer schema");
+    let module_path = write_temp_module("integer_normalization", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("integer_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+counter = module.Counter.from_json({"count": 1.0})
+assert counter.count == 1
+assert isinstance(counter.count, int)
+assert counter.to_json() == {"count": 1}
+
+try:
+    module.Counter(count=1.0)
+except TypeError:
+    pass
+else:
+    raise AssertionError("direct constructors must keep Python int fields strict")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass integer normalization test");
+    assert!(
+        output.status.success(),
+        "generated dataclass integer normalization test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_keep_conditionally_evaluated_object_properties_constructible() {
+    let source = generate_dataclass_models(&json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "if": {
+            "patternProperties": {
+                "foo": {"type": "string"},
+            },
+        },
+        "unevaluatedProperties": false,
+    }))
+    .expect("generate dataclasses from conditional unevaluatedProperties schema");
+    let module_path = write_temp_module("conditional_unevaluated_properties", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("conditional_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model = module.GeneratedSchema.from_json({"foo": "a"})
+assert model.to_json() == {"foo": "a"}
+
+try:
+    module.GeneratedSchema.from_json({"bar": "a"})
+except ValueError:
+    pass
+else:
+    raise AssertionError("unevaluatedProperties still needs to reject unmatched keys")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass conditional unevaluatedProperties test");
+    assert!(
+        output.status.success(),
+        "generated dataclass conditional unevaluatedProperties test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_keep_prefix_item_types_ergonomic_without_losing_schema_checks() {
     let source = generate_dataclass_models(&json!({
         "title": "TracePoint",

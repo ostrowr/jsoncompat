@@ -380,6 +380,8 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
     if annotation is int:
         if isinstance(value, int) and not isinstance(value, bool):
             return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
         raise TypeError(f"expected int, got {type(value).__name__}")
     if annotation is float:
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -419,6 +421,7 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
 
 def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
     instance_json: str | None = None
+    rejected_dataclass_branches: list[type[DataclassModel]] = []
     for branch in branches:
         if branch is JsoncompatMissingType and value is JSONCOMPAT_MISSING:
             return JSONCOMPAT_MISSING
@@ -429,12 +432,22 @@ def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
             if instance_json is None:
                 instance_json = json.dumps(value, separators=(",", ":"), sort_keys=True)
             if not _jsoncompat_validator_for(branch).is_valid(instance_json):
+                rejected_dataclass_branches.append(branch)
                 continue
             return branch.jsoncompat_from_validated(value)
         try:
             return _jsoncompat_construct_value(branch, value)
         except (TypeError, ValueError):
             continue
+
+    # Canonicalized helper branches can be narrower than the already-validated
+    # containing schema, so keep a structural fallback before rejecting.
+    for branch in rejected_dataclass_branches:
+        try:
+            return branch.jsoncompat_from_validated(value)
+        except (TypeError, ValueError):
+            continue
+
     raise TypeError(f"value {value!r} does not match any union branch")
 
 

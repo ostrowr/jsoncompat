@@ -186,6 +186,22 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 reader_model = module.JSONCOMPAT_MODEL
 
+def json_equivalent(left, right):
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            json_equivalent(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            json_equivalent(left_item, right_item)
+            for left_item, right_item in zip(left, right)
+        )
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    return type(left) is type(right) and left == right
+
 for raw_line in sys.stdin:
     mode, raw_json = raw_line.split("\t", 1)
     candidate = json.loads(raw_json)
@@ -197,7 +213,7 @@ for raw_line in sys.stdin:
         emitted = model.to_json()
         candidate_json = json.dumps(candidate, separators=(",", ":"), sort_keys=True)
         emitted_json = json.dumps(emitted, separators=(",", ":"), sort_keys=True)
-        if candidate_json != emitted_json:
+        if not json_equivalent(candidate, emitted):
             print(
                 "err\tgenerated dataclass changed parsed JSON during round-trip: "
                 + f"{candidate_json} -> {emitted_json}",
