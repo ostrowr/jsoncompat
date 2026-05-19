@@ -33,16 +33,20 @@ fn stamp_example_snapshots_are_up_to_date() {
     assert_eq!(manifest, read_json(root.join("manifest.json")));
     assert_eq!(bundle, read_json(root.join("bundle.json")));
     assert_eq!(
-        writer_dataclasses,
-        read_text(root.join("writer.dataclasses.py"))
+        normalized_newlines(&writer_dataclasses),
+        normalized_newlines(&read_text(root.join("writer.dataclasses.py")))
     );
     assert_eq!(
-        reader_dataclasses,
-        read_text(root.join("reader.dataclasses.py"))
+        normalized_newlines(&reader_dataclasses),
+        normalized_newlines(&read_text(root.join("reader.dataclasses.py")))
     );
 
     assert_python_compiles(&root.join("writer.dataclasses.py"));
     assert_python_compiles(&root.join("reader.dataclasses.py"));
+}
+
+fn normalized_newlines(contents: &str) -> String {
+    contents.replace("\r\n", "\n")
 }
 
 fn assert_python_compiles(path: &Path) {
