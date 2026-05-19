@@ -72,6 +72,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "unevaluatedItems": false
 }"""
-    root: ((GeneratedSchemaBranch2 | float | list[typing.Any] | str | typing.Any) | (GeneratedSchemaBranch22 | float | list[typing.Any] | str | typing.Any)) = dc.root_field()
+    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | float | list[typing.Any] | str | None)) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

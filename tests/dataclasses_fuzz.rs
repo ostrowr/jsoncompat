@@ -16,7 +16,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-datatest_stable::harness!(fixture, "tests/fixtures/fuzz", ".*\\.json$");
+datatest_stable::harness! {
+    { test = fixture, root = "tests/fixtures/fuzz", pattern = ".*\\.json$" },
+}
 
 fn fixture(file: &Path) -> Result<(), Box<dyn Error>> {
     run_generated_value_fixture(file, &DataclassGeneratedValueValidatorFactory)

@@ -1,1 +1,1 @@
-unsupported $ref '#/$defs/inner' at '#/properties/foo/$ref'
+unsupported $ref 'schema-refs-absolute-uris-defs2.json' at '#/$ref'

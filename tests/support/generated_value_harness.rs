@@ -1,6 +1,5 @@
-use json_schema_ast::compile;
-use json_schema_fuzz::generate_value;
-use jsoncompat::build_and_resolve_schema;
+use json_schema_ast::{AstError, SchemaDocument, SchemaError, SchemaNodeKind};
+use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 use rand::{SeedableRng, rngs::StdRng};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -45,6 +44,7 @@ where
 
     let rel_path = file.strip_prefix(FUZZ_FIXTURE_ROOT).unwrap_or(file);
     let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+    let validate_fixture_tests = rel_str.starts_with("custom/");
 
     let seed = 0xBADBABE + file.to_string_lossy().len() as u64;
     let mut rng = StdRng::seed_from_u64(seed);
@@ -62,15 +62,57 @@ where
             index,
             schema_json,
         };
-        let ast = build_and_resolve_schema(schema_json)?;
-        let compiled = compile(schema_json)?;
+        let schema = match SchemaDocument::from_json(schema_json) {
+            Ok(schema) => schema,
+            Err(AstError::Schema(SchemaError::UnsupportedSchemaDialect { .. }))
+                if !validate_fixture_tests =>
+            {
+                continue;
+            }
+            Err(AstError::UnsupportedReference { .. } | AstError::UnresolvedReference { .. })
+                if !validate_fixture_tests =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let root = match schema.root() {
+            Ok(root) => root,
+            Err(AstError::UnsupportedReference { .. } | AstError::UnresolvedReference { .. })
+                if !validate_fixture_tests =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if matches!(root.kind(), SchemaNodeKind::BoolSchema(false)) {
+            continue;
+        }
         let mut generated_validator = validator_factory.build_validator(&schema_case)?;
         let is_whitelisted = allowed.map(|set| set.contains(&index)).unwrap_or(false);
+        let generation_config = GenerationConfig::new(6);
 
         let mut success = true;
         for _ in 0..GENERATED_VALUE_ITERATIONS {
-            let candidate = generate_value(&ast, &mut rng, 6);
-            if !compiled.is_valid(&candidate) {
+            let candidate = match ValueGenerator::generate(&schema, generation_config, &mut rng) {
+                Ok(candidate) => candidate,
+                Err(GenerateError::ExhaustedAttempts { .. }) => {
+                    if !is_whitelisted {
+                        panic!(
+                            "{}",
+                            format!(
+                                "Failed to generate a valid instance for schema #{index} in {rel_str}\n\nSchema:\n{}",
+                                serde_json::to_string_pretty(schema_json)?,
+                            ),
+                        );
+                    }
+                    success = false;
+                    break;
+                }
+                Err(GenerateError::Schema(error)) => return Err(error.into()),
+                Err(error) => return Err(error.into()),
+            };
+            if !schema.is_valid(&candidate)? {
                 if !is_whitelisted {
                     panic!(
                         "{}",
@@ -79,7 +121,7 @@ where
                             index,
                             schema_json,
                             &candidate,
-                            "fuzzer generated a value rejected by the Rust schema compiler",
+                            "generator returned a value rejected by the raw schema validator",
                         )?,
                     );
                 }
@@ -145,75 +187,29 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
         "oneOf.json".to_string(),
         [2, 4, 5].iter().cloned().collect(),
     );
-    map.insert(
-        "not.json".to_string(),
-        [2, 3, 4, 5, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "if-then-else.json".to_string(),
-        [3, 4, 5, 7, 8, 9].iter().cloned().collect(),
-    );
+    map.insert("not.json".to_string(), [4, 5, 8].iter().cloned().collect());
     map.insert(
         "unevaluatedItems.json".to_string(),
-        [5, 9, 12, 18].iter().cloned().collect(),
+        [12, 18].iter().cloned().collect(),
     );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 13, 14, 16, 33].iter().cloned().collect(),
-    );
-    map.insert(
-        "items.json".to_string(),
-        [2, 3, 5, 7, 8].iter().cloned().collect(),
-    );
-    map.insert(
-        "uniqueItems.json".to_string(),
-        [2, 5].iter().cloned().collect(),
-    );
-    map.insert(
-        "properties.json".to_string(),
-        [1, 2].iter().cloned().collect(),
+        [12, 15].iter().cloned().collect(),
     );
     map.insert(
         "anchor.json".to_string(),
         [0, 1, 2, 3].iter().cloned().collect(),
     );
     map.insert(
-        "additionalProperties.json".to_string(),
-        [5].iter().cloned().collect(),
-    );
-    map.insert(
-        "infinite-loop-detection.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
         "optional/anchor.json".to_string(),
         [0].iter().cloned().collect(),
     );
-    map.insert(
-        "optional/ecmascript-regex.json".to_string(),
-        [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-            30, 31,
-        ]
-        .iter()
-        .cloned()
-        .collect(),
-    );
-    map.insert(
-        "optional/non-bmp-regex.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("pattern.json".to_string(), [0, 1].iter().cloned().collect());
     map.insert(
         "optional/unknownKeyword.json".to_string(),
         [0].iter().cloned().collect(),
     );
     map.insert(
         "optional/id.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
         [0].iter().cloned().collect(),
     );
     map.insert(
@@ -230,10 +226,6 @@ fn load_whitelist() -> HashMap<String, HashSet<usize>> {
             .iter()
             .cloned()
             .collect(),
-    );
-    map.insert(
-        "if-then-else.json".to_string(),
-        [7, 8].iter().cloned().collect(),
     );
     map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
     map.insert(

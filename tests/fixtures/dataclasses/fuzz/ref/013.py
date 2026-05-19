@@ -39,7 +39,7 @@ class GeneratedSchemaA(dc.DataclassRootModel):
     root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | float | list[GeneratedSchemaAItem] | str | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "A": {
@@ -54,7 +54,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     }
   }
 }"""
-    prop1: dc.Omittable[str] = dc.field("prop1", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    root: GeneratedSchemaA = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

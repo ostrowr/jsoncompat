@@ -15,6 +15,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     "type": "integer"
   }
 }"""
-    root: list[int] = dc.root_field()
+    root: typing.Literal["scalar"] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

@@ -19,7 +19,7 @@ class GeneratedSchemaAString(dc.DataclassRootModel):
     root: str = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(dc.DataclassRootModel):
+class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "a_string": {
@@ -33,6 +33,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: typing.Any = dc.root_field()
+    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

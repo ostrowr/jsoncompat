@@ -7,7 +7,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(dc.DataclassModel):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -17,6 +17,6 @@ class GeneratedSchema(dc.DataclassModel):
     }
   }
 }"""
-    foo: dc.Omittable[GeneratedSchema] = dc.field("foo", omittable=True)
+    root: typing.Any = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

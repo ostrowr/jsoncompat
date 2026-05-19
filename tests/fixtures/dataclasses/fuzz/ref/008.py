@@ -19,7 +19,7 @@ class GeneratedSchemaIsString(dc.DataclassRootModel):
     root: str = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
+class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$defs": {
     "is-string": {
@@ -33,7 +33,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     }
   }
 }"""
-    _ref: dc.Omittable[GeneratedSchemaIsString] = dc.field("$ref", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    root: typing.Any = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

@@ -312,18 +312,20 @@ impl DataclassModuleBuilder {
             return self.emit_inline_object_class(obj, pointer, scope_name, "Value");
         }
 
-        if obj.contains_key("prefixItems") {
+        if let Some(literal) = parse_literal_annotation(obj) {
+            return Ok(literal);
+        }
+
+        if is_array_schema(obj) && obj.contains_key("prefixItems") {
             return Ok(parse_type_annotation(obj, pointer)?.unwrap_or_else(|| typing_symbol("Any")));
         }
 
-        if let Some(items) = obj.get("items") {
+        if is_array_schema(obj)
+            && let Some(items) = obj.get("items")
+        {
             let item_annotation =
                 self.inline_annotation(items, &join_pointer(pointer, "items"), scope_name, "Item")?;
             return Ok(format!("list[{item_annotation}]"));
-        }
-
-        if let Some(literal) = parse_literal_annotation(obj) {
-            return Ok(literal);
         }
 
         if let Some(type_annotation) = parse_type_annotation(obj, pointer)? {
@@ -356,10 +358,10 @@ impl DataclassModuleBuilder {
                 if obj.get("$ref").is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
-                if obj.get("items").is_some() {
+                if parse_literal_annotation(obj).is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
-                if parse_literal_annotation(obj).is_some() {
+                if is_array_schema(obj) && obj.get("items").is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
                 if parse_type_annotation(obj, pointer)?.is_some() {
@@ -1372,11 +1374,39 @@ fn merge_union_branch_schema(
     }
 }
 
-fn is_object_schema(obj: &Map<String, Value>) -> bool {
-    if obj.contains_key("properties") || obj.contains_key("required") {
-        return true;
+fn schema_type_is_exclusively(obj: &Map<String, Value>, expected_type: &str) -> bool {
+    match obj.get("type") {
+        Some(Value::String(type_name)) => type_name == expected_type,
+        Some(Value::Array(type_names)) => {
+            !type_names.is_empty()
+                && type_names
+                    .iter()
+                    .all(|type_name| type_name.as_str() == Some(expected_type))
+        }
+        _ => false,
     }
-    matches!(obj.get("type"), Some(Value::String(type_name)) if type_name == "object")
+}
+
+fn schema_literal_values_are_exclusively(
+    obj: &Map<String, Value>,
+    predicate: impl Fn(&Value) -> bool,
+) -> bool {
+    if let Some(value) = obj.get("const") {
+        return predicate(value);
+    }
+    obj.get("enum")
+        .and_then(Value::as_array)
+        .is_some_and(|values| !values.is_empty() && values.iter().all(predicate))
+}
+
+fn is_object_schema(obj: &Map<String, Value>) -> bool {
+    schema_type_is_exclusively(obj, "object")
+        || schema_literal_values_are_exclusively(obj, Value::is_object)
+}
+
+fn is_array_schema(obj: &Map<String, Value>) -> bool {
+    schema_type_is_exclusively(obj, "array")
+        || schema_literal_values_are_exclusively(obj, Value::is_array)
 }
 
 fn union_annotation(annotations: &[String]) -> String {
@@ -1470,13 +1500,8 @@ fn python_literal_annotation(value: &Value) -> Option<String> {
         Value::Bool(_) | Value::String(_) => {
             Some(format!("typing.Literal[{}]", python_json_literal(value)))
         }
-        Value::Number(number) if number.to_string().starts_with('-') => {
-            if number.is_i64() {
-                Some("int".to_owned())
-            } else {
-                Some("float".to_owned())
-            }
-        }
+        Value::Number(number) if number.is_f64() => Some("float".to_owned()),
+        Value::Number(number) if number.to_string().starts_with('-') => Some("int".to_owned()),
         Value::Number(_) => Some(format!("typing.Literal[{}]", python_json_literal(value))),
         Value::Array(_) | Value::Object(_) => None,
     }
@@ -1737,5 +1762,55 @@ mod tests {
         assert!(!source.contains("__jsoncompat_object_spec__"));
         assert!(!source.contains("dc.object_spec("));
         assert!(!source.contains("dc.field_spec("));
+    }
+
+    #[test]
+    fn object_keywords_do_not_hide_scalar_literal_roots() {
+        let schema = json!({
+            "enum": [1],
+            "properties": {
+                "x": { "type": "string" }
+            }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class GeneratedSchema(dc.DataclassRootModel):"));
+        assert!(source.contains("root: typing.Literal[1] = dc.root_field()"));
+        assert!(!source.contains("dc.DataclassAdditionalModel"));
+    }
+
+    #[test]
+    fn array_keywords_do_not_hide_scalar_literal_roots() {
+        let schema = json!({
+            "const": "scalar",
+            "items": {
+                "type": "integer"
+            }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class GeneratedSchema(dc.DataclassRootModel):"));
+        assert!(source.contains("root: typing.Literal[\"scalar\"] = dc.root_field()"));
+        assert!(!source.contains("root: list["));
+    }
+
+    #[test]
+    fn object_literal_roots_keep_object_models() {
+        let schema = json!({
+            "enum": [{ "value": "x" }],
+            "properties": {
+                "value": { "type": "string" }
+            },
+            "required": ["value"],
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class GeneratedSchema(dc.DataclassModel):"));
+        assert!(source.contains("value: str = dc.field(\"value\")"));
+        assert!(!source.contains("class GeneratedSchema(dc.DataclassRootModel):"));
     }
 }

@@ -71,7 +71,7 @@ impl SchemaCompatInput {
         let warnings = backcompat::compatibility_warnings(&schema)
             .with_context(|| format!("collecting JSON Schema compatibility warnings for {path}"))?;
         Ok(Self {
-            document: SchemaDoc { schema },
+            document: SchemaDoc { raw: json, schema },
             warnings,
         })
     }

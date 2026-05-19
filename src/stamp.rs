@@ -4,8 +4,7 @@
 //! writer version and a `data` payload. Writers emit only the latest version,
 //! while readers accept a tagged union of historical writer envelopes.
 
-use crate::{Role, build_and_resolve_schema, check_compat};
-use json_schema_ast::canonicalize_json;
+use crate::{CompatibilityError, Role, SchemaDocument, check_compat};
 use jsoncompat_codegen::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -85,7 +84,7 @@ impl StampManifest {
                     });
                 }
 
-                build_and_resolve_schema(&version.schema).map_err(|source| {
+                validated_schema(&version.schema).map_err(|source| {
                     StampError::InvalidHistoricalSchema {
                         stable_id: history.stable_id.clone(),
                         version: version.version,
@@ -181,6 +180,11 @@ pub enum StampError {
         stable_id: String,
         source: anyhow::Error,
     },
+    #[error("failed to compare schema history '{stable_id}' against the current schema: {source}")]
+    CompatibilityCheck {
+        stable_id: String,
+        source: CompatibilityError,
+    },
     #[error("unsupported non-local $ref '{ref_value}'")]
     UnsupportedRef { ref_value: String },
     #[error("conflicting {metadata_key} metadata at '{pointer}'")]
@@ -219,7 +223,8 @@ pub fn stamp_schema(
     }
 
     manifest.validate()?;
-    build_and_resolve_schema(&schema).map_err(|source| StampError::InvalidCurrentSchema {
+    reject_unsupported_refs(&schema)?;
+    validated_schema(&schema).map_err(|source| StampError::InvalidCurrentSchema {
         stable_id: stable_id.to_owned(),
         source,
     })?;
@@ -234,21 +239,25 @@ pub fn stamp_schema(
         if latest.schema_sha256 == schema_sha256 {
             StampStatus::Unchanged
         } else {
-            let old_ast = build_and_resolve_schema(&latest.schema).map_err(|source| {
+            let old_ast = validated_schema(&latest.schema).map_err(|source| {
                 StampError::InvalidHistoricalSchema {
                     stable_id: stable_id.to_owned(),
                     version: latest.version,
                     source,
                 }
             })?;
-            let new_ast = build_and_resolve_schema(&schema).map_err(|source| {
-                StampError::InvalidCurrentSchema {
+            let new_ast =
+                validated_schema(&schema).map_err(|source| StampError::InvalidCurrentSchema {
+                    stable_id: stable_id.to_owned(),
+                    source,
+                })?;
+
+            if check_compat(&old_ast, &new_ast, Role::Both).map_err(|source| {
+                StampError::CompatibilityCheck {
                     stable_id: stable_id.to_owned(),
                     source,
                 }
-            })?;
-
-            if check_compat(&old_ast, &new_ast, Role::Both) {
+            })? {
                 latest.schema_sha256 = schema_sha256;
                 latest.schema = schema;
                 StampStatus::CompatibleUpdate
@@ -339,6 +348,30 @@ pub fn write_stamp_manifest_atomic(
     }
 
     Ok(())
+}
+
+fn validated_schema(raw: &Value) -> Result<SchemaDocument, anyhow::Error> {
+    let schema = SchemaDocument::from_json(raw)?;
+    schema.root()?;
+    schema.validate_source_schema()?;
+    Ok(schema)
+}
+
+fn canonicalize_json(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            let mut entries = object.iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+            let mut canonical = Map::new();
+            for (key, value) in entries {
+                canonical.insert(key.clone(), canonicalize_json(value));
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonicalize_json).collect()),
+        _ => value.clone(),
+    }
 }
 
 fn build_writer_schema(stable_id: &str, version: &SchemaVersionEntry) -> Result<Value, StampError> {
@@ -695,6 +728,29 @@ fn rewrite_local_refs(schema: &Value, namespace: &str) -> Result<Value, StampErr
             .map(Value::Array),
         _ => Ok(schema.clone()),
     }
+}
+
+fn reject_unsupported_refs(schema: &Value) -> Result<(), StampError> {
+    match schema {
+        Value::Object(obj) => {
+            for (key, value) in obj {
+                if key == "$ref" {
+                    if let Some(ref_value) = value.as_str() {
+                        rewrite_ref_value(ref_value, "")?;
+                    }
+                } else {
+                    reject_unsupported_refs(value)?;
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                reject_unsupported_refs(item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn rewrite_ref_value(ref_value: &str, namespace: &str) -> Result<String, StampError> {
