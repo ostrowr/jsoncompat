@@ -126,7 +126,7 @@ struct Cli {
 enum Command {
     /// Generate random JSON instances that satisfy a schema.
     Generate(generate::GenerateArgs),
-    /// Check backward-compatibility between two schema revisions.
+    /// Check raw JSON Schemas, or OpenAPI 3.1 contracts with --openapi.
     Compat(compat::CompatArgs),
     /// Check compatibility between two golden files.
     CI(ci::CiArgs),

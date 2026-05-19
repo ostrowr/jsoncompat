@@ -49,7 +49,7 @@ jsoncompat compat old-schema.json new-schema.json --role both --fuzz 1000 --dept
 Check an OpenAPI 3.1 contract:
 
 ```bash
-jsoncompat compat old-openapi.json new-openapi.json
+jsoncompat compat --openapi old-openapi.json new-openapi.json
 ```
 
 Generate example values accepted by a schema:
@@ -98,7 +98,7 @@ For OpenAPI 3.1 documents, jsoncompat checks:
 - removed operations;
 - supported local `#/components/...` references.
 
-OpenAPI comparisons always check requests in the deserializer direction and responses in the serializer direction. `--role` and `--fuzz` are raw-JSON-Schema-only flags.
+Pass `--openapi` when the inputs are OpenAPI documents. OpenAPI comparisons always check requests in the deserializer direction and responses in the serializer direction. `--role` and `--fuzz` are raw-JSON-Schema-only flags.
 
 See [openapi/README.md](openapi/README.md) for the OpenAPI user guide.
 

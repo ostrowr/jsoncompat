@@ -7,10 +7,13 @@ use jsoncompat as backcompat;
 
 #[derive(clap::Args)]
 pub(crate) struct CompatArgs {
-    /// Path to the *old* JSON Schema or OpenAPI 3.1 document.
+    /// Path to the *old* JSON Schema document, or OpenAPI 3.1 document with --openapi.
     old: String,
-    /// Path to the *new* JSON Schema or OpenAPI 3.1 document.
+    /// Path to the *new* JSON Schema document, or OpenAPI 3.1 document with --openapi.
     new: String,
+    /// Compare both inputs as OpenAPI 3.1 documents.
+    #[arg(long)]
+    openapi: bool,
     /// Compatibility role.
     #[arg(long, value_enum, default_value_t = RoleCli::Both)]
     role: RoleCli,
@@ -23,49 +26,42 @@ pub(crate) struct CompatArgs {
 }
 
 pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
-    let old = CompatInput::load(&args.old)?;
-    let new = CompatInput::load(&args.new)?;
+    if args.openapi {
+        if args.role != RoleCli::Both {
+            bail!(
+                "--role is only available for raw JSON Schema inputs; OpenAPI comparisons check request and response compatibility together"
+            );
+        }
+        if args.fuzz > 0 {
+            bail!("--fuzz is only available for raw JSON Schema inputs");
+        }
+
+        let old = load_openapi_document(&args.old)?;
+        let new = load_openapi_document(&args.new)?;
+        return compat_openapi(old, new, &args.old, &args.new);
+    }
+
+    let old = SchemaCompatInput::load(&args.old)?;
+    let new = SchemaCompatInput::load(&args.new)?;
     let role: backcompat::Role = args.role.into();
     old.print_warnings(&args.old);
     new.print_warnings(&args.new);
-
-    match (old, new) {
-        (CompatInput::Schema { document: old, .. }, CompatInput::Schema { document: new, .. }) => {
-            compat_schemas(old, new, role, args.fuzz, args.depth)
-        }
-        (CompatInput::OpenApi(old), CompatInput::OpenApi(new)) => {
-            if args.role != RoleCli::Both {
-                bail!(
-                    "--role is only available for raw JSON Schema inputs; OpenAPI comparisons check request and response compatibility together"
-                );
-            }
-            if args.fuzz > 0 {
-                bail!("--fuzz is only available for raw JSON Schema inputs");
-            }
-            compat_openapi(old, new, &args.old, &args.new)
-        }
-        _ => bail!("compat inputs must both be raw JSON Schemas or both be OpenAPI 3.1 documents"),
-    }
+    compat_schemas(old.document, new.document, role, args.fuzz, args.depth)
 }
 
-enum CompatInput {
-    Schema {
-        document: SchemaDoc,
-        warnings: Vec<backcompat::CompatibilityWarning>,
-    },
-    OpenApi(backcompat::OpenApiDocument),
+struct SchemaCompatInput {
+    document: SchemaDoc,
+    warnings: Vec<backcompat::CompatibilityWarning>,
 }
 
-impl CompatInput {
+impl SchemaCompatInput {
     fn load(path: &str) -> Result<Self> {
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
         if looks_like_openapi_document(&json) {
-            let document = backcompat::OpenApiDocument::from_json(&json)
-                .with_context(|| format!("building OpenAPI document for {path}"))?;
-            backcompat::validate_openapi_compatibility_input(&document)
-                .with_context(|| format!("validating OpenAPI compatibility input for {path}"))?;
-            return Ok(Self::OpenApi(document));
+            bail!(
+                "{path} looks like an OpenAPI document; pass --openapi to compare OpenAPI contracts explicitly"
+            );
         }
 
         let schema = backcompat::SchemaDocument::from_json(&json)
@@ -74,19 +70,27 @@ impl CompatInput {
             .with_context(|| format!("validating JSON Schema compatibility input for {path}"))?;
         let warnings = backcompat::compatibility_warnings(&schema)
             .with_context(|| format!("collecting JSON Schema compatibility warnings for {path}"))?;
-        Ok(Self::Schema {
+        Ok(Self {
             document: SchemaDoc { schema },
             warnings,
         })
     }
 
     fn print_warnings(&self, path: &str) {
-        if let Self::Schema { warnings, .. } = self {
-            for warning in warnings {
-                eprintln!("{} {path}: {warning}", "warning:".yellow());
-            }
+        for warning in &self.warnings {
+            eprintln!("{} {path}: {warning}", "warning:".yellow());
         }
     }
+}
+
+fn load_openapi_document(path: &str) -> Result<backcompat::OpenApiDocument> {
+    let raw = read_to_string(path)?;
+    let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
+    let document = backcompat::OpenApiDocument::from_json(&json)
+        .with_context(|| format!("building OpenAPI document for {path}"))?;
+    backcompat::validate_openapi_compatibility_input(&document)
+        .with_context(|| format!("validating OpenAPI compatibility input for {path}"))?;
+    Ok(document)
 }
 
 fn looks_like_openapi_document(json: &Value) -> bool {
@@ -207,6 +211,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: false,
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
@@ -243,6 +248,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: false,
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
@@ -283,6 +289,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: false,
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
@@ -328,6 +335,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: false,
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
@@ -373,6 +381,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: false,
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
@@ -420,6 +429,7 @@ mod tests {
             let result = cmd(CompatArgs {
                 old: old_path.to_string_lossy().into_owned(),
                 new: new_path.to_string_lossy().into_owned(),
+                openapi: false,
                 role: RoleCli::Both,
                 fuzz: 0,
                 depth: 8,
@@ -470,6 +480,7 @@ mod tests {
         let result = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: true,
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
@@ -491,11 +502,10 @@ mod tests {
         ));
         fs::write(&path, r#"{"openapi":"3.1.0","type":"string"}"#).unwrap();
 
-        let input = CompatInput::load(&path.to_string_lossy())
+        SchemaCompatInput::load(&path.to_string_lossy())
             .expect("annotation-only raw schemas should stay in raw schema mode");
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema { .. }));
     }
 
     #[test]
@@ -513,15 +523,14 @@ mod tests {
         )
         .unwrap();
 
-        let input = CompatInput::load(&path.to_string_lossy())
+        SchemaCompatInput::load(&path.to_string_lossy())
             .expect("annotation-like OpenAPI metadata on a raw schema should stay in schema mode");
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema { .. }));
     }
 
     #[test]
-    fn malformed_openapi_shaped_inputs_still_route_through_openapi_validation() {
+    fn openapi_shaped_inputs_require_explicit_openapi_mode() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -529,15 +538,14 @@ mod tests {
         let path = std::env::temp_dir().join(format!("jsoncompat-malformed-openapi-{unique}.json"));
         fs::write(&path, r#"{"openapi":"3.1.0","paths":{}}"#).unwrap();
 
-        let error = match CompatInput::load(&path.to_string_lossy()) {
+        let error = match SchemaCompatInput::load(&path.to_string_lossy()) {
             Err(error) => error,
-            Ok(_) => panic!("OpenAPI-shaped inputs should route through OpenAPI validation"),
+            Ok(_) => panic!("OpenAPI-shaped inputs should require --openapi"),
         };
 
         fs::remove_file(path).unwrap();
         let message = format!("{error:#}");
-        assert!(message.contains("building OpenAPI document"), "{message}");
-        assert!(message.contains("#/info"), "{message}");
+        assert!(message.contains("--openapi"), "{message}");
     }
 
     #[test]
@@ -554,11 +562,10 @@ mod tests {
         )
         .unwrap();
 
-        let input = CompatInput::load(&path.to_string_lossy())
+        SchemaCompatInput::load(&path.to_string_lossy())
             .expect("ambiguous annotation-only inputs should stay in raw schema mode");
 
         fs::remove_file(path).unwrap();
-        assert!(matches!(input, CompatInput::Schema { .. }));
     }
 
     #[test]
@@ -590,6 +597,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: true,
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
@@ -629,6 +637,7 @@ mod tests {
             let error = cmd(CompatArgs {
                 old: old_path.to_string_lossy().into_owned(),
                 new: new_path.to_string_lossy().into_owned(),
+                openapi: true,
                 role: RoleCli::Both,
                 fuzz: 0,
                 depth: 8,
@@ -690,6 +699,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: true,
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
@@ -749,6 +759,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: true,
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
@@ -834,6 +845,7 @@ mod tests {
         let error = cmd(CompatArgs {
             old: old_path.to_string_lossy().into_owned(),
             new: new_path.to_string_lossy().into_owned(),
+            openapi: true,
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,

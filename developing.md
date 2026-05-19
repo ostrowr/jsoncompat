@@ -56,7 +56,7 @@ The split is deliberate:
 - warning-only raw JSON Schema keywords are valid inputs whose semantics are not yet modeled by the subset checker;
 - hard errors remain hard errors for unsupported reference scoping, non-integral `number.multipleOf`, unsafe floating-point number-bound precision, malformed schemas, and other cases that would make a static verdict unsafe.
 
-`jsoncompat compat` prints warnings before the verdict. `jsoncompat ci` keeps the warning text in its output without turning that grade into `Invalid`.
+`jsoncompat compat` prints warnings before the verdict for raw schemas; `jsoncompat compat --openapi` selects the separate OpenAPI contract path explicitly. `jsoncompat ci` keeps the warning text in its output without turning that grade into `Invalid`.
 
 ## Canonicalization and debugging
 

@@ -5,7 +5,7 @@ Most users should start with the [repository README](https://github.com/ostrowr/
 jsoncompat can compare JSON OpenAPI 3.1 documents with path operations:
 
 ```bash
-jsoncompat compat old-openapi.json new-openapi.json
+jsoncompat compat --openapi old-openapi.json new-openapi.json
 ```
 
 It can also print the per-operation request and response schemas that drive that comparison:
@@ -29,7 +29,7 @@ OpenAPI compatibility is directional by surface:
 - requests are checked in the deserializer direction, because a server should keep accepting requests it previously accepted;
 - responses are checked in the serializer direction, because clients should keep accepting responses the server may emit.
 
-`--role` and `--fuzz` are raw-JSON-Schema-only flags. OpenAPI comparisons always use the paired request/response interpretation above.
+`--role` and `--fuzz` are raw-JSON-Schema-only flags. `--openapi` selects the OpenAPI contract path explicitly, and those comparisons always use the paired request/response interpretation above.
 
 ## Supported inputs
 
