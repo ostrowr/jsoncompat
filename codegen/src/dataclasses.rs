@@ -64,22 +64,22 @@ struct ClassSpec {
 }
 
 #[derive(Debug)]
-struct DataclassModuleBuilder {
+struct DataclassModuleBuilder<'a> {
     classes: Vec<ClassSpec>,
     class_names: BTreeMap<String, String>,
     named_refs: BTreeMap<String, String>,
-    codegen_root: Value,
-    validation_root: Value,
-    validation_root_defs: Option<Map<String, Value>>,
+    codegen_root: &'a Value,
+    validation_root: &'a Value,
+    validation_root_defs: Option<&'a Map<String, Value>>,
     inline_names: BTreeMap<String, String>,
     inline_name_counters: BTreeMap<String, u32>,
 }
 
-impl DataclassModuleBuilder {
+impl<'a> DataclassModuleBuilder<'a> {
     fn new(
         named_refs: BTreeMap<String, String>,
-        codegen_root: Value,
-        validation_root: Value,
+        codegen_root: &'a Value,
+        validation_root: &'a Value,
     ) -> Self {
         let class_names = [
             DATACLASSES_RUNTIME_MODULE,
@@ -103,8 +103,7 @@ impl DataclassModuleBuilder {
             validation_root_defs: validation_root
                 .as_object()
                 .and_then(|obj| obj.get("$defs"))
-                .and_then(Value::as_object)
-                .cloned(),
+                .and_then(Value::as_object),
             validation_root,
             inline_names: BTreeMap::new(),
             inline_name_counters: BTreeMap::new(),
@@ -282,10 +281,10 @@ impl DataclassModuleBuilder {
         fallback_schema: &Value,
         pointer: &str,
     ) -> Result<String, DataclassError> {
-        let validation_schema = resolve_json_pointer(&self.validation_root, pointer)
+        let validation_schema = resolve_json_pointer(self.validation_root, pointer)
             .unwrap_or(fallback_schema)
             .clone();
-        let schema = match (&validation_schema, self.validation_root_defs.as_ref()) {
+        let schema = match (&validation_schema, self.validation_root_defs) {
             (Value::Object(obj), Some(root_defs)) => {
                 Value::Object(schema_object_with_root_defs(obj, root_defs)?)
             }
@@ -343,7 +342,7 @@ impl DataclassModuleBuilder {
 
     fn ref_annotation(&mut self, ref_value: &str, pointer: &str) -> Result<String, DataclassError> {
         let declaration_name = resolve_local_ref_name(&self.named_refs, ref_value, pointer)?;
-        let Some(target) = resolve_json_pointer(&self.codegen_root, ref_value).cloned() else {
+        let Some(target) = resolve_json_pointer(self.codegen_root, ref_value).cloned() else {
             return Ok(declaration_name);
         };
         let Value::Object(target_obj) = target else {
@@ -525,8 +524,7 @@ fn render_dataclass_module(
     })?;
 
     let root_metadata = parse_optional_metadata(schema, "#")?;
-    let mut builder =
-        DataclassModuleBuilder::new(named_refs, schema.clone(), validation_schema.clone());
+    let mut builder = DataclassModuleBuilder::new(named_refs, schema, validation_schema);
     match &root_metadata {
         Some(JsoncompatMetadata::Writer { .. }) | Some(JsoncompatMetadata::Reader { .. }) => {
             emit_root_defs(&mut builder, schema)?;
@@ -853,7 +851,7 @@ fn render_reader_root_class(
 }
 
 fn emit_nested_defs(
-    builder: &mut DataclassModuleBuilder,
+    builder: &mut DataclassModuleBuilder<'_>,
     obj: &Map<String, Value>,
     pointer: &str,
 ) -> Result<(), DataclassError> {
@@ -879,7 +877,7 @@ fn emit_nested_defs(
 }
 
 fn emit_root_defs(
-    builder: &mut DataclassModuleBuilder,
+    builder: &mut DataclassModuleBuilder<'_>,
     schema: &Value,
 ) -> Result<(), DataclassError> {
     let root = expect_schema_object(schema, "#")?;
@@ -887,7 +885,7 @@ fn emit_root_defs(
 }
 
 fn parse_object_fields(
-    builder: &mut DataclassModuleBuilder,
+    builder: &mut DataclassModuleBuilder<'_>,
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
@@ -945,7 +943,7 @@ fn parse_object_fields(
 }
 
 fn parse_extra_annotation(
-    builder: &mut DataclassModuleBuilder,
+    builder: &mut DataclassModuleBuilder<'_>,
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
@@ -968,7 +966,7 @@ fn parse_extra_annotation(
 }
 
 fn parse_pattern_property_annotations(
-    builder: &mut DataclassModuleBuilder,
+    builder: &mut DataclassModuleBuilder<'_>,
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
@@ -1017,7 +1015,7 @@ fn merge_extra_annotations(annotations: Vec<String>) -> Option<String> {
 }
 
 fn required_property_fallback_annotation(
-    builder: &mut DataclassModuleBuilder,
+    builder: &mut DataclassModuleBuilder<'_>,
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
