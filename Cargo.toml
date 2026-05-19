@@ -59,6 +59,10 @@ harness = false
 name = "dataclasses_fuzz"
 harness = false
 
+[[test]]
+name = "dataclasses_backcompat_examples"
+harness = false
+
 [[bench]]
 name = "validator_cache"
 harness = false

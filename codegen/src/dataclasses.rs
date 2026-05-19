@@ -490,6 +490,10 @@ impl DataclassModuleBuilder {
         let mut annotations = Vec::new();
         for (index, branch) in branches.iter().enumerate() {
             let branch_pointer = join_pointer(&join_pointer(pointer, keyword), &index.to_string());
+            if branch_is_direct_recursive_ref(branch, pointer) {
+                annotations.push(typing_symbol("Any"));
+                continue;
+            }
             let merged_branch = merge_union_branch_schema(branch, &context, &branch_pointer)?;
             annotations.push(self.inline_annotation(
                 &merged_branch,
@@ -1578,6 +1582,13 @@ fn union_annotation(annotations: &[String]) -> String {
     let mut unique = annotations.to_vec();
     unique.sort();
     unique.dedup();
+    let any_annotation = typing_symbol("Any");
+    if unique
+        .iter()
+        .any(|annotation| annotation == &any_annotation)
+    {
+        return any_annotation;
+    }
     unique.sort_by(
         |left, right| match (left.as_str() == "None", right.as_str() == "None") {
             (true, false) => std::cmp::Ordering::Greater,
@@ -1590,6 +1601,13 @@ fn union_annotation(annotations: &[String]) -> String {
         1 => unique.pop().expect("len checked above"),
         _ => format!("({})", unique.into_iter().collect::<Vec<_>>().join(" | ")),
     }
+}
+
+fn branch_is_direct_recursive_ref(branch: &Value, pointer: &str) -> bool {
+    let Value::Object(obj) = branch else {
+        return false;
+    };
+    obj.len() == 1 && obj.get("$ref").and_then(Value::as_str) == Some(pointer)
 }
 
 fn omittable_annotation(annotation: &str) -> String {
@@ -2093,5 +2111,30 @@ mod tests {
                 ..
             } if ref_value == "http://localhost:1234/draft2020-12/nested.json#foo"
         ));
+    }
+
+    #[test]
+    fn direct_same_value_recursive_union_branches_fall_back_to_any() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "Value": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/Value" },
+                        { "type": "string" }
+                    ]
+                }
+            },
+            "type": "object",
+            "properties": {
+                "value": { "$ref": "#/$defs/Value" }
+            },
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class GeneratedSchemaValue(dc.DataclassRootModel):"));
+        assert!(source.contains("    root: typing.Any = dc.root_field()"));
     }
 }

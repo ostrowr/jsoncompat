@@ -30,7 +30,7 @@ class GeneratedSchemaValue(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (GeneratedSchemaValue | str) = dc.root_field()
+    root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):

@@ -361,7 +361,7 @@ fn canonicalize_json(value: &Value) -> Value {
     match value {
         Value::Object(object) => {
             let mut entries = object.iter().collect::<Vec<_>>();
-            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            entries.sort_by_key(|(key, _)| *key);
 
             let mut canonical = Map::new();
             for (key, value) in entries {
