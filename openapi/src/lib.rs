@@ -5823,10 +5823,8 @@ fn validate_reference_object_fields(
     for (field, value) in reference {
         match field.as_str() {
             "$ref" => {}
-            "summary" | "description" => {
-                if !value.is_string() {
-                    return Err(invalid_value(&pointer.child(field), "a string"));
-                }
+            "summary" | "description" if !value.is_string() => {
+                return Err(invalid_value(&pointer.child(field), "a string"));
             }
             _ => {}
         }
