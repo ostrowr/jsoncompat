@@ -11,7 +11,10 @@
 // Re-export the document type needed by `check_compat` so application callers
 // do not need a second direct dependency just to construct inputs.
 use json_pointer::JsonPointer;
-use json_schema_ast::{NodeId, SchemaNode, SchemaNodeKind};
+use json_schema_ast::{
+    NodeId, SCHEMA_ARRAY_CHILD_KEYWORDS, SCHEMA_MAP_CHILD_KEYWORDS, SINGLE_SCHEMA_CHILD_KEYWORDS,
+    SchemaNode, SchemaNodeKind,
+};
 pub use json_schema_ast::{SchemaBuildError, SchemaDocument};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -165,27 +168,6 @@ const UNSUPPORTED_COMPATIBILITY_KEYWORDS: &[&str] = &[
 ];
 const UNSUPPORTED_COMPATIBILITY_REFERENCE_KEYWORDS: &[&str] =
     &["$id", "$anchor", "$dynamicRef", "$dynamicAnchor"];
-const SOURCE_SINGLE_SCHEMA_CHILD_KEYWORDS: &[&str] = &[
-    "additionalProperties",
-    "contains",
-    "contentSchema",
-    "else",
-    "if",
-    "items",
-    "not",
-    "propertyNames",
-    "then",
-    "unevaluatedItems",
-    "unevaluatedProperties",
-];
-const SOURCE_SCHEMA_MAP_CHILD_KEYWORDS: &[&str] = &[
-    "$defs",
-    "definitions",
-    "dependentSchemas",
-    "patternProperties",
-    "properties",
-];
-const SOURCE_SCHEMA_ARRAY_CHILD_KEYWORDS: &[&str] = &["allOf", "anyOf", "oneOf", "prefixItems"];
 const MAX_EXACT_F64_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 fn reject_unsupported_source_keywords(schema: &SchemaDocument) -> Result<(), CompatibilityError> {
@@ -243,13 +225,13 @@ fn strip_non_local_schema_refs(schema: &Value) -> Value {
                     {
                         None
                     }
-                    key if SOURCE_SINGLE_SCHEMA_CHILD_KEYWORDS.contains(&key) => {
+                    key if SINGLE_SCHEMA_CHILD_KEYWORDS.contains(&key) => {
                         Some(strip_non_local_schema_refs(value))
                     }
-                    key if SOURCE_SCHEMA_MAP_CHILD_KEYWORDS.contains(&key) => {
+                    key if SCHEMA_MAP_CHILD_KEYWORDS.contains(&key) => {
                         Some(strip_non_local_schema_ref_map(value))
                     }
-                    key if SOURCE_SCHEMA_ARRAY_CHILD_KEYWORDS.contains(&key) => {
+                    key if SCHEMA_ARRAY_CHILD_KEYWORDS.contains(&key) => {
                         Some(strip_non_local_schema_ref_array(value))
                     }
                     _ => Some(value.clone()),
@@ -312,9 +294,9 @@ fn find_unsupported_keyword_in_schema_object(
         }
     }
 
-    for keyword in SOURCE_SINGLE_SCHEMA_CHILD_KEYWORDS {
-        if let Some(child) = object.get(*keyword) {
-            pointer.push(*keyword);
+    for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
+        if let Some(child) = object.get(keyword) {
+            pointer.push(keyword);
             let unsupported = find_unsupported_keyword_in_schema_value(child, pointer, keywords);
             pointer.pop();
             if unsupported.is_some() {
@@ -323,9 +305,9 @@ fn find_unsupported_keyword_in_schema_object(
         }
     }
 
-    for keyword in SOURCE_SCHEMA_MAP_CHILD_KEYWORDS {
-        if let Some(children) = object.get(*keyword).and_then(Value::as_object) {
-            pointer.push(*keyword);
+    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
+        if let Some(children) = object.get(keyword).and_then(Value::as_object) {
+            pointer.push(keyword);
             for (name, child) in children {
                 pointer.push(name);
                 let unsupported =
@@ -340,9 +322,9 @@ fn find_unsupported_keyword_in_schema_object(
         }
     }
 
-    for keyword in SOURCE_SCHEMA_ARRAY_CHILD_KEYWORDS {
-        if let Some(children) = object.get(*keyword).and_then(Value::as_array) {
-            pointer.push(*keyword);
+    for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
+        if let Some(children) = object.get(keyword).and_then(Value::as_array) {
+            pointer.push(keyword);
             for (index, child) in children.iter().enumerate() {
                 pointer.push(index.to_string());
                 let unsupported =
@@ -377,17 +359,17 @@ fn reject_unsafe_number_bounds_in_schema_object_tree(
 ) -> Result<(), CompatibilityError> {
     reject_unsafe_number_bounds_in_schema_object(object, pointer)?;
 
-    for keyword in SOURCE_SINGLE_SCHEMA_CHILD_KEYWORDS {
-        if let Some(child) = object.get(*keyword) {
-            pointer.push(*keyword);
+    for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
+        if let Some(child) = object.get(keyword) {
+            pointer.push(keyword);
             reject_unsafe_number_bounds_in_schema_value(child, pointer)?;
             pointer.pop();
         }
     }
 
-    for keyword in SOURCE_SCHEMA_MAP_CHILD_KEYWORDS {
-        if let Some(children) = object.get(*keyword).and_then(Value::as_object) {
-            pointer.push(*keyword);
+    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
+        if let Some(children) = object.get(keyword).and_then(Value::as_object) {
+            pointer.push(keyword);
             for (name, child) in children {
                 pointer.push(name);
                 reject_unsafe_number_bounds_in_schema_value(child, pointer)?;
@@ -397,9 +379,9 @@ fn reject_unsafe_number_bounds_in_schema_object_tree(
         }
     }
 
-    for keyword in SOURCE_SCHEMA_ARRAY_CHILD_KEYWORDS {
-        if let Some(children) = object.get(*keyword).and_then(Value::as_array) {
-            pointer.push(*keyword);
+    for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
+        if let Some(children) = object.get(keyword).and_then(Value::as_array) {
+            pointer.push(keyword);
             for (index, child) in children.iter().enumerate() {
                 pointer.push(index.to_string());
                 reject_unsafe_number_bounds_in_schema_value(child, pointer)?;

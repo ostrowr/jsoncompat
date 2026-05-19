@@ -158,56 +158,12 @@ fn claimed_openapi_compatibility_survives_lowered_contract_witnesses() {
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -602,56 +558,12 @@ fn claimed_openapi_media_header_and_status_compatibility_survives_lowered_contra
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -798,56 +710,12 @@ fn claimed_openapi_query_serialization_compatibility_survives_lowered_contract_w
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -995,56 +863,12 @@ fn claimed_openapi_component_body_and_response_refs_survive_lowered_contract_wit
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -1145,56 +969,12 @@ fn claimed_openapi_recursive_component_refs_survive_lowered_contract_witnesses()
         path: "/nodes".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -1380,56 +1160,12 @@ fn claimed_openapi_path_header_and_cookie_serialization_survives_lowered_contrac
         path: "/pets/{petId}".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -1509,56 +1245,12 @@ fn claimed_openapi_content_backed_fields_survive_lowered_contract_witnesses() {
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -1644,56 +1336,12 @@ fn claimed_openapi_operation_parameter_overrides_survive_lowered_contract_witnes
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 #[test]
@@ -1764,56 +1412,12 @@ fn claimed_openapi_component_parameter_and_header_refs_survive_lowered_contract_
         path: "/pets".to_owned(),
     };
 
-    for (old_name, old) in &documents {
-        for (new_name, new) in &documents {
-            let report =
-                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
-            if !report.is_compatible() {
-                continue;
-            }
-
-            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
-            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
-            let old_operation = old_lowerer
-                .lower_operation(&operation)
-                .expect("old operation should lower")
-                .expect("old operation should exist");
-            let new_operation = new_lowerer
-                .lower_operation(&operation)
-                .expect("new operation should lower")
-                .expect("new operation should exist");
-
-            let old_request = old
-                .lowered_contract_document(&old_operation.request)
-                .expect("old lowered request should build");
-            let new_request = new
-                .lowered_contract_document(&new_operation.request)
-                .expect("new lowered request should build");
-            assert_witness_inclusion(
-                old_name,
-                new_name,
-                "request",
-                &old_request,
-                &new_request,
-                &request_witnesses,
-            );
-
-            let old_response = old
-                .lowered_contract_document(&old_operation.response)
-                .expect("old lowered response should build");
-            let new_response = new
-                .lowered_contract_document(&new_operation.response)
-                .expect("new lowered response should build");
-            assert_witness_inclusion(
-                new_name,
-                old_name,
-                "response",
-                &new_response,
-                &old_response,
-                &response_witnesses,
-            );
-        }
-    }
+    assert_claimed_openapi_compatibility_preserves_witnesses(
+        &documents,
+        &operation,
+        &request_witnesses,
+        &response_witnesses,
+    );
 }
 
 fn spec(parameters: Value, request_body: Option<Value>, response: Value) -> Value {
@@ -2223,6 +1827,64 @@ fn typed_response(status: &str, body: Value, headers: Value) -> Value {
         "body": body,
         "headers": headers
     })
+}
+
+fn assert_claimed_openapi_compatibility_preserves_witnesses(
+    documents: &[(&str, OpenApiDocument)],
+    operation: &OperationKey,
+    request_witnesses: &[Value],
+    response_witnesses: &[Value],
+) {
+    for (old_name, old) in documents {
+        for (new_name, new) in documents {
+            let report =
+                check_openapi_compat(old, new).expect("OpenAPI soundness corpus should compare");
+            if !report.is_compatible() {
+                continue;
+            }
+
+            let old_lowerer = OpenApiOperationLowerer::new(old).expect("old lowerer should build");
+            let new_lowerer = OpenApiOperationLowerer::new(new).expect("new lowerer should build");
+            let old_operation = old_lowerer
+                .lower_operation(operation)
+                .expect("old operation should lower")
+                .expect("old operation should exist");
+            let new_operation = new_lowerer
+                .lower_operation(operation)
+                .expect("new operation should lower")
+                .expect("new operation should exist");
+
+            let old_request = old
+                .lowered_contract_document(&old_operation.request)
+                .expect("old lowered request should build");
+            let new_request = new
+                .lowered_contract_document(&new_operation.request)
+                .expect("new lowered request should build");
+            assert_witness_inclusion(
+                old_name,
+                new_name,
+                "request",
+                &old_request,
+                &new_request,
+                request_witnesses,
+            );
+
+            let old_response = old
+                .lowered_contract_document(&old_operation.response)
+                .expect("old lowered response should build");
+            let new_response = new
+                .lowered_contract_document(&new_operation.response)
+                .expect("new lowered response should build");
+            assert_witness_inclusion(
+                new_name,
+                old_name,
+                "response",
+                &new_response,
+                &old_response,
+                response_witnesses,
+            );
+        }
+    }
 }
 
 fn assert_witness_inclusion(

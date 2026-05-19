@@ -70,13 +70,16 @@ The compatibility layer then compares:
 
 ### Request envelopes
 
-A lowered request schema is an object with some or all of:
+A lowered request schema is an object with these five required envelope fields:
 
 - `path`
 - `query`
 - `headers`
 - `cookies`
 - `body`
+
+Absent surfaces use empty object groups or a `null` body contract, so every
+lowered request has the same top-level shape.
 
 Parameters are grouped by location and lowered into object properties. The translation preserves:
 

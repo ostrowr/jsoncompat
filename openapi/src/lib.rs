@@ -4,7 +4,11 @@ mod json_pointer;
 
 use email_address::EmailAddress;
 use json_pointer::JsonPointer;
-use json_schema_ast::{SchemaBuildError, SchemaDocument};
+use json_schema_ast::{
+    SCHEMA_ARRAY_CHILD_KEYWORDS, SCHEMA_MAP_CHILD_KEYWORDS, SINGLE_SCHEMA_CHILD_KEYWORDS,
+    SchemaBuildError, SchemaDocument, is_schema_array_child_keyword, is_schema_map_child_keyword,
+    is_single_schema_child_keyword,
+};
 use mime::Mime;
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value, json};
@@ -3275,19 +3279,7 @@ fn validate_schema_document_shape_with_context(
                 }
             }
 
-            for keyword in [
-                "additionalProperties",
-                "contains",
-                "contentSchema",
-                "else",
-                "if",
-                "items",
-                "not",
-                "propertyNames",
-                "then",
-                "unevaluatedItems",
-                "unevaluatedProperties",
-            ] {
+            for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
                 if let Some(child) = object.get(keyword) {
                     validate_schema_document_shape_with_context(
                         child,
@@ -3321,7 +3313,7 @@ fn validate_schema_document_shape_with_context(
                 }
             }
 
-            for keyword in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+            for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
                 if let Some(children) = object.get(keyword).and_then(Value::as_array) {
                     for (index, child) in children.iter().enumerate() {
                         validate_schema_document_shape_with_context(
@@ -5900,40 +5892,6 @@ fn collect_component_schema_names(schema: &Value) -> Vec<String> {
     names.into_iter().collect()
 }
 
-const VALIDATION_SINGLE_SCHEMA_CHILD_KEYWORDS: &[&str] = &[
-    "additionalProperties",
-    "contains",
-    "contentSchema",
-    "else",
-    "if",
-    "items",
-    "not",
-    "propertyNames",
-    "then",
-    "unevaluatedItems",
-    "unevaluatedProperties",
-];
-const VALIDATION_SCHEMA_MAP_CHILD_KEYWORDS: &[&str] = &[
-    "$defs",
-    "definitions",
-    "dependentSchemas",
-    "patternProperties",
-    "properties",
-];
-const VALIDATION_SCHEMA_ARRAY_CHILD_KEYWORDS: &[&str] = &["allOf", "anyOf", "oneOf", "prefixItems"];
-
-fn is_validation_single_schema_child_keyword(keyword: &str) -> bool {
-    VALIDATION_SINGLE_SCHEMA_CHILD_KEYWORDS.contains(&keyword)
-}
-
-fn is_validation_schema_map_child_keyword(keyword: &str) -> bool {
-    VALIDATION_SCHEMA_MAP_CHILD_KEYWORDS.contains(&keyword)
-}
-
-fn is_validation_schema_array_child_keyword(keyword: &str) -> bool {
-    VALIDATION_SCHEMA_ARRAY_CHILD_KEYWORDS.contains(&keyword)
-}
-
 fn collect_component_schema_names_into(schema: &Value, names: &mut BTreeSet<String>) {
     match schema {
         Value::Object(object) => {
@@ -5943,22 +5901,22 @@ fn collect_component_schema_names_into(schema: &Value, names: &mut BTreeSet<Stri
                 names.insert(name);
             }
 
-            for keyword in VALIDATION_SINGLE_SCHEMA_CHILD_KEYWORDS {
-                if let Some(child) = object.get(*keyword) {
+            for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
+                if let Some(child) = object.get(keyword) {
                     collect_component_schema_names_into(child, names);
                 }
             }
 
-            for keyword in VALIDATION_SCHEMA_MAP_CHILD_KEYWORDS {
-                if let Some(children) = object.get(*keyword).and_then(Value::as_object) {
+            for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
+                if let Some(children) = object.get(keyword).and_then(Value::as_object) {
                     for child in children.values() {
                         collect_component_schema_names_into(child, names);
                     }
                 }
             }
 
-            for keyword in VALIDATION_SCHEMA_ARRAY_CHILD_KEYWORDS {
-                if let Some(children) = object.get(*keyword).and_then(Value::as_array) {
+            for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
+                if let Some(children) = object.get(keyword).and_then(Value::as_array) {
                     for child in children {
                         collect_component_schema_names_into(child, names);
                     }
@@ -5994,18 +5952,18 @@ fn schema_uses_later_lowering_reference_features(schema: &Value) -> bool {
                 return true;
             }
 
-            for keyword in VALIDATION_SINGLE_SCHEMA_CHILD_KEYWORDS {
+            for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
                 if object
-                    .get(*keyword)
+                    .get(keyword)
                     .is_some_and(schema_uses_later_lowering_reference_features)
                 {
                     return true;
                 }
             }
 
-            for keyword in VALIDATION_SCHEMA_MAP_CHILD_KEYWORDS {
+            for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
                 if object
-                    .get(*keyword)
+                    .get(keyword)
                     .and_then(Value::as_object)
                     .is_some_and(|children| {
                         children
@@ -6017,9 +5975,9 @@ fn schema_uses_later_lowering_reference_features(schema: &Value) -> bool {
                 }
             }
 
-            for keyword in VALIDATION_SCHEMA_ARRAY_CHILD_KEYWORDS {
+            for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
                 if object
-                    .get(*keyword)
+                    .get(keyword)
                     .and_then(Value::as_array)
                     .is_some_and(|children| {
                         children
@@ -6068,13 +6026,13 @@ fn strip_deferred_schema_references_for_validation(
                         DeferredReferenceValidation::Backend => Some(value.clone()),
                         DeferredReferenceValidation::ResolvedAst => None,
                     },
-                    key if is_validation_single_schema_child_keyword(key) => Some(
+                    key if is_single_schema_child_keyword(key) => Some(
                         strip_deferred_schema_references_for_validation(value, validation),
                     ),
-                    key if is_validation_schema_map_child_keyword(key) => {
+                    key if is_schema_map_child_keyword(key) => {
                         Some(strip_schema_map_deferred_references(value, validation))
                     }
-                    key if is_validation_schema_array_child_keyword(key) => {
+                    key if is_schema_array_child_keyword(key) => {
                         Some(strip_schema_array_deferred_references(value, validation))
                     }
                     _ => Some(value.clone()),
@@ -6152,13 +6110,13 @@ fn rewrite_schema_refs_for_validation(
                         }
                         value.clone()
                     }
-                    key if is_validation_single_schema_child_keyword(key) => {
+                    key if is_single_schema_child_keyword(key) => {
                         rewrite_schema_refs_for_validation(value, &child_pointer)?
                     }
-                    key if is_validation_schema_map_child_keyword(key) => {
+                    key if is_schema_map_child_keyword(key) => {
                         rewrite_schema_map_refs_for_validation(value, &child_pointer)?
                     }
-                    key if is_validation_schema_array_child_keyword(key) => {
+                    key if is_schema_array_child_keyword(key) => {
                         rewrite_schema_array_refs_for_validation(value, &child_pointer)?
                     }
                     _ => value.clone(),

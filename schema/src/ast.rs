@@ -12,7 +12,10 @@ use crate::constraints::{
 };
 use crate::json_semantics::{integer_value_from_json, json_values_equal, numeric_values_equal};
 use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
-use crate::{CompileError, JSONSchema, SchemaError, compile};
+use crate::{
+    CompileError, JSONSchema, SCHEMA_ARRAY_CHILD_KEYWORDS, SCHEMA_MAP_CHILD_KEYWORDS,
+    SINGLE_SCHEMA_CHILD_KEYWORDS, SchemaError, compile,
+};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
 use std::cell::OnceCell;
@@ -173,19 +176,7 @@ fn schema_uses_resolver_owned_reference_features(schema: &Value) -> bool {
         return true;
     }
 
-    for keyword in [
-        "additionalProperties",
-        "contains",
-        "else",
-        "if",
-        "items",
-        "not",
-        "propertyNames",
-        "then",
-        "unevaluatedItems",
-        "unevaluatedProperties",
-        "contentSchema",
-    ] {
+    for keyword in SINGLE_SCHEMA_CHILD_KEYWORDS {
         if object
             .get(keyword)
             .is_some_and(schema_uses_resolver_owned_reference_features)
@@ -194,13 +185,7 @@ fn schema_uses_resolver_owned_reference_features(schema: &Value) -> bool {
         }
     }
 
-    for keyword in [
-        "$defs",
-        "definitions",
-        "dependentSchemas",
-        "patternProperties",
-        "properties",
-    ] {
+    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
         if object
             .get(keyword)
             .and_then(Value::as_object)
@@ -214,7 +199,7 @@ fn schema_uses_resolver_owned_reference_features(schema: &Value) -> bool {
         }
     }
 
-    for keyword in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+    for keyword in SCHEMA_ARRAY_CHILD_KEYWORDS {
         if object
             .get(keyword)
             .and_then(Value::as_array)

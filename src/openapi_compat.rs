@@ -3,10 +3,8 @@
 use crate::{
     CompatibilityError, Role, check_compat, explain_compat_failure, validate_compatibility_input,
 };
-use json_schema_ast::SchemaBuildError;
 use jsoncompat_openapi::{
-    LoweredOperation, OpenApiDocument, OpenApiError, OpenApiLoweringError, OperationKey,
-    lower_operations,
+    LoweredOperation, OpenApiDocument, OpenApiLoweringError, OperationKey, lower_operations,
 };
 use std::collections::BTreeMap;
 
@@ -14,23 +12,9 @@ use std::collections::BTreeMap;
 #[non_exhaustive]
 pub enum OpenApiCompatibilityError {
     #[error(transparent)]
-    OpenApi(OpenApiError),
-    #[error(transparent)]
-    Schema(SchemaBuildError),
-    #[error(transparent)]
-    Lowering(OpenApiLoweringError),
+    Lowering(#[from] OpenApiLoweringError),
     #[error(transparent)]
     Compatibility(#[from] CompatibilityError),
-}
-
-impl From<OpenApiLoweringError> for OpenApiCompatibilityError {
-    fn from(error: OpenApiLoweringError) -> Self {
-        match error {
-            OpenApiLoweringError::OpenApi(error) => Self::OpenApi(error),
-            OpenApiLoweringError::Schema(error) => Self::Schema(error),
-            _ => Self::Lowering(error),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
