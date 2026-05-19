@@ -31,6 +31,14 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
             "warehouseCode": {
                 "$ref": "#/$defs/warehouseCode",
             },
+            "coordinates": {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string"},
+                    {"type": "integer"},
+                ],
+                "items": false,
+            },
         },
         "required": ["sku", "metadata"],
         "additionalProperties": {"type": "number"},
@@ -68,6 +76,7 @@ assert_type(item.metadata, InventoryItemMetadata)
 assert_type(item.metadata.warehouse, str)
 assert_type(item.tags, Omittable[list[str]])
 assert_type(item.warehouseCode, Omittable[str])
+assert_type(item.coordinates, Omittable[list[int | str]])
 assert_type(item.__jsoncompat_extra__, dict[str, float])
 assert_type(
     item.get_additional_property("priority"),
@@ -80,6 +89,7 @@ item_from_constructor = InventoryItem(
     quantity=JSONCOMPAT_MISSING,
     tags=["dry"],
     warehouseCode="WH-123",
+    coordinates=["aisle", 7],
     __jsoncompat_extra__={"priority": 2.5},
 )
 assert_type(item_from_constructor, InventoryItem)
@@ -101,6 +111,12 @@ InventoryItem(
 )
 
 InventoryItemMetadata(warehouse="east").get_additional_property("priority")
+
+InventoryItem(
+    sku="sku-456",
+    metadata=InventoryItemMetadata(warehouse="east"),
+    coordinates=[{}],
+)
 "#,
     )?;
 

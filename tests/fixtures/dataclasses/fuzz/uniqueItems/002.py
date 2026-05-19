@@ -31,6 +31,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "uniqueItems": true
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[(typing.Literal[False] | typing.Literal[True])] | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

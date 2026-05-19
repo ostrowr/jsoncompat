@@ -323,7 +323,7 @@ impl DataclassModuleBuilder {
         }
 
         if is_array_schema(obj) && obj.contains_key("prefixItems") {
-            return Ok(parse_type_annotation(obj, pointer)?.unwrap_or_else(|| typing_symbol("Any")));
+            return self.prefix_items_array_annotation(obj, pointer, scope_name);
         }
 
         if is_array_schema(obj)
@@ -368,6 +368,61 @@ impl DataclassModuleBuilder {
         }
 
         Ok(declaration_name)
+    }
+
+    fn prefix_items_array_annotation(
+        &mut self,
+        obj: &Map<String, Value>,
+        pointer: &str,
+        scope_name: &str,
+    ) -> Result<String, DataclassError> {
+        let prefix_items = obj
+            .get("prefixItems")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                invalid_schema(
+                    join_pointer(pointer, "prefixItems"),
+                    "prefixItems must be an array",
+                )
+            })?;
+
+        let mut item_annotations = Vec::new();
+        let mut has_unconstrained_prefix_item = false;
+        for (index, item) in prefix_items.iter().enumerate() {
+            match item {
+                Value::Bool(true) => has_unconstrained_prefix_item = true,
+                Value::Bool(false) => {}
+                _ => item_annotations.push(self.inline_annotation(
+                    item,
+                    &join_pointer(&join_pointer(pointer, "prefixItems"), &index.to_string()),
+                    scope_name,
+                    &format!("PrefixItem{index}"),
+                )?),
+            }
+        }
+
+        if has_unconstrained_prefix_item {
+            return Ok(format!("list[{}]", typing_symbol("Any")));
+        }
+
+        match obj.get("items") {
+            None | Some(Value::Bool(true)) => {
+                return Ok(format!("list[{}]", typing_symbol("Any")));
+            }
+            Some(Value::Bool(false)) => {}
+            Some(items) => item_annotations.push(self.inline_annotation(
+                items,
+                &join_pointer(pointer, "items"),
+                scope_name,
+                "Item",
+            )?),
+        }
+
+        if item_annotations.is_empty() {
+            return Ok(format!("list[{}]", typing_symbol("Any")));
+        }
+
+        Ok(format!("list[{}]", union_annotation(&item_annotations)))
     }
 
     fn inline_annotation(
@@ -1870,5 +1925,52 @@ mod tests {
         assert!(source.contains("class ProfileName(dc.DataclassRootModel):"));
         assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(!source.contains("name: ProfileName = dc.field(\"name\")"));
+    }
+
+    #[test]
+    fn prefix_items_preserve_a_constrained_element_union() {
+        let schema = json!({
+            "title": "trace",
+            "type": "object",
+            "properties": {
+                "coordinates": {
+                    "type": "array",
+                    "prefixItems": [
+                        { "type": "string" },
+                        { "type": "integer" }
+                    ],
+                    "items": false
+                }
+            },
+            "required": ["coordinates"],
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("coordinates: list[(int | str)] = dc.field(\"coordinates\")"));
+        assert!(!source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
+    }
+
+    #[test]
+    fn unconstrained_prefix_items_do_not_emit_phantom_wrapper_models() {
+        let schema = json!({
+            "title": "trace",
+            "type": "object",
+            "properties": {
+                "coordinates": {
+                    "type": "array",
+                    "prefixItems": [true, false],
+                    "items": false
+                }
+            },
+            "required": ["coordinates"],
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
+        assert!(!source.contains("PrefixItem"));
     }
 }

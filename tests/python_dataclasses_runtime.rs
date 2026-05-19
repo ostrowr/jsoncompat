@@ -207,6 +207,72 @@ for value in invalid_values:
 }
 
 #[test]
+fn generated_dataclasses_keep_prefix_item_types_ergonomic_without_losing_schema_checks() {
+    let source = generate_dataclass_models(&json!({
+        "title": "TracePoint",
+        "type": "object",
+        "properties": {
+            "coordinates": {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string"},
+                    {"type": "integer"},
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2,
+            }
+        },
+        "required": ["coordinates"],
+        "additionalProperties": false,
+    }))
+    .expect("generate dataclasses from prefixItems schema");
+    let module_path = write_temp_module("prefix_items", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("prefix_item_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+point = module.TracePoint(coordinates=["aisle", 7])
+assert point.to_json() == {"coordinates": ["aisle", 7]}
+assert module.TracePoint.from_json({"coordinates": ["aisle", 7]}).to_json() == {
+    "coordinates": ["aisle", 7]
+}
+
+for factory in (
+    lambda: module.TracePoint(coordinates=[7, "aisle"]),
+    lambda: module.TracePoint(coordinates=["aisle", 7, 9]),
+    lambda: module.TracePoint.from_json({"coordinates": [7, "aisle"]}),
+):
+    try:
+        factory()
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("prefixItems schema invariant was not enforced")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass prefixItems test");
+    assert!(
+        output.status.success(),
+        "generated dataclass prefixItems test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn python_api_exposes_reusable_schema_tools_and_deprecates_one_shot_helpers() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(

@@ -40,7 +40,7 @@ class GeneratedSchemaItem(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = dc.root_field()
+    root: list[GeneratedSchemaSubItem] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaSubItemFoo(dc.DataclassRootModel):
@@ -116,6 +116,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[typing.Any] = dc.root_field()
+    root: list[GeneratedSchemaItem] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
