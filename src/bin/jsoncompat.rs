@@ -18,6 +18,8 @@ use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 
 #[path = "jsoncompat/ci.rs"]
 mod ci;
+#[path = "jsoncompat/codegen.rs"]
+mod codegen;
 #[path = "jsoncompat/compat.rs"]
 mod compat;
 #[path = "jsoncompat/demo.rs"]
@@ -26,6 +28,8 @@ mod demo;
 mod generate;
 #[path = "jsoncompat/lower_openapi.rs"]
 mod lower_openapi;
+#[path = "jsoncompat/stamp.rs"]
+mod stamp;
 
 /// In-memory representation of a parsed schema document.
 #[derive(Debug)]
@@ -130,6 +134,10 @@ enum Command {
     Compat(compat::CompatArgs),
     /// Check compatibility between two golden files.
     CI(ci::CiArgs),
+    /// Stamp a schema into versioned writer/reader envelopes.
+    Stamp(stamp::StampArgs),
+    /// Generate code or normalized schema output from JSON Schema.
+    Codegen(codegen::CodegenArgs),
     /// Print the lowered JSON Schema contracts for an OpenAPI 3.1 document.
     #[command(name = "lower-openapi")]
     LowerOpenApi(lower_openapi::LowerOpenApiArgs),
@@ -161,6 +169,8 @@ fn main() -> Result<()> {
         Command::Generate(a) => generate::cmd(a),
         Command::Compat(a) => compat::cmd(a),
         Command::CI(a) => ci::cmd(a),
+        Command::Stamp(a) => stamp::cmd(a),
+        Command::Codegen(a) => codegen::cmd(a),
         Command::LowerOpenApi(a) => lower_openapi::cmd(a),
         Command::Demo(a) => demo::cmd(a),
     }
@@ -180,12 +190,12 @@ mod tests {
 
     #[test]
     fn gen_value_retries_until_raw_schema_accepts_the_candidate() {
+        let raw = json!({
+            "type": "integer",
+            "minimum": 1
+        });
         let schema = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!({
-                "type": "integer",
-                "minimum": 1
-            }))
-            .unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&raw).unwrap(),
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -199,8 +209,9 @@ mod tests {
 
     #[test]
     fn gen_value_returns_unsatisfiable_for_false_schema() {
+        let raw = json!(false);
         let schema = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&raw).unwrap(),
         };
         let mut rng = StdRng::seed_from_u64(7);
 
@@ -211,11 +222,13 @@ mod tests {
 
     #[test]
     fn sample_incompat_with_role_both_continues_after_exhausting_the_first_direction() {
+        let old_raw = json!({});
+        let new_raw = json!(false);
         let old = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!({})).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&old_raw).unwrap(),
         };
         let new = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&json!(false)).unwrap(),
+            schema: backcompat::SchemaDocument::from_json(&new_raw).unwrap(),
         };
         let mut rng = StdRng::seed_from_u64(7);
 

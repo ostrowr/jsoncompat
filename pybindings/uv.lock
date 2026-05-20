@@ -1,0 +1,10 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[options]
+exclude-newer = "2026-05-09T15:20:36Z"
+
+[[package]]
+name = "jsoncompat"
+source = { editable = "." }

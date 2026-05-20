@@ -21,12 +21,18 @@ use std::collections::HashSet;
 
 mod json_pointer;
 mod openapi_compat;
+mod stamp;
 mod subset;
 
 pub use jsoncompat_openapi::{OpenApiDocument, OpenApiError, OpenApiLoweringError};
 pub use openapi_compat::{
     OpenApiCompatibilityError, OpenApiCompatibilityIssue, OpenApiCompatibilityReport,
     OpenApiCompatibilitySurface, check_openapi_compat, validate_openapi_compatibility_input,
+};
+pub use stamp::{
+    ENVELOPE_DATA_KEY, ENVELOPE_VERSION_KEY, STAMP_MANIFEST_VERSION, SchemaHistory,
+    SchemaVersionEntry, StampBundle, StampError, StampManifest, StampResult, StampStatus,
+    canonical_schema_hash, stamp_schema, write_stamp_manifest_atomic,
 };
 use subset::{
     explain_subschema_failure, explain_subschema_failure_emitted_values, is_subschema_of,

@@ -1,0 +1,1 @@
+unsupported $ref 'schema-relative-uri-defs2.json' at '#/$ref'

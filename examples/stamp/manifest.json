@@ -1,0 +1,56 @@
+{
+  "manifest_version": 1,
+  "schemas": {
+    "user-profile": {
+      "stable_id": "user-profile",
+      "versions": [
+        {
+          "version": 1,
+          "schema_sha256": "sha256:935de295398bc648ac95846b8ec5c54e01eea14aa7f8930c86ea1d5c7cf7d01a",
+          "schema": {
+            "properties": {
+              "age": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "age"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "version": 2,
+          "schema_sha256": "sha256:db6962f9c26e4987998211028f8250a1a303fba58319e2b4ce906cbee172ad49",
+          "schema": {
+            "properties": {
+              "age": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "interests": {
+                "type": "integer"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "age",
+              "interests"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    }
+  }
+}

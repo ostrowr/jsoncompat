@@ -1,0 +1,1 @@
+unsupported $ref 'http://example.com/ref/else' at '#/$ref'

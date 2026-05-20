@@ -1,0 +1,1 @@
+unsupported $ref 'https://localhost:1234/draft2020-12/id/my_identifier.json' at '#/anyOf/1/$ref'

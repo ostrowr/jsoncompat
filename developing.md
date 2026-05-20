@@ -110,6 +110,7 @@ Key suites:
 - `tests/compat_soundness.rs` keeps claimed compatibility aligned with witness spaces;
 - `tests/openapi.rs`, `tests/openapi_fixtures.rs`, and `tests/openapi_soundness.rs` cover the OpenAPI lowering and reporting contract;
 - `tests/fuzz.rs` runs JSON Schema Test Suite fixtures through parsing, generation, canonicalization parity, and evaluator checks;
+- `tests/dataclasses_backcompat.rs`, `tests/dataclasses_fuzz.rs`, and `tests/dataclasses_stamp_backcompat.rs` keep generated Python models aligned with plain schemas, fuzz fixtures, and stamped writer/reader histories;
 - `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` cover canonicalization and AST round-tripping.
 
 Compatibility fixtures should stay small, synthetic, and net new. Do not add internal or production schemas to the public repository.

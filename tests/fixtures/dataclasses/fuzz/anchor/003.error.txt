@@ -1,0 +1,1 @@
+unsupported $ref 'child1#my_anchor' at '#/$ref'

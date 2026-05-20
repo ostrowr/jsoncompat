@@ -1,0 +1,1 @@
+unsupported $ref '#my_anchor' at '#/anyOf/1/$ref'

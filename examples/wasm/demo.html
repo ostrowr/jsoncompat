@@ -15,7 +15,7 @@
     <script type="module">
       // The Wasm package is built into `pkg/` by `just wasm-demo` with
       //   wasm-pack build wasm --target web --out-dir examples/wasm/pkg
-      import init, { check_compat, generate_value } from "../../wasm/pkg/jsoncompat_wasm.js";
+      import init, { check_compat, generator_for, validator_for } from "../../wasm/pkg/jsoncompat_wasm.js";
 
       const out = document.getElementById('out');
 
@@ -45,8 +45,11 @@
           lines.push(`${role.padEnd(12)}: ${ok}`);
         }
         lines.push('\n=== Example value generation ===');
-        const sample = await generate_value(oldSchema, 3);
+        const generator = generator_for(oldSchema);
+        const sample = generator.generate_value(3);
         lines.push(sample);
+        const validator = validator_for(oldSchema);
+        lines.push(`valid: ${validator.is_valid(sample)}`);
 
         out.textContent = lines.join('\n');
       })();

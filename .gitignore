@@ -2,3 +2,5 @@
 /target
 .wrangler
 .dev.vars*
+.venv
+__pycache__/
