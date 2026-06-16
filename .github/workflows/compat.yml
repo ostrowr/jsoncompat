@@ -17,6 +17,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test golden-file compatibility CLI
+        run: |
+          cargo run --locked --bin jsoncompat -- ci tests/fixtures/cli/ci-old.json tests/fixtures/cli/ci-new.json --display json
+          if cargo run --locked --bin jsoncompat -- ci tests/fixtures/cli/ci-old.json tests/fixtures/cli/ci-incompatible.json --display json; then
+            echo "Expected incompatible golden files to fail" >&2
+            exit 1
+          fi
+
+      - name: Test JSON Schema compatibility CLI
+        run: |
+          cargo run --locked --bin jsoncompat -- compat tests/fixtures/backcompat/format_annotation_changed/old.json tests/fixtures/backcompat/format_annotation_changed/new.json --role both
+          if cargo run --locked --bin jsoncompat -- compat tests/fixtures/backcompat/type_change_string_number/old.json tests/fixtures/backcompat/type_change_string_number/new.json --role both; then
+            echo "Expected incompatible JSON Schemas to fail" >&2
+            exit 1
+          fi
+
+      - name: Test OpenAPI compatibility CLI
+        run: |
+          cargo run --locked --bin jsoncompat -- compat tests/fixtures/openapi_compat/request_anyof_optional_field_added/old.json tests/fixtures/openapi_compat/request_anyof_optional_field_added/new.json --openapi
+          if cargo run --locked --bin jsoncompat -- compat tests/fixtures/openapi_compat/operation_removed/old.json tests/fixtures/openapi_compat/operation_removed/new.json --openapi; then
+            echo "Expected incompatible OpenAPI documents to fail" >&2
+            exit 1
+          fi
+
       - name: Find merge base with main
         id: merge_base
         run: |
@@ -34,7 +58,7 @@ jobs:
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run jsoncompat ci
+      - name: Check stamp example schema compatibility
         if: steps.stamp_example.outputs.should_run == 'true'
         run: |
-          cargo run --bin jsoncompat ci examples/stamp/schema-v2.json examples/stamp/schema-v2.json.new
+          cargo run --locked --bin jsoncompat -- compat examples/stamp/schema-v2.json examples/stamp/schema-v2.json.new --role both

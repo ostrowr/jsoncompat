@@ -1,0 +1,14 @@
+{
+  "profile": {
+    "mode": "serializer",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "integer" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "stable_id": "profile"
+  }
+}
