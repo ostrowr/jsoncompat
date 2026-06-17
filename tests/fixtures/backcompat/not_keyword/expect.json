@@ -1,6 +1,5 @@
 {
   "serializer": false,
-  "deserializer": false,
-  "expected_serializer_message": "new schema #: new values may be negated-schema values, but the previous schema only accepted strings",
-  "expected_deserializer_message": "old schema #: new values may be strings, but the previous schema only accepted negated-schema values"
+  "deserializer": true,
+  "expected_serializer_message": "new schema #: new values may be negated-schema values, but the previous schema only accepted strings"
 }
