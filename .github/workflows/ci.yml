@@ -48,13 +48,14 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (deny warnings)
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
-
-      - name: cargo check
-        run: cargo check --workspace --all-features --all-targets --locked
+        run: cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
 
       - name: cargo test
-        run: cargo test --workspace --all-features --all-targets --locked
+        run: cargo test --workspace --all-features --locked
+
+      - name: Smoke-check benchmarks
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        run: cargo bench --workspace --all-features --bench '*' --locked -- --test
 
   python-linux:
     runs-on: ${{ matrix.platform.runner }}

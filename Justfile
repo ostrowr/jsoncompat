@@ -10,9 +10,8 @@ check:
   else \
     cargo build -p jsoncompat_py; \
   fi
-  cargo clippy --workspace --all-features --all-targets -- -D warnings
-  cargo check --workspace --all-features --all-targets --locked
-  cargo test --workspace --all-features --all-targets --locked
+  cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
+  cargo test --workspace --all-features --locked
   @echo "[just] checking Python code …"
   env -u VIRTUAL_ENV uv run --project pybindings --with pyright==1.1.408 pyright
   @echo "[just] checking TypeScript code …"
@@ -24,11 +23,11 @@ regen-dataclasses-fixtures:
 
 bench:
   @echo "[just] running Rust benchmarks …"
-  cargo bench --benches
+  cargo bench --workspace --all-features --bench '*' --locked
 
 bench-check:
   @echo "[just] smoke-checking Rust benchmarks …"
-  cargo bench --benches -- --test
+  cargo bench --workspace --all-features --bench '*' --locked -- --test
 
 # ---- Basic python smoke test ----
 
