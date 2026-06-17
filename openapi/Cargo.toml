@@ -1,6 +1,6 @@
 [package]
 name = "jsoncompat_openapi"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 description = "OpenAPI 3.1 validation and lowering for jsoncompat"
 repository = "https://github.com/ostrowr/jsoncompat"
@@ -9,7 +9,7 @@ readme = "README.md"
 
 [dependencies]
 email_address = "0.2.9"
-json_schema_ast = { path = "../schema", version = "0.3.1" }
+json_schema_ast = { path = "../schema", version = "0.4.0" }
 mime = "0.3.17"
 percent-encoding = "2.3"
 serde_json = "1.0.149"
