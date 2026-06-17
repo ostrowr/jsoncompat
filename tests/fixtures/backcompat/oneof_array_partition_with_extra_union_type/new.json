@@ -1,0 +1,18 @@
+{
+  "oneOf": [
+    {
+      "type": "array"
+    },
+    {
+      "anyOf": [
+        {
+          "type": "array",
+          "minItems": 1
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}

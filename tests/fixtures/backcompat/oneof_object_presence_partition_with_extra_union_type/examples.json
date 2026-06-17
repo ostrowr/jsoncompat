@@ -1,0 +1,8 @@
+{
+  "old_only": [],
+  "new_only": ["extra"],
+  "both": [
+    {},
+    {"other": 1}
+  ]
+}

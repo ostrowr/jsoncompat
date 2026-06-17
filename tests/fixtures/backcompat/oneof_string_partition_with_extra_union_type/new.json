@@ -1,0 +1,18 @@
+{
+  "oneOf": [
+    {
+      "type": "string"
+    },
+    {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "number"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "old_only": [
+    {"forbidden": "value"},
+    {"other": 1}
+  ],
+  "new_only": [],
+  "both": [
+    {},
+    {"allowed": 1}
+  ]
+}

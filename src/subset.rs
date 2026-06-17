@@ -2540,10 +2540,8 @@ fn any_of_object_count_cover_is_universal(branches: &[SchemaNode]) -> bool {
     usize_intervals_cover_nonnegative(&intervals)
 }
 
-/// Recognize a common object-applicator partition:
-///
-
-/// Recognize `oneOf: [{type:object}, {type:object, minProperties:1}]`, whose
+/// Recognize the common object-applicator partition
+/// `oneOf: [{type:object}, {type:object, minProperties:1}]`, whose
 /// language is exactly the empty object.  The partition arms must be otherwise
 /// unconstrained; targets are accepted only when the empty object is obviously
 /// valid syntactically.
@@ -2554,8 +2552,13 @@ fn oneof_object_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaN
 
     fn object_with_min(schema: &SchemaNode, min: usize) -> bool {
         match schema.kind() {
-            SchemaNodeKind::AnyOf(children) => children.iter().any(|c| object_with_min(c, min)),
-            SchemaNodeKind::AllOf(children) => children.iter().all(|c| object_with_min(c, min)),
+            // This recognizer is used to reduce an exact `oneOf` difference.
+            // Every union/intersection arm must therefore denote the same
+            // language; finding only one matching child would silently discard
+            // values contributed by its siblings.
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::AllOf(children) => {
+                !children.is_empty() && children.iter().all(|c| object_with_min(c, min))
+            }
             SchemaNodeKind::Object {
                 properties,
                 pattern_properties,
@@ -2591,7 +2594,7 @@ fn oneof_object_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaN
                 ..
             } => {
                 if possible_json_type_mask(if_schema) & JSON_TYPE_OBJECT == 0 {
-                    else_schema.as_ref().is_none_or(|b| accepts_empty_object(b))
+                    else_schema.as_ref().is_none_or(accepts_empty_object)
                 } else {
                     false
                 }
@@ -2621,8 +2624,10 @@ fn oneof_string_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaN
 
     fn string_with_min(schema: &SchemaNode, min: u64) -> bool {
         match schema.kind() {
-            SchemaNodeKind::AnyOf(children) => children.iter().any(|c| string_with_min(c, min)),
-            SchemaNodeKind::AllOf(children) => children.iter().all(|c| string_with_min(c, min)),
+            // Exact XOR reduction cannot ignore values from sibling branches.
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::AllOf(children) => {
+                !children.is_empty() && children.iter().all(|c| string_with_min(c, min))
+            }
             SchemaNodeKind::String {
                 length,
                 pattern,
@@ -2650,7 +2655,7 @@ fn oneof_string_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaN
                 ..
             } => {
                 if possible_json_type_mask(if_schema) & JSON_TYPE_STRING == 0 {
-                    else_schema.as_ref().is_none_or(|b| accepts_empty_string(b))
+                    else_schema.as_ref().is_none_or(accepts_empty_string)
                 } else {
                     false
                 }
@@ -2683,8 +2688,9 @@ fn oneof_array_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNo
 
     fn all_arrays(schema: &SchemaNode) -> bool {
         match schema.kind() {
-            SchemaNodeKind::AnyOf(children) => children.iter().any(all_arrays),
-            SchemaNodeKind::AllOf(children) => children.iter().all(all_arrays),
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::AllOf(children) => {
+                !children.is_empty() && children.iter().all(all_arrays)
+            }
             SchemaNodeKind::Array {
                 prefix_items,
                 items,
@@ -2707,8 +2713,9 @@ fn oneof_array_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNo
 
     fn nonempty_arrays(schema: &SchemaNode) -> bool {
         match schema.kind() {
-            SchemaNodeKind::AnyOf(children) => children.iter().any(nonempty_arrays),
-            SchemaNodeKind::AllOf(children) => children.iter().all(nonempty_arrays),
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::AllOf(children) => {
+                !children.is_empty() && children.iter().all(nonempty_arrays)
+            }
             SchemaNodeKind::Array {
                 prefix_items,
                 items,
@@ -2740,7 +2747,7 @@ fn oneof_array_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNo
                 ..
             } => {
                 if possible_json_type_mask(if_schema) & JSON_TYPE_ARRAY == 0 {
-                    else_schema.as_ref().is_none_or(|b| accepts_empty_array(b))
+                    else_schema.as_ref().is_none_or(accepts_empty_array)
                 } else {
                     false
                 }
@@ -2776,8 +2783,12 @@ fn oneof_object_absence_partition_subset_of(branches: &[SchemaNode], sup: &Schem
 
     fn accepts_all_objects(schema: &SchemaNode) -> bool {
         match schema.kind() {
-            SchemaNodeKind::AnyOf(children) => children.iter().any(accepts_all_objects),
-            SchemaNodeKind::AllOf(children) => children.iter().all(accepts_all_objects),
+            // The broad XOR arm must be exactly the object domain. Requiring
+            // every child to have that language prevents an unrelated sibling
+            // from leaking scalars into the reduced difference.
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::AllOf(children) => {
+                !children.is_empty() && children.iter().all(accepts_all_objects)
+            }
             SchemaNodeKind::Object {
                 properties,
                 pattern_properties,
@@ -2804,7 +2815,13 @@ fn oneof_object_absence_partition_subset_of(branches: &[SchemaNode], sup: &Schem
 
     fn presence_name(schema: &SchemaNode) -> Option<&str> {
         match schema.kind() {
-            SchemaNodeKind::AnyOf(children) => children.iter().find_map(presence_name),
+            SchemaNodeKind::AnyOf(children) if !children.is_empty() => {
+                let name = presence_name(&children[0])?;
+                children[1..]
+                    .iter()
+                    .all(|child| presence_name(child) == Some(name))
+                    .then_some(name)
+            }
             SchemaNodeKind::AllOf(children) => {
                 // Be conservative for split wrappers: exactly one conjunct may
                 // provide the presence partition, and every sibling must accept
@@ -18026,5 +18043,71 @@ mod tests {
         }));
         let sup = resolve(json!({ "type": "object", "required": ["a"] }));
         assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_exact_partition_shortcuts_preserve_extra_union_types() {
+        let cases = [
+            (
+                json!({
+                    "oneOf": [
+                        { "type": "string" },
+                        {
+                            "anyOf": [
+                                { "type": "string", "minLength": 1 },
+                                { "type": "number" }
+                            ]
+                        }
+                    ]
+                }),
+                json!({ "type": "string", "maxLength": 0 }),
+            ),
+            (
+                json!({
+                    "oneOf": [
+                        { "type": "array" },
+                        {
+                            "anyOf": [
+                                { "type": "array", "minItems": 1 },
+                                { "type": "string" }
+                            ]
+                        }
+                    ]
+                }),
+                json!({ "type": "array", "maxItems": 0 }),
+            ),
+            (
+                json!({
+                    "oneOf": [
+                        { "type": "object" },
+                        {
+                            "anyOf": [
+                                { "type": "object", "minProperties": 1 },
+                                { "type": "string" }
+                            ]
+                        }
+                    ]
+                }),
+                json!({ "type": "object", "maxProperties": 0 }),
+            ),
+            (
+                json!({
+                    "oneOf": [
+                        { "type": "object" },
+                        {
+                            "anyOf": [
+                                { "type": "object", "required": ["p"] },
+                                { "type": "string" }
+                            ]
+                        }
+                    ]
+                }),
+                json!({ "type": "object", "properties": { "p": false } }),
+            ),
+        ];
+
+        for (sub, sup) in cases {
+            assert!(!is_subschema_of(&resolve(sub), &resolve(sup)));
+        }
     }
 }

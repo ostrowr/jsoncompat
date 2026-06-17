@@ -1,0 +1,18 @@
+{
+  "oneOf": [
+    {
+      "type": "object"
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["p"]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}
