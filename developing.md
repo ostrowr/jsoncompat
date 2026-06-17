@@ -49,6 +49,32 @@ The compatibility layer works over the resolved schema graph:
 
 The resolved IR is public because the compatibility checker and the fuzzer are separate crates, but the parser-only details stay private. Typed domains such as `IntegerBounds`, `NumberBounds`, `CountRange`, `ContainsConstraint`, and `PatternConstraint` keep impossible states out of the core model where practical.
 
+### Subset checker internals
+
+The subset checker is deliberately a one-sided prover: a `false` result means
+"unknown or incompatible", not a proof of non-subset. Keep new rules in that
+style unless they are backed by an exact evaluator. The root `src/subset.rs`
+only exposes entry points and a module map; `dispatcher.rs` owns the ordered
+recursive pipeline. Its phases are intentionally ordered as normalization and
+vacuity checks, recursion bookkeeping, pre-kind structural covers, then the
+concrete kind-pair dispatch.
+
+Most sibling modules are conservative fact providers. `type_masks`,
+`intervals`, `finite`, `enumeration`, `emptiness`, and `properties` compute
+upper/lower facts where `None`/`false` means unknown. Higher-level modules such
+as `predispatch`, `conditional`, `partitions`, `boolean`, and `disjoint` combine
+those facts into proof shortcuts. `membership` owns evaluator probes and the
+recursion/productivity guard; avoid calling raw validation negatively unless the
+helper explicitly documents that under-acceptance is safe. `explainers` and
+`explanation` mirror proof failures without changing verdict behavior.
+
+When adding a rule, prefer a narrow helper in the fact module closest to the
+semantic claim, then call it from a named dispatcher phase. Add both a positive
+fixture and a near-miss negative fixture, especially for `oneOf`, negation,
+conditionals, recursion, and finite-domain/cardinality arguments. If a rule
+needs recursion, route it through `SubschemaCheckContext` rather than creating a
+fresh visited set; that keeps productive recursion and explanation mode aligned.
+
 For `json_schema_ast`, the user-facing validation surface is intentionally
 smaller than the resolved IR surface:
 
