@@ -2,7 +2,7 @@
 
 use crate::SchemaNode;
 use json_schema_ast::{
-    CountRange, IntegerBounds, IntegerMultipleOf, NumberBounds, NumberMultipleOf,
+    CountRange, IntegerBounds, IntegerMultipleOf, NumberBound, NumberBounds, NumberMultipleOf,
     PatternConstraint, SchemaNodeKind, json_values_equal,
 };
 use serde_json::Value;
@@ -72,6 +72,72 @@ pub(super) fn integer_constraints_subsumed_by_number(sub: &SchemaNode, sup: &Sch
             sup_multiple_of.as_ref(),
         )
         && check_enum_inclusion(sub_enum.as_deref(), sup_enum.as_deref())
+}
+
+/// Return true when a `number` schema is finitely pinned tightly enough to
+/// check directly against an `integer` schema.
+///
+/// We intentionally do **not** infer integer-ness from `multipleOf: 1`: the
+/// validator uses an epsilon tolerance for numeric multiples, so near-integer
+/// floating values can satisfy such a number schema while failing `type:
+/// integer`.  Only exact singleton bounds and finite enums are handled here.
+pub(super) fn number_constraints_subsumed_by_integer(sub: &SchemaNode, sup: &SchemaNode) -> bool {
+    let (
+        SchemaNodeKind::Number {
+            bounds: sub_bounds,
+            enumeration: sub_enum,
+            ..
+        },
+        SchemaNodeKind::Integer { .. },
+    ) = (sub.kind(), sup.kind())
+    else {
+        return false;
+    };
+
+    // Equal inclusive number bounds admit at most one JSON numeric value.  Ask
+    // the resolved schemas directly so multipleOf/enum details (and the
+    // validator's numeric semantics) stay authoritative.
+    if let Some(value) = singleton_integer_number_value(*sub_bounds) {
+        let json_value = Value::Number(value.into());
+        return !sub.accepts_value(&json_value) || sup.accepts_value(&json_value);
+    }
+
+    // A number enum is finite, so we can prove cross-type inclusion by checking
+    // every actually-admitted enum member directly.  This is deliberately more
+    // conservative than reasoning from an integral multipleOf: the validator
+    // applies an epsilon tolerance for numeric multipleOf, so e.g. values very
+    // close to 1 can satisfy `multipleOf: 1` without being integer instances.
+    if let Some(enum_values) = sub_enum.as_deref() {
+        return enum_values
+            .iter()
+            .filter(|value| sub.accepts_value(value))
+            .all(|value| sup.accepts_value(value));
+    }
+
+    false
+}
+
+fn singleton_integer_number_value(bounds: NumberBounds) -> Option<i64> {
+    let (NumberBound::Inclusive(lower), NumberBound::Inclusive(upper)) =
+        (bounds.lower(), bounds.upper())
+    else {
+        return None;
+    };
+    if lower != upper || lower.fract() != 0.0 {
+        return None;
+    }
+    finite_bound_to_i64(lower)
+}
+
+fn finite_bound_to_i64(value: f64) -> Option<i64> {
+    const MAX_EXACT_F64_INT: f64 = 9_007_199_254_740_992.0; // 2^53
+    if !value.is_finite()
+        || value.fract() != 0.0
+        || !(-MAX_EXACT_F64_INT..=MAX_EXACT_F64_INT).contains(&value)
+    {
+        return None;
+    }
+    Some(value as i64)
 }
 
 pub(super) fn check_enum_inclusion(sub_enum: Option<&[Value]>, sup_enum: Option<&[Value]>) -> bool {

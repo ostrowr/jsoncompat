@@ -1,0 +1,5 @@
+{
+  "serializer": false,
+  "deserializer": true,
+  "expected_serializer_message": "old schema #/properties/p: anyOf branch 1: property 'p' can appear with values the comparison target rejects"
+}

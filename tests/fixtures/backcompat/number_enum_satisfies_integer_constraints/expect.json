@@ -1,0 +1,5 @@
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #: new values may be integers, but the previous schema only accepted numbers"
+}

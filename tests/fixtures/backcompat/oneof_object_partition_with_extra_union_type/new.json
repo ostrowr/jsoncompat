@@ -1,0 +1,18 @@
+{
+  "oneOf": [
+    {
+      "type": "object"
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "minProperties": 1
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}

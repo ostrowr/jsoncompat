@@ -1,0 +1,5 @@
+{
+  "serializer": true,
+  "deserializer": false,
+  "expected_deserializer_message": "old schema #/propertyNames: property names: new values may be any value, but the previous schema only accepted enumerated values"
+}

@@ -1,0 +1,6 @@
+{
+  "type": "number",
+  "enum": [4, 8],
+  "minimum": 0,
+  "maximum": 10
+}
