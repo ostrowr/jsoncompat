@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    finite_schema_value_superset, scalar::check_enum_inclusion,
+    finite_property_name_strings_superset, scalar::check_enum_inclusion,
     schema_definitely_rejects_all_values, schema_may_under_accept_values,
 };
 
@@ -257,12 +257,13 @@ pub(super) fn object_constraints_subsumed(
     }
 
     for (property_name, sup_property_schema) in sup.properties {
-        if !property_name_can_fit_with_dependencies(
-            property_name,
-            guaranteed_names,
-            effective_sub_property_count,
-            sub.dependent_required,
-        ) {
+        // Optional constraints on the superset are vacuous when the subset can
+        // never contain that property name (because of propertyNames, an empty
+        // explicit property schema, saturated counts, or dependent-required
+        // contradictions).  The cheaper count/dependency check misses common
+        // generated shapes where `propertyNames` excludes a declared optional
+        // property.
+        if !object_property_name_can_be_present(property_name, &sub, guaranteed_names, context) {
             continue;
         }
         if sub.properties.contains_key(property_name)
@@ -378,7 +379,7 @@ pub(super) fn object_constraints_subsumed(
 /// common in generated schemas and cheap to recognize: too many required
 /// names for `maxProperties`, a required name rejected by `propertyNames`, or
 /// a required property whose applicable schema is literally `false`.
-fn object_constraints_definitely_uninhabited(sub: &ObjectConstraints<'_>) -> bool {
+pub(super) fn object_constraints_definitely_uninhabited(sub: &ObjectConstraints<'_>) -> bool {
     // `dependentRequired` edges rooted at an unconditionally required name are
     // themselves unconditional. Close over those edges before applying the
     // cheap cardinality/property-name contradiction checks below.
@@ -505,18 +506,7 @@ fn finite_object_name_values(sub: &ObjectConstraints<'_>) -> Option<Vec<String>>
 /// Returns `None` whenever the internal evaluator may fail closed/open relative
 /// to raw validation, or when the language is not obviously finite.
 fn finite_property_name_values(schema: &SchemaNode) -> Option<Vec<String>> {
-    let values = finite_schema_value_superset(schema)?;
-    let mut strings: Vec<String> = Vec::new();
-    for value in values {
-        let Some(s) = value.as_str() else {
-            // Non-string JSON values cannot be object property names.
-            continue;
-        };
-        if !strings.iter().any(|seen| seen == s) {
-            strings.push(s.to_owned());
-        }
-    }
-    Some(strings)
+    finite_property_name_strings_superset(schema)
 }
 
 /// Return true only for contradictions that definitively make all objects with

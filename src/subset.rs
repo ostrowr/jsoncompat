@@ -19,7 +19,7 @@ mod scalar;
 use object::dependent_requirement_is_guaranteed;
 use scalar::{
     StringConstraints, check_enum_inclusion, integer_constraints_subsumed_by_number,
-    string_constraints_subsumed,
+    number_constraints_subsumed_by_integer, string_constraints_subsumed,
 };
 
 #[derive(Default)]
@@ -325,6 +325,29 @@ impl SubschemaAnalysis {
     }
 }
 
+/// Peel semantically-neutral singleton applicators.  `allOf`, `anyOf`, and
+/// `oneOf` with exactly one child are all equivalent to that child; keeping
+/// them wrapped tends to hide simple negation and type facts from the structural
+/// prover.  Stop on cycles defensively (recursive refs can preserve wrappers).
+fn unwrap_singleton_applicators(mut node: &SchemaNode) -> &SchemaNode {
+    let mut seen = HashSet::new();
+    loop {
+        if !seen.insert(node.id()) {
+            return node;
+        }
+        match node.kind() {
+            SchemaNodeKind::AllOf(children)
+            | SchemaNodeKind::AnyOf(children)
+            | SchemaNodeKind::OneOf(children)
+                if children.len() == 1 =>
+            {
+                node = &children[0];
+            }
+            _ => return node,
+        }
+    }
+}
+
 fn analyze_subschema_with_context(
     sub: &SchemaNode,
     sup: &SchemaNode,
@@ -332,6 +355,21 @@ fn analyze_subschema_with_context(
     mode: ExplanationMode,
 ) -> SubschemaAnalysis {
     if sub == sup {
+        return SubschemaAnalysis::compatible();
+    }
+
+    let normalized_sub = unwrap_singleton_applicators(sub);
+    let normalized_sup = unwrap_singleton_applicators(sup);
+    if normalized_sub.id() != sub.id() || normalized_sup.id() != sup.id() {
+        return analyze_subschema_with_context(normalized_sub, normalized_sup, context, mode);
+    }
+
+    // A zero possible-type mask is a syntactic proof that the subset language
+    // is empty (for example, an allOf intersection of disjoint JSON types).
+    // The mask helper is an upper bound, so returning compatible here is safe
+    // and avoids falling into branch-wise applicator explanations for
+    // impossible schemas.
+    if possible_json_type_mask(sub) == 0 {
         return SubschemaAnalysis::compatible();
     }
 
@@ -373,6 +411,19 @@ fn analyze_subschema_with_context(
         return SubschemaAnalysis::compatible();
     }
 
+    // Split allOf integer ranges can be finite even when no individual
+    // conjunct is finite (e.g. `integer & minimum & maximum`). Enumerate a
+    // small outward-rounded upper bound and require every live candidate to be
+    // accepted by the target.
+    if let Some(values) = finite_split_allof_integer_values(sub)
+        && values.iter().all(|value| {
+            context.schema_definitely_rejects_value(sub, value)
+                || context.superset_contains_value(sup, value)
+        })
+    {
+        return SubschemaAnalysis::compatible();
+    }
+
     // Broad schemas such as `{}` hit the `Any` arm below before the normal
     // superset-`anyOf` handler. Give obvious whole-type unions a chance first.
     if let SchemaNodeKind::AnyOf(branches) = sup.kind()
@@ -394,6 +445,434 @@ fn analyze_subschema_with_context(
     context
         .active_pairs
         .insert(recursion_key, context.productive_depth);
+
+    // A few local array contradictions (impossible contains, uniqueItems over
+    // too-small finite domains, repeated required singleton positions) make an
+    // array branch empty.  Check them before JSON-type dispatch so they remain
+    // vacuous even against a different target type; the matcher emptiness
+    // helper has its own cycle guard for recursive schemas.
+    if array_schema_is_locally_impossible(sub) {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Likewise, a few local object contradictions (required false property,
+    // impossible propertyNames capacity, dependent-required overflow) make the
+    // subset empty even when the target has a different JSON type.
+    if object_schema_is_locally_impossible(sub) {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Normalize the two degenerate XOR shapes that show up surprisingly often
+    // in generated schemas. `oneOf: [A, A]` is empty, while
+    // `oneOf: [false, A]` is exactly `A` (and symmetrically for the false arm).
+    // Keeping this before the general oneOf handlers avoids treating an empty
+    // xor as a union of its branches.
+    if let SchemaNodeKind::OneOf(branches) = sub.kind() {
+        if one_of_pair_is_syntactically_empty(branches) {
+            context.active_pairs.remove(&recursion_key);
+            return SubschemaAnalysis::compatible();
+        }
+        if let Some(live) = one_of_trivial_live_branch(branches) {
+            context.active_pairs.remove(&recursion_key);
+            return if let Some(live) = live {
+                analyze_subschema_with_context(live, sup, context, mode)
+            } else {
+                SubschemaAnalysis::compatible()
+            };
+        }
+        if let Some(live) = one_of_pair_single_live_branch(branches) {
+            let result = analyze_subschema_with_context(live, sup, context, mode);
+            context.active_pairs.remove(&recursion_key);
+            return result;
+        }
+    }
+    if let SchemaNodeKind::OneOf(branches) = sup.kind() {
+        if let Some(Some(live)) = one_of_trivial_live_branch(branches) {
+            let result = analyze_subschema_with_context(sub, live, context, mode);
+            context.active_pairs.remove(&recursion_key);
+            return result;
+        }
+        // An empty oneOf on the right only contains an empty subset; leave that
+        // to the ordinary machinery unless the subset was handled above.
+        if let Some(live) = one_of_pair_single_live_branch(branches) {
+            let result = analyze_subschema_with_context(sub, live, context, mode);
+            context.active_pairs.remove(&recursion_key);
+            return result;
+        }
+    }
+
+    // JSON Schema negation is involutive. Peel syntactic double negation early,
+    // before union/conditional special cases can obscure the positive inner
+    // schema. This is purely a normalization step, not general complement
+    // reasoning.
+    if let SchemaNodeKind::Not(outer) = sub.kind()
+        && let SchemaNodeKind::Not(inner) = unwrap_singleton_applicators(outer).kind()
+    {
+        let result = analyze_subschema_with_context(inner, sup, context, mode);
+        context.active_pairs.remove(&recursion_key);
+        return result;
+    }
+    if let SchemaNodeKind::Not(outer) = sup.kind()
+        && let SchemaNodeKind::Not(inner) = unwrap_singleton_applicators(outer).kind()
+    {
+        let result = analyze_subschema_with_context(sub, inner, context, mode);
+        context.active_pairs.remove(&recursion_key);
+        return result;
+    }
+
+    // Collapse conditionals whose guard is syntactically constant.  The
+    // normal conditional prover is intentionally conservative because most
+    // guards partition the instance space.  For `if: true`/`if: false`,
+    // however, JSON Schema reduces exactly to the selected branch (or `true`
+    // when that branch is absent).  Generated schemas often leave this shape
+    // behind after simplifying a guard, and treating it structurally avoids
+    // losing straightforward enum/range implications inside the live branch.
+    if let SchemaNodeKind::IfThenElse {
+        if_schema,
+        then_schema,
+        else_schema,
+    } = sup.kind()
+        && let Some(live) =
+            constant_guard_conditional_branch(if_schema, then_schema.as_ref(), else_schema.as_ref())
+    {
+        match live {
+            LiveConditionalBranch::Universal => {
+                context.active_pairs.remove(&recursion_key);
+                return SubschemaAnalysis::compatible();
+            }
+            LiveConditionalBranch::Schema(branch) if branch.id() != sup.id() => {
+                let result = analyze_subschema_with_context(sub, branch, context, mode);
+                context.active_pairs.remove(&recursion_key);
+                return result;
+            }
+            LiveConditionalBranch::Schema(_) => {}
+        }
+    }
+
+    if let SchemaNodeKind::IfThenElse {
+        if_schema,
+        then_schema,
+        else_schema,
+    } = sub.kind()
+        && let Some(live) =
+            constant_guard_conditional_branch(if_schema, then_schema.as_ref(), else_schema.as_ref())
+    {
+        match live {
+            LiveConditionalBranch::Universal => {
+                let is_subschema = schema_is_trivially_universal(sup);
+                context.active_pairs.remove(&recursion_key);
+                return SubschemaAnalysis::from_check(is_subschema, mode, || {
+                    explain_schema_kind_gap(sub, sup)
+                });
+            }
+            LiveConditionalBranch::Schema(branch) if branch.id() != sub.id() => {
+                let result = analyze_subschema_with_context(branch, sup, context, mode);
+                context.active_pairs.remove(&recursion_key);
+                return result;
+            }
+            LiveConditionalBranch::Schema(_) => {}
+        }
+    }
+
+    // The complement of a syntactically empty schema is universal.  This
+    // catches common normalized contradictions such as `not(allOf[type:string,
+    // type:array])` before the ordinary negation arm asks for contravariant
+    // implication facts.
+    if let SchemaNodeKind::Not(excluded) = sup.kind()
+        && schema_is_locally_impossible_for_negation(unwrap_singleton_applicators(excluded))
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Push the same constant-guard conditional normalization through a
+    // negated target.  `not(if true then A else B)` is just `not A`, so a
+    // disjointness proof against the live branch is sufficient.  Do not
+    // synthesize a temporary `Not` node; the existing negated-target
+    // disjointness prover already has the right conservative structure.
+    if let SchemaNodeKind::Not(excluded) = sup.kind()
+        && let SchemaNodeKind::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } = unwrap_singleton_applicators(excluded).kind()
+        && let Some(live) =
+            constant_guard_conditional_branch(if_schema, then_schema.as_ref(), else_schema.as_ref())
+    {
+        match live {
+            LiveConditionalBranch::Schema(branch)
+                if schemas_definitely_disjoint_for_negation(sub, branch, context) =>
+            {
+                context.active_pairs.remove(&recursion_key);
+                return SubschemaAnalysis::compatible();
+            }
+            LiveConditionalBranch::Universal
+                if schema_is_locally_empty_for_finite_enumeration(sub) =>
+            {
+                context.active_pairs.remove(&recursion_key);
+                return SubschemaAnalysis::compatible();
+            }
+            _ => {}
+        }
+    }
+
+    // A conditional can be syntactically universal even when it is not the
+    // literal `true` schema: if every value satisfying the guard is accepted
+    // by the `then` branch, and the `else` branch is unconstrained (or absent),
+    // the conditional accepts all instances. Recognize this before the main
+    // structural match so such generated guards behave like a true superset.
+    if let SchemaNodeKind::IfThenElse {
+        if_schema,
+        then_schema,
+        else_schema,
+    } = sup.kind()
+        && conditional_is_known_universal(
+            if_schema,
+            then_schema.as_ref(),
+            else_schema.as_ref(),
+            context,
+        )
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A union containing both `A` and `not B` is universal whenever B <= A.
+    // This complement-cover pattern is common in generated partition schemas
+    // and is safe to recognize before the ordinary branch-wise AnyOf logic.
+    if let SchemaNodeKind::AnyOf(branches) = sup.kind()
+        && (any_of_contains_known_universal_branch(branches, context)
+            || any_of_complement_cover_is_universal(branches, context)
+            || any_of_complement_union_cover_is_universal(branches, context)
+            || any_of_property_presence_cover_is_universal(branches)
+            || any_of_single_property_name_partition_is_universal(branches)
+            || any_of_required_property_value_partition_is_universal(branches)
+            || any_of_prefix_item_partition_is_universal(branches)
+            || any_of_items_contains_partition_is_universal(branches)
+            || any_of_integer_partition_cover_is_universal(branches)
+            || any_of_numeric_range_cover_is_universal(branches)
+            || any_of_string_length_cover_is_universal(branches)
+            || any_of_array_count_cover_is_universal(branches)
+            || any_of_object_count_cover_is_universal(branches))
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A two-arm `oneOf` of a schema and its complement is universal.
+    if let SchemaNodeKind::OneOf(branches) = sup.kind()
+        && one_of_complement_pair_is_universal(branches, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A `oneOf` with one universal arm behaves like the complement of the
+    // other arm.  Use local disjointness to prove a subset lands on exactly
+    // the universal side.
+    if let SchemaNodeKind::OneOf(branches) = sup.kind()
+        && one_of_universal_arm_contains_subset(sub, branches, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Likewise, `oneOf: [A, B, not(anyOf[A, B])]` is universal when the
+    // positive siblings are known to be an exact disjoint cover of the union.
+    if let SchemaNodeKind::OneOf(branches) = sup.kind()
+        && one_of_complement_union_partition_is_universal(branches, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // The same finite complement partition can be spelled with `oneOf` when
+    // the finite side is split into mutually exclusive sibling branches.
+    if let SchemaNodeKind::OneOf(branches) = sup.kind()
+        && one_of_finite_complement_partition_is_universal(branches, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A two-arm xor of complements is contained in the union of its excluded
+    // sides; prove each excluded side against the target directly.
+    if let SchemaNodeKind::OneOf(branches) = sub.kind()
+        && complement_only_oneof_subset_of(branches, sup, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A two-arm xor with comparable positive arms is a set difference.
+    // If every excluded target arm is either inside the removed side or
+    // disjoint from the retained side, the difference fits the negation.
+    if let SchemaNodeKind::OneOf(branches) = sub.kind()
+        && let SchemaNodeKind::Not(excluded) = sup.kind()
+        && comparable_oneof_difference_subset_of_negation(branches, excluded, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A mixed xor `oneOf[A, not B]` collapses to `not(A ∪ B)` when A and B
+    // are disjoint. In that case it is certainly contained by `not T` for
+    // any T known to fit inside either excluded side. This catches compact
+    // encodings of "everything except these two disjoint regions" without
+    // constructing a synthetic union node.
+    if let SchemaNodeKind::OneOf(branches) = sub.kind()
+        && mixed_oneof_disjoint_complement_subset_of_target(branches, sup, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Dual De Morgan shape: the complement of an intersection of explicit
+    // complements is the union of their positive inners. If each positive
+    // inner is contained by the target, the whole negated intersection is too.
+    if let SchemaNodeKind::Not(excluded_intersection) = sub.kind()
+        && let SchemaNodeKind::AllOf(conjuncts) =
+            unwrap_singleton_applicators(excluded_intersection).kind()
+        && conjuncts
+            .iter()
+            .all(|conjunct| matches!(conjunct.kind(), SchemaNodeKind::Not(_)))
+        && conjuncts.iter().all(|conjunct| {
+            if let SchemaNodeKind::Not(inner) = conjunct.kind() {
+                analyze_subschema_with_context(inner, sup, context, ExplanationMode::VerdictOnly)
+                    .is_subschema
+            } else {
+                false
+            }
+        })
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // If the target mixed xor rejects only a finite comparable gap, it is
+    // enough for a negated subset to exclude each gap value concretely.
+    if let SchemaNodeKind::Not(excluded) = sub.kind()
+        && negated_schema_excludes_mixed_finite_gap(
+            unwrap_singleton_applicators(excluded),
+            sup,
+            context,
+        )
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Complemented xor normalization for `not(oneOf[A, not B])` in the
+    // conservative comparable/disjoint cases handled by the helper.
+    if let SchemaNodeKind::Not(excluded_xor) = sub.kind()
+        && let SchemaNodeKind::OneOf(children) = unwrap_singleton_applicators(excluded_xor).kind()
+        && (negated_oneof_complement_pair_subset_of(children, sup, context)
+            || negated_complement_pair_subset_of_mixed_difference(children, sup, context)
+            || negated_xor_covers_mixed_comparable_gap(children, sup, context))
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // For a two-arm xor, its complement accepts values that satisfy both
+    // arms (or neither arm).  Prove either side directly before falling back
+    // to more specialized complement-arm identities.
+    if let SchemaNodeKind::Not(excluded_xor) = sup.kind()
+        && let SchemaNodeKind::OneOf(children) = unwrap_singleton_applicators(excluded_xor).kind()
+        && negated_two_arm_oneof_contains(sub, children, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // The complement of `oneOf[not A, B]` contains both A and B when
+    // A and B are definitely disjoint: outside the overlap, the xor is false
+    // exactly on those two regions.  This is a common spelling of a two-way
+    // partition with one arm negated.
+    if let SchemaNodeKind::Not(excluded_xor) = sup.kind()
+        && let SchemaNodeKind::OneOf(children) = unwrap_singleton_applicators(excluded_xor).kind()
+        && negated_oneof_complement_pair_contains(sub, children, context)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Untyped array/object count assertions canonicalize the same way as
+    // string lengths: all other JSON types plus one count half-line.
+    if let SchemaNodeKind::Not(excluded_union) = sub.kind()
+        && let SchemaNodeKind::AnyOf(children) = unwrap_singleton_applicators(excluded_union).kind()
+        && (negated_untyped_array_count_halfline_subset_of(children, sup)
+            || negated_untyped_object_count_halfline_subset_of(children, sup))
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // Analogous canonicalization for untyped string length assertions:
+    // all non-strings are accepted by the positive union, so its negation is
+    // the opposite string-length half-line.
+    if let SchemaNodeKind::Not(excluded_union) = sub.kind()
+        && let SchemaNodeKind::AnyOf(children) = unwrap_singleton_applicators(excluded_union).kind()
+        && negated_untyped_string_length_halfline_subset_of(children, sup)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A negated canonicalized untyped numeric assertion has the shape
+    // `not(anyOf[<all non-number types>, <numeric half-line>])`.  Once every
+    // non-number type is covered, the complement is a numeric half-line with
+    // the endpoint flipped; compare that interval directly to numeric targets.
+    if let SchemaNodeKind::Not(excluded_union) = sub.kind()
+        && let SchemaNodeKind::AnyOf(children) = unwrap_singleton_applicators(excluded_union).kind()
+        && negated_untyped_numeric_halfline_subset_of(children, sup)
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // One-sided De Morgan normalization: `not(anyOf[..., not A, ...])`
+    // implies `A`. Do this before the main match because finite/enum targets
+    // have early arms that would otherwise hide the negated-subset case.
+    if let SchemaNodeKind::Not(excluded_union) = sub.kind()
+        && let SchemaNodeKind::AnyOf(children) = unwrap_singleton_applicators(excluded_union).kind()
+        && (negated_union_type_remainder_subset_of(children, sup)
+            || negated_anyof_finite_complement_arm_subset_of(children, sup, context)
+            || negated_union_subset_of_mixed_difference(children, sup, context)
+            || children.iter().any(|child| {
+                if let SchemaNodeKind::Not(required) = child.kind() {
+                    analyze_subschema_with_context(
+                        required,
+                        sup,
+                        context,
+                        ExplanationMode::VerdictOnly,
+                    )
+                    .is_subschema
+                } else {
+                    false
+                }
+            }))
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
+
+    // A very common xor spelling for "objects without property p" is
+    // `oneOf: [{type: object}, {type: object, required: [p]}]`.  The generic
+    // oneOf rule below checks each arm independently, which is too strong: the
+    // second arm is precisely removed by the xor. Recognize the narrow
+    // presence-partition form before falling back to branch-wise reasoning.
+    if let SchemaNodeKind::OneOf(children) = sub.kind()
+        && (oneof_object_absence_partition_subset_of(children, sup)
+            || oneof_array_empty_partition_subset_of(children, sup)
+            || oneof_string_empty_partition_subset_of(children, sup)
+            || oneof_object_empty_partition_subset_of(children, sup))
+    {
+        context.active_pairs.remove(&recursion_key);
+        return SubschemaAnalysis::compatible();
+    }
 
     use SchemaNodeKind::*;
 
@@ -431,10 +910,17 @@ fn analyze_subschema_with_context(
             // generated schemas split `required` and `properties` across
             // parallel allOf wrappers.
             let is_subschema = sups.iter().all(|sup_conjunct| {
-                subs.iter().any(|sub_conjunct| {
-                    analyze_subschema_with_context(sub_conjunct, sup_conjunct, context, mode)
-                        .is_subschema
-                })
+                // First try the whole intersection: split range/count helpers
+                // can combine facts spread across conjuncts. Avoid immediately
+                // recursing into another allOf wrapper; the conjunct-wise
+                // fallback below handles nested intersections without cycles.
+                (!matches!(sup_conjunct.kind(), SchemaNodeKind::AllOf(_))
+                    && analyze_subschema_with_context(sub, sup_conjunct, context, mode)
+                        .is_subschema)
+                    || subs.iter().any(|sub_conjunct| {
+                        analyze_subschema_with_context(sub_conjunct, sup_conjunct, context, mode)
+                            .is_subschema
+                    })
             });
             SubschemaAnalysis::from_check(is_subschema, mode, || {
                 explain_superset_all_of_failure(sub, sups, context)
@@ -538,6 +1024,15 @@ fn analyze_subschema_with_context(
             );
             SubschemaAnalysis::from_check(is_subschema, mode, || explain_schema_kind_gap(sub, sup))
         }
+        (AllOf(_), Not(excluded)) => {
+            // An intersection can imply a negated target even when no single
+            // conjunct does (the De Morgan shape `not A && not B` is the
+            // canonical example). Ask the disjointness prover about the whole
+            // intersection before falling back to the generic one-conjunct
+            // shortcut below.
+            let is_subschema = schemas_definitely_disjoint_for_negation(sub, excluded, context);
+            SubschemaAnalysis::from_check(is_subschema, mode, || explain_schema_kind_gap(sub, sup))
+        }
         (AllOf(subs), _) => {
             let is_subschema = subs.iter().any(|schema| {
                 analyze_subschema_with_context(schema, sup, context, mode).is_subschema
@@ -571,17 +1066,37 @@ fn analyze_subschema_with_context(
 
         (_, AnyOf(sups)) => {
             let conditional_branches_fit_union = if let IfThenElse {
-                then_schema: Some(then_branch),
-                else_schema: Some(else_branch),
-                ..
+                if_schema,
+                then_schema,
+                else_schema,
             } = sub.kind()
             {
-                analyze_subschema_with_context(then_branch, sup, context, mode).is_subschema
-                    && analyze_subschema_with_context(else_branch, sup, context, mode).is_subschema
+                conditional_branches_subsumed_by(
+                    if_schema,
+                    then_schema.as_ref(),
+                    else_schema.as_ref(),
+                    sup,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+            } else {
+                false
+            };
+            let negated_allof_fit_union = if let Not(inner) = sub.kind()
+                && let AllOf(conjuncts) = inner.kind()
+            {
+                negated_allof_covered_by_anyof(conjuncts, sups, context)
+            } else {
+                false
+            };
+            let negated_finite_gap_fit_union = if let Not(excluded) = sub.kind() {
+                negated_exclusion_covered_by_anyof_finite_gap(excluded, sups, context)
             } else {
                 false
             };
             let is_subschema = conditional_branches_fit_union
+                || negated_allof_fit_union
+                || negated_finite_gap_fit_union
                 || sups.iter().any(|branch| {
                     analyze_subschema_with_context(sub, branch, context, mode).is_subschema
                 })
@@ -621,21 +1136,47 @@ fn analyze_subschema_with_context(
                 then_schema: sup_then,
                 else_schema: sup_else,
             },
-        ) if sub_if == sup_if => {
-            // Identical conditions partition the instance space in the same
-            // way, so branch-wise implication is sufficient. Missing
-            // branches are the JSON Schema `true` schema.
-            let is_subschema = optional_conditional_branch_subsumed(
-                sub_then.as_ref(),
-                sup_then.as_ref(),
-                context,
-                mode,
-            ) && optional_conditional_branch_subsumed(
-                sub_else.as_ref(),
-                sup_else.as_ref(),
-                context,
-                mode,
-            );
+        ) => {
+            // Equivalent conditions partition the instance space in the same
+            // way, so branch-wise implication is sufficient. Node equality is
+            // a fast path; otherwise use mutual conservative implication for
+            // common independently-resolved guards (e.g. identical enums).
+            let guards_equivalent = sub_if == sup_if
+                || schemas_obviously_equivalent(sub_if, sup_if)
+                || (analyze_subschema_with_context(
+                    sub_if,
+                    sup_if,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+                    && analyze_subschema_with_context(
+                        sup_if,
+                        sub_if,
+                        context,
+                        ExplanationMode::VerdictOnly,
+                    )
+                    .is_subschema);
+            let is_subschema = if guards_equivalent {
+                same_guard_conditional_branches_subsumed(
+                    sub_if,
+                    sub_then.as_ref(),
+                    sub_else.as_ref(),
+                    sup_then.as_ref(),
+                    sup_else.as_ref(),
+                    context,
+                    mode,
+                )
+            } else {
+                superset_conditional_contains(
+                    sub,
+                    sup,
+                    sup_if,
+                    sup_then.as_ref(),
+                    sup_else.as_ref(),
+                    context,
+                )
+            };
             SubschemaAnalysis::from_check(is_subschema, mode, || {
                 explain_identical_conditional_failure(
                     sub_then.as_ref(),
@@ -670,23 +1211,31 @@ fn analyze_subschema_with_context(
         }
         (
             IfThenElse {
+                if_schema,
                 then_schema,
                 else_schema,
-                ..
             },
             _,
         ) => {
-            // If both conditional branches are themselves subsets of the
-            // target, the whole conditional is too. This deliberately ignores
-            // the condition (a stronger proof obligation) and therefore stays
-            // sound even for unsupported condition schemas.
-            let is_subschema = conditional_branches_subsumed_by(
-                then_schema.as_ref(),
-                else_schema.as_ref(),
-                sup,
-                context,
-                mode,
-            );
+            // If both live conditional branches are themselves subsets of the
+            // target, the whole conditional is too. Branches whose guard side
+            // is syntactically impossible can be ignored; this is common in
+            // generated schemas that use a type guard with an incompatible
+            // branch as a way to spell a singleton/else case.
+            let negated_target_cover = if let SchemaNodeKind::Not(excluded) = sup.kind() {
+                schemas_definitely_disjoint_for_negation(sub, excluded, context)
+            } else {
+                false
+            };
+            let is_subschema = negated_target_cover
+                || conditional_branches_subsumed_by(
+                    if_schema,
+                    then_schema.as_ref(),
+                    else_schema.as_ref(),
+                    sup,
+                    context,
+                    mode,
+                );
             SubschemaAnalysis::from_check(is_subschema, mode, || {
                 Some(SubschemaExplanation::new(
                     "conditional branches are not all contained by the comparison target",
@@ -717,13 +1266,27 @@ fn analyze_subschema_with_context(
             // catches common generated refinements such as `not: {type:
             // string}` being safely narrower than `not: {enum: ["x"]}`
             // without opening up arbitrary complement reasoning.
-            let inner_implication = analyze_subschema_with_context(
-                sup_negated,
-                sub_negated,
-                context,
-                ExplanationMode::VerdictOnly,
-            )
-            .is_subschema;
+            let split_inner_implication = if let AllOf(conjuncts) = sup_negated.kind() {
+                conjuncts.iter().any(|conjunct| {
+                    analyze_subschema_with_context(
+                        conjunct,
+                        sub_negated,
+                        context,
+                        ExplanationMode::VerdictOnly,
+                    )
+                    .is_subschema
+                })
+            } else {
+                false
+            };
+            let inner_implication = split_inner_implication
+                || analyze_subschema_with_context(
+                    sup_negated,
+                    sub_negated,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema;
             let disjoint_fallback = !inner_implication
                 && schemas_definitely_disjoint_for_negation(sub, sup_negated, context);
             SubschemaAnalysis::from_check(inner_implication || disjoint_fallback, mode, || {
@@ -732,7 +1295,17 @@ fn analyze_subschema_with_context(
                 ))
             })
         }
-        (Not(sub_negated), _) => match sub_negated.kind() {
+        (Not(sub_negated), _) => match unwrap_singleton_applicators(sub_negated).kind() {
+            Not(inner) => {
+                // Double negation is exactly the inner schema in JSON Schema.
+                // Peel one layer so finite/enumerated inners can use the usual
+                // subset machinery (notably unions on the right).
+                let is_subschema =
+                    analyze_subschema_with_context(inner, sup, context, mode).is_subschema;
+                SubschemaAnalysis::from_check(is_subschema, mode, || {
+                    explain_schema_kind_gap(sub, sup)
+                })
+            }
             Any | BoolSchema(true) => SubschemaAnalysis::compatible(),
             BoolSchema(false) => SubschemaAnalysis::from_check(
                 matches!(sup.kind(), Any | BoolSchema(true)),
@@ -741,7 +1314,16 @@ fn analyze_subschema_with_context(
             ),
             _ => SubschemaAnalysis::from_check(false, mode, || explain_schema_kind_gap(sub, sup)),
         },
-        (_, Not(sup_negated)) => match sup_negated.kind() {
+        (_, Not(sup_negated)) => match unwrap_singleton_applicators(sup_negated).kind() {
+            Not(inner) => {
+                // `not(not T)` on the right is just T; delegate to the normal
+                // positive subset proof rather than requiring complement facts.
+                let is_subschema =
+                    analyze_subschema_with_context(sub, inner, context, mode).is_subschema;
+                SubschemaAnalysis::from_check(is_subschema, mode, || {
+                    explain_schema_kind_gap(sub, sup)
+                })
+            }
             Any | BoolSchema(true) => {
                 SubschemaAnalysis::from_check(matches!(sub.kind(), BoolSchema(false)), mode, || {
                     explain_schema_kind_gap(sub, sup)
@@ -756,7 +1338,9 @@ fn analyze_subschema_with_context(
                 // object discriminator values. This catches common schemas
                 // such as `{type: string}` versus `{not: {type: number}}`
                 // without treating arbitrary negation as implication.
-                let disjoint = schemas_definitely_disjoint_for_negation(sub, sup_negated, context);
+                let excluded = unwrap_singleton_applicators(sup_negated);
+                let disjoint = schemas_definitely_disjoint_for_negation(sub, sup_negated, context)
+                    || schema_disjoint_from_conditional(sub, excluded, context);
                 SubschemaAnalysis::from_check(disjoint, mode, || explain_schema_kind_gap(sub, sup))
             }
         },
@@ -786,6 +1370,14 @@ fn analyze_subschema_with_context(
             Integer { .. } | Const(_),
         ) => SubschemaAnalysis::from_check(
             context.superset_contains_value_set(sup, sub_enum),
+            mode,
+            || explain_schema_kind_gap(sub, sup),
+        ),
+
+        (Number { .. }, Integer { .. }) => SubschemaAnalysis::from_check(
+            finite_integer_number_values(sub)
+                .is_some_and(|values| context.superset_contains_value_set(sup, &values))
+                || number_constraints_subsumed_by_integer(sub, sup),
             mode,
             || explain_schema_kind_gap(sub, sup),
         ),
@@ -860,6 +1452,35 @@ fn optional_conditional_branch_subsumed(
     }
 }
 
+enum LiveConditionalBranch<'a> {
+    /// The selected branch is absent, which is the JSON Schema `true` schema.
+    Universal,
+    Schema(&'a SchemaNode),
+}
+
+/// Return the only live branch for a conditional with a syntactically constant
+/// guard.  Keep this deliberately narrow: recognizing literal/unconstrained
+/// true and literal false is enough for common normalized schemas, while
+/// avoiding general emptiness/complement reasoning in a normalization helper.
+fn constant_guard_conditional_branch<'a>(
+    if_schema: &SchemaNode,
+    then_branch: Option<&'a SchemaNode>,
+    else_branch: Option<&'a SchemaNode>,
+) -> Option<LiveConditionalBranch<'a>> {
+    let selected = if schema_is_trivially_universal(if_schema) {
+        then_branch
+    } else if matches!(if_schema.kind(), SchemaNodeKind::BoolSchema(false)) {
+        else_branch
+    } else {
+        return None;
+    };
+
+    Some(match selected {
+        Some(branch) => LiveConditionalBranch::Schema(branch),
+        None => LiveConditionalBranch::Universal,
+    })
+}
+
 fn explain_identical_conditional_failure(
     sub_then: Option<&SchemaNode>,
     sup_then: Option<&SchemaNode>,
@@ -902,21 +1523,480 @@ fn explain_optional_conditional_branch_failure(
     }
 }
 
+/// Prove a finite conditional branch is contained by `sup` after restricting it
+/// to the side of the guard on which the branch can actually run.  The finite
+/// value list is an upper bound for the branch language; values that are
+/// definitely rejected by the branch, definitely rejected by the guard (then
+/// side), or definitely accepted by the guard (else side) can be ignored.
+fn finite_conditional_branch_values_fit_target(
+    if_schema: &SchemaNode,
+    branch: &SchemaNode,
+    sup: &SchemaNode,
+    then_side: bool,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let Some(values) = finite_schema_value_superset(branch) else {
+        return false;
+    };
+    values.iter().all(|value| {
+        if context.schema_definitely_rejects_value(branch, value) {
+            return true;
+        }
+        let can_reach_side = if then_side {
+            !context.schema_definitely_rejects_value(if_schema, value)
+        } else {
+            !context.superset_contains_value(if_schema, value)
+        };
+        !can_reach_side || context.superset_contains_value(sup, value)
+    })
+}
+
+/// Dual finite proof for the `then` side: when the guard itself has a finite
+/// value superset, enumerate that instead of the branch.  This catches cases
+/// like `if: {enum:[1,"a"]}, then: {type: integer}` where the branch is not
+/// finite on its own, but the reachable intersection is.  Values that the
+/// guard or branch evaluator can soundly reject are ignored; any uncertain
+/// value is kept, making the check conservative.
+fn finite_conditional_then_guard_values_fit_target(
+    if_schema: &SchemaNode,
+    then_branch: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let Some(values) = finite_schema_value_superset(if_schema) else {
+        return false;
+    };
+    values.iter().all(|value| {
+        if context.schema_definitely_rejects_value(if_schema, value)
+            || context.schema_definitely_rejects_value(then_branch, value)
+        {
+            return true;
+        }
+        context.superset_contains_value(sup, value)
+    })
+}
+
+/// Enumerate a finite guard domain to prove an implicit `then` branch fits a target.
+/// This is the missing-branch analogue of `finite_conditional_then_guard_values_fit_target`.
+fn finite_guard_values_fit_target(
+    if_schema: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let Some(values) = finite_schema_value_superset(if_schema) else {
+        return false;
+    };
+    values.iter().all(|value| {
+        if context.schema_definitely_rejects_value(if_schema, value) {
+            return true;
+        }
+        context.superset_contains_value(sup, value)
+    })
+}
+
+/// If the guard is `not A`, its else-side domain is contained in `A`.
+/// Proving `A <= sup` is therefore enough for any else branch (including an
+/// implicit/universal one) to fit the target.
+fn negated_guard_complement_subsumed_by_target(
+    if_schema: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let SchemaNodeKind::Not(negated) = if_schema.kind() else {
+        return false;
+    };
+    analyze_subschema_with_context(negated, sup, context, ExplanationMode::VerdictOnly).is_subschema
+}
+
+/// Finite fallback for an implicit/universal else side of a negated guard.
+/// This is useful when `A <= sup` is too hard structurally but `A` has a small
+/// enumerable superset.
+fn finite_negated_guard_complement_values_fit_target(
+    if_schema: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let SchemaNodeKind::Not(negated) = if_schema.kind() else {
+        return false;
+    };
+    let Some(values) = finite_schema_value_superset(negated) else {
+        return false;
+    };
+    values.iter().all(|value| {
+        if context.schema_definitely_rejects_value(negated, value)
+            || context.superset_contains_value(if_schema, value)
+        {
+            return true;
+        }
+        context.superset_contains_value(sup, value)
+    })
+}
+
+/// Finite fallback for an explicit else branch under a negated guard; enumerate
+/// the complement side (`A` in `not A`) and filter by the branch.
+fn finite_conditional_else_negated_guard_values_fit_target(
+    if_schema: &SchemaNode,
+    else_branch: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let SchemaNodeKind::Not(negated) = if_schema.kind() else {
+        return false;
+    };
+    let Some(values) = finite_schema_value_superset(negated) else {
+        return false;
+    };
+    values.iter().all(|value| {
+        if context.schema_definitely_rejects_value(negated, value)
+            || context.schema_definitely_rejects_value(else_branch, value)
+            || context.superset_contains_value(if_schema, value)
+        {
+            return true;
+        }
+        context.superset_contains_value(sup, value)
+    })
+}
+
 fn conditional_branches_subsumed_by(
+    if_schema: &SchemaNode,
     then_branch: Option<&SchemaNode>,
     else_branch: Option<&SchemaNode>,
     sup: &SchemaNode,
     context: &mut SubschemaCheckContext,
     mode: ExplanationMode,
 ) -> bool {
+    fn then_branch_is_vacuous(
+        if_schema: &SchemaNode,
+        then_branch: &SchemaNode,
+        context: &mut SubschemaCheckContext,
+    ) -> bool {
+        // The then side admits only values satisfying both the guard and the
+        // branch.  Any sound disjointness fact for those two schemas makes the
+        // side empty; false is merely conservative.
+        let then_mask = possible_json_type_mask(then_branch);
+        then_mask == 0
+            || schemas_definitely_disjoint_for_partition(then_branch, then_mask, if_schema, context)
+            || schema_definitely_excludes_schema(then_branch, if_schema, context)
+            || schema_definitely_excludes_schema(if_schema, then_branch, context)
+    }
+
+    fn else_branch_is_vacuous(
+        if_schema: &SchemaNode,
+        else_branch: &SchemaNode,
+        context: &mut SubschemaCheckContext,
+    ) -> bool {
+        // The else side admits only values that fail the guard.  If the branch
+        // itself is a subset of the guard, no value can take that side.
+        analyze_subschema_with_context(
+            else_branch,
+            if_schema,
+            context,
+            ExplanationMode::VerdictOnly,
+        )
+        .is_subschema
+    }
+
     match (then_branch, else_branch) {
         (Some(then_branch), Some(else_branch)) => {
-            analyze_subschema_with_context(then_branch, sup, context, mode).is_subschema
-                && analyze_subschema_with_context(else_branch, sup, context, mode).is_subschema
+            (analyze_subschema_with_context(then_branch, sup, context, mode).is_subschema
+                || then_branch_is_vacuous(if_schema, then_branch, context)
+                || analyze_subschema_with_context(
+                    if_schema,
+                    sup,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+                || finite_conditional_branch_values_fit_target(
+                    if_schema,
+                    then_branch,
+                    sup,
+                    true,
+                    context,
+                )
+                || finite_conditional_then_guard_values_fit_target(
+                    if_schema,
+                    then_branch,
+                    sup,
+                    context,
+                ))
+                && (analyze_subschema_with_context(else_branch, sup, context, mode).is_subschema
+                    || else_branch_is_vacuous(if_schema, else_branch, context)
+                    || branch_covers_guard_complement(if_schema, sup, context)
+                    || negated_guard_complement_subsumed_by_target(if_schema, sup, context)
+                    || finite_conditional_branch_values_fit_target(
+                        if_schema,
+                        else_branch,
+                        sup,
+                        false,
+                        context,
+                    )
+                    || finite_conditional_else_negated_guard_values_fit_target(
+                        if_schema,
+                        else_branch,
+                        sup,
+                        context,
+                    ))
         }
-        // A missing branch is unconstrained on its side of the condition. We
-        // only prove that case when the target is syntactically universal.
-        _ => schema_is_trivially_universal(sup),
+        (None, Some(else_branch)) => {
+            // With no `then`, every value satisfying the guard is accepted on
+            // that side.  It is therefore enough for the guard language itself
+            // to be contained by the target, plus the usual proof for the
+            // explicit else side.
+            analyze_subschema_with_context(if_schema, sup, context, mode).is_subschema
+                && (analyze_subschema_with_context(else_branch, sup, context, mode).is_subschema
+                    || else_branch_is_vacuous(if_schema, else_branch, context)
+                    || branch_covers_guard_complement(if_schema, sup, context)
+                    || negated_guard_complement_subsumed_by_target(if_schema, sup, context)
+                    || finite_conditional_branch_values_fit_target(
+                        if_schema,
+                        else_branch,
+                        sup,
+                        false,
+                        context,
+                    )
+                    || finite_conditional_else_negated_guard_values_fit_target(
+                        if_schema,
+                        else_branch,
+                        sup,
+                        context,
+                    ))
+        }
+        (Some(then_branch), None) => {
+            // With no `else`, values failing the guard are unconstrained.  The
+            // cheap sound special case is a universal guard, which leaves no
+            // else side at all (or a universal target, as before).
+            (schema_is_trivially_universal(sup)
+                || schema_is_trivially_universal(if_schema)
+                || branch_covers_guard_complement(if_schema, sup, context)
+                || negated_guard_complement_subsumed_by_target(if_schema, sup, context)
+                || finite_negated_guard_complement_values_fit_target(if_schema, sup, context))
+                && (analyze_subschema_with_context(then_branch, sup, context, mode).is_subschema
+                    || then_branch_is_vacuous(if_schema, then_branch, context)
+                    || analyze_subschema_with_context(
+                        if_schema,
+                        sup,
+                        context,
+                        ExplanationMode::VerdictOnly,
+                    )
+                    .is_subschema
+                    || finite_conditional_branch_values_fit_target(
+                        if_schema,
+                        then_branch,
+                        sup,
+                        true,
+                        context,
+                    )
+                    || finite_conditional_then_guard_values_fit_target(
+                        if_schema,
+                        then_branch,
+                        sup,
+                        context,
+                    ))
+        }
+        (None, None) => schema_is_trivially_universal(sup),
+    }
+}
+
+fn schemas_obviously_equivalent(a: &SchemaNode, b: &SchemaNode) -> bool {
+    use SchemaNodeKind::*;
+    match (a.kind(), b.kind()) {
+        (Const(x), Const(y)) => json_values_equal(x, y),
+        (Const(x), Enum(ys)) | (Enum(ys), Const(x)) => {
+            ys.len() == 1 && ys.iter().any(|y| json_values_equal(x, y))
+        }
+        (Enum(xs), Enum(ys)) => {
+            xs.len() == ys.len()
+                && xs
+                    .iter()
+                    .all(|x| ys.iter().any(|y| json_values_equal(x, y)))
+        }
+        (BoolSchema(x), BoolSchema(y)) => x == y,
+        (Any, Any) => true,
+        (Null { enumeration: None }, Null { enumeration: None }) => true,
+        (Boolean { enumeration: None }, Boolean { enumeration: None }) => true,
+        (
+            String {
+                enumeration: None,
+                length: al,
+                pattern: ap,
+                format: af,
+            },
+            String {
+                enumeration: None,
+                length: bl,
+                pattern: bp,
+                format: bf,
+            },
+        ) => al == bl && ap == bp && af == bf,
+        (
+            Number {
+                enumeration: None,
+                bounds: ab,
+                multiple_of: am,
+            },
+            Number {
+                enumeration: None,
+                bounds: bb,
+                multiple_of: bm,
+            },
+        ) => ab == bb && am == bm,
+        (
+            Integer {
+                enumeration: None,
+                bounds: ab,
+                multiple_of: am,
+            },
+            Integer {
+                enumeration: None,
+                bounds: bb,
+                multiple_of: bm,
+            },
+        ) => ab == bb && am == bm,
+        _ => false,
+    }
+}
+
+/// Compare two conditionals with an identical guard, taking account of
+/// branches that are impossible on their guard side. Missing branches are the
+/// JSON Schema `true` schema. For the guarded side, it is enough for the
+/// superset branch to cover the guard; for the else side, a recognized
+/// complement-cover branch can cover every value outside the guard.
+fn same_guard_conditional_branches_subsumed(
+    guard: &SchemaNode,
+    sub_then: Option<&SchemaNode>,
+    sub_else: Option<&SchemaNode>,
+    sup_then: Option<&SchemaNode>,
+    sup_else: Option<&SchemaNode>,
+    context: &mut SubschemaCheckContext,
+    mode: ExplanationMode,
+) -> bool {
+    let then_empty = |branch: &SchemaNode, context: &mut SubschemaCheckContext| {
+        let mask = possible_json_type_mask(branch);
+        mask == 0
+            || schemas_definitely_disjoint_for_partition(branch, mask, guard, context)
+            || schema_definitely_excludes_schema(branch, guard, context)
+            || schema_definitely_excludes_schema(guard, branch, context)
+    };
+    let else_empty = |branch: &SchemaNode, context: &mut SubschemaCheckContext| {
+        analyze_subschema_with_context(branch, guard, context, ExplanationMode::VerdictOnly)
+            .is_subschema
+    };
+
+    let then_ok = match (sub_then, sup_then) {
+        (_, None) => true,
+        (Some(sub_branch), Some(sup_branch)) => {
+            then_empty(sub_branch, context)
+                || analyze_subschema_with_context(sub_branch, sup_branch, context, mode)
+                    .is_subschema
+                || analyze_subschema_with_context(
+                    guard,
+                    sup_branch,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+                || finite_conditional_branch_values_fit_target(
+                    guard, sub_branch, sup_branch, true, context,
+                )
+                || finite_conditional_then_guard_values_fit_target(
+                    guard, sub_branch, sup_branch, context,
+                )
+        }
+        (None, Some(sup_branch)) => {
+            analyze_subschema_with_context(guard, sup_branch, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+                || finite_guard_values_fit_target(guard, sup_branch, context)
+        }
+    };
+    if !then_ok {
+        return false;
+    }
+
+    match (sub_else, sup_else) {
+        (_, None) => true,
+        (Some(sub_branch), Some(sup_branch)) => {
+            else_empty(sub_branch, context)
+                || analyze_subschema_with_context(sub_branch, sup_branch, context, mode)
+                    .is_subschema
+                || branch_covers_guard_complement(guard, sup_branch, context)
+                || finite_conditional_branch_values_fit_target(
+                    guard, sub_branch, sup_branch, false, context,
+                )
+                || finite_conditional_else_negated_guard_values_fit_target(
+                    guard, sub_branch, sup_branch, context,
+                )
+        }
+        (None, Some(sup_branch)) => {
+            branch_covers_guard_complement(guard, sup_branch, context)
+                || negated_guard_complement_subsumed_by_target(guard, sup_branch, context)
+                || finite_negated_guard_complement_values_fit_target(guard, sup_branch, context)
+        }
+    }
+}
+
+/// Return true for the small, sound class of conditionals that accept every
+/// instance. Missing conditional branches are JSON Schema `true`; for an
+/// explicit `then` branch, proving `if <= then` makes the guarded side
+/// vacuous as a restriction. We deliberately only treat the else side as
+/// covered when it is absent or syntactically universal, avoiding general
+/// complement reasoning here.
+fn conditional_is_known_universal(
+    if_schema: &SchemaNode,
+    then_branch: Option<&SchemaNode>,
+    else_branch: Option<&SchemaNode>,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let then_covers_guard = match then_branch {
+        None => true,
+        Some(then_branch) => {
+            schema_is_trivially_universal(then_branch)
+                || analyze_subschema_with_context(
+                    if_schema,
+                    then_branch,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+        }
+    };
+    if !then_covers_guard {
+        return false;
+    }
+
+    match else_branch {
+        None => true,
+        Some(else_branch) => branch_covers_guard_complement(if_schema, else_branch, context),
+    }
+}
+
+/// Prove that a conditional else branch accepts every value outside `if_schema`.
+/// A branch `not E` has that property whenever `E <= if_schema`: anything that
+/// misses the guard cannot be in `E`, so it satisfies `not E`.  This also works
+/// through an anyOf containing such a complement branch.  Keep the recognizer
+/// deliberately small; failure is conservative.
+fn branch_covers_guard_complement(
+    if_schema: &SchemaNode,
+    branch: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if schema_is_trivially_universal(branch) {
+        return true;
+    }
+    match branch.kind() {
+        SchemaNodeKind::Not(excluded) => {
+            analyze_subschema_with_context(
+                excluded,
+                if_schema,
+                context,
+                ExplanationMode::VerdictOnly,
+            )
+            .is_subschema
+        }
+        SchemaNodeKind::AnyOf(children) => children
+            .iter()
+            .any(|child| branch_covers_guard_complement(if_schema, child, context)),
+        _ => false,
     }
 }
 
@@ -953,12 +2033,13 @@ fn superset_conditional_contains(
         (condition_always_true && covered_by_then) || (condition_always_false && covered_by_else);
 
     let branchwise_subset_cover = if let SchemaNodeKind::IfThenElse {
+        if_schema,
         then_schema,
         else_schema,
-        ..
     } = sub.kind()
     {
         conditional_branches_subsumed_by(
+            if_schema,
             then_schema.as_ref(),
             else_schema.as_ref(),
             sup,
@@ -970,6 +2051,2732 @@ fn superset_conditional_contains(
     };
 
     unconditional_branch_cover || guarded_branch_cover || branchwise_subset_cover
+}
+
+fn u64_intervals_cover_nonnegative(intervals: &[(u64, Option<u64>)]) -> bool {
+    let mut reach: Option<u128> = None;
+    for (min, max) in intervals {
+        if *min == 0 {
+            match max {
+                None => return true,
+                Some(upper) => {
+                    let upper = u128::from(*upper);
+                    reach = Some(reach.map_or(upper, |old| old.max(upper)));
+                }
+            }
+        }
+    }
+    let Some(mut reach) = reach else {
+        return false;
+    };
+    loop {
+        let mut advanced = false;
+        for (min, max) in intervals {
+            if u128::from(*min) > reach + 1 {
+                continue;
+            }
+            match max {
+                None => return true,
+                Some(upper) => {
+                    let upper = u128::from(*upper);
+                    if upper > reach {
+                        reach = upper;
+                        advanced = true;
+                    }
+                }
+            }
+        }
+        if !advanced {
+            return false;
+        }
+    }
+}
+
+fn usize_intervals_cover_nonnegative(intervals: &[(usize, Option<usize>)]) -> bool {
+    let mut reach: Option<u128> = None;
+    for (min, max) in intervals {
+        if *min == 0 {
+            match max {
+                None => return true,
+                Some(upper) => {
+                    let upper = *upper as u128;
+                    reach = Some(reach.map_or(upper, |old| old.max(upper)));
+                }
+            }
+        }
+    }
+    let Some(mut reach) = reach else {
+        return false;
+    };
+    loop {
+        let mut advanced = false;
+        for (min, max) in intervals {
+            if (*min as u128) > reach + 1 {
+                continue;
+            }
+            match max {
+                None => return true,
+                Some(upper) => {
+                    let upper = *upper as u128;
+                    if upper > reach {
+                        reach = upper;
+                        advanced = true;
+                    }
+                }
+            }
+        }
+        if !advanced {
+            return false;
+        }
+    }
+}
+
+/// Recognize `not integer` plus a pair of plain integer range arms that cover
+/// the integer lattice.  The complement arm covers fractional numbers and all
+/// non-numbers; the range arms cover every integer.
+fn any_of_integer_partition_cover_is_universal(branches: &[SchemaNode]) -> bool {
+    fn integer_divisor_is_one(multiple_of: &Option<IntegerMultipleOf>) -> bool {
+        multiple_of
+            .as_ref()
+            .and_then(|m| m.integer_divisor())
+            .is_none_or(|divisor| divisor == 1)
+    }
+
+    fn plain_integer_bounds(schema: &SchemaNode) -> Option<IntegerBounds> {
+        match schema.kind() {
+            SchemaNodeKind::Integer {
+                bounds,
+                multiple_of,
+                enumeration,
+            } if enumeration.is_none() && integer_divisor_is_one(multiple_of) => Some(*bounds),
+            _ => None,
+        }
+    }
+
+    fn is_unbounded_plain_integer(schema: &SchemaNode) -> bool {
+        plain_integer_bounds(schema)
+            .is_some_and(|bounds| bounds.lower().is_none() && bounds.upper().is_none())
+    }
+
+    fn collect(
+        schema: &SchemaNode,
+        has_noninteger: &mut bool,
+        intervals: &mut Vec<IntegerBounds>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect(child, has_noninteger, intervals, active);
+                }
+            }
+            SchemaNodeKind::Not(inner) if is_unbounded_plain_integer(inner) => {
+                *has_noninteger = true;
+            }
+            _ => {
+                if let Some(bounds) = plain_integer_bounds(schema) {
+                    intervals.push(bounds);
+                }
+            }
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut has_noninteger = false;
+    let mut intervals = Vec::new();
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect(branch, &mut has_noninteger, &mut intervals, &mut active);
+    }
+    if !has_noninteger {
+        return false;
+    }
+
+    // Merge the integer intervals, allowing finite bridge arms between the
+    // unbounded-low and unbounded-high sides.  Endpoints are inclusive in the
+    // normalized IR, so the next uncovered integer after `reach` is
+    // `reach + 1`.
+    let mut reach: Option<i128> = None;
+    for bounds in &intervals {
+        if bounds.lower().is_none() {
+            match bounds.upper() {
+                None => return true,
+                Some(upper) => {
+                    let upper = i128::from(upper);
+                    reach = Some(reach.map_or(upper, |old| old.max(upper)));
+                }
+            }
+        }
+    }
+    let Some(mut reach) = reach else {
+        return false;
+    };
+
+    loop {
+        let mut advanced = false;
+        for bounds in &intervals {
+            let Some(lower) = bounds.lower() else {
+                continue;
+            };
+            if i128::from(lower) > reach + 1 {
+                continue;
+            }
+            match bounds.upper() {
+                None => return true,
+                Some(upper) => {
+                    let upper = i128::from(upper);
+                    if upper > reach {
+                        reach = upper;
+                        advanced = true;
+                    }
+                }
+            }
+        }
+        if !advanced {
+            return false;
+        }
+    }
+}
+
+/// Recognize an `anyOf` whose plain numeric branches cover the real number
+/// line, while sibling applicability arms cover non-numbers.  We only use
+/// unconstrained number intervals (no multipleOf/enum), and require an
+/// unbounded-low arm plus an unbounded-high arm whose endpoints touch/overlap.
+fn any_of_numeric_range_cover_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_STRING,
+        JSON_TYPE_OBJECT,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    fn collect_intervals(
+        schema: &SchemaNode,
+        out: &mut Vec<NumberBounds>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_intervals(child, out, active);
+                }
+            }
+            SchemaNodeKind::Number {
+                bounds,
+                multiple_of,
+                enumeration,
+            } if multiple_of.is_none() && enumeration.is_none() => out.push(*bounds),
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    fn endpoints_touch_or_overlap(upper: NumberBound, lower: NumberBound) -> bool {
+        match (upper, lower) {
+            (NumberBound::Unbounded, _) | (_, NumberBound::Unbounded) => true,
+            (NumberBound::Inclusive(u), NumberBound::Inclusive(l)) => u >= l,
+            (NumberBound::Inclusive(u), NumberBound::Exclusive(l)) => u >= l,
+            (NumberBound::Exclusive(u), NumberBound::Inclusive(l)) => u >= l,
+            (NumberBound::Exclusive(u), NumberBound::Exclusive(l)) => u > l,
+        }
+    }
+
+    fn farther_upper(a: NumberBound, b: NumberBound) -> NumberBound {
+        match (a, b) {
+            (NumberBound::Unbounded, _) | (_, NumberBound::Unbounded) => NumberBound::Unbounded,
+            (NumberBound::Inclusive(x), NumberBound::Inclusive(y)) => {
+                if y > x {
+                    b
+                } else {
+                    a
+                }
+            }
+            (NumberBound::Inclusive(x), NumberBound::Exclusive(y)) => {
+                if y > x {
+                    b
+                } else {
+                    a
+                }
+            }
+            (NumberBound::Exclusive(x), NumberBound::Inclusive(y)) => {
+                if y >= x {
+                    b
+                } else {
+                    a
+                }
+            }
+            (NumberBound::Exclusive(x), NumberBound::Exclusive(y)) => {
+                if y > x {
+                    b
+                } else {
+                    a
+                }
+            }
+        }
+    }
+
+    let mut intervals = Vec::new();
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect_intervals(branch, &mut intervals, &mut active);
+    }
+
+    let mut reach: Option<NumberBound> = None;
+    for interval in &intervals {
+        if matches!(interval.lower(), NumberBound::Unbounded) {
+            let upper = interval.upper();
+            if matches!(upper, NumberBound::Unbounded) {
+                return true;
+            }
+            reach = Some(reach.map_or(upper, |old| farther_upper(old, upper)));
+        }
+    }
+    let Some(mut reach) = reach else {
+        return false;
+    };
+    loop {
+        let mut advanced = false;
+        for interval in &intervals {
+            if !endpoints_touch_or_overlap(reach, interval.lower()) {
+                continue;
+            }
+            let upper = interval.upper();
+            if matches!(upper, NumberBound::Unbounded) {
+                return true;
+            }
+            let next = farther_upper(reach, upper);
+            if next != reach {
+                reach = next;
+                advanced = true;
+            }
+        }
+        if !advanced {
+            return false;
+        }
+    }
+}
+
+/// Recognize an `anyOf` whose string branches cover the length line, while
+/// sibling applicability arms cover non-strings.  This is the string analogue
+/// of the count covers (`maxLength: n` vs `minLength: n+1`).
+fn any_of_string_length_cover_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_OBJECT,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    fn collect_intervals(
+        schema: &SchemaNode,
+        out: &mut Vec<(u64, Option<u64>)>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_intervals(child, out, active);
+                }
+            }
+            SchemaNodeKind::String {
+                length,
+                pattern,
+                format,
+                enumeration,
+            } if pattern.is_none() && format.is_none() && enumeration.is_none() => {
+                out.push((length.min(), length.max()));
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut intervals = Vec::new();
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect_intervals(branch, &mut intervals, &mut active);
+    }
+    u64_intervals_cover_nonnegative(&intervals)
+}
+
+/// Recognize an `anyOf` whose array branches cover the item-count line, while
+/// sibling applicability arms cover non-arrays.  This is the array analogue of
+/// the object property-count cover (`maxItems: n` vs `minItems: n+1`).
+fn any_of_array_count_cover_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_OBJECT,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    fn collect_intervals(
+        schema: &SchemaNode,
+        out: &mut Vec<(u64, Option<u64>)>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_intervals(child, out, active);
+                }
+            }
+            SchemaNodeKind::Array { item_count, .. } if array_schema_is_plain_count(schema) => {
+                out.push((item_count.min(), item_count.max()));
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut intervals = Vec::new();
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect_intervals(branch, &mut intervals, &mut active);
+    }
+    u64_intervals_cover_nonnegative(&intervals)
+}
+
+/// Recognize an `anyOf` whose object branches cover the property-count line,
+/// while sibling applicability arms cover all non-objects.  This catches
+/// spellings such as `{minProperties: 1} | {maxProperties: 0}` after parser
+/// normalization, and a slightly more general empty-object arm paired with a
+/// plain non-empty-count arm.
+fn any_of_object_count_cover_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    fn collect_intervals(
+        schema: &SchemaNode,
+        out: &mut Vec<(usize, Option<usize>)>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_intervals(child, out, active);
+                }
+            }
+            SchemaNodeKind::Object { property_count, .. }
+                if object_schema_is_plain_count(schema) =>
+            {
+                out.push((property_count.min(), property_count.max()));
+            }
+            // Many applicator-only object schemas (for example `properties`)
+            // accept the empty object even though they are not plain count
+            // ranges.  Record just that singleton fact; it is enough to pair
+            // with a `minProperties: 1` arm without assuming anything about
+            // their non-empty behavior.
+            SchemaNodeKind::Object {
+                required,
+                property_count,
+                enumeration,
+                ..
+            } if required.is_empty() && enumeration.is_none() && property_count.min() == 0 => {
+                out.push((0, Some(0)));
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut intervals = Vec::new();
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect_intervals(branch, &mut intervals, &mut active);
+    }
+
+    usize_intervals_cover_nonnegative(&intervals)
+}
+
+/// Recognize a common object-applicator partition:
+///
+
+/// Recognize `oneOf: [{type:object}, {type:object, minProperties:1}]`, whose
+/// language is exactly the empty object.  The partition arms must be otherwise
+/// unconstrained; targets are accepted only when the empty object is obviously
+/// valid syntactically.
+fn oneof_object_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNode) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    fn object_with_min(schema: &SchemaNode, min: usize) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children.iter().any(|c| object_with_min(c, min)),
+            SchemaNodeKind::AllOf(children) => children.iter().all(|c| object_with_min(c, min)),
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                properties.is_empty()
+                    && pattern_properties.is_empty()
+                    && required.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && schema_is_trivially_universal(property_names)
+                    && property_count.min() == min
+                    && property_count.max().is_none()
+                    && dependent_required.is_empty()
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn accepts_empty_object(schema: &SchemaNode) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => true,
+            SchemaNodeKind::AnyOf(children) => children.iter().any(accepts_empty_object),
+            SchemaNodeKind::AllOf(children) => children.iter().all(accepts_empty_object),
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                else_schema,
+                ..
+            } => {
+                if possible_json_type_mask(if_schema) & JSON_TYPE_OBJECT == 0 {
+                    else_schema.as_ref().is_none_or(|b| accepts_empty_object(b))
+                } else {
+                    false
+                }
+            }
+            SchemaNodeKind::Object {
+                required,
+                property_count,
+                enumeration,
+                ..
+            } => required.is_empty() && property_count.min() == 0 && enumeration.is_none(),
+            _ => false,
+        }
+    }
+
+    ((object_with_min(&branches[0], 0) && object_with_min(&branches[1], 1))
+        || (object_with_min(&branches[1], 0) && object_with_min(&branches[0], 1)))
+        && accepts_empty_object(sup)
+}
+
+/// Recognize `oneOf: [{type:string}, {type:string, minLength:1}]`, whose
+/// language is exactly the empty string.  Pattern/format/enum constraints are
+/// deliberately excluded so we never assume a regex accepts "".
+fn oneof_string_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNode) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    fn string_with_min(schema: &SchemaNode, min: u64) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children.iter().any(|c| string_with_min(c, min)),
+            SchemaNodeKind::AllOf(children) => children.iter().all(|c| string_with_min(c, min)),
+            SchemaNodeKind::String {
+                length,
+                pattern,
+                format,
+                enumeration,
+            } => {
+                length.min() == min
+                    && length.max().is_none()
+                    && pattern.is_none()
+                    && format.is_none()
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn accepts_empty_string(schema: &SchemaNode) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => true,
+            SchemaNodeKind::AnyOf(children) => children.iter().any(accepts_empty_string),
+            SchemaNodeKind::AllOf(children) => children.iter().all(accepts_empty_string),
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                else_schema,
+                ..
+            } => {
+                if possible_json_type_mask(if_schema) & JSON_TYPE_STRING == 0 {
+                    else_schema.as_ref().is_none_or(|b| accepts_empty_string(b))
+                } else {
+                    false
+                }
+            }
+            SchemaNodeKind::String {
+                length,
+                pattern,
+                format,
+                enumeration,
+            } => {
+                length.min() == 0 && pattern.is_none() && format.is_none() && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    ((string_with_min(&branches[0], 0) && string_with_min(&branches[1], 1))
+        || (string_with_min(&branches[1], 0) && string_with_min(&branches[0], 1)))
+        && accepts_empty_string(sup)
+}
+
+/// Recognize the exact two-arm xor partition `all arrays` XOR `nonempty arrays`.
+/// Its language is just the empty array.  Keep the recognizer deliberately
+/// syntactic: the nonempty arm may only impose `minItems: 1`, and the target
+/// must accept the empty array for structural reasons.
+fn oneof_array_empty_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNode) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    fn all_arrays(schema: &SchemaNode) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children.iter().any(all_arrays),
+            SchemaNodeKind::AllOf(children) => children.iter().all(all_arrays),
+            SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                item_count,
+                contains,
+                unique_items,
+                enumeration,
+            } => {
+                prefix_items.is_empty()
+                    && schema_is_trivially_universal(items)
+                    && item_count.min() == 0
+                    && item_count.max().is_none()
+                    && contains.is_none()
+                    && !*unique_items
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn nonempty_arrays(schema: &SchemaNode) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children.iter().any(nonempty_arrays),
+            SchemaNodeKind::AllOf(children) => children.iter().all(nonempty_arrays),
+            SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                item_count,
+                contains,
+                unique_items,
+                enumeration,
+            } => {
+                prefix_items.is_empty()
+                    && schema_is_trivially_universal(items)
+                    && item_count.min() == 1
+                    && item_count.max().is_none()
+                    && contains.is_none()
+                    && !*unique_items
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn accepts_empty_array(schema: &SchemaNode) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => true,
+            SchemaNodeKind::AnyOf(children) => children.iter().any(accepts_empty_array),
+            SchemaNodeKind::AllOf(children) => children.iter().all(accepts_empty_array),
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                else_schema,
+                ..
+            } => {
+                if possible_json_type_mask(if_schema) & JSON_TYPE_ARRAY == 0 {
+                    else_schema.as_ref().is_none_or(|b| accepts_empty_array(b))
+                } else {
+                    false
+                }
+            }
+            SchemaNodeKind::Array {
+                item_count,
+                contains,
+                enumeration,
+                ..
+            } => {
+                item_count.min() == 0
+                    && contains.as_ref().is_none_or(|c| c.count().min() == 0)
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    ((all_arrays(&branches[0]) && nonempty_arrays(&branches[1]))
+        || (all_arrays(&branches[1]) && nonempty_arrays(&branches[0])))
+        && accepts_empty_array(sup)
+}
+
+/// Recognize the exact two-arm xor partition `all objects` XOR `objects with p`.
+/// Its language is exactly the set of objects where `p` is absent.  This is
+/// intentionally narrower than general oneOf difference reasoning: both arms
+/// must be unconstrained apart from the single presence requirement, and the
+/// target must accept every object missing that same property.
+fn oneof_object_absence_partition_subset_of(branches: &[SchemaNode], sup: &SchemaNode) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    fn accepts_all_objects(schema: &SchemaNode) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children.iter().any(accepts_all_objects),
+            SchemaNodeKind::AllOf(children) => children.iter().all(accepts_all_objects),
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                properties.is_empty()
+                    && pattern_properties.is_empty()
+                    && required.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && schema_is_trivially_universal(property_names)
+                    && property_count.min() == 0
+                    && property_count.max().is_none()
+                    && dependent_required.is_empty()
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn presence_name(schema: &SchemaNode) -> Option<&str> {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children.iter().find_map(presence_name),
+            SchemaNodeKind::AllOf(children) => {
+                // Be conservative for split wrappers: exactly one conjunct may
+                // provide the presence partition, and every sibling must accept
+                // all objects so it cannot narrow the arm.
+                let mut found = None;
+                for child in children {
+                    if let Some(name) = presence_name(child) {
+                        if found.replace(name).is_some() {
+                            return None;
+                        }
+                    } else if !accepts_all_objects(child) {
+                        return None;
+                    }
+                }
+                found
+            }
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                if required.len() != 1 {
+                    return None;
+                }
+                let name = required.iter().next()?.as_str();
+                let only_mentions_name = properties
+                    .iter()
+                    .all(|(key, value)| key == name && schema_is_trivially_universal(value));
+                if only_mentions_name
+                    && pattern_properties.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && schema_is_trivially_universal(property_names)
+                    && property_count.min() <= 1
+                    && property_count.max().is_none()
+                    && dependent_required
+                        .values()
+                        .all(|deps| deps.iter().all(|dep| dep == name))
+                    && enumeration.is_none()
+                {
+                    Some(name)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn accepts_all_without(schema: &SchemaNode, name: &str) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => true,
+            SchemaNodeKind::AnyOf(children) => {
+                children.iter().any(|c| accepts_all_without(c, name))
+            }
+            SchemaNodeKind::AllOf(children) => {
+                children.iter().all(|c| accepts_all_without(c, name))
+            }
+            SchemaNodeKind::IfThenElse {
+                if_schema,
+                then_schema: _,
+                else_schema,
+            } => {
+                // If the guard cannot match objects, every object takes the else
+                // branch (or an implicit true branch).
+                if possible_json_type_mask(if_schema) & JSON_TYPE_OBJECT == 0 {
+                    else_schema
+                        .as_ref()
+                        .is_none_or(|branch| accepts_all_without(branch, name))
+                } else {
+                    false
+                }
+            }
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                required.is_empty()
+                    && properties.keys().all(|key| key == name)
+                    && pattern_properties.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && schema_is_trivially_universal(property_names)
+                    && property_count.min() == 0
+                    && property_count.max().is_none()
+                    && dependent_required.keys().all(|key| key == name)
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    let (broad, presence) = (&branches[0], &branches[1]);
+    let name = if accepts_all_objects(broad) {
+        presence_name(presence)
+    } else if accepts_all_objects(presence) {
+        presence_name(broad)
+    } else {
+        None
+    };
+    name.is_some_and(|name| accepts_all_without(sup, name))
+}
+
+/// ```text
+/// anyOf: [ { required: [p] }, { properties: { p: S } } ]
+/// ```
+///
+/// JSON Schema object keywords are vacuous for non-objects; after parsing they
+/// typically appear as applicability unions (non-object arms plus one object
+/// arm).  For objects, the first branch accepts every object where `p` is
+/// present, while the second accepts every object where `p` is absent.  The
+/// property schema `S` may reject some present values, but those are already
+/// covered by the presence branch.  Keep this recognizer deliberately narrow:
+/// the presence arm may only require/constrain `p` (or have dependentRequired
+/// rules whose dependencies are already satisfied by `p`), and the absence arm
+/// may mention only `p` in `properties`/dependentRequired triggers with
+/// otherwise-universal object constraints.
+fn any_of_property_presence_cover_is_universal(branches: &[SchemaNode]) -> bool {
+    fn object_arm_accepts_all_with_property(schema: &SchemaNode, name: &str) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children
+                .iter()
+                .any(|child| object_arm_accepts_all_with_property(child, name)),
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                // For every object that contains `name`, no other property
+                // may be required or constrained.  Dependent-required rules are
+                // okay only when their entire dependency set is already
+                // satisfied by the presence of `name`.
+                required.iter().all(|required_name| required_name == name)
+                    && properties
+                        .iter()
+                        .all(|(key, value)| key == name && schema_is_trivially_universal(value))
+                    && pattern_properties.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && schema_is_trivially_universal(property_names)
+                    && property_count.min() <= 1
+                    && property_count.max().is_none()
+                    && dependent_required
+                        .values()
+                        .all(|deps| deps.iter().all(|dep| dep == name))
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    fn object_arm_accepts_all_without_property(schema: &SchemaNode, name: &str) -> bool {
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => children
+                .iter()
+                .any(|child| object_arm_accepts_all_without_property(child, name)),
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                required.is_empty()
+                    && properties.keys().all(|key| key == name)
+                    && pattern_properties.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && schema_is_trivially_universal(property_names)
+                    && property_count.min() == 0
+                    && property_count.max().is_none()
+                    && dependent_required.keys().all(|key| key == name)
+                    && enumeration.is_none()
+            }
+            _ => false,
+        }
+    }
+
+    // The presence split only covers objects.  Ensure every other JSON type is
+    // wholly accepted by at least one sibling (usually the parser-created
+    // applicability arms).
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    let mut candidate_names = HashSet::new();
+    fn collect_required_singletons(
+        schema: &SchemaNode,
+        out: &mut HashSet<String>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_required_singletons(child, out, active);
+                }
+            }
+            SchemaNodeKind::Object {
+                required,
+                properties,
+                dependent_required,
+                ..
+            } => {
+                if required.len() == 1
+                    && let Some(name) = required.iter().next()
+                {
+                    out.insert(name.clone());
+                }
+                out.extend(properties.keys().cloned());
+                for deps in dependent_required.values() {
+                    out.extend(deps.iter().cloned());
+                }
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect_required_singletons(branch, &mut candidate_names, &mut active);
+    }
+
+    candidate_names.into_iter().any(|name| {
+        branches
+            .iter()
+            .any(|branch| object_arm_accepts_all_with_property(branch, &name))
+            && branches
+                .iter()
+                .any(|branch| object_arm_accepts_all_without_property(branch, &name))
+    })
+}
+
+/// Recognize a narrow propertyNames/count partition for objects with at most
+/// one property, plus a sibling count arm for objects with two or more
+/// properties.  For a one-key object, `propertyNames: P` and
+/// `propertyNames: { not: P }` are complementary; the empty object satisfies
+/// both propertyNames arms, and the high-count arm covers the remaining object
+/// cardinalities.  As with the other object-universal recognizers, require
+/// explicit sibling coverage for every non-object JSON type.
+fn any_of_single_property_name_partition_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    let mut has_high_count_arm = false;
+    let mut positive: Vec<&SchemaNode> = Vec::new();
+    let mut negative: Vec<&SchemaNode> = Vec::new();
+
+    fn collect<'a>(
+        schema: &'a SchemaNode,
+        high: &mut bool,
+        positive: &mut Vec<&'a SchemaNode>,
+        negative: &mut Vec<&'a SchemaNode>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect(child, high, positive, negative, active);
+                }
+            }
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                if object_schema_is_plain_count(schema)
+                    && property_count.max().is_none()
+                    && property_count.min() <= 2
+                {
+                    *high = true;
+                }
+
+                // A low-count propertyNames arm must impose no constraints
+                // other than the name predicate and an upper cardinality bound
+                // that includes singleton objects.  Empty objects satisfy any
+                // propertyNames predicate vacuously.
+                let low_shape = properties.is_empty()
+                    && pattern_properties.is_empty()
+                    && required.is_empty()
+                    && schema_is_trivially_universal(additional)
+                    && dependent_required.is_empty()
+                    && enumeration.is_none()
+                    && property_count.min() == 0
+                    && property_count.max().is_none_or(|max| max >= 1);
+                if low_shape && !schema_is_trivially_universal(property_names) {
+                    match property_names.kind() {
+                        SchemaNodeKind::Not(inner) => negative.push(inner),
+                        _ => positive.push(property_names),
+                    }
+                }
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect(
+            branch,
+            &mut has_high_count_arm,
+            &mut positive,
+            &mut negative,
+            &mut active,
+        );
+    }
+    if !has_high_count_arm {
+        return false;
+    }
+
+    positive.iter().any(|pos| {
+        negative
+            .iter()
+            .any(|neg| schemas_obviously_equivalent(pos, neg))
+    })
+}
+
+/// Recognize a three-way property-value partition:
+///
+/// * objects without property `p` (spelled as `not { required: [p] }`),
+/// * objects with `p` whose value satisfies `S`, and
+/// * objects with `p` whose value satisfies `not S`.
+///
+/// The object arms are kept deliberately plain so they accept arbitrary extra
+/// properties.  Non-object coverage is checked independently, because parser
+/// applicability expansion often supplies it via sibling arms.
+fn any_of_required_property_value_partition_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    fn plain_presence_object_name(schema: &SchemaNode) -> Option<String> {
+        let SchemaNodeKind::Object {
+            properties,
+            pattern_properties,
+            required,
+            additional,
+            property_names,
+            property_count,
+            dependent_required,
+            enumeration,
+        } = schema.kind()
+        else {
+            return None;
+        };
+        if required.len() != 1
+            || !pattern_properties.is_empty()
+            || !schema_is_trivially_universal(additional)
+            || !schema_is_trivially_universal(property_names)
+            || property_count.min() > 1
+            || property_count.max().is_some()
+            || !dependent_required.is_empty()
+            || enumeration.is_some()
+        {
+            return None;
+        }
+        let name = required.iter().next()?.clone();
+        if properties
+            .iter()
+            .all(|(key, value)| key == &name && schema_is_trivially_universal(value))
+        {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
+    fn presence_test_name(schema: &SchemaNode) -> Option<String> {
+        match schema.kind() {
+            SchemaNodeKind::Object { .. } => plain_presence_object_name(schema),
+            SchemaNodeKind::AnyOf(children) => {
+                let mut object_name: Option<String> = None;
+                let mut saw_object = false;
+                for child in children {
+                    if possible_json_type_mask(child) & JSON_TYPE_OBJECT == 0 {
+                        continue;
+                    }
+                    saw_object = true;
+                    let name = plain_presence_object_name(child)?;
+                    if object_name.as_ref().is_some_and(|old| old != &name) {
+                        return None;
+                    }
+                    object_name = Some(name);
+                }
+                saw_object.then_some(object_name).flatten()
+            }
+            _ => None,
+        }
+    }
+
+    fn collect_absence_names(
+        schema: &SchemaNode,
+        out: &mut HashSet<String>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_absence_names(child, out, active);
+                }
+            }
+            SchemaNodeKind::Not(inner) => {
+                if let Some(name) = presence_test_name(inner) {
+                    out.insert(name);
+                }
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    fn collect_value_arms<'a>(
+        schema: &'a SchemaNode,
+        out: &mut Vec<(String, bool, &'a SchemaNode)>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect_value_arms(child, out, active);
+                }
+            }
+            SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                required,
+                additional,
+                property_names,
+                property_count,
+                dependent_required,
+                enumeration,
+            } => {
+                if required.len() != 1
+                    || properties.len() != 1
+                    || !pattern_properties.is_empty()
+                    || !schema_is_trivially_universal(additional)
+                    || !schema_is_trivially_universal(property_names)
+                    || property_count.min() > 1
+                    || property_count.max().is_some()
+                    || !dependent_required.is_empty()
+                    || enumeration.is_some()
+                {
+                    return;
+                }
+                let name = required.iter().next().expect("len checked");
+                let Some(value_schema) = properties.get(name) else {
+                    return;
+                };
+                match value_schema.kind() {
+                    SchemaNodeKind::Not(inner) => out.push((name.clone(), false, inner)),
+                    _ => out.push((name.clone(), true, value_schema)),
+                }
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut absence_names = HashSet::new();
+    let mut value_arms = Vec::new();
+    let mut absence_active = HashSet::new();
+    let mut value_active = HashSet::new();
+    for branch in branches {
+        collect_absence_names(branch, &mut absence_names, &mut absence_active);
+        collect_value_arms(branch, &mut value_arms, &mut value_active);
+    }
+
+    for name in absence_names {
+        let positives: Vec<_> = value_arms
+            .iter()
+            .filter(|(arm_name, positive, _)| arm_name == &name && *positive)
+            .map(|(_, _, schema)| *schema)
+            .collect();
+        let negatives: Vec<_> = value_arms
+            .iter()
+            .filter(|(arm_name, positive, _)| arm_name == &name && !*positive)
+            .map(|(_, _, schema)| *schema)
+            .collect();
+        if positives.iter().any(|pos| {
+            negatives
+                .iter()
+                .any(|neg| schemas_obviously_equivalent(pos, neg))
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Recognize complementary constraints on a single tuple position.  A
+/// `prefixItems[i]` constraint is vacuous for arrays shorter than `i + 1`, so
+/// two otherwise-plain array arms with predicates `P` and `not P` at the same
+/// position cover every array; parser applicability arms cover non-arrays.
+fn any_of_prefix_item_partition_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_OBJECT,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    let mut positives: Vec<(usize, &SchemaNode)> = Vec::new();
+    let mut negatives: Vec<(usize, &SchemaNode)> = Vec::new();
+
+    fn collect<'a>(
+        schema: &'a SchemaNode,
+        positives: &mut Vec<(usize, &'a SchemaNode)>,
+        negatives: &mut Vec<(usize, &'a SchemaNode)>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect(child, positives, negatives, active);
+                }
+            }
+            SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                item_count,
+                contains,
+                unique_items,
+                enumeration,
+            } => {
+                if !schema_is_trivially_universal(items)
+                    || item_count.min() != 0
+                    || item_count.max().is_some()
+                    || contains.is_some()
+                    || *unique_items
+                    || enumeration.is_some()
+                {
+                    return;
+                }
+                for (idx, item_schema) in prefix_items.iter().enumerate() {
+                    // All other tuple positions must be unconstrained; this
+                    // keeps the arm a pure predicate on one optional slot.
+                    if prefix_items.iter().enumerate().any(|(other_idx, other)| {
+                        other_idx != idx && !schema_is_trivially_universal(other)
+                    }) {
+                        continue;
+                    }
+                    match item_schema.kind() {
+                        SchemaNodeKind::Not(inner) => negatives.push((idx, inner)),
+                        _ if !schema_is_trivially_universal(item_schema) => {
+                            positives.push((idx, item_schema));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect(branch, &mut positives, &mut negatives, &mut active);
+    }
+    positives.iter().any(|(pos_idx, pos)| {
+        negatives
+            .iter()
+            .any(|(neg_idx, neg)| pos_idx == neg_idx && schemas_obviously_equivalent(pos, neg))
+    })
+}
+
+/// Recognize the array tautology "all items satisfy P, or some item does not
+/// satisfy P".  The `items` arm covers the empty array; the `contains: not P`
+/// arm covers every non-empty counterexample.  Keep both array arms otherwise
+/// unconstrained so this remains a pure partition fact.
+fn any_of_items_contains_partition_is_universal(branches: &[SchemaNode]) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_OBJECT,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    let mut all_item_preds: Vec<&SchemaNode> = Vec::new();
+    let mut all_not_preds: Vec<&SchemaNode> = Vec::new();
+    let mut some_preds: Vec<&SchemaNode> = Vec::new();
+    let mut some_not_preds: Vec<&SchemaNode> = Vec::new();
+
+    fn collect<'a>(
+        schema: &'a SchemaNode,
+        all_item_preds: &mut Vec<&'a SchemaNode>,
+        all_not_preds: &mut Vec<&'a SchemaNode>,
+        some_preds: &mut Vec<&'a SchemaNode>,
+        some_not_preds: &mut Vec<&'a SchemaNode>,
+        active: &mut HashSet<NodeId>,
+    ) {
+        if !active.insert(schema.id()) {
+            return;
+        }
+        match schema.kind() {
+            SchemaNodeKind::AnyOf(children) => {
+                for child in children {
+                    collect(
+                        child,
+                        all_item_preds,
+                        all_not_preds,
+                        some_preds,
+                        some_not_preds,
+                        active,
+                    );
+                }
+            }
+            SchemaNodeKind::Array {
+                prefix_items,
+                items,
+                item_count,
+                contains,
+                unique_items,
+                enumeration,
+            } => {
+                if !prefix_items.is_empty() || *unique_items || enumeration.is_some() {
+                    return;
+                }
+                match contains {
+                    None => {
+                        if item_count.min() == 0
+                            && item_count.max().is_none()
+                            && !schema_is_trivially_universal(items)
+                        {
+                            match items.kind() {
+                                SchemaNodeKind::Not(inner) => all_not_preds.push(inner),
+                                _ => all_item_preds.push(items),
+                            }
+                        }
+                    }
+                    Some(contains) => {
+                        if schema_is_trivially_universal(items)
+                            && item_count.min() <= 1
+                            && item_count.max().is_none()
+                            && contains.count().min() <= 1
+                            && contains.count().max().is_none()
+                        {
+                            match contains.schema.kind() {
+                                SchemaNodeKind::Not(inner) => some_not_preds.push(inner),
+                                _ if !schema_is_trivially_universal(&contains.schema) => {
+                                    some_preds.push(&contains.schema)
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        active.remove(&schema.id());
+    }
+
+    let mut active = HashSet::new();
+    for branch in branches {
+        collect(
+            branch,
+            &mut all_item_preds,
+            &mut all_not_preds,
+            &mut some_preds,
+            &mut some_not_preds,
+            &mut active,
+        );
+    }
+    all_item_preds.iter().any(|all_pred| {
+        some_not_preds
+            .iter()
+            .any(|not_pred| schemas_obviously_equivalent(all_pred, not_pred))
+    }) || all_not_preds.iter().any(|not_pred| {
+        some_preds
+            .iter()
+            .any(|some_pred| schemas_obviously_equivalent(not_pred, some_pred))
+    })
+}
+
+/// For `oneOf[true, X]` (or the symmetric spelling), membership is exactly
+/// `not X`.  Prove a subset fits this xor when it is locally disjoint from the
+/// non-universal arm, including a small conditional-disjointness case.
+fn one_of_universal_arm_contains_subset(
+    sub: &SchemaNode,
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+    for universal_idx in 0..2 {
+        let universal = unwrap_singleton_applicators(&branches[universal_idx]);
+        if !schema_is_trivially_universal(universal) {
+            continue;
+        }
+        let excluded = unwrap_singleton_applicators(&branches[1 - universal_idx]);
+        if schemas_definitely_disjoint_for_negation(sub, excluded, context)
+            || schema_disjoint_from_conditional(sub, excluded, context)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Conservative disjointness for a schema against a conditional.  If every
+/// subset value is known to take one side of the guard, it suffices to prove it
+/// disjoint from that side's branch. Missing branches are `true`, so they cannot
+/// witness disjointness.
+fn schema_disjoint_from_conditional(
+    sub: &SchemaNode,
+    conditional: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    let SchemaNodeKind::IfThenElse {
+        if_schema,
+        then_schema,
+        else_schema,
+    } = conditional.kind()
+    else {
+        return false;
+    };
+
+    let sub_implies_guard =
+        analyze_subschema_with_context(sub, if_schema, context, ExplanationMode::VerdictOnly)
+            .is_subschema;
+    if sub_implies_guard {
+        return then_schema.as_ref().is_some_and(|then_branch| {
+            schemas_definitely_disjoint_for_negation(sub, then_branch, context)
+        });
+    }
+
+    if schemas_definitely_disjoint_for_negation(sub, if_schema, context) {
+        return else_schema.as_ref().is_some_and(|else_branch| {
+            schemas_definitely_disjoint_for_negation(sub, else_branch, context)
+        });
+    }
+
+    false
+}
+
+/// An `anyOf` is universal as soon as one branch is known universal.  The
+/// generic trivial-universal recognizer intentionally stays syntactic; this
+/// wrapper also recognizes the small conditional tautologies proved by
+/// `conditional_is_known_universal` (for example `if: A, then: A`).
+fn any_of_contains_known_universal_branch(
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    branches.iter().any(|branch| {
+        let branch = unwrap_singleton_applicators(branch);
+        if schema_is_trivially_universal(branch) {
+            return true;
+        }
+        if let SchemaNodeKind::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema,
+        } = branch.kind()
+        {
+            return conditional_is_known_universal(
+                if_schema,
+                then_schema.as_ref(),
+                else_schema.as_ref(),
+                context,
+            );
+        }
+        false
+    })
+}
+
+/// Return true when an `anyOf` is syntactically universal because it contains
+/// a branch `A` plus a complement branch `not B` with `B <= A`.
+///
+/// For every instance, either it satisfies `B` (and therefore `A`) or it does
+/// not satisfy `B` (and therefore satisfies `not B`).  The inner implication
+/// is delegated to the ordinary conservative subset prover; failure simply
+/// means we do not recognize the cover.
+fn any_of_complement_cover_is_universal(
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    for (not_index, branch) in branches.iter().enumerate() {
+        let SchemaNodeKind::Not(excluded) = branch.kind() else {
+            continue;
+        };
+        for (cover_index, cover) in branches.iter().enumerate() {
+            if cover_index == not_index {
+                continue;
+            }
+            if analyze_subschema_with_context(
+                excluded,
+                cover,
+                context,
+                ExplanationMode::VerdictOnly,
+            )
+            .is_subschema
+            {
+                return true;
+            }
+        }
+
+        // The positive side of the partition may itself be split across
+        // several finite branches rather than appearing as one syntactic
+        // schema. If `B` has a finite upper bound and every live candidate of
+        // `B` is accepted by some sibling branch, then those siblings cover B;
+        // together with `not B` the union is universal. We deliberately use an
+        // upper bound plus definite concrete-value checks, so unsupported
+        // keywords only make this fail closed.
+        if let Some(values) = finite_schema_value_superset(excluded)
+            && values.iter().all(|value| {
+                context.schema_definitely_rejects_value(excluded, value)
+                    || branches.iter().enumerate().any(|(cover_index, cover)| {
+                        cover_index != not_index && context.superset_contains_value(cover, value)
+                    })
+            })
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Prove an `anyOf` is universal when it contains the complement of a
+/// syntactic union plus siblings covering every union arm.  Overlap among the
+/// positive siblings is harmless for `anyOf`; for any instance, either it is
+/// outside the excluded union (so the complement branch accepts it) or it is
+/// inside one union arm that is contained by a sibling.
+fn any_of_complement_union_cover_is_universal(
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    for (not_index, branch) in branches.iter().enumerate() {
+        let SchemaNodeKind::Not(excluded_union) = branch.kind() else {
+            continue;
+        };
+        let union_children = match excluded_union.kind() {
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::OneOf(children) => children,
+            _ => continue,
+        };
+
+        if union_children.iter().all(|child| {
+            branches.iter().enumerate().any(|(index, cover)| {
+                index != not_index
+                    && analyze_subschema_with_context(
+                        child,
+                        cover,
+                        context,
+                        ExplanationMode::VerdictOnly,
+                    )
+                    .is_subschema
+            })
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Prove a subset relation for a `oneOf` made only of complements.
+/// With two or more complement branches, any accepted value must be excluded
+/// by at least one inner schema (otherwise it would match every complement
+/// branch, not exactly one). Therefore the whole oneOf is contained in the
+/// union of the excluded inners. If each inner is contained by the target, the
+/// complement-only oneOf is contained as well.
+fn complement_only_oneof_subset_of(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() < 2 {
+        return false;
+    }
+    let mut inners = Vec::with_capacity(branches.len());
+    for branch in branches {
+        let SchemaNodeKind::Not(inner) = branch.kind() else {
+            return false;
+        };
+        inners.push(inner);
+    }
+    // For a branch `not A_j` to be the *only* matching complement, the
+    // instance must satisfy every other inner `A_i`.  Thus it is enough that,
+    // for each omitted position j, at least one of the remaining inners is
+    // known to be contained by the target.  With two branches this reduces to
+    // the familiar requirement that both inners imply the target; with three
+    // or more branches, two target-contained inners already cover every xor
+    // arm.  Keep the proof at the level of whole inners so we do not assume
+    // anything about intersections we cannot model.
+    let contained: Vec<bool> = inners
+        .iter()
+        .map(|inner| {
+            analyze_subschema_with_context(inner, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+        })
+        .collect();
+    (0..inners.len()).all(|omitted| {
+        if contained
+            .iter()
+            .enumerate()
+            .any(|(index, ok)| index != omitted && *ok)
+        {
+            return true;
+        }
+
+        // The xor arm for `not A_omitted` also vanishes when two of the
+        // required remaining inners are definitely disjoint.  This catches
+        // empty complement xors such as not-string/not-number/not-boolean
+        // without needing a general intersection solver.
+        for (left_index, &left) in inners.iter().enumerate() {
+            if left_index == omitted {
+                continue;
+            }
+            let left_mask = possible_json_type_mask(left);
+            if left_mask == 0 {
+                return true;
+            }
+            for (right_index, &right) in inners.iter().enumerate().skip(left_index + 1) {
+                if right_index == omitted {
+                    continue;
+                }
+                if possible_json_type_mask(right) == 0
+                    || schemas_definitely_disjoint_for_partition(left, left_mask, right, context)
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+}
+
+/// Try the mixed-xor disjoint reduction against a target directly, or against
+/// one negated arm of a target union.
+/// Prove `oneOf[A, B] <= not T` when one positive arm is contained in the
+/// other.  Then the xor is the larger arm with the smaller arm removed.
+fn comparable_oneof_difference_subset_of_negation(
+    branches: &[SchemaNode],
+    excluded: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    for (small_idx, large_idx) in [(0_usize, 1_usize), (1, 0)] {
+        let small = unwrap_singleton_applicators(&branches[small_idx]);
+        let large = unwrap_singleton_applicators(&branches[large_idx]);
+        if matches!(small.kind(), SchemaNodeKind::Not(_))
+            || matches!(large.kind(), SchemaNodeKind::Not(_))
+        {
+            continue;
+        }
+        if !analyze_subschema_with_context(small, large, context, ExplanationMode::VerdictOnly)
+            .is_subschema
+        {
+            continue;
+        }
+
+        let excluded = unwrap_singleton_applicators(excluded);
+        let mut pieces: Vec<&SchemaNode> = Vec::new();
+        match excluded.kind() {
+            SchemaNodeKind::AnyOf(children) => pieces.extend(children.iter()),
+            _ => pieces.push(excluded),
+        }
+
+        let mut ok = true;
+        for piece in pieces {
+            let piece = unwrap_singleton_applicators(piece);
+            let inside_removed =
+                analyze_subschema_with_context(piece, small, context, ExplanationMode::VerdictOnly)
+                    .is_subschema;
+            if inside_removed {
+                continue;
+            }
+            if !schemas_definitely_disjoint_for_negation(piece, large, context) {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            return true;
+        }
+    }
+    false
+}
+
+fn mixed_oneof_disjoint_complement_subset_of_target(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    fn inner(
+        branches: &[SchemaNode],
+        sup: &SchemaNode,
+        context: &mut SubschemaCheckContext,
+        active: &mut HashSet<NodeId>,
+    ) -> bool {
+        let sup = unwrap_singleton_applicators(sup);
+        if !active.insert(sup.id()) {
+            return false;
+        }
+        let result = match sup.kind() {
+            SchemaNodeKind::BoolSchema(true) | SchemaNodeKind::Any => true,
+            SchemaNodeKind::Not(excluded) => {
+                mixed_oneof_disjoint_complement_subset_of_negation(branches, excluded, context)
+            }
+            // It is enough to fit one union arm.
+            SchemaNodeKind::AnyOf(children) => {
+                if mixed_oneof_disjoint_complement_subset_of_union_target(
+                    branches, children, context,
+                ) {
+                    true
+                } else {
+                    let mut ok = false;
+                    for child in children {
+                        if inner(branches, child, context, active) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                    ok
+                }
+            }
+            // To fit an intersection, fit every conjunct.
+            SchemaNodeKind::AllOf(children) => {
+                let mut ok = true;
+                for child in children {
+                    if !inner(branches, child, context, active) {
+                        ok = false;
+                        break;
+                    }
+                }
+                ok
+            }
+            SchemaNodeKind::OneOf(target_children) => {
+                mixed_oneof_disjoint_complement_subset_of_mixed_target(
+                    branches,
+                    target_children,
+                    context,
+                )
+            }
+            _ => false,
+        };
+        active.remove(&sup.id());
+        result
+    }
+
+    inner(branches, sup, context, &mut HashSet::new())
+}
+
+/// Prove a disjoint mixed xor fits a union containing a negated finite arm.
+///
+/// For subset `not(A ∪ B)`, a target union with an arm `not D` can only reject
+/// values from D that are not accepted by another union arm.  Enumerate a
+/// finite over-approximation of D and require each such remaining value to be
+/// covered by A or B.
+fn mixed_oneof_disjoint_complement_subset_of_union_target(
+    sub_branches: &[SchemaNode],
+    target_children: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if sub_branches.len() != 2 || target_children.is_empty() {
+        return false;
+    }
+
+    for sub_neg_idx in 0..2 {
+        let sub_pos_idx = 1 - sub_neg_idx;
+        let SchemaNodeKind::Not(sub_b_raw) = sub_branches[sub_neg_idx].kind() else {
+            continue;
+        };
+        let sub_a = unwrap_singleton_applicators(&sub_branches[sub_pos_idx]);
+        let sub_b = unwrap_singleton_applicators(sub_b_raw);
+        if !schemas_definitely_disjoint_for_negation(sub_a, sub_b, context) {
+            continue;
+        }
+
+        for (neg_index, child) in target_children.iter().enumerate() {
+            let SchemaNodeKind::Not(d_raw) = unwrap_singleton_applicators(child).kind() else {
+                continue;
+            };
+            let d = unwrap_singleton_applicators(d_raw);
+            let Some(values) = finite_schema_value_superset(d) else {
+                continue;
+            };
+            let mut covered = true;
+            'values: for value in values {
+                for (index, other) in target_children.iter().enumerate() {
+                    if index == neg_index {
+                        continue;
+                    }
+                    if context.superset_contains_value(other, &value) {
+                        continue 'values;
+                    }
+                }
+                if !(context.superset_contains_value(sub_a, &value)
+                    || context.superset_contains_value(sub_b, &value))
+                {
+                    covered = false;
+                    break;
+                }
+            }
+            if covered {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Prove a disjoint mixed xor is contained by a comparable mixed-xor target.
+///
+/// For disjoint A/B, the subset is `not(A ∪ B)`.  A target `oneOf[C, not D]`
+/// with C <= D is `C ∪ not D`, i.e. it rejects only `D \ C`.  If D has a
+/// finite over-approximation and every value not definitely in C is covered by
+/// A or B, then anything outside A ∪ B must satisfy the target.
+fn mixed_oneof_disjoint_complement_subset_of_mixed_target(
+    sub_branches: &[SchemaNode],
+    target_branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if sub_branches.len() != 2 || target_branches.len() != 2 {
+        return false;
+    }
+
+    for sub_neg_idx in 0..2 {
+        let sub_pos_idx = 1 - sub_neg_idx;
+        let SchemaNodeKind::Not(sub_b_raw) = sub_branches[sub_neg_idx].kind() else {
+            continue;
+        };
+        let sub_a = unwrap_singleton_applicators(&sub_branches[sub_pos_idx]);
+        let sub_b = unwrap_singleton_applicators(sub_b_raw);
+        if !schemas_definitely_disjoint_for_negation(sub_a, sub_b, context) {
+            continue;
+        }
+
+        for tgt_neg_idx in 0..2 {
+            let tgt_pos_idx = 1 - tgt_neg_idx;
+            let SchemaNodeKind::Not(tgt_d_raw) = target_branches[tgt_neg_idx].kind() else {
+                continue;
+            };
+            let tgt_c = unwrap_singleton_applicators(&target_branches[tgt_pos_idx]);
+            let tgt_d = unwrap_singleton_applicators(tgt_d_raw);
+            if !analyze_subschema_with_context(tgt_c, tgt_d, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+            {
+                continue;
+            }
+            let Some(values) = finite_schema_value_superset(tgt_d) else {
+                continue;
+            };
+            let mut covered = true;
+            for value in values {
+                if context.superset_contains_value(tgt_c, &value) {
+                    continue;
+                }
+                if !(context.superset_contains_value(sub_a, &value)
+                    || context.superset_contains_value(sub_b, &value))
+                {
+                    covered = false;
+                    break;
+                }
+            }
+            if covered {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Prove `oneOf[A, not B] <= not T` for the disjoint A/B case.
+///
+/// If A and B are disjoint, the xor accepts exactly values outside both A and
+/// B.  Therefore it is contained by `not T` whenever T is contained by A or B.
+fn mixed_oneof_disjoint_complement_subset_of_negation(
+    branches: &[SchemaNode],
+    excluded: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    for neg_idx in 0..2 {
+        let pos_idx = 1 - neg_idx;
+        let SchemaNodeKind::Not(inner_b) = branches[neg_idx].kind() else {
+            continue;
+        };
+        let a = unwrap_singleton_applicators(&branches[pos_idx]);
+        let b = unwrap_singleton_applicators(inner_b);
+        if !schemas_definitely_disjoint_for_negation(a, b, context) {
+            continue;
+        }
+        let excluded = unwrap_singleton_applicators(excluded);
+        if analyze_subschema_with_context(excluded, a, context, ExplanationMode::VerdictOnly)
+            .is_subschema
+            || analyze_subschema_with_context(excluded, b, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Prove a subset relation for the complement of a two-arm xor where one arm
+/// is itself a complement: `not(oneOf[A, not B])`.
+///
+/// Semantically this is `(A && !B) || (!A && B)`, i.e. the symmetric
+/// difference of `A` and `B`, so it is always contained in `A || B`. We first
+/// try that general union bound, then fall back to smaller comparable/disjoint
+/// normal forms. In each case we discharge the remaining containment(s) with
+/// the ordinary prover. This catches generated xor/complement partitions without treating
+/// arbitrary negated oneOf as a union.
+fn negated_oneof_complement_pair_subset_of(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    for not_index in 0..2 {
+        let SchemaNodeKind::Not(inner_b) = branches[not_index].kind() else {
+            continue;
+        };
+        let a = &branches[1 - not_index];
+        let b = inner_b;
+
+        // In full generality this negated xor is the symmetric difference
+        // `A xor B`, hence it is always contained in `A || B`. If both sides
+        // independently imply the target, no relationship between A and B is
+        // needed.
+        let a_le_sup =
+            analyze_subschema_with_context(a, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema;
+        let b_le_sup =
+            analyze_subschema_with_context(b, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema;
+        if a_le_sup && b_le_sup {
+            return true;
+        }
+
+        // If both sides are finite, evaluate the exact symmetric-difference
+        // candidates concretely. Unknown evaluator results fail closed.
+        if let (Some(mut a_values), Some(b_values)) = (
+            finite_schema_value_superset(a),
+            finite_schema_value_superset(b),
+        ) {
+            for value in b_values {
+                if !a_values
+                    .iter()
+                    .any(|existing| json_values_equal(existing, &value))
+                {
+                    a_values.push(value);
+                }
+            }
+            let mut all_known = true;
+            let mut all_live_in_sup = true;
+            for value in &a_values {
+                let a_accepts = context.superset_contains_value(a, value);
+                let a_rejects = context.schema_definitely_rejects_value(a, value);
+                let b_accepts = context.superset_contains_value(b, value);
+                let b_rejects = context.schema_definitely_rejects_value(b, value);
+                if (!a_accepts && !a_rejects) || (!b_accepts && !b_rejects) {
+                    all_known = false;
+                    break;
+                }
+                if a_accepts != b_accepts && !context.superset_contains_value(sup, value) {
+                    all_live_in_sup = false;
+                    break;
+                }
+            }
+            if all_known && all_live_in_sup {
+                return true;
+            }
+        }
+
+        let a_le_b = analyze_subschema_with_context(a, b, context, ExplanationMode::VerdictOnly)
+            .is_subschema;
+        if a_le_b
+            && analyze_subschema_with_context(b, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+        {
+            return true;
+        }
+
+        let b_le_a = analyze_subschema_with_context(b, a, context, ExplanationMode::VerdictOnly)
+            .is_subschema;
+        if b_le_a
+            && analyze_subschema_with_context(a, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+        {
+            return true;
+        }
+
+        let a_mask = possible_json_type_mask(a);
+        if a_mask == 0 {
+            if analyze_subschema_with_context(b, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+            {
+                return true;
+            }
+        } else if schemas_definitely_disjoint_for_partition(a, a_mask, b, context)
+            && analyze_subschema_with_context(a, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+            && analyze_subschema_with_context(b, sup, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// For `not(oneOf[P, Q])`, prove the xor excludes an infinite comparable gap
+/// of a mixed-xor target. If the gap is `Domain \ Kept`, one xor arm covering
+/// all of Domain and the other intersecting Domain only inside Kept suffices.
+fn negated_xor_covers_mixed_comparable_gap(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    fn finite_intersection_subset_of(
+        finite_side: &SchemaNode,
+        domain: &SchemaNode,
+        kept: &SchemaNode,
+        context: &mut SubschemaCheckContext,
+    ) -> bool {
+        let Some(values) = finite_schema_value_superset(finite_side) else {
+            return false;
+        };
+        for value in values {
+            if context.schema_definitely_rejects_value(finite_side, &value)
+                || context.schema_definitely_rejects_value(domain, &value)
+            {
+                continue;
+            }
+            // If this value may lie in both sides, it must definitely be kept.
+            if !context.superset_contains_value(kept, &value) {
+                return false;
+            }
+        }
+        true
+    }
+
+    if branches.len() != 2 {
+        return false;
+    }
+    let p = unwrap_singleton_applicators(&branches[0]);
+    let q = unwrap_singleton_applicators(&branches[1]);
+    let SchemaNodeKind::OneOf(target_branches) = unwrap_singleton_applicators(sup).kind() else {
+        return false;
+    };
+    if target_branches.len() != 2 {
+        return false;
+    }
+    for neg_index in 0..2 {
+        let neg_arm = unwrap_singleton_applicators(&target_branches[neg_index]);
+        let SchemaNodeKind::Not(d_raw) = neg_arm.kind() else {
+            continue;
+        };
+        let d = unwrap_singleton_applicators(d_raw);
+        let c = unwrap_singleton_applicators(&target_branches[1 - neg_index]);
+        for (domain, kept) in [(c, d), (d, c)] {
+            if !analyze_subschema_with_context(kept, domain, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+            {
+                continue;
+            }
+            if analyze_subschema_with_context(domain, q, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+                && finite_intersection_subset_of(p, domain, kept, context)
+            {
+                return true;
+            }
+            if analyze_subschema_with_context(domain, p, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+                && finite_intersection_subset_of(q, domain, kept, context)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// General finite-gap check for `not X <= oneOf[C, not D]` when C and D are
+/// comparable. The mixed xor rejects exactly the finite difference between
+/// the larger and smaller side; prove X definitely accepts every such value.
+fn negated_schema_excludes_mixed_finite_gap(
+    excluded: &SchemaNode,
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    fn gap_rejected_by_negation(
+        domain: &SchemaNode,
+        kept: &SchemaNode,
+        excluded: &SchemaNode,
+        context: &mut SubschemaCheckContext,
+    ) -> bool {
+        let Some(values) = finite_schema_value_superset(domain) else {
+            return false;
+        };
+        for value in values {
+            if context.superset_contains_value(kept, &value)
+                || context.schema_definitely_rejects_value(domain, &value)
+            {
+                continue;
+            }
+            if !context.superset_contains_value(excluded, &value) {
+                return false;
+            }
+        }
+        true
+    }
+
+    let SchemaNodeKind::OneOf(target_branches) = unwrap_singleton_applicators(sup).kind() else {
+        return false;
+    };
+    if target_branches.len() != 2 {
+        return false;
+    }
+    for neg_index in 0..2 {
+        let neg_arm = unwrap_singleton_applicators(&target_branches[neg_index]);
+        let SchemaNodeKind::Not(d_raw) = neg_arm.kind() else {
+            continue;
+        };
+        let d = unwrap_singleton_applicators(d_raw);
+        let c = unwrap_singleton_applicators(&target_branches[1 - neg_index]);
+        if analyze_subschema_with_context(d, c, context, ExplanationMode::VerdictOnly).is_subschema
+            && gap_rejected_by_negation(c, d, excluded, context)
+        {
+            return true;
+        }
+        if analyze_subschema_with_context(c, d, context, ExplanationMode::VerdictOnly).is_subschema
+            && gap_rejected_by_negation(d, c, excluded, context)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Prove `not(anyOf[arms...]) <= oneOf[C, not D]` in the finite remainder
+/// case. If D <= C, the target rejects exactly C \ D; every such finite
+/// candidate must be covered by one of the excluded union arms.
+fn negated_union_subset_of_mixed_difference(
+    arms: &[SchemaNode],
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    fn gap_covered(
+        domain: &SchemaNode,
+        kept: &SchemaNode,
+        arms: &[SchemaNode],
+        context: &mut SubschemaCheckContext,
+    ) -> bool {
+        let Some(values) = finite_schema_value_superset(domain) else {
+            return false;
+        };
+        'values: for value in values {
+            if context.superset_contains_value(kept, &value)
+                || context.schema_definitely_rejects_value(domain, &value)
+            {
+                continue;
+            }
+            for arm in arms {
+                if context.superset_contains_value(arm, &value) {
+                    continue 'values;
+                }
+            }
+            return false;
+        }
+        true
+    }
+
+    if arms.is_empty() {
+        return false;
+    }
+    let SchemaNodeKind::OneOf(target_branches) = unwrap_singleton_applicators(sup).kind() else {
+        return false;
+    };
+    if target_branches.len() != 2 {
+        return false;
+    }
+    for neg_index in 0..2 {
+        let neg_arm = unwrap_singleton_applicators(&target_branches[neg_index]);
+        let SchemaNodeKind::Not(d_raw) = neg_arm.kind() else {
+            continue;
+        };
+        let d = unwrap_singleton_applicators(d_raw);
+        let c = unwrap_singleton_applicators(&target_branches[1 - neg_index]);
+        // If D <= C, the xor rejects C \ D. If C <= D, it rejects D \ C.
+        if analyze_subschema_with_context(d, c, context, ExplanationMode::VerdictOnly).is_subschema
+            && gap_covered(c, d, arms, context)
+        {
+            return true;
+        }
+        if analyze_subschema_with_context(c, d, context, ExplanationMode::VerdictOnly).is_subschema
+            && gap_covered(d, c, arms, context)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Handle `not(oneOf[not A, not B]) <= oneOf[C, not D]` for the common
+/// finite-difference case.  When A and B are disjoint, the left side is
+/// `not(A || B)`.  When D is contained in C, the mixed-xor target is
+/// `D || not C`, i.e. it rejects only `C \ D`.  Enumerating a finite
+/// over-approximation of C and requiring every possible remainder value to be
+/// covered by A or B is a conservative proof of containment.
+fn negated_complement_pair_subset_of_mixed_difference(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    let left0 = unwrap_singleton_applicators(&branches[0]);
+    let left1 = unwrap_singleton_applicators(&branches[1]);
+    // Two shapes reduce to the complement of a disjoint union: a negated xor
+    // of disjoint positive arms, and a negated xor of two complemented arms
+    // whose inners are disjoint (`xor(!A, !B) == A || B`).
+    let mut candidates = vec![(left0, left1)];
+    if let (SchemaNodeKind::Not(a_raw), SchemaNodeKind::Not(b_raw)) = (left0.kind(), left1.kind()) {
+        candidates.push((
+            unwrap_singleton_applicators(a_raw),
+            unwrap_singleton_applicators(b_raw),
+        ));
+    }
+
+    let SchemaNodeKind::OneOf(target_branches) = unwrap_singleton_applicators(sup).kind() else {
+        return false;
+    };
+    if target_branches.len() != 2 {
+        return false;
+    }
+
+    for (a, b) in candidates {
+        if !schemas_definitely_disjoint_for_negation(a, b, context) {
+            continue;
+        }
+
+        for neg_index in 0..2 {
+            let neg_arm = unwrap_singleton_applicators(&target_branches[neg_index]);
+            let SchemaNodeKind::Not(d_raw) = neg_arm.kind() else {
+                continue;
+            };
+            let d = unwrap_singleton_applicators(d_raw);
+            let c = unwrap_singleton_applicators(&target_branches[1 - neg_index]);
+
+            // Restrict to the simple identity `oneOf[C, not D] == D || not C`.
+            if !analyze_subschema_with_context(d, c, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+            {
+                continue;
+            }
+            let Some(values) = finite_schema_value_superset(c) else {
+                continue;
+            };
+
+            let mut ok = true;
+            for value in values {
+                if context.superset_contains_value(d, &value) {
+                    continue;
+                }
+                if context.schema_definitely_rejects_value(c, &value) {
+                    continue;
+                }
+                if !(context.superset_contains_value(a, &value)
+                    || context.superset_contains_value(b, &value))
+                {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Prove the generic two-arm identity for a complemented xor: values accepted
+/// by both arms, or by neither arm, are accepted by `not(oneOf[A, B])`.
+fn negated_two_arm_oneof_contains(
+    sub: &SchemaNode,
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+    let a = &branches[0];
+    let b = &branches[1];
+
+    let in_a =
+        analyze_subschema_with_context(sub, a, context, ExplanationMode::VerdictOnly).is_subschema;
+    let in_b =
+        analyze_subschema_with_context(sub, b, context, ExplanationMode::VerdictOnly).is_subschema;
+    if in_a && in_b {
+        return true;
+    }
+
+    // The "neither" side is also safe when we can prove disjointness from both
+    // arms.  Keep this as a fallback because disjointness may recurse through
+    // finite/value reasoning and is a little more expensive than implication.
+    !in_a
+        && !in_b
+        && schemas_definitely_disjoint_for_negation(sub, a, context)
+        && schemas_definitely_disjoint_for_negation(sub, b, context)
+}
+
+/// Prove a subset is contained by `not(oneOf[not A, B])` in the simple
+/// disjoint case.  If A and B cannot overlap, the complemented xor is exactly
+/// `A ∪ B`; therefore any schema known to fit either side is accepted.
+fn negated_oneof_complement_pair_contains(
+    sub: &SchemaNode,
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    for neg_idx in 0..2 {
+        let pos_idx = 1 - neg_idx;
+        let SchemaNodeKind::Not(a) = branches[neg_idx].kind() else {
+            continue;
+        };
+        let a = unwrap_singleton_applicators(a);
+        let b = &branches[pos_idx];
+        if !schemas_definitely_disjoint_for_negation(a, b, context) {
+            continue;
+        }
+        if analyze_subschema_with_context(sub, a, context, ExplanationMode::VerdictOnly)
+            .is_subschema
+            || analyze_subschema_with_context(sub, b, context, ExplanationMode::VerdictOnly)
+                .is_subschema
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Return true for the exact degenerate xor `oneOf: [A, A]`.
+///
+/// This is intentionally syntactic (plus the tiny equivalence fast path) so it
+/// cannot turn overlapping-but-not-identical branches into an empty language.
+fn one_of_pair_is_syntactically_empty(branches: &[SchemaNode]) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+    (branches[0] == branches[1] || schemas_obviously_equivalent(&branches[0], &branches[1]))
+        || (schema_is_locally_empty_for_finite_enumeration(&branches[0])
+            && schema_is_locally_empty_for_finite_enumeration(&branches[1]))
+}
+
+/// If all but one branch of a oneOf are locally empty, the xor is exactly the
+/// remaining branch; if every branch is empty, the xor is empty.  Returns
+/// `Some(None)` for the all-empty case and `Some(Some(branch))` for one live
+/// branch. Wider live sets are left untouched.
+fn one_of_trivial_live_branch(branches: &[SchemaNode]) -> Option<Option<&SchemaNode>> {
+    if branches.is_empty() {
+        return Some(None);
+    }
+    let mut live: Option<&SchemaNode> = None;
+    for branch in branches {
+        if schema_is_locally_empty_for_finite_enumeration(branch) {
+            continue;
+        }
+        if live.is_some() {
+            return None;
+        }
+        live = Some(branch);
+    }
+    Some(live)
+}
+
+/// For a two-arm xor with one definitely empty arm, return the live arm.
+///
+/// Restrict this to local, non-recursive emptiness facts. A false arm has no
+/// effect on xor parity, so `oneOf(false, A)` is exactly `A`.
+fn one_of_pair_single_live_branch(branches: &[SchemaNode]) -> Option<&SchemaNode> {
+    if branches.len() != 2 {
+        return None;
+    }
+    let left_empty = schema_is_locally_empty_for_finite_enumeration(&branches[0]);
+    let right_empty = schema_is_locally_empty_for_finite_enumeration(&branches[1]);
+    match (left_empty, right_empty) {
+        (true, false) => Some(&branches[1]),
+        (false, true) => Some(&branches[0]),
+        // If both are empty the xor is empty; the caller's empty-pair fast path
+        // handles syntactically equal false arms, and otherwise falling through
+        // remains conservative.
+        _ => None,
+    }
+}
+
+/// Prove the exact two-arm identity `oneOf: [A, not A]` (up to conservative
+/// mutual-subset equivalence) is universal.  This catches infinite partitions
+/// such as strings vs non-strings without treating arbitrary `oneOf` as a
+/// union: with exactly two arms, equivalence of the positive arm and the
+/// negated arm's exclusion guarantees every value matches exactly one arm.
+fn one_of_complement_pair_is_universal(
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    if branches.len() != 2 {
+        return false;
+    }
+
+    for not_index in 0..2 {
+        let SchemaNodeKind::Not(excluded) = branches[not_index].kind() else {
+            continue;
+        };
+        let positive = &branches[1 - not_index];
+        let positive_implies_excluded = analyze_subschema_with_context(
+            positive,
+            excluded,
+            context,
+            ExplanationMode::VerdictOnly,
+        )
+        .is_subschema;
+        if !positive_implies_excluded {
+            continue;
+        }
+        let excluded_implies_positive = analyze_subschema_with_context(
+            excluded,
+            positive,
+            context,
+            ExplanationMode::VerdictOnly,
+        )
+        .is_subschema;
+        if excluded_implies_positive {
+            return true;
+        }
+    }
+    false
+}
+
+/// Prove a `oneOf` is universal when it consists of disjoint positive
+/// siblings plus the complement of their union.  This recognizes generated
+/// partitions such as `[string, number, not(anyOf[string, number])]` without
+/// assuming arbitrary `oneOf` behaves like `anyOf`.
+fn one_of_complement_union_partition_is_universal(
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    for (not_index, branch) in branches.iter().enumerate() {
+        let SchemaNodeKind::Not(excluded_union) = branch.kind() else {
+            continue;
+        };
+        let union_children = match excluded_union.kind() {
+            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::OneOf(children) => children,
+            _ => continue,
+        };
+
+        let sibling_indices: Vec<usize> = (0..branches.len())
+            .filter(|&index| index != not_index)
+            .collect();
+        if sibling_indices.is_empty() {
+            continue;
+        }
+
+        // Outside the excluded union, only the complement branch may match.
+        if !sibling_indices.iter().all(|&index| {
+            analyze_subschema_with_context(
+                &branches[index],
+                excluded_union,
+                context,
+                ExplanationMode::VerdictOnly,
+            )
+            .is_subschema
+        }) {
+            continue;
+        }
+
+        // Inside the union, at most one positive sibling may match.
+        let pairwise_disjoint = sibling_indices
+            .iter()
+            .enumerate()
+            .all(|(pos, &left_index)| {
+                sibling_indices[pos + 1..].iter().all(|&right_index| {
+                    let left = &branches[left_index];
+                    let right = &branches[right_index];
+                    let mask = possible_json_type_mask(left);
+                    mask == 0
+                        || schemas_definitely_disjoint_for_partition(left, mask, right, context)
+                })
+            });
+        if !pairwise_disjoint {
+            continue;
+        }
+
+        // Every arm of the excluded union must flow into some positive
+        // sibling, giving coverage of the inside region.
+        if union_children.iter().all(|child| {
+            sibling_indices.iter().any(|&index| {
+                analyze_subschema_with_context(
+                    child,
+                    &branches[index],
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+            })
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Prove a finite complement partition written as `oneOf` is universal.
+///
+/// For a branch `not B`, require every sibling to be a subset of B, then use a
+/// finite upper bound for B to prove each live B-candidate is accepted by
+/// exactly one sibling (one definite accept, definite rejection by the rest).
+/// Values outside B then satisfy only the complement branch, so the `oneOf`
+/// accepts every instance.  All checks are conservative: unsupported concrete
+/// evaluation or subset facts simply make the proof fail.
+fn one_of_finite_complement_partition_is_universal(
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    for (not_index, branch) in branches.iter().enumerate() {
+        let SchemaNodeKind::Not(excluded) = branch.kind() else {
+            continue;
+        };
+        let Some(values) = finite_schema_value_superset(excluded) else {
+            continue;
+        };
+
+        let sibling_indices: Vec<usize> = (0..branches.len())
+            .filter(|&index| index != not_index)
+            .collect();
+        if sibling_indices.is_empty() {
+            continue;
+        }
+
+        // Keep complement branch exclusive: no sibling may accept a value
+        // outside B. Delegate that implication to the conservative subset
+        // prover rather than trying to reason from concrete samples.
+        if !sibling_indices.iter().all(|&index| {
+            analyze_subschema_with_context(
+                &branches[index],
+                excluded,
+                context,
+                ExplanationMode::VerdictOnly,
+            )
+            .is_subschema
+        }) {
+            continue;
+        }
+
+        let partitions_finite_side = values.iter().all(|value| {
+            if context.schema_definitely_rejects_value(excluded, value) {
+                return true;
+            }
+
+            let mut definite_accepts = 0usize;
+            for &index in &sibling_indices {
+                let sibling = &branches[index];
+                if context.superset_contains_value(sibling, value) {
+                    definite_accepts += 1;
+                    if definite_accepts > 1 {
+                        return false;
+                    }
+                } else if !context.schema_definitely_rejects_value(sibling, value) {
+                    // Unknown membership could hide either a coverage gap or
+                    // an overlap, so do not claim an exact oneOf partition.
+                    return false;
+                }
+            }
+            definite_accepts == 1
+        });
+
+        if partitions_finite_side {
+            return true;
+        }
+    }
+    false
 }
 
 const JSON_TYPE_NULL: u8 = 1 << 0;
@@ -985,11 +4792,330 @@ const JSON_TYPE_ALL: u8 = JSON_TYPE_NULL
     | JSON_TYPE_ARRAY
     | JSON_TYPE_OBJECT;
 
+// Whole-type recognizers used by the lightweight union/complement shortcuts below.
+
+// If a negated union explicitly contains whole-type arms for every type except
+// a small remainder, then the negation can only produce values in that
+// remainder.  When the target accepts each remaining type wholesale, this is a
+// sound subset proof.  This is especially useful for parsed type-specific
+// assertions without an explicit `type` (e.g. `{ "maximum": 1 }` lowers to a
+// union of all non-number types plus the bounded-number arm; negating it
+// forces a number).
+
+fn complement_u64_count_halfline(range: CountRange<u64>) -> Option<CountRange<u64>> {
+    match (range.min(), range.max()) {
+        (0, None) => None,
+        (min, None) => min
+            .checked_sub(1)
+            .and_then(|max| CountRange::new(0, Some(max))),
+        (0, Some(max)) => max.checked_add(1).map(CountRange::unbounded_from),
+        (_, Some(_)) => None,
+    }
+}
+
+fn complement_usize_count_halfline(range: CountRange<usize>) -> Option<CountRange<usize>> {
+    match (range.min(), range.max()) {
+        (0, None) => None, // complement is empty; callers handle as vacuous true
+        (min, None) => min
+            .checked_sub(1)
+            .and_then(|max| CountRange::new(0, Some(max))),
+        (0, Some(max)) => max.checked_add(1).map(CountRange::unbounded_from),
+        (_, Some(_)) => None,
+    }
+}
+
+/// Recognize negated untyped `minItems`/`maxItems` half-lines.
+fn negated_untyped_array_count_halfline_subset_of(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_OBJECT,
+    ] {
+        if !branches
+            .iter()
+            .any(|b| schema_obviously_accepts_json_type(b, bit))
+        {
+            return false;
+        }
+    }
+    if !array_schema_is_plain_count(sup) {
+        return false;
+    }
+    let SchemaNodeKind::Array {
+        item_count: sup_count,
+        ..
+    } = sup.kind()
+    else {
+        return false;
+    };
+    for branch in branches {
+        if !array_schema_is_plain_count(branch) {
+            continue;
+        }
+        let SchemaNodeKind::Array { item_count, .. } = branch.kind() else {
+            continue;
+        };
+        if item_count.min() == 0 && item_count.max().is_none() {
+            return true; // excluded union is universal for arrays too; complement empty
+        }
+        if let Some(complement) = complement_u64_count_halfline(*item_count)
+            && sup_count.contains_range(complement)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Recognize negated untyped `minProperties`/`maxProperties` half-lines.
+fn negated_untyped_object_count_halfline_subset_of(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+    ] {
+        if !branches
+            .iter()
+            .any(|b| schema_obviously_accepts_json_type(b, bit))
+        {
+            return false;
+        }
+    }
+    if !object_schema_is_plain_count(sup) {
+        return false;
+    }
+    let SchemaNodeKind::Object {
+        property_count: sup_count,
+        ..
+    } = sup.kind()
+    else {
+        return false;
+    };
+    for branch in branches {
+        if !object_schema_is_plain_count(branch) {
+            continue;
+        }
+        let SchemaNodeKind::Object { property_count, .. } = branch.kind() else {
+            continue;
+        };
+        if property_count.min() == 0 && property_count.max().is_none() {
+            return true;
+        }
+        if let Some(complement) = complement_usize_count_halfline(*property_count)
+            && sup_count.contains_range(complement)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Recognize the complement of a canonicalized untyped string length half-line.
+fn negated_untyped_string_length_halfline_subset_of(
+    branches: &[SchemaNode],
+    sup: &SchemaNode,
+) -> bool {
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_ARRAY,
+        JSON_TYPE_OBJECT,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    let SchemaNodeKind::String {
+        length: sup_length,
+        pattern: None,
+        format: None,
+        enumeration: None,
+    } = sup.kind()
+    else {
+        return false;
+    };
+
+    for branch in branches {
+        let SchemaNodeKind::String {
+            length,
+            pattern: None,
+            format: None,
+            enumeration: None,
+        } = branch.kind()
+        else {
+            continue;
+        };
+
+        let complement = match (length.min(), length.max()) {
+            // Excluding strings of length >= min leaves 0..min-1.  min=0 is
+            // the universal string branch, whose complement is empty (vacuous).
+            (0, None) => return true,
+            (min, None) => CountRange::new(0_u64, min.checked_sub(1)),
+            // Excluding strings of length <= max leaves max+1..
+            (0, Some(max)) => max.checked_add(1).map(CountRange::unbounded_from),
+            // A bounded middle interval has a two-sided complement; skip it.
+            (_, Some(_)) => None,
+        };
+        if let Some(complement) = complement
+            && sup_length.contains_range(complement)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Recognize the complement of a canonicalized untyped numeric half-line.
+///
+/// A raw schema like `{ "minimum": 0 }` canonicalizes to an anyOf that accepts
+/// every non-number type plus a bounded `type:number` branch. Negating that
+/// union leaves only the opposite numeric half-line. We require explicit whole
+/// non-number coverage and a plain numeric branch (no enum/multipleOf), so the
+/// derived interval is an over-approximation of the negated language even if
+/// there are additional numeric branches in the union.
+fn negated_untyped_numeric_halfline_subset_of(branches: &[SchemaNode], sup: &SchemaNode) -> bool {
+    // All non-number JSON types must be swallowed by the excluded union.
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+        JSON_TYPE_OBJECT,
+    ] {
+        if !branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            return false;
+        }
+    }
+
+    let SchemaNodeKind::Number {
+        multiple_of: None,
+        enumeration: None,
+        ..
+    } = sup.kind()
+    else {
+        return false;
+    };
+    let Some(sup_interval) = numeric_interval_bound(sup) else {
+        return false;
+    };
+
+    for branch in branches {
+        let SchemaNodeKind::Number {
+            bounds,
+            multiple_of: None,
+            enumeration: None,
+        } = branch.kind()
+        else {
+            continue;
+        };
+        let excluded = NumericInterval {
+            lower: match bounds.lower() {
+                NumberBound::Unbounded => None,
+                NumberBound::Inclusive(value) => Some(NumericIntervalBound {
+                    value,
+                    inclusive: true,
+                }),
+                NumberBound::Exclusive(value) => Some(NumericIntervalBound {
+                    value,
+                    inclusive: false,
+                }),
+            },
+            upper: match bounds.upper() {
+                NumberBound::Unbounded => None,
+                NumberBound::Inclusive(value) => Some(NumericIntervalBound {
+                    value,
+                    inclusive: true,
+                }),
+                NumberBound::Exclusive(value) => Some(NumericIntervalBound {
+                    value,
+                    inclusive: false,
+                }),
+            },
+            empty: false,
+        };
+
+        // Only a half-line has a single-interval complement.
+        let complement = match (excluded.lower, excluded.upper) {
+            (Some(lower), None) => NumericInterval {
+                lower: None,
+                upper: Some(NumericIntervalBound {
+                    value: lower.value,
+                    inclusive: !lower.inclusive,
+                }),
+                empty: false,
+            },
+            (None, Some(upper)) => NumericInterval {
+                lower: Some(NumericIntervalBound {
+                    value: upper.value,
+                    inclusive: !upper.inclusive,
+                }),
+                upper: None,
+                empty: false,
+            },
+            _ => continue,
+        };
+        if numeric_interval_contains(sup_interval, complement) {
+            return true;
+        }
+    }
+    false
+}
+
+fn negated_union_type_remainder_subset_of(branches: &[SchemaNode], sup: &SchemaNode) -> bool {
+    let mut remainder = JSON_TYPE_ALL;
+    for bit in [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+        JSON_TYPE_OBJECT,
+    ] {
+        if branches
+            .iter()
+            .any(|branch| schema_obviously_accepts_json_type(branch, bit))
+        {
+            remainder &= !bit;
+        }
+    }
+    if remainder == 0 {
+        return true;
+    }
+    [
+        JSON_TYPE_NULL,
+        JSON_TYPE_BOOL,
+        JSON_TYPE_NUMBER,
+        JSON_TYPE_STRING,
+        JSON_TYPE_ARRAY,
+        JSON_TYPE_OBJECT,
+    ]
+    .into_iter()
+    .filter(|bit| remainder & *bit != 0)
+    .all(|bit| schema_obviously_accepts_json_type(sup, bit))
+}
+
 /// Prove a schema is covered by an `anyOf` whose branches obviously accept
 /// whole JSON value types. This is intentionally much weaker than general
 /// union reasoning: it only fires when every possible type of `sub` has a
-/// branch that accepts *all* values of that type. That makes it useful for
-/// generated `anyOf` type unions while staying sound for unsupported keywords.
+/// branch that accepts *all* values of that type.
 fn any_of_obvious_type_cover_contains(sub: &SchemaNode, branches: &[SchemaNode]) -> bool {
     let mask = possible_json_type_mask(sub);
     if mask == 0 {
@@ -1042,6 +5168,10 @@ fn schema_obviously_accepts_json_type(schema: &SchemaNode, bit: u8) -> bool {
                 _ => false,
             },
             Not(child) if matches!(child.kind(), BoolSchema(false)) => true,
+            // If a schema cannot possibly accept a JSON type, its negation
+            // accepts that entire type. `possible_json_type_mask` is an upper
+            // bound, so a missing bit is a sound whole-type fact.
+            Not(child) if possible_json_type_mask(child) & bit == 0 => true,
             AllOf(children) => children.iter().all(|child| inner(child, bit, active)),
             AnyOf(children) => children.iter().any(|child| inner(child, bit, active)),
             String {
@@ -1234,9 +5364,91 @@ fn schemas_definitely_disjoint_for_negation(
             return false;
         }
 
+        // `possible_json_type_mask` is a sound upper bound on accepted JSON
+        // types.  If two upper bounds are disjoint, the languages themselves
+        // are disjoint, regardless of any applicator structure inside either
+        // side.  This cheap check is especially useful when proving
+        // `S <= not(anyOf[T...])`: each excluded arm can often be ruled out by
+        // type alone before we descend into contains/items/property details.
+        let left_mask = possible_json_type_mask(left);
+        let right_mask = possible_json_type_mask(right);
+        if left_mask == 0 || right_mask == 0 || (left_mask & right_mask) == 0 {
+            active.remove(&(left.id(), right.id()));
+            return true;
+        }
+
+        // If either side has a finite upper bound, concrete-value rejection can
+        // prove disjointness even when the other side is an explicit
+        // complement/intersection (for example `allOf` of `not const` versus
+        // an `enum`).  Because the finite set is only an upper bound, each
+        // candidate must either be definitely rejected by its own schema or by
+        // the opposite schema.
+        if let Some(values) = finite_schema_value_superset(left)
+            && values.iter().all(|value| {
+                context.schema_definitely_rejects_value(left, value)
+                    || context.schema_definitely_rejects_value(right, value)
+            })
+        {
+            active.remove(&(left.id(), right.id()));
+            return true;
+        }
+        if let Some(values) = finite_schema_value_superset(right)
+            && values.iter().all(|value| {
+                context.schema_definitely_rejects_value(right, value)
+                    || context.schema_definitely_rejects_value(left, value)
+            })
+        {
+            active.remove(&(left.id(), right.id()));
+            return true;
+        }
+
         use SchemaNodeKind::*;
         let result = match (left.kind(), right.kind()) {
             (BoolSchema(false), _) | (_, BoolSchema(false)) => true,
+            // Distribute the cheap disjointness proof across an intersection
+            // versus a union: every union arm must be ruled out, and any
+            // single conjunct can rule out a given arm.  The generic AllOf
+            // and AnyOf cases below are intentionally simpler; this mixed
+            // shape is common after spelling De Morgan complements explicitly.
+            (AllOf(conjuncts), AnyOf(branches)) | (AllOf(conjuncts), OneOf(branches)) => {
+                branches.iter().all(|branch| {
+                    conjuncts
+                        .iter()
+                        .any(|conjunct| inner(conjunct, branch, context, active))
+                })
+            }
+            (AnyOf(branches), AllOf(conjuncts)) | (OneOf(branches), AllOf(conjuncts)) => {
+                branches.iter().all(|branch| {
+                    conjuncts
+                        .iter()
+                        .any(|conjunct| inner(branch, conjunct, context, active))
+                })
+            }
+            // A complement is disjoint from any schema proved to be contained
+            // by the complemented language. This is the small implication
+            // needed for De Morgan-shaped schemas such as
+            // `allOf: [{not: A}, {not: B}]` versus `not: {anyOf: [A, B]}`:
+            // when checking disjointness with one branch `A`, the explicit
+            // `not: A` conjunct is enough. Keep this as an implication proof
+            // rather than attempting general complement algebra.
+            (Not(excluded), _) => {
+                analyze_subschema_with_context(
+                    right,
+                    excluded,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+            }
+            (_, Not(excluded)) => {
+                analyze_subschema_with_context(
+                    left,
+                    excluded,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+            }
             (AnyOf(children), _) | (OneOf(children), _) => children
                 .iter()
                 .all(|child| inner(child, right, context, active)),
@@ -1262,6 +5474,94 @@ fn schemas_definitely_disjoint_for_negation(
 
     inner(left, right, context, &mut HashSet::new())
 }
+
+/// Sufficient De Morgan cover for `not(allOf: [A, B, ...])` against an
+/// `anyOf` target.  The complement of an intersection is the union of the
+/// complements; for each conjunct `A`, it is enough to find a target branch
+/// `not B` with `B <= A` (contravariance of negation).  This deliberately
+/// avoids constructing synthetic schema nodes and stays conservative for
+/// non-negated target branches.
+fn negated_allof_covered_by_anyof(
+    conjuncts: &[SchemaNode],
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    conjuncts.iter().all(|conjunct| {
+        branches.iter().any(|branch| match branch.kind() {
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => true,
+            SchemaNodeKind::Not(excluded) => {
+                analyze_subschema_with_context(
+                    excluded,
+                    conjunct,
+                    context,
+                    ExplanationMode::VerdictOnly,
+                )
+                .is_subschema
+            }
+            _ => false,
+        })
+    })
+}
+/// Prove `not(anyOf([...])) <= target` when one excluded-union arm is a
+/// complement of a finite schema. If an arm is `not A`, any value surviving
+/// the outer negation must be in `A` and must avoid every sibling arm. Enumerate
+/// an upper bound for `A`; each candidate must either be impossible for `A`, be
+/// definitely consumed by a sibling arm, or be definitely accepted by target.
+fn negated_anyof_finite_complement_arm_subset_of(
+    children: &[SchemaNode],
+    target: &SchemaNode,
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    children.iter().enumerate().any(|(neg_index, child)| {
+        let SchemaNodeKind::Not(core) = child.kind() else {
+            return false;
+        };
+        let Some(values) = finite_schema_value_superset(core) else {
+            return false;
+        };
+
+        values.iter().all(|value| {
+            context.schema_definitely_rejects_value(core, value)
+                || children.iter().enumerate().any(|(index, sibling)| {
+                    index != neg_index && context.superset_contains_value(sibling, value)
+                })
+                || context.superset_contains_value(target, value)
+        })
+    })
+}
+
+/// Cover `not A` by an `anyOf` that contains a coarser finite complement
+/// `not B` plus explicit branches for the finite gap `B \ A`.
+///
+/// For any value accepted by `not A`, either it is outside `B` (and therefore
+/// accepted by the `not B` branch) or it is one of the finite candidates in an
+/// upper bound for `B`.  For those candidates, require either definite
+/// acceptance by `A` (so they are irrelevant to `not A`) or definite acceptance
+/// by some union branch.  This handles generated partitions such as
+/// `not {const: 1}` being covered by `anyOf: [not {enum:[1,2]}, {const:2}]`.
+fn negated_exclusion_covered_by_anyof_finite_gap(
+    excluded: &SchemaNode,
+    branches: &[SchemaNode],
+    context: &mut SubschemaCheckContext,
+) -> bool {
+    branches.iter().any(|branch| {
+        let SchemaNodeKind::Not(coarser_excluded) = branch.kind() else {
+            return false;
+        };
+        let Some(values) = finite_schema_value_superset(coarser_excluded) else {
+            return false;
+        };
+
+        values.iter().all(|value| {
+            context.schema_definitely_rejects_value(coarser_excluded, value)
+                || context.superset_contains_value(excluded, value)
+                || branches
+                    .iter()
+                    .any(|cover| context.superset_contains_value(cover, value))
+        })
+    })
+}
+
 /// Like `schemas_definitely_disjoint_for_oneof`, but also uses finite value
 /// upper bounds with the concrete-value evaluator. This is only used while a
 /// context is already available (for oneOf partition proofs): if every value
@@ -1329,13 +5629,22 @@ fn schemas_definitely_disjoint_for_partition(
         {
             return true;
         }
-        if finite_required_property_values_rejected_by_other(sub, other, context)
-            || finite_required_property_values_rejected_by_other(other, sub, context)
+        let overlap = possible_json_type_mask(sub) & possible_json_type_mask(other);
+        // Property/tuple witnesses only prove disjointness for the object/array
+        // portions of the languages.  If the same pair can also overlap on a
+        // scalar (or on the other container kind), treating that local witness
+        // as whole-schema disjointness would make oneOf partitions unsound.
+        if overlap != 0
+            && overlap & !JSON_TYPE_OBJECT == 0
+            && (finite_required_property_values_rejected_by_other(sub, other, context)
+                || finite_required_property_values_rejected_by_other(other, sub, context))
         {
             return true;
         }
-        if finite_required_array_item_values_rejected_by_other(sub, other, context)
-            || finite_required_array_item_values_rejected_by_other(other, sub, context)
+        if overlap != 0
+            && overlap & !JSON_TYPE_ARRAY == 0
+            && (finite_required_array_item_values_rejected_by_other(sub, other, context)
+                || finite_required_array_item_values_rejected_by_other(other, sub, context))
         {
             return true;
         }
@@ -1842,7 +6151,9 @@ fn schemas_definitely_disjoint_for_oneof(
     if overlap == 0 {
         return true;
     }
-    if overlap == JSON_TYPE_NUMBER && numeric_intervals_are_disjoint(sub, other) {
+    if overlap == JSON_TYPE_NUMBER
+        && (numeric_intervals_are_disjoint(sub, other) || integer_lattices_are_disjoint(sub, other))
+    {
         return true;
     }
     if overlap == JSON_TYPE_STRING && string_length_intervals_are_disjoint(sub, other) {
@@ -2035,6 +6346,127 @@ fn numeric_intervals_are_disjoint(left: &SchemaNode, right: &SchemaNode) -> bool
     }
     interval_strictly_before(left_interval, right_interval)
         || interval_strictly_before(right_interval, left_interval)
+}
+
+/// Prove disjointness for integer(-constrained) schemas whose `multipleOf`
+/// constraints share no common multiple inside their overlapping finite
+/// integer interval. Integer `multipleOf` constraints are all anchored at zero,
+/// so their intersection is exactly the multiples of lcm(d1, d2). This is a
+/// deliberately narrow syntactic check; returning false is conservative.
+fn integer_lattices_are_disjoint(left: &SchemaNode, right: &SchemaNode) -> bool {
+    #[derive(Clone, Copy)]
+    struct Summary {
+        lower: Option<i64>,
+        upper: Option<i64>,
+        divisor: i128,
+    }
+
+    fn gcd(mut a: i128, mut b: i128) -> i128 {
+        while b != 0 {
+            let r = a.rem_euclid(b);
+            a = b;
+            b = r;
+        }
+        a.abs()
+    }
+
+    fn lcm(a: i128, b: i128) -> Option<i128> {
+        if a <= 0 || b <= 0 {
+            return None;
+        }
+        let g = gcd(a, b);
+        a.checked_div(g)?.checked_mul(b)
+    }
+
+    fn intersect(left: Summary, right: Summary) -> Option<Summary> {
+        let lower = match (left.lower, right.lower) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
+        let upper = match (left.upper, right.upper) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
+        Some(Summary {
+            lower,
+            upper,
+            divisor: lcm(left.divisor, right.divisor)?,
+        })
+    }
+
+    fn summarize(schema: &SchemaNode, active: &mut HashSet<NodeId>) -> Option<Summary> {
+        if !active.insert(schema.id()) {
+            return None;
+        }
+        let result = match schema.kind() {
+            SchemaNodeKind::Integer {
+                bounds,
+                multiple_of,
+                ..
+            } => {
+                let divisor = multiple_of
+                    .as_ref()
+                    .and_then(|multiple| multiple.integer_divisor())
+                    .unwrap_or(1);
+                (divisor > 0).then_some(Summary {
+                    lower: bounds.lower(),
+                    upper: bounds.upper(),
+                    divisor,
+                })
+            }
+            SchemaNodeKind::AllOf(children) => {
+                let mut summary: Option<Summary> = None;
+                for child in children {
+                    if let Some(child_summary) = summarize(child, active) {
+                        summary = Some(match summary {
+                            Some(current) => match intersect(current, child_summary) {
+                                Some(joined) => joined,
+                                None => {
+                                    active.remove(&schema.id());
+                                    return None;
+                                }
+                            },
+                            None => child_summary,
+                        });
+                    }
+                }
+                summary
+            }
+            _ => None,
+        };
+        active.remove(&schema.id());
+        result
+    }
+
+    fn ceil_div(n: i128, d: i128) -> i128 {
+        debug_assert!(d > 0);
+        let q = n.div_euclid(d);
+        let r = n.rem_euclid(d);
+        if r == 0 { q } else { q + 1 }
+    }
+
+    let Some(left) = summarize(left, &mut HashSet::new()) else {
+        return false;
+    };
+    let Some(right) = summarize(right, &mut HashSet::new()) else {
+        return false;
+    };
+    let Some(combined) = intersect(left, right) else {
+        return false;
+    };
+    let lower = combined.lower.map(i128::from);
+    let upper = combined.upper.map(i128::from);
+    let (Some(lower), Some(upper)) = (lower, upper) else {
+        // Any half-infinite interval contains some multiple of a positive lcm.
+        return false;
+    };
+    if lower > upper {
+        return true;
+    }
+    let first_multiple = ceil_div(lower, combined.divisor).saturating_mul(combined.divisor);
+    first_multiple > upper
 }
 
 /// Cheap string-length disjointness for partition proofs. Length bounds are
@@ -2460,7 +6892,11 @@ fn object_property_count_interval_bound(schema: &SchemaNode) -> Option<LengthInt
                 if pattern_properties.is_empty()
                     && matches!(additional.kind(), SchemaNodeKind::BoolSchema(false))
                 {
-                    let declared = u64::try_from(properties.len()).ok()?;
+                    let usable_declared = properties
+                        .keys()
+                        .filter(|name| !schema_forbids_property_name_for_objects(schema, name))
+                        .count();
+                    let declared = u64::try_from(usable_declared).ok()?;
                     upper = Some(upper.map_or(declared, |current| current.min(declared)));
                 }
 
@@ -2468,18 +6904,20 @@ fn object_property_count_interval_bound(schema: &SchemaNode) -> Option<LengthInt
                 // keys regardless of additionalProperties/patternProperties.
                 // `finite_schema_value_superset` is an upper bound, so counting
                 // its string members remains a sound (possibly loose) capacity.
-                if schema_has_obvious_finite_property_names(property_names)
-                    && let Some(values) = finite_schema_value_superset(property_names)
-                {
-                    let mut names: Vec<&str> = Vec::new();
-                    for value in &values {
-                        if let Some(name) = value.as_str()
-                            && !names.contains(&name)
-                        {
-                            names.push(name);
-                        }
-                    }
-                    let finite = u64::try_from(names.len()).ok()?;
+                if let Some(names) = finite_property_name_strings_superset(property_names) {
+                    // Some members of a finite propertyNames language may be
+                    // syntactically impossible anyway (for example a declared
+                    // property with schema `false`, or a name rejected by a
+                    // matching false patternProperty). Dropping names that
+                    // this very object schema forbids gives a tighter capacity
+                    // while remaining an upper bound: every usable key must be
+                    // in the finite name language and must not be individually
+                    // forbidden by the object constraints.
+                    let usable = names
+                        .iter()
+                        .filter(|name| !schema_forbids_property_name_for_objects(schema, name))
+                        .count();
+                    let finite = u64::try_from(usable).ok()?;
                     upper = Some(upper.map_or(finite, |current| current.min(finite)));
                 }
 
@@ -2599,6 +7037,127 @@ fn object_property_count_interval_bound(schema: &SchemaNode) -> Option<LengthInt
     }
 
     inner(schema, &mut HashSet::new())
+}
+
+/// Return the exact small set of integer JSON values accepted by a `type:
+/// number` schema when that finiteness is syntactically obvious.  We accept
+/// explicit integer enums and inclusive singleton integer bounds.  In
+/// particular, do *not* infer integrality from numeric `multipleOf`: validators
+/// commonly use floating tolerances around multiples, so that would be unsafe.
+/// Callers use this to bridge normalized numeric singletons into integer/const
+/// targets without general arithmetic reasoning.
+fn finite_integer_number_values(schema: &SchemaNode) -> Option<Vec<Value>> {
+    let SchemaNodeKind::Number {
+        multiple_of: _,
+        enumeration,
+        ..
+    } = schema.kind()
+    else {
+        return None;
+    };
+    if let Some(values) = enumeration {
+        if values.iter().all(|value| value.as_i64().is_some()) {
+            return Some(values.clone());
+        }
+        return None;
+    }
+
+    let interval = numeric_interval_bound(schema)?;
+    if interval.empty {
+        return Some(Vec::new());
+    }
+    let (Some(lower), Some(upper)) = (interval.lower, interval.upper) else {
+        return None;
+    };
+    if !lower.value.is_finite() || !upper.value.is_finite() {
+        return None;
+    }
+    const MAX_EXACT: f64 = 9_007_199_254_740_991.0;
+    if lower.value < -MAX_EXACT || upper.value > MAX_EXACT {
+        return None;
+    }
+
+    // Do not infer integrality from `multipleOf` on a number schema: both the
+    // JSON Schema validator and our evaluator allow tiny floating tolerances
+    // around numeric multiples.  Only an inclusive singleton bound (or an
+    // explicit enum handled above) is an exact finite integer language.
+    let integrality_forced = lower.inclusive
+        && upper.inclusive
+        && lower.value == upper.value
+        && lower.value.fract() == 0.0;
+    if !integrality_forced {
+        return None;
+    }
+
+    let mut start = lower.value.ceil();
+    if !lower.inclusive && start == lower.value {
+        start += 1.0;
+    }
+    let mut end = upper.value.floor();
+    if !upper.inclusive && end == upper.value {
+        end -= 1.0;
+    }
+    if start > end {
+        return Some(Vec::new());
+    }
+    if start < i64::MIN as f64 || end > i64::MAX as f64 {
+        return None;
+    }
+    let start_i = start as i64;
+    let end_i = end as i64;
+    if end_i.checked_sub(start_i).is_none_or(|span| span > 2048) {
+        return None;
+    }
+
+    let mut values = Vec::new();
+    for n in start_i..=end_i {
+        let value = Value::Number(n.into());
+        if schema.accepts_value(&value) {
+            values.push(value);
+        }
+    }
+    Some(values)
+}
+
+/// Return a small finite integer upper bound for split `allOf` integer ranges.
+/// This is deliberately an over-approximation: endpoints are rounded outward,
+/// then callers filter candidates with the exact/rejection evaluator. The
+/// direct-integer-conjunct guard is what makes it safe to enumerate integers
+/// rather than arbitrary numbers.
+fn finite_split_allof_integer_values(schema: &SchemaNode) -> Option<Vec<Value>> {
+    if !matches!(schema.kind(), SchemaNodeKind::AllOf(_))
+        || !allof_has_direct_integer_conjunct(schema)
+        || possible_json_type_mask(schema) & !JSON_TYPE_NUMBER != 0
+    {
+        return None;
+    }
+    let interval = numeric_interval_bound(schema)?;
+    if interval.empty {
+        return Some(Vec::new());
+    }
+    let (Some(lower), Some(upper)) = (interval.lower, interval.upper) else {
+        return None;
+    };
+    if !lower.value.is_finite() || !upper.value.is_finite() {
+        return None;
+    }
+    const MAX_EXACT: f64 = 9_007_199_254_740_991.0;
+    if lower.value < -MAX_EXACT || upper.value > MAX_EXACT {
+        return None;
+    }
+    // Round outward; this may include one extra integer at an exclusive bound,
+    // which is fine for an upper bound.
+    let start_f = lower.value.floor();
+    let end_f = upper.value.ceil();
+    if start_f < i64::MIN as f64 || end_f > i64::MAX as f64 || start_f > end_f {
+        return None;
+    }
+    let start = start_f as i64;
+    let end = end_f as i64;
+    if end.checked_sub(start).is_none_or(|span| span > 256) {
+        return None;
+    }
+    Some((start..=end).map(|n| Value::Number(n.into())).collect())
 }
 
 /// Prove a split `allOf` numeric intersection is contained by a plain number
@@ -3378,6 +7937,20 @@ fn schema_accepts_all_objects_with_property(schema: &SchemaNode, name: &str) -> 
             SchemaNodeKind::AllOf(children) => {
                 !children.is_empty() && children.iter().all(|child| inner(child, name, active))
             }
+            SchemaNodeKind::IfThenElse {
+                then_schema,
+                else_schema,
+                ..
+            } => match (then_schema.as_ref(), else_schema.as_ref()) {
+                (Some(then_schema), Some(else_schema)) => {
+                    inner(then_schema, name, active) && inner(else_schema, name, active)
+                }
+                // The missing branch is implicit `true`; if the present branch
+                // accepts every object containing the property, the whole
+                // conditional does too regardless of the guard outcome.
+                (Some(branch), None) | (None, Some(branch)) => inner(branch, name, active),
+                (None, None) => true,
+            },
             _ => false,
         };
         active.remove(&schema.id());
@@ -4304,6 +8877,17 @@ fn schema_is_trivially_universal(schema: &SchemaNode) -> bool {
             SchemaNodeKind::Not(child) => matches!(child.kind(), SchemaNodeKind::BoolSchema(false)),
             SchemaNodeKind::AllOf(children) => children.iter().all(|child| inner(child, active)),
             SchemaNodeKind::AnyOf(children) => children.iter().any(|child| inner(child, active)),
+            SchemaNodeKind::IfThenElse {
+                then_schema,
+                else_schema,
+                ..
+            } => match (then_schema.as_ref(), else_schema.as_ref()) {
+                (Some(then_schema), Some(else_schema)) => {
+                    inner(then_schema, active) && inner(else_schema, active)
+                }
+                (Some(branch), None) | (None, Some(branch)) => inner(branch, active),
+                (None, None) => true,
+            },
             _ => false,
         };
         active.remove(&schema.id());
@@ -4325,105 +8909,536 @@ fn schema_is_trivially_universal(schema: &SchemaNode) -> bool {
 /// The full emptiness prover may recursively ask for another finite superset;
 /// doing that from inside enumeration can re-enter recursive schemas with a
 /// fresh visitation set. Keep this deliberately local.
-fn schema_is_locally_empty_for_finite_enumeration(schema: &SchemaNode) -> bool {
-    matches!(schema.kind(), SchemaNodeKind::BoolSchema(false))
-        || matches!(schema.kind(), SchemaNodeKind::Enum(values) if values.is_empty())
-        || matches!(constrained_enumeration(schema), Some(values) if values.is_empty())
+fn array_schema_is_locally_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::Array {
+        prefix_items,
+        items,
+        item_count,
+        contains,
+        unique_items,
+        enumeration,
+    } = schema.kind()
+    else {
+        return false;
+    };
+    let constraints = array::ArrayConstraints {
+        prefix_items,
+        items,
+        item_count: *item_count,
+        contains: contains.as_ref(),
+        unique_items: *unique_items,
+        enumeration: enumeration.as_deref(),
+    };
+    if array::array_constraints_definitely_uninhabited(&constraints) {
+        return true;
+    }
+    let Some(effective_count) = array::effective_item_count_for_unique_finite_domain(
+        prefix_items,
+        items,
+        *item_count,
+        *unique_items,
+    ) else {
+        return true;
+    };
+    if let Some(contains) = contains.as_ref() {
+        let matcher_disjoint_from_every_position = contains.count().min() > 0
+            && prefix_items
+                .iter()
+                .all(|item| schemas_definitely_disjoint_by_shape(item, &contains.schema))
+            && schemas_definitely_disjoint_by_shape(items, &contains.schema);
+        array::contains_requirement_definitely_impossible(contains, effective_count, *unique_items)
+            || array::contains_requirement_impossible_for_unique_finite_items(
+                prefix_items,
+                items,
+                effective_count,
+                contains,
+                *unique_items,
+            )
+            || matcher_disjoint_from_every_position
+            || array_contains_requirement_is_locally_impossible(schema)
+    } else {
+        false
+    }
 }
 
-fn schema_has_obvious_finite_property_names(schema: &SchemaNode) -> bool {
+fn object_schema_is_locally_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::Object {
+        properties,
+        pattern_properties,
+        required,
+        additional,
+        property_names,
+        property_count,
+        dependent_required,
+        enumeration,
+        ..
+    } = schema.kind()
+    else {
+        return false;
+    };
+    object::object_constraints_definitely_uninhabited(&object::ObjectConstraints {
+        properties,
+        pattern_properties,
+        required,
+        additional,
+        property_names,
+        property_count: *property_count,
+        dependent_required,
+        enumeration: enumeration.as_deref(),
+    })
+}
+
+fn array_contains_requirement_is_locally_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::Array {
+        contains: Some(contains),
+        item_count,
+        ..
+    } = schema.kind()
+    else {
+        return false;
+    };
+    let required = contains.count().min();
+    if required == 0 {
+        return false;
+    }
+    if item_count
+        .max()
+        .is_some_and(|max_items| required > max_items)
+    {
+        return true;
+    }
+    schema_is_locally_empty_for_finite_enumeration(&contains.schema)
+}
+
+/// Detect a split `allOf` object contradiction where a property is guaranteed
+/// present and two conjuncts give it disjoint direct `properties` schemas.
+/// This stays deliberately syntactic; pattern/additionalProperties interactions
+/// are left to the existing object-local prover.
+fn split_allof_object_property_is_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::AllOf(children) = schema.kind() else {
+        return false;
+    };
+    let mask = possible_json_type_mask(schema);
+    if mask == 0 || mask & !JSON_TYPE_OBJECT != 0 {
+        return false;
+    }
+
+    let mut required = HashSet::<String>::new();
+    let mut constraints: HashMap<String, Vec<&SchemaNode>> = HashMap::new();
+    for child in children {
+        let child = unwrap_singleton_applicators(child);
+        if let SchemaNodeKind::Object {
+            properties,
+            required: child_required,
+            ..
+        } = child.kind()
+        {
+            required.extend(child_required.iter().cloned());
+            for (name, property_schema) in properties {
+                constraints
+                    .entry(name.clone())
+                    .or_default()
+                    .push(property_schema);
+            }
+        }
+    }
+
+    for name in required {
+        let Some(property_constraints) = constraints.get(&name) else {
+            continue;
+        };
+        for i in 0..property_constraints.len() {
+            for j in (i + 1)..property_constraints.len() {
+                if schemas_definitely_disjoint_by_shape(
+                    property_constraints[i],
+                    property_constraints[j],
+                ) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Detect a split `allOf` array contradiction where one conjunct constrains
+/// every item to a homogeneous schema and another requires a `contains` match
+/// that is disjoint from that homogeneous item schema.  This is intentionally
+/// narrow: the whole intersection must be array-only, and the homogeneous
+/// conjunct must have no prefix tuple holes.
+fn split_allof_array_contains_is_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::AllOf(children) = schema.kind() else {
+        return false;
+    };
+    let mask = possible_json_type_mask(schema);
+    if mask == 0 || mask & !JSON_TYPE_ARRAY != 0 {
+        return false;
+    }
+
+    let mut homogeneous_items: Vec<&SchemaNode> = Vec::new();
+    let mut required_contains: Vec<&SchemaNode> = Vec::new();
+    for child in children {
+        let child = unwrap_singleton_applicators(child);
+        if let SchemaNodeKind::Array {
+            prefix_items,
+            items,
+            contains,
+            ..
+        } = child.kind()
+        {
+            if prefix_items.is_empty() {
+                homogeneous_items.push(items);
+            }
+            if let Some(contains) = contains.as_ref()
+                && contains.count().min() > 0
+            {
+                required_contains.push(&contains.schema);
+            }
+        }
+    }
+
+    homogeneous_items.iter().any(|items| {
+        required_contains
+            .iter()
+            .any(|matcher| schemas_definitely_disjoint_by_shape(items, matcher))
+    })
+}
+
+/// Detect a split `allOf` array length/count contradiction.
+fn split_allof_array_length_is_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::AllOf(_) = schema.kind() else {
+        return false;
+    };
+    let mask = possible_json_type_mask(schema);
+    if mask == 0 || mask & !JSON_TYPE_ARRAY != 0 {
+        return false;
+    }
+    array_length_interval_bound(schema).is_some_and(|interval| interval.empty)
+}
+
+/// Detect a split `allOf` object property-count contradiction.
+fn split_allof_object_count_is_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::AllOf(_) = schema.kind() else {
+        return false;
+    };
+    let mask = possible_json_type_mask(schema);
+    if mask == 0 || mask & !JSON_TYPE_OBJECT != 0 {
+        return false;
+    }
+    object_property_count_interval_bound(schema).is_some_and(|interval| interval.empty)
+}
+
+/// Detect a split `allOf` numeric-range contradiction.  This only fires when
+/// the whole intersection is numeric-only and the existing interval extractor
+/// can prove the intersection empty, so lattice/multipleOf cases remain with
+/// the more precise numeric provers.
+fn split_allof_numeric_range_is_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::AllOf(_) = schema.kind() else {
+        return false;
+    };
+    let mask = possible_json_type_mask(schema);
+    if mask == 0 || mask & !JSON_TYPE_NUMBER != 0 {
+        return false;
+    }
+    numeric_interval_bound(schema).is_some_and(|interval| interval.empty)
+}
+
+/// Detect the simplest split `allOf` string-length contradiction.  The normal
+/// string interval reasoning is used for pairwise disjointness, but negation
+/// normalization needs an explicit emptiness witness for schemas such as
+/// `allOf: [{minLength: 3}, {maxLength: 1}]`.  Keep this syntactic and
+/// string-only so it cannot accidentally classify a mixed-type intersection as
+/// empty.
+fn split_allof_string_length_is_impossible(schema: &SchemaNode) -> bool {
+    let SchemaNodeKind::AllOf(children) = schema.kind() else {
+        return false;
+    };
+    let mask = possible_json_type_mask(schema);
+    if mask == 0 || mask & !JSON_TYPE_STRING != 0 {
+        return false;
+    }
+
+    let mut lower = 0_u64;
+    let mut upper: Option<u64> = None;
+    let mut saw_string_bound = false;
+    for child in children {
+        let child = unwrap_singleton_applicators(child);
+        let SchemaNodeKind::String { length, .. } = child.kind() else {
+            continue;
+        };
+        saw_string_bound = true;
+        lower = lower.max(length.min());
+        if let Some(child_upper) = length.max() {
+            upper = Some(upper.map_or(child_upper, |current| current.min(child_upper)));
+        }
+    }
+
+    saw_string_bound && upper.is_some_and(|max_len| lower > max_len)
+}
+
+/// A deliberately small emptiness predicate for the inner side of a negation.
+///
+/// `not(false)`-like targets are universal, but the finite-enumeration
+/// emptiness helper intentionally does not look at the richer array/object
+/// contradiction checks (unique finite domains, impossible `contains`, closed
+/// object/property-name conflicts). Those checks are already used to prove an
+/// impossible schema is a subset of an arbitrary typed target; expose the same
+/// fact to negation normalization without turning this into a general recursive
+/// emptiness prover. The applicator recursion below only follows directions
+/// that preserve emptiness, and is cycle guarded.
+fn schema_is_locally_impossible_for_negation(schema: &SchemaNode) -> bool {
     fn inner(schema: &SchemaNode, active: &mut HashSet<NodeId>) -> bool {
         if !active.insert(schema.id()) {
             return false;
         }
-        let result = match schema.kind() {
-            SchemaNodeKind::Const(_) | SchemaNodeKind::Enum(_) => true,
-            SchemaNodeKind::String {
-                enumeration: Some(_),
-                ..
-            } => true,
-            SchemaNodeKind::String { length, .. } if length.max() == Some(0) => true,
-            SchemaNodeKind::AllOf(children) => children.iter().any(|child| inner(child, active)),
-            SchemaNodeKind::AnyOf(children) | SchemaNodeKind::OneOf(children) => {
-                children.iter().all(|child| inner(child, active))
+        let normalized = unwrap_singleton_applicators(schema);
+        if normalized.id() != schema.id() {
+            let result = inner(normalized, active);
+            active.remove(&schema.id());
+            return result;
+        }
+
+        let result = schema_is_locally_empty_for_finite_enumeration(schema)
+            || split_allof_array_contains_is_impossible(schema)
+            || split_allof_object_property_is_impossible(schema)
+            || split_allof_array_length_is_impossible(schema)
+            || split_allof_object_count_is_impossible(schema)
+            || split_allof_numeric_range_is_impossible(schema)
+            || split_allof_string_length_is_impossible(schema)
+            || array_schema_is_locally_impossible(schema)
+            || object_schema_is_locally_impossible(schema)
+            || match schema.kind() {
+                SchemaNodeKind::AllOf(children) => {
+                    children.iter().any(|child| inner(child, active))
+                }
+                SchemaNodeKind::AnyOf(children) => {
+                    !children.is_empty() && children.iter().all(|child| inner(child, active))
+                }
+                SchemaNodeKind::OneOf(children) => {
+                    (!children.is_empty() && children.iter().all(|child| inner(child, active)))
+                        || (children.len() == 2
+                            && schemas_obviously_equivalent(&children[0], &children[1]))
+                }
+                SchemaNodeKind::IfThenElse {
+                    if_schema,
+                    then_schema,
+                    else_schema,
+                } => {
+                    // If both explicit branches are empty, no guard outcome can
+                    // admit a value.  For a locally constant guard, it is also
+                    // enough for the selected explicit branch to be empty;
+                    // a missing selected branch is implicit `true`, so it is
+                    // deliberately not treated as empty.
+                    match (then_schema.as_ref(), else_schema.as_ref()) {
+                        (Some(then_branch), Some(else_branch))
+                            if inner(then_branch, active) && inner(else_branch, active) =>
+                        {
+                            true
+                        }
+                        (Some(then_branch), _) if schema_is_trivially_universal(if_schema) => {
+                            inner(then_branch, active)
+                        }
+                        (_, Some(else_branch)) if inner(if_schema, active) => {
+                            inner(else_branch, active)
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
+        active.remove(&schema.id());
+        result
+    }
+
+    inner(schema, &mut HashSet::new())
+}
+
+fn schema_is_locally_empty_for_finite_enumeration(schema: &SchemaNode) -> bool {
+    fn inner(schema: &SchemaNode, active: &mut HashSet<NodeId>) -> bool {
+        if !active.insert(schema.id()) {
+            // Recursive wrappers are not a local emptiness witness by themselves.
+            return false;
+        }
+        let result = if matches!(schema.kind(), SchemaNodeKind::BoolSchema(false))
+            || matches!(schema.kind(), SchemaNodeKind::Enum(values) if values.is_empty())
+            || possible_json_type_mask(schema) == 0
+            || matches!(constrained_enumeration(schema), Some(values) if values.is_empty())
+        {
+            true
+        } else if let Some(values) = constrained_enumeration(schema)
+            && !schema_may_under_accept_values(schema)
+            && values.iter().all(|value| !schema.accepts_value(value))
+        {
+            true
+        } else {
+            match schema.kind() {
+                SchemaNodeKind::AllOf(children) => {
+                    children.iter().any(|child| inner(child, active))
+                }
+                SchemaNodeKind::AnyOf(children) | SchemaNodeKind::OneOf(children)
+                    if children.len() == 1 =>
+                {
+                    inner(&children[0], active)
+                }
+                _ => false,
             }
-            _ => false,
         };
         active.remove(&schema.id());
         result
     }
+
     inner(schema, &mut HashSet::new())
 }
-
-fn finite_integer_multiple_number_values(
-    bounds: NumberBounds,
-    multiple_of: NumberMultipleOf,
-) -> Option<Vec<Value>> {
-    // A number schema with an integral multipleOf has only integer-valued
-    // inhabitants. With finite endpoints that gives a finite domain; keep the
-    // enumeration tiny and within exactly-representable f64 integers.
-    if !multiple_of.is_integer_valued() || multiple_of.as_f64().fract() != 0.0 {
-        return None;
-    }
-    let divisor = multiple_of.integer_divisor()?;
-    if divisor <= 0 || divisor > i128::from(i64::MAX) {
-        return None;
-    }
-
-    const MAX_EXACT_F64_INTEGER_LOCAL: f64 = 9_007_199_254_740_991.0;
-    fn integer_floor(value: f64) -> Option<i128> {
-        (value.is_finite() && value.abs() <= MAX_EXACT_F64_INTEGER_LOCAL)
-            .then(|| value.floor() as i128)
-    }
-    fn integer_ceil(value: f64) -> Option<i128> {
-        (value.is_finite() && value.abs() <= MAX_EXACT_F64_INTEGER_LOCAL)
-            .then(|| value.ceil() as i128)
-    }
-
-    let lower = match bounds.lower() {
-        NumberBound::Unbounded => return None,
-        NumberBound::Inclusive(value) => integer_ceil(value)?,
-        NumberBound::Exclusive(value) => {
-            let ceil = integer_ceil(value)?;
-            if value.fract() == 0.0 { ceil + 1 } else { ceil }
+/// Return a finite upper bound for the *string* values accepted by `schema`.
+///
+/// This is deliberately narrower than `finite_schema_value_superset`: when a
+/// schema is used as `propertyNames`, only string instances are ever tested.
+/// A conditional such as `{if: {type: "string"}, then: {enum: [...]}}` is
+/// infinite as a whole (non-strings are unconstrained), but has a finite string
+/// language. Keeping this helper string-scoped lets object cardinality use
+/// that fact without making the global finite-language prover unsound.
+pub(super) fn finite_property_name_strings_superset(schema: &SchemaNode) -> Option<Vec<String>> {
+    fn push(values: &mut Vec<String>, value: String) {
+        if !values.iter().any(|seen| seen == &value) {
+            values.push(value);
         }
-    };
-    let upper = match bounds.upper() {
-        NumberBound::Unbounded => return None,
-        NumberBound::Inclusive(value) => integer_floor(value)?,
-        NumberBound::Exclusive(value) => {
-            let floor = integer_floor(value)?;
-            if value.fract() == 0.0 {
-                floor - 1
-            } else {
-                floor
+    }
+
+    fn strings_from_values(values: &[Value]) -> Vec<String> {
+        let mut out = Vec::new();
+        for value in values {
+            if let Some(s) = value.as_str() {
+                push(&mut out, s.to_owned());
             }
         }
-    };
-    if upper < lower {
-        return Some(Vec::new());
+        out
     }
 
-    let rem = lower.rem_euclid(divisor);
-    let first = if rem == 0 {
-        lower
-    } else {
-        lower + (divisor - rem)
-    };
-    if first > upper {
-        return Some(Vec::new());
+    fn merge(mut left: Vec<String>, right: Vec<String>) -> Vec<String> {
+        for value in right {
+            push(&mut left, value);
+        }
+        left
     }
-    let count = ((upper - first) / divisor) + 1;
-    if count > 256 {
-        return None;
+
+    fn inner(
+        schema: &SchemaNode,
+        active: &mut HashSet<NodeId>,
+    ) -> Option<Vec<std::string::String>> {
+        if !active.insert(schema.id()) {
+            return None;
+        }
+        macro_rules! try_opt {
+            ($expr:expr) => {
+                match $expr {
+                    Some(value) => value,
+                    None => {
+                        active.remove(&schema.id());
+                        return None;
+                    }
+                }
+            };
+        }
+
+        use SchemaNodeKind::*;
+        let result = match schema.kind() {
+            BoolSchema(false) => Some(Vec::new()),
+            _ if possible_json_type_mask(schema) & JSON_TYPE_STRING == 0 => Some(Vec::new()),
+            Const(value) => Some(value.as_str().map_or_else(Vec::new, |s| vec![s.to_owned()])),
+            Enum(values) => Some(strings_from_values(values)),
+            String {
+                enumeration: Some(values),
+                ..
+            } => Some(strings_from_values(values)),
+            String {
+                length,
+                enumeration: None,
+                ..
+            } if length.max() == Some(0) => Some(vec![std::string::String::new()]),
+            AllOf(children) => {
+                let mut best: Option<Vec<std::string::String>> = None;
+                for child in children {
+                    if let Some(values) = inner(child, active)
+                        && best
+                            .as_ref()
+                            .is_none_or(|current| values.len() < current.len())
+                    {
+                        best = Some(values);
+                    }
+                }
+                best.map(|mut values| {
+                    values.retain(|name| {
+                        let value = Value::String(name.clone());
+                        !children.iter().any(|child| {
+                            !schema_may_under_accept_values(child) && !child.accepts_value(&value)
+                        })
+                    });
+                    values
+                })
+            }
+            AnyOf(children) | OneOf(children) => {
+                let mut union = Vec::new();
+                for child in children {
+                    let Some(values) = inner(child, active) else {
+                        active.remove(&schema.id());
+                        return None;
+                    };
+                    union = merge(union, values);
+                }
+                Some(union)
+            }
+            IfThenElse {
+                if_schema,
+                then_schema,
+                else_schema,
+            } => {
+                let if_all_strings =
+                    whole_json_types_accepted_mask(if_schema) & JSON_TYPE_STRING != 0;
+                let if_no_strings = possible_json_type_mask(if_schema) & JSON_TYPE_STRING == 0;
+                if if_all_strings {
+                    then_schema
+                        .as_ref()
+                        .and_then(|branch| inner(branch, active))
+                } else if if_no_strings {
+                    else_schema
+                        .as_ref()
+                        .and_then(|branch| inner(branch, active))
+                } else if let (Some(then_branch), Some(else_branch)) =
+                    (then_schema.as_ref(), else_schema.as_ref())
+                {
+                    let then_values = try_opt!(inner(then_branch, active));
+                    let else_values = try_opt!(inner(else_branch, active));
+                    Some(merge(then_values, else_values))
+                } else if then_schema.is_none() {
+                    let else_values = try_opt!(else_schema.as_ref().and_then(|b| inner(b, active)));
+                    let condition_values = try_opt!(inner(if_schema, active));
+                    Some(merge(condition_values, else_values))
+                } else if else_schema.is_none() {
+                    let then_values = try_opt!(then_schema.as_ref().and_then(|b| inner(b, active)));
+                    if let Not(negated) = if_schema.kind() {
+                        let else_side = try_opt!(inner(negated, active));
+                        Some(merge(then_values, else_side))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        let result = result.map(|mut values| {
+            if !schema_may_under_accept_values(schema) {
+                values.retain(|name| schema.accepts_value(&Value::String(name.clone())));
+            }
+            values
+        });
+        active.remove(&schema.id());
+        result
     }
-    let mut values = Vec::new();
-    for offset in 0..count {
-        let raw = first + offset * divisor;
-        let as_i64 = i64::try_from(raw).ok()?;
-        values.push(Value::Number(as_i64.into()));
-    }
-    Some(values)
+
+    inner(schema, &mut HashSet::new())
 }
 
 pub(super) fn finite_schema_value_superset(schema: &SchemaNode) -> Option<Vec<Value>> {
@@ -4574,27 +9589,18 @@ pub(super) fn finite_schema_value_superset(schema: &SchemaNode) -> Option<Vec<Va
             }
             Number {
                 bounds,
-                multiple_of,
                 enumeration: None,
-            } => {
-                if let Some(multiple_of) = multiple_of
-                    && let Some(values) =
-                        finite_integer_multiple_number_values(*bounds, *multiple_of)
+                ..
+            } => match (bounds.lower(), bounds.upper()) {
+                (NumberBound::Inclusive(lower), NumberBound::Inclusive(upper))
+                    if lower.to_bits() == upper.to_bits() =>
                 {
-                    Some(values)
-                } else {
-                    match (bounds.lower(), bounds.upper()) {
-                        (NumberBound::Inclusive(lower), NumberBound::Inclusive(upper))
-                            if lower.to_bits() == upper.to_bits() =>
-                        {
-                            serde_json::Number::from_f64(lower)
-                                .map(Value::Number)
-                                .map(|value| vec![value])
-                        }
-                        _ => None,
-                    }
+                    serde_json::Number::from_f64(lower)
+                        .map(Value::Number)
+                        .map(|value| vec![value])
                 }
-            }
+                _ => None,
+            },
             // These primitive domains are genuinely finite even without an
             // explicit enum. Keeping them here lets uniqueItems reasoning see
             // boolean/null item schemas and propertyNames reject non-strings.
@@ -4678,7 +9684,6 @@ pub(super) fn finite_schema_value_superset(schema: &SchemaNode) -> Option<Vec<Va
                 enumeration: None,
                 ..
             } if property_count.max() != Some(0)
-                && schema_has_obvious_finite_property_names(property_names)
                 && pattern_properties.values().all(|pattern_property| {
                     pattern_property.pattern.support() == PatternSupport::Supported
                 }) =>
@@ -4689,18 +9694,10 @@ pub(super) fn finite_schema_value_superset(schema: &SchemaNode) -> Option<Vec<Va
                 // superset of object values. Unsupported patternProperties
                 // are excluded by the guard above because they make it
                 // impossible to know whether `additional` applies.
-                let Some(name_values) = inner(property_names, active) else {
+                let Some(mut keys) = finite_property_name_strings_superset(property_names) else {
                     active.remove(&schema.id());
                     return None;
                 };
-                let mut keys: Vec<std::string::String> = Vec::new();
-                for value in name_values {
-                    if let Some(name) = value.as_str()
-                        && !keys.iter().any(|seen| seen == name)
-                    {
-                        keys.push(name.to_owned());
-                    }
-                }
                 keys.sort();
                 if keys.len() > 5 {
                     active.remove(&schema.id());
@@ -4862,6 +9859,45 @@ pub(super) fn finite_schema_value_superset(schema: &SchemaNode) -> Option<Vec<Va
                 }
                 Some(arrays)
             }
+            OneOf(children)
+                if children.len() > 1
+                    && children
+                        .iter()
+                        .all(|child| matches!(child.kind(), SchemaNodeKind::Not(_))) =>
+            {
+                // A `oneOf` made solely of complements has no inhabitants
+                // outside the union of the excluded regions: a value outside
+                // every excluded region matches every complement branch, not
+                // exactly one of them. When each excluded region has a finite
+                // upper bound, their union is therefore a finite upper bound
+                // for the whole xor. This catches common generated shapes
+                // such as `oneOf: [not const A, not enum [A, B]]`, whose true
+                // language is the finite symmetric difference, without
+                // pretending arbitrary negation is finite.
+                let mut union = Vec::new();
+                let mut all_finite = true;
+                for child in children {
+                    let SchemaNodeKind::Not(excluded) = child.kind() else {
+                        all_finite = false;
+                        break;
+                    };
+                    let Some(values) = inner(excluded, active) else {
+                        all_finite = false;
+                        break;
+                    };
+                    for value in values {
+                        push_distinct(&mut union, value);
+                        if union.len() > 256 {
+                            all_finite = false;
+                            break;
+                        }
+                    }
+                    if !all_finite {
+                        break;
+                    }
+                }
+                if all_finite { Some(union) } else { None }
+            }
             AnyOf(children) | OneOf(children) => {
                 let mut union = Vec::new();
                 let mut all_finite = true;
@@ -4886,10 +9922,13 @@ pub(super) fn finite_schema_value_superset(schema: &SchemaNode) -> Option<Vec<Va
                 }
             }
             AllOf(children) => {
+                // Split integer bounds across conjuncts can be finite even when
+                // no single child is finite; use that as an initial upper bound
+                // and still prefer any smaller finite child below.
+                let mut best: Option<Vec<Value>> = finite_split_allof_integer_values(schema);
                 // The intersection is a subset of every child. Any finite
                 // child therefore gives a sound finite upper bound; choose the
                 // smallest one we can find to keep later bounds useful.
-                let mut best: Option<Vec<Value>> = None;
                 for child in children {
                     if let Some(child_values) = inner(child, active)
                         && best
@@ -6811,6 +11850,62 @@ mod tests {
     }
 
     #[test]
+    fn singleton_number_bounds_can_be_integer_subset() {
+        let old = resolve(json!({ "type": "integer", "multipleOf": 2 }));
+        let new = resolve(json!({ "type": "number", "minimum": 4, "maximum": 4 }));
+        let fractional = resolve(json!({ "type": "number", "minimum": 4.5, "maximum": 4.5 }));
+
+        assert!(is_subschema_of(&new, &old));
+        assert!(!is_subschema_of(&fractional, &old));
+    }
+
+    #[test]
+    fn singleton_number_bounds_empty_after_multiple_of_is_vacuous() {
+        let old = resolve(json!({ "type": "integer", "const": 7 }));
+        let new = resolve(json!({
+            "type": "number",
+            "minimum": 4,
+            "maximum": 4,
+            "multipleOf": 3
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn integral_number_multiple_of_alone_is_not_treated_as_integer() {
+        let old = resolve(json!({ "type": "integer" }));
+        let new = resolve(json!({ "type": "number", "multipleOf": 1 }));
+
+        // The validator permits tiny floating-point deviations for multipleOf,
+        // so values such as 1.0000000000000002 can satisfy the number schema
+        // without satisfying the integer schema.
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn number_enum_can_be_subsumed_by_integer_schema() {
+        let old =
+            resolve(json!({ "type": "integer", "minimum": 2, "maximum": 8, "multipleOf": 2 }));
+        let new = resolve(json!({
+            "type": "number",
+            "enum": [2, 4.0, 8],
+            "minimum": 0,
+            "maximum": 10
+        }));
+
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn number_enum_fractional_member_blocks_integer_subset() {
+        let old = resolve(json!({ "type": "integer" }));
+        let new = resolve(json!({ "type": "number", "enum": [2, 2.5] }));
+
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
     fn integer_schema_without_enum_is_not_subsumed_by_old_number_enum() {
         let old = resolve(json!({
                 "type": "number",
@@ -7466,6 +12561,204 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_integer_lattice_gap_can_partition_oneof() {
+        let sub = resolve(json!({
+            "allOf": [
+                { "type": "integer", "minimum": 2, "maximum": 4 },
+                { "type": "integer", "multipleOf": 2 }
+            ]
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                {
+                    "allOf": [
+                        { "type": "integer", "minimum": 2, "maximum": 4 },
+                        { "type": "integer", "multipleOf": 2 }
+                    ]
+                },
+                {
+                    "allOf": [
+                        { "type": "integer", "minimum": 1, "maximum": 5 },
+                        { "type": "integer", "multipleOf": 3 }
+                    ]
+                }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn property_disjointness_does_not_ignore_shared_non_objects() {
+        let branch_a = json!({
+            "type": ["object", "null"],
+            "required": ["kind"],
+            "properties": { "kind": { "const": "a" } }
+        });
+        let branch_b = json!({
+            "type": ["object", "null"],
+            "required": ["kind"],
+            "properties": { "kind": { "const": "b" } }
+        });
+        let sub = resolve(branch_a.clone());
+        let sup = resolve(json!({ "oneOf": [branch_a, branch_b] }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn tuple_disjointness_does_not_ignore_shared_non_arrays() {
+        let branch_a = json!({
+            "type": ["array", "null"],
+            "minItems": 1,
+            "prefixItems": [{ "const": "a" }]
+        });
+        let branch_b = json!({
+            "type": ["array", "null"],
+            "minItems": 1,
+            "prefixItems": [{ "const": "b" }]
+        });
+        let sub = resolve(branch_a.clone());
+        let sup = resolve(json!({ "oneOf": [branch_a, branch_b] }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_property_disjointness_keeps_shared_non_objects() {
+        let branch_a = json!({
+            "if": { "type": "object" },
+            "then": {
+                "required": ["kind"],
+                "properties": { "kind": { "const": "a" } }
+            }
+        });
+        let branch_b = json!({
+            "if": { "type": "object" },
+            "then": {
+                "required": ["kind"],
+                "properties": { "kind": { "const": "b" } }
+            }
+        });
+        let sub = resolve(branch_a.clone());
+        let sup = resolve(json!({ "oneOf": [branch_a, branch_b] }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_tuple_disjointness_keeps_shared_non_arrays() {
+        let branch_a = json!({
+            "if": { "type": "array" },
+            "then": {
+                "minItems": 1,
+                "prefixItems": [{ "const": "a" }]
+            }
+        });
+        let branch_b = json!({
+            "if": { "type": "array" },
+            "then": {
+                "minItems": 1,
+                "prefixItems": [{ "const": "b" }]
+            }
+        });
+        let sub = resolve(branch_a.clone());
+        let sup = resolve(json!({ "oneOf": [branch_a, branch_b] }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn integral_number_lattice_gap_is_not_used_for_number_oneof() {
+        let sub = resolve(json!({
+            "type": "number",
+            "minimum": 2,
+            "maximum": 4,
+            "multipleOf": 2
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "number", "minimum": 2, "maximum": 4, "multipleOf": 2 },
+                { "type": "number", "minimum": 1, "maximum": 5, "multipleOf": 3 }
+            ]
+        }));
+        // Numeric multipleOf uses an epsilon tolerance, so near-multiple floats
+        // can overlap even when the integer lattice projection has a gap.
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn integer_lattice_gap_can_partition_oneof() {
+        let sub = resolve(json!({
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 4,
+            "multipleOf": 2
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "integer", "minimum": 2, "maximum": 4, "multipleOf": 2 },
+                { "type": "integer", "minimum": 1, "maximum": 5, "multipleOf": 3 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn forbidden_closed_declared_property_tightens_count_partition() {
+        let sub = resolve(json!({
+            "type": "object",
+            "properties": { "a": true, "b": false },
+            "additionalProperties": false
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": { "a": true, "b": false },
+                    "additionalProperties": false
+                },
+                { "type": "object", "minProperties": 2 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn forbidden_finite_property_names_tighten_object_count_partition() {
+        let sub = resolve(json!({
+            "type": "object",
+            "propertyNames": { "enum": ["a", "b"] },
+            "properties": { "b": false }
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                {
+                    "type": "object",
+                    "propertyNames": { "enum": ["a", "b"] },
+                    "properties": { "b": false }
+                },
+                { "type": "object", "minProperties": 2 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_finite_property_names_imply_object_count_partition() {
+        let names = json!({
+            "if": { "type": "string" },
+            "then": { "enum": ["a", "b"] }
+        });
+        let sub = resolve(json!({
+            "type": "object",
+            "propertyNames": names.clone()
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "object", "propertyNames": names },
+                { "type": "object", "minProperties": 3 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
     fn array_length_disjoint_oneof_can_partition_arrays() {
         let sub = resolve(json!({
             "type": "array",
@@ -7869,6 +13162,568 @@ mod tests {
     }
 
     #[test]
+    fn anyof_complement_cover_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "type": "integer" },
+                { "not": { "const": 1 } }
+            ]
+        }));
+
+        // `const 1` is contained by `integer`, so integer ∪ not(1) is all JSON.
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_complement_of_union_cover_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "not": { "anyOf": [
+                    { "type": "string" },
+                    { "type": "number" }
+                ] } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_finite_split_complement_cover_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "enum": [1, 2, "x"] } },
+                { "const": 1 },
+                { "const": 2 },
+                { "const": "x" }
+            ]
+        }));
+
+        // The finite excluded enum is covered by several sibling branches;
+        // together with its complement this is universal.
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_split_integer_range_complement_cover_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "allOf": [
+                    { "type": "integer" },
+                    { "minimum": 0 },
+                    { "maximum": 2 }
+                ] } },
+                { "const": 0 },
+                { "const": 1 },
+                { "const": 2 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_complement_of_disjoint_union_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "not": { "anyOf": [
+                    { "type": "string" },
+                    { "type": "number" }
+                ] } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_complement_of_overlapping_union_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "integer" },
+                { "type": "number" },
+                { "not": { "anyOf": [
+                    { "type": "integer" },
+                    { "type": "number" }
+                ] } }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_infinite_complement_pair_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "string" },
+                { "not": { "type": "string" } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_non_equivalent_complement_pair_stays_conservative() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "integer" },
+                { "not": { "type": "number" } }
+            ]
+        }));
+
+        // Fractional numbers match neither arm, so this is not universal.
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_finite_complement_partition_accepts_unconstrained_schema() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "not": { "enum": [1, 2] } },
+                { "const": 1 },
+                { "const": 2 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_finite_complement_partition_rejects_overlapping_cover() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "not": { "enum": [1, 2] } },
+                { "enum": [1, 2] },
+                { "const": 1 }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn split_allof_small_integer_range_uses_finite_conditional_target() {
+        let sub = resolve(json!({
+            "allOf": [
+                { "type": "integer", "minimum": 0 },
+                { "type": "integer", "maximum": 1 }
+            ]
+        }));
+        let sup = resolve(json!({
+            "if": { "enum": [1, "a", null] },
+            "then": { "type": "number" },
+            "else": true
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_disjoint_from_negated_const_target() {
+        let sub = resolve(json!({
+            "if": { "enum": [1, "a", null] },
+            "then": { "type": "number" },
+            "else": true
+        }));
+        let sup = resolve(json!({ "not": { "const": null } }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn identical_type_guard_prunes_both_vacuous_then_sides() {
+        let sub =
+            resolve(json!({ "if": {"type":"integer"}, "then": {"type":"null"}, "else": true }));
+        let sup =
+            resolve(json!({ "if": {"type":"integer"}, "then": {"type":"object"}, "else": true }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn identical_conditional_guard_prunes_vacuous_then_side() {
+        let sub = resolve(json!({
+            "if": { "enum": ["a", "b"] },
+            "then": { "type": "integer" },
+            "else": { "type": "object" }
+        }));
+        let sup = resolve(json!({
+            "if": { "enum": ["a", "b"] },
+            "then": { "type": "object" },
+            "else": true
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_guard_covered_then_with_universal_else_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "if": { "enum": ["a", "b"] },
+            "then": { "type": "string" },
+            "else": true
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_universal_arm_excludes_disjoint_conditional() {
+        let sub = resolve(json!({ "type": "integer", "multipleOf": 2 }));
+        let sup = resolve(json!({
+            "oneOf": [
+                true,
+                {
+                    "if": { "type": "integer", "multipleOf": 1 },
+                    "then": { "type": "array", "items": { "type": "boolean" } },
+                    "else": { "type": "number", "minimum": 0, "maximum": 3 }
+                }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_conditional_tautology_branch_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "if": { "const": 1 }, "then": { "const": 1 } },
+                { "type": "boolean" }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_else_complement_of_guard_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "if": { "type": "string" },
+            "then": true,
+            "else": { "not": { "const": "blocked-string" } }
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_else_complement_must_be_guard_subset() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "if": { "type": "string" },
+            "then": true,
+            "else": { "not": { "const": 1 } }
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_then_enum_filtered_by_guard_fits_target() {
+        let sub = resolve(json!({
+            "if": { "type": "integer" },
+            "then": { "enum": [1, "a"] },
+            "else": false
+        }));
+        let sup = resolve(json!({ "type": "integer" }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_finite_guard_filters_infinite_then_branch() {
+        let sub = resolve(json!({
+            "if": { "enum": [1, "a"] },
+            "then": { "type": "integer" },
+            "else": false
+        }));
+        let sup = resolve(json!({ "const": 1 }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_negated_type_guard_false_then_is_inner_type() {
+        let sub = resolve(json!({
+            "if": { "not": { "type": "string" } },
+            "then": false,
+            "else": true
+        }));
+        let sup = resolve(json!({ "type": "string" }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_negated_finite_guard_with_universal_else_fits_target() {
+        let sub = resolve(json!({
+            "if": { "not": { "const": 1 } },
+            "then": { "type": "integer" },
+            "else": true
+        }));
+        let sup = resolve(json!({ "type": "integer" }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_negated_finite_guard_filters_infinite_else_branch() {
+        let sub = resolve(json!({
+            "if": { "not": { "const": 1 } },
+            "then": false,
+            "else": { "type": "integer" }
+        }));
+        let sup = resolve(json!({ "const": 1 }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_else_enum_filtered_by_guard_fits_target() {
+        let sub = resolve(json!({
+            "if": { "type": "integer" },
+            "then": { "type": "string" },
+            "else": { "enum": [1, "a"] }
+        }));
+        let sup = resolve(json!({ "type": "string" }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_conditional_filters_then_by_finite_guard() {
+        let sub = resolve(json!({
+            "if": { "enum": [1, "a"] },
+            "then": { "type": "integer" },
+            "else": true
+        }));
+        let sup = resolve(json!({
+            "if": { "enum": [1, "a"] },
+            "then": { "const": 1 },
+            "else": true
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_conditional_filters_else_by_guard() {
+        let sub = resolve(json!({
+            "if": { "const": 1 },
+            "then": true,
+            "else": { "enum": [1, "a"] }
+        }));
+        let sup = resolve(json!({
+            "if": { "const": 1 },
+            "then": true,
+            "else": { "const": "a" }
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_conditional_missing_then_uses_finite_guard() {
+        let sub = resolve(json!({
+            "if": { "allOf": [{ "enum": [1, 2] }, { "const": 1 }] },
+            "else": false
+        }));
+        let sup = resolve(json!({
+            "if": { "allOf": [{ "enum": [1, 2] }, { "const": 1 }] },
+            "then": { "const": 1 },
+            "else": false
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_conditional_missing_else_uses_negated_finite_guard() {
+        let sub = resolve(json!({
+            "if": { "not": { "enum": [1, "a"] } },
+            "then": false
+        }));
+        let sup = resolve(json!({
+            "if": { "not": { "enum": [1, "a"] } },
+            "then": false,
+            "else": { "enum": [1, "a"] }
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_with_false_then_is_subset_of_guard_complement() {
+        let sub = resolve(json!({
+            "if": { "type": "null" },
+            "then": false,
+            "else": true
+        }));
+        let sup = resolve(json!({ "not": { "type": "null" } }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_missing_else_uses_target_complement_cover() {
+        let sub = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "not": { "const": "reserved" } }
+        }));
+        let sup = resolve(json!({ "not": { "const": "reserved" } }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_explicit_else_uses_target_complement_cover() {
+        let sub = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "not": { "const": "reserved" } },
+            "else": { "const": 1 }
+        }));
+        let sup = resolve(json!({ "not": { "const": "reserved" } }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_with_false_else_is_subset_of_guard_target() {
+        let sub = resolve(json!({
+            "if": { "type": "null" },
+            "then": { "not": { "const": 1 } },
+            "else": false
+        }));
+        let sup = resolve(json!({ "type": "null" }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn allof_to_allof_uses_whole_intersection_for_conjunct() {
+        let sub = resolve(json!({
+            "allOf": [
+                { "type": "integer" },
+                { "minimum": 1 },
+                { "maximum": 3 }
+            ]
+        }));
+        let sup = resolve(json!({
+            "allOf": [
+                { "type": "integer", "minimum": 0, "maximum": 5 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_explicit_then_uses_guard_cover() {
+        let sub = resolve(json!({
+            "if": { "enum": ["a", "b"] },
+            "then": true,
+            "else": false
+        }));
+        let sup = resolve(json!({
+            "if": { "enum": ["a", "b"] },
+            "then": { "type": "string" },
+            "else": false
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_explicit_else_uses_complement_cover() {
+        let sub = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "maxLength": 5 },
+            "else": { "not": { "const": 1 } }
+        }));
+        let sup = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "maxLength": 10 },
+            "else": { "not": { "const": "reserved" } }
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_missing_else_accepts_complement_cover() {
+        let sub = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "maxLength": 5 }
+        }));
+        let sup = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "maxLength": 10 },
+            "else": { "not": { "const": "reserved" } }
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn same_guard_missing_else_rejects_incomplete_complement_cover() {
+        let sub = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "maxLength": 5 }
+        }));
+        let sup = resolve(json!({
+            "if": { "type": "string" },
+            "then": { "maxLength": 10 },
+            "else": { "not": { "const": 1 } }
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_guard_not_covered_then_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "if": { "enum": ["a", "b"] },
+            "then": { "type": "number" },
+            "else": true
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn incomplete_anyof_complement_cover_stays_conservative() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "type": "string" },
+                { "not": { "const": 1 } }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
     fn incomplete_anyof_type_cover_stays_conservative() {
         let sub = resolve(json!({}));
         let sup = resolve(json!({
@@ -8218,6 +14073,25 @@ mod tests {
             "oneOf": [
                 { "const": "red" },
                 { "const": "blue" }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_conditional_required_property_can_partition_branch() {
+        let sub = resolve(json!({
+            "type": "object",
+            "required": ["flag"]
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "object", "required": ["flag"] },
+                { "not": {
+                    "if": { "type": "object" },
+                    "then": { "required": ["flag"] }
+                }}
             ]
         }));
 
@@ -9003,6 +14877,210 @@ mod tests {
     }
 
     #[test]
+    fn allof_of_negations_implies_negated_anyof() {
+        let sub = resolve(json!({
+            "allOf": [
+                { "not": { "type": "string" } },
+                { "not": { "type": "integer" } }
+            ]
+        }));
+        let sup = resolve(json!({
+            "not": {
+                "anyOf": [
+                    { "type": "string" },
+                    { "type": "integer" }
+                ]
+            }
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_allof_of_complements_is_covered_by_positive_union() {
+        let sub = resolve(json!({
+            "not": { "allOf": [
+                { "not": { "const": 2 } },
+                { "not": { "enum": [2, 3] } }
+            ] }
+        }));
+        let sup = resolve(json!({ "anyOf": [
+            { "enum": [2, 3] },
+            { "enum": ["a", "b"] }
+        ] }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_union_with_finite_complement_arm_filters_sibling_values() {
+        let sub = resolve(json!({
+            "not": {
+                "anyOf": [
+                    { "const": 1 },
+                    { "not": { "enum": [1, 2] } }
+                ]
+            }
+        }));
+        let sup = resolve(json!({ "anyOf": [
+            { "enum": [2, 3] },
+            { "enum": ["a", "b"] }
+        ] }));
+
+        // The subset simplifies to the singleton value 2.
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_union_with_complement_arm_implies_positive_arm() {
+        let sub = resolve(json!({
+            "not": {
+                "anyOf": [
+                    { "not": { "const": "ok" } },
+                    { "const": "bad" }
+                ]
+            }
+        }));
+        let sup = resolve(json!({ "enum": ["ok", "other"] }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_oneof_complement_pair_disjoint_reduces_to_union() {
+        let sub = resolve(json!({
+            "not": { "oneOf": [
+                { "const": false },
+                { "not": { "type": "integer" } }
+            ] }
+        }));
+        let sup = resolve(json!({ "anyOf": [
+            { "const": false },
+            { "type": "integer" }
+        ] }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_oneof_complement_pair_finite_cancellation() {
+        let sub = resolve(json!({
+            "not": { "oneOf": [
+                { "not": { "enum": [null, false] } },
+                { "type": "null" }
+            ] }
+        }));
+        let sup = resolve(json!({ "const": false }));
+
+        // The xor complement reduces to the finite symmetric difference
+        // between {null,false} and {null}, i.e. just false.
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_oneof_complement_pair_overlap_uses_union_bound() {
+        let sub = resolve(json!({
+            "not": { "oneOf": [
+                { "type": "string" },
+                { "not": { "enum": [1, "a", null] } }
+            ] }
+        }));
+        let sup = resolve(json!({ "anyOf": [
+            { "type": "string" },
+            { "enum": [1, "a", null] }
+        ] }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_oneof_complement_pair_comparable_reduces_to_larger_side() {
+        let sub = resolve(json!({
+            "not": { "oneOf": [
+                { "enum": [1, 2] },
+                { "not": { "type": "integer" } }
+            ] }
+        }));
+        let sup = resolve(json!({ "type": "integer" }));
+
+        // The positive enum arm is contained in the integer arm, so the
+        // complement of the xor can only contain integers.
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_singleton_covered_by_finite_complement_gap_union() {
+        let sub = resolve(json!({ "not": { "const": 1 } }));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "enum": [1, 2] } },
+                { "const": 2 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn allof_of_finite_negations_implies_negated_enum() {
+        let sub = resolve(json!({
+            "allOf": [
+                { "not": { "const": 1 } },
+                { "not": { "const": 2 } }
+            ]
+        }));
+        let sup = resolve(json!({ "not": { "enum": [1, 2] } }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_allof_is_covered_by_anyof_of_negated_applicability_conjuncts() {
+        // `minLength` without an explicit type is normalized as an
+        // applicability union (non-strings plus constrained strings).  The
+        // De Morgan cover still holds after that expansion.
+        let sub = resolve(json!({
+            "not": {
+                "allOf": [
+                    { "type": "string" },
+                    { "minLength": 2 }
+                ]
+            }
+        }));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "string" } },
+                { "not": { "minLength": 2 } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn double_negation_on_left_delegates_to_inner_subset() {
+        let sub = resolve(json!({ "not": { "not": { "enum": [1, "a"] } } }));
+        let sup = resolve(json!({ "anyOf": [
+            { "enum": [1, "a"] },
+            { "const": 2 }
+        ] }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn double_negation_on_right_delegates_to_inner_subset() {
+        let sub = resolve(json!({ "enum": [1, "a"] }));
+        let sup = resolve(json!({ "not": { "not": { "anyOf": [
+            { "const": 1 },
+            { "const": "a" },
+            { "const": 2 }
+        ] } } }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
     fn negation_is_contravariant_for_proved_inner_subset() {
         let sub = resolve(json!({ "not": { "type": "string" } }));
         let sup = resolve(json!({ "not": { "enum": ["blocked"] } }));
@@ -9776,6 +15854,65 @@ mod tests {
     }
 
     #[test]
+    fn impossible_min_properties_exceeds_conditional_finite_property_names_is_vacuous() {
+        let names = json!({
+            "if": { "type": "string" },
+            "then": { "enum": ["only"] }
+        });
+        let impossible = resolve(json!({
+            "type": "object",
+            "minProperties": 2,
+            "propertyNames": names
+        }));
+        let arbitrary_object = resolve(json!({
+            "type": "object",
+            "required": ["z"]
+        }));
+
+        assert!(is_subschema_of(&impossible, &arbitrary_object));
+    }
+
+    #[test]
+    fn conditional_missing_then_finite_property_names_bound_count() {
+        let names = json!({
+            "if": { "enum": ["a"] },
+            "else": { "enum": ["b"] }
+        });
+        let sub = resolve(json!({
+            "type": "object",
+            "propertyNames": names.clone()
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "object", "propertyNames": names },
+                { "type": "object", "minProperties": 3 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn conditional_missing_else_negated_finite_property_names_bound_count() {
+        let names = json!({
+            "if": { "not": { "enum": ["a"] } },
+            "then": { "enum": ["b"] }
+        });
+        let sub = resolve(json!({
+            "type": "object",
+            "propertyNames": names.clone()
+        }));
+        let sup = resolve(json!({
+            "oneOf": [
+                { "type": "object", "propertyNames": names },
+                { "type": "object", "minProperties": 3 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
     fn impossible_min_properties_excludes_declared_names_with_impossible_dependencies() {
         let impossible = resolve(json!({
             "type": "object",
@@ -10337,6 +16474,83 @@ mod tests {
     }
 
     #[test]
+    fn conditional_missing_then_uses_guard_and_else_cover() {
+        let subset = resolve(json!({
+            "if": { "type": "integer" },
+            "else": { "enum": [false, null] }
+        }));
+        let superset = resolve(json!({
+            "anyOf": [
+                { "type": "integer" },
+                { "enum": [false, null] }
+            ]
+        }));
+
+        assert!(is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
+    fn conditional_missing_then_requires_guard_cover() {
+        let subset = resolve(json!({
+            "if": { "type": "integer" },
+            "else": { "const": false }
+        }));
+        let superset = resolve(json!({ "enum": [false] }));
+
+        assert!(!is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
+    fn conditional_vacuous_then_branch_can_use_else_subset() {
+        let subset = resolve(json!({
+            "if": { "type": "boolean" },
+            "then": { "anyOf": [{ "type": "object" }] },
+            "else": { "const": 1 }
+        }));
+        let superset = resolve(json!({ "type": "integer" }));
+
+        assert!(is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
+    fn conditional_vacuous_then_detects_negated_guard_literal() {
+        let subset = resolve(json!({
+            "if": { "not": { "const": 1 } },
+            "then": { "const": 1 },
+            "else": { "const": 1 }
+        }));
+        let superset = resolve(json!({ "const": 1 }));
+
+        // The then side is `not const(1) && const(1)`, so it is empty even
+        // though both schemas have the same broad numeric type mask.
+        assert!(is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
+    fn conditional_vacuous_else_branch_can_use_then_subset() {
+        let subset = resolve(json!({
+            "if": { "type": "integer" },
+            "then": { "const": 1 },
+            "else": { "type": "integer" }
+        }));
+        let superset = resolve(json!({ "const": 1 }));
+
+        assert!(is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
+    fn conditional_overlapping_else_branch_stays_live() {
+        let subset = resolve(json!({
+            "if": { "type": "integer" },
+            "then": { "const": 1 },
+            "else": { "type": "string" }
+        }));
+        let superset = resolve(json!({ "const": 1 }));
+
+        assert!(!is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
     fn conditional_branches_can_target_union_collectively() {
         let subset = resolve(json!({
             "if": { "type": "string" },
@@ -10367,6 +16581,26 @@ mod tests {
         let superset = resolve(json!({
             "type": "array",
             "maxItems": 3
+        }));
+
+        assert!(is_subschema_of(&subset, &superset));
+    }
+
+    #[test]
+    fn unique_split_allof_integer_range_has_finite_capacity() {
+        let subset = resolve(json!({
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+                "allOf": [
+                    { "type": "integer", "minimum": 0 },
+                    { "type": "integer", "maximum": 1 }
+                ]
+            }
+        }));
+        let superset = resolve(json!({
+            "type": "array",
+            "maxItems": 2
         }));
 
         assert!(is_subschema_of(&subset, &superset));
@@ -10458,7 +16692,7 @@ mod tests {
     }
 
     #[test]
-    fn unique_integral_number_multiple_domain_has_finite_capacity() {
+    fn unique_number_multiple_domain_is_not_treated_as_finite_capacity() {
         let subset = resolve(json!({
             "type": "array",
             "uniqueItems": true,
@@ -10474,7 +16708,10 @@ mod tests {
             "maxItems": 3
         }));
 
-        assert!(is_subschema_of(&subset, &superset));
+        // Near-multiple floating values make this domain infinite under the
+        // validator's epsilon semantics, so do not cap uniqueItems by the
+        // projected integer multiples.
+        assert!(!is_subschema_of(&subset, &superset));
     }
 
     #[test]
@@ -10547,5 +16784,1247 @@ mod tests {
         }));
 
         assert!(is_subschema_of(&impossible, &arbitrary_array));
+    }
+
+    #[test]
+    fn anyof_required_or_property_schema_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "required": ["tag"] },
+                { "properties": { "tag": { "const": "ok" } } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn property_presence_cover_with_extra_absence_constraint_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "required": ["tag"] },
+                { "properties": { "tag": { "const": "ok" }, "other": { "const": 1 } } }
+            ]
+        }));
+
+        // An object like {"other": 2} has no tag and fails the second branch.
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn explicit_non_object_complement_with_presence_split_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "object" } },
+                { "type": "object", "required": ["tag"] },
+                { "type": "object", "properties": { "tag": { "const": "ok" } } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn required_or_same_trigger_dependent_required_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "required": ["tag"] },
+                { "dependentRequired": { "tag": ["other"] } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn required_or_other_trigger_dependent_required_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "required": ["tag"] },
+                { "dependentRequired": { "other": ["missing"] } }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_object_count_threshold_cover_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxProperties": 0 },
+                { "minProperties": 1 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_empty_object_arm_plus_nonempty_count_cover_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "properties": { "tag": { "const": "ok" } } },
+                { "minProperties": 1 }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_object_count_bridge_intervals_are_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "object" } },
+                { "type": "object", "maxProperties": 0 },
+                { "type": "object", "minProperties": 1, "maxProperties": 2 },
+                { "type": "object", "minProperties": 3 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_object_count_threshold_gap_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxProperties": 1 },
+                { "minProperties": 3 }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn property_absence_and_dependent_target_presence_cover_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "properties": { "tag": { "const": "ok" } } },
+                { "dependentRequired": { "other": ["tag"] } }
+            ]
+        }));
+
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn dependent_target_presence_cover_with_extra_dependency_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "properties": { "tag": { "const": "ok" } } },
+                { "dependentRequired": { "other": ["tag", "extra"] } }
+            ]
+        }));
+
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_single_property_name_partition_with_count_gap_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "minProperties": 2 },
+                { "maxProperties": 1, "propertyNames": { "enum": ["a"] } },
+                { "maxProperties": 1, "propertyNames": { "not": { "enum": ["a"] } } }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn property_name_partition_without_high_count_gap_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxProperties": 1, "propertyNames": { "enum": ["a"] } },
+                { "maxProperties": 1, "propertyNames": { "not": { "enum": ["a"] } } }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_required_property_value_partition_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "required": ["a"] } },
+                { "required": ["a"], "properties": { "a": { "enum": [1] } } },
+                { "required": ["a"], "properties": { "a": { "not": { "enum": [1] } } } }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn property_value_partition_with_extra_required_name_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "required": ["a"] } },
+                { "required": ["a", "b"], "properties": { "a": { "enum": [1] } } },
+                { "required": ["a"], "properties": { "a": { "not": { "enum": [1] } } } }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_prefix_item_complement_partition_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "prefixItems": [ { "enum": [1] } ] },
+                { "prefixItems": [ { "not": { "enum": [1] } } ] }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn prefix_item_partition_with_tail_bound_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxItems": 1, "prefixItems": [ { "enum": [1] } ] },
+                { "maxItems": 1, "prefixItems": [ { "not": { "enum": [1] } } ] }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_items_or_contains_complement_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "items": { "enum": [1] } },
+                { "contains": { "not": { "enum": [1] } } }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn items_contains_partition_with_max_contains_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "items": { "enum": [1] } },
+                { "contains": { "not": { "enum": [1] } }, "maxContains": 1 }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_not_items_or_contains_positive_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "items": { "not": { "enum": [1] } } },
+                { "contains": { "enum": [1] } }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_array_count_threshold_cover_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxItems": 1 },
+                { "minItems": 2 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_array_count_bridge_intervals_are_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "array" } },
+                { "type": "array", "maxItems": 0 },
+                { "type": "array", "minItems": 1, "maxItems": 2 },
+                { "type": "array", "minItems": 3 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_array_count_gap_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxItems": 1 },
+                { "minItems": 3 }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_string_length_threshold_cover_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxLength": 1 },
+                { "minLength": 2 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_string_length_bridge_intervals_are_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "string" } },
+                { "type": "string", "maxLength": 1 },
+                { "type": "string", "minLength": 2, "maxLength": 3 },
+                { "type": "string", "minLength": 4 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_string_length_gap_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maxLength": 1 },
+                { "minLength": 3 }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_numeric_touching_range_cover_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "maximum": 1 },
+                { "exclusiveMinimum": 1 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_numeric_bridge_intervals_are_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "number" } },
+                { "type": "number", "maximum": 0 },
+                { "type": "number", "minimum": 0, "maximum": 2 },
+                { "type": "number", "minimum": 2 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_numeric_bridge_open_point_gap_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "number" } },
+                { "type": "number", "exclusiveMaximum": 0 },
+                { "type": "number", "exclusiveMinimum": 0, "maximum": 2 },
+                { "type": "number", "minimum": 2 }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_numeric_open_point_gap_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "exclusiveMaximum": 1 },
+                { "exclusiveMinimum": 1 }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_integer_lattice_with_noninteger_complement_is_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "integer" } },
+                { "type": "integer", "maximum": 1 },
+                { "type": "integer", "minimum": 2 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_integer_lattice_bridge_intervals_cover_gap() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "integer" } },
+                { "type": "integer", "maximum": 0 },
+                { "type": "integer", "minimum": 1, "maximum": 4 },
+                { "type": "integer", "minimum": 5 }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn anyof_integer_lattice_gap_with_noninteger_complement_is_not_universal() {
+        let sub = resolve(json!({}));
+        let sup = resolve(json!({
+            "anyOf": [
+                { "not": { "type": "integer" } },
+                { "type": "integer", "maximum": 1 },
+                { "type": "integer", "minimum": 3 }
+            ]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn finite_oneof_of_complements_can_prove_xor_subset() {
+        // The new schema accepts only []: it is the symmetric difference of
+        // { } and { [], {} }.  The old schema accepts arrays (and 3), so the
+        // finite xor is a safe subset even though neither complement branch is
+        // finite by itself.
+        let old = resolve(json!({
+            "oneOf": [
+                { "not": { "const": 3 } },
+                { "not": { "type": "array" } }
+            ]
+        }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "const": {} } },
+                { "not": { "enum": [[], {}] } }
+            ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn impossible_type_intersection_is_subset_of_anything() {
+        let sub = resolve(json!({
+            "allOf": [
+                { "type": "string" },
+                { "type": "number" }
+            ]
+        }));
+        let sup = resolve(json!({ "const": 42 }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn disjoint_complement_xor_collapses_to_union_subset() {
+        let old = resolve(json!({
+            "anyOf": [
+                { "type": "string" },
+                { "type": "number" }
+            ]
+        }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "type": "string" } },
+                { "not": { "type": "number" } }
+            ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn overlapping_complement_xor_does_not_collapse_to_union() {
+        // Excluded regions overlap (integers are numbers), so the xor is the
+        // non-integer-number gap rather than their union. Do not prove it as a
+        // subset of integers.
+        let old = resolve(json!({ "type": "integer" }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "type": "integer" } },
+                { "not": { "type": "number" } }
+            ]
+        }));
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn three_way_complement_xor_needs_only_two_covering_inners() {
+        // In a three-way xor of complements, each accepted arm satisfies the
+        // other two excluded regions.  A and B are both contained by `old`, so
+        // every arm is covered even though C also admits arrays.
+        let old = resolve(json!({ "type": ["string", "number", "boolean"] }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "type": ["string", "number"] } },
+                { "not": { "type": ["number", "boolean"] } },
+                { "not": { "type": ["boolean", "array"] } }
+            ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_singleton_untyped_numeric_assertion_forces_number() {
+        let old = resolve(json!({ "type": "number" }));
+        let new = resolve(json!({ "not": { "oneOf": [ { "maximum": 1 } ] } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_singleton_untyped_string_assertion_forces_string() {
+        let old = resolve(json!({ "type": "string" }));
+        let new = resolve(json!({ "not": { "oneOf": [ { "maxLength": 1 } ] } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn disjoint_three_way_complement_xor_is_empty() {
+        let old = resolve(json!({ "const": 42 }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "type": "string" } },
+                { "not": { "type": "number" } },
+                { "not": { "type": "boolean" } }
+            ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn three_way_complement_xor_with_one_covering_inner_stays_conservative() {
+        let old = resolve(json!({ "type": "number" }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "type": "number" } },
+                { "not": { "type": ["number", "array"] } },
+                { "not": { "type": ["number", "string"] } }
+            ]
+        }));
+        assert!(!is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn overlapping_complement_xor_is_still_subset_of_excluded_union() {
+        // Symmetric difference of integers and numbers is the non-integer
+        // numbers, which is still contained by the broader number schema.
+        let old = resolve(json!({ "type": "number" }));
+        let new = resolve(json!({
+            "oneOf": [
+                { "not": { "type": "integer" } },
+                { "not": { "type": "number" } }
+            ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn duplicate_two_arm_oneof_is_empty() {
+        let old = resolve(json!(false));
+        let new = resolve(json!({ "oneOf": [ { "type": "string" }, { "type": "string" } ] }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn false_arm_two_way_oneof_normalizes_to_live_branch() {
+        let old = resolve(json!({ "type": "string" }));
+        let new = resolve(json!({ "oneOf": [ false, { "type": "string", "maxLength": 3 } ] }));
+        assert!(is_subschema_of(&new, &old));
+
+        let wrapped_old = resolve(json!({ "oneOf": [ { "type": "string" }, false ] }));
+        assert!(is_subschema_of(&new, &wrapped_old));
+    }
+
+    #[test]
+    fn oneof_with_multiple_empty_arms_reduces_to_live_branch() {
+        let old = resolve(json!({ "type": "integer" }));
+        let new = resolve(
+            json!({ "oneOf": [ false, { "enum": [] }, { "type": "integer", "minimum": 0 } ] }),
+        );
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_impossible_intersection_is_universal_superset() {
+        let old =
+            resolve(json!({ "not": { "allOf": [ { "type": "array" }, { "type": "string" } ] } }));
+        let new = resolve(json!({ "anyOf": [ { "maxLength": 1 }, { "not": false } ] }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_oneof_complement_disjoint_pair_contains_positive_side() {
+        let old = resolve(json!({
+            "not": { "oneOf": [ { "not": { "type": "null" } }, { "type": "number" } ] }
+        }));
+        let new = resolve(json!({ "type": "number" }));
+        assert!(is_subschema_of(&new, &old));
+
+        let null_side = resolve(json!({ "type": "null" }));
+        assert!(is_subschema_of(&null_side, &old));
+    }
+
+    #[test]
+    fn negated_two_arm_oneof_contains_intersection_side() {
+        let old = resolve(json!({ "not": { "oneOf": [ { "minLength": 1 }, { "maximum": 1 } ] } }));
+        let new = resolve(json!({ "oneOf": [ { "type": "object" }, { "enum": ["a", "aa"] } ] }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_two_arm_oneof_contains_neither_side() {
+        let old =
+            resolve(json!({ "not": { "oneOf": [ { "type": "string" }, { "type": "number" } ] } }));
+        let new = resolve(json!({ "type": "object" }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_minimum_becomes_number_upper_halfline() {
+        let old = resolve(json!({ "type": "number", "exclusiveMaximum": 0 }));
+        let new = resolve(json!({ "not": { "minimum": 0 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_maximum_becomes_number_lower_halfline() {
+        let old = resolve(json!({ "type": "number", "exclusiveMinimum": 1 }));
+        let new = resolve(json!({ "not": { "maximum": 1 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_minlength_becomes_string_upper_count() {
+        let old = resolve(json!({ "type": "string", "maxLength": 0 }));
+        let new = resolve(json!({ "not": { "minLength": 1 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_maxlength_becomes_string_lower_count() {
+        let old = resolve(json!({ "type": "string", "minLength": 2 }));
+        let new = resolve(json!({ "not": { "maxLength": 1 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_minitems_becomes_array_upper_count() {
+        let old = resolve(json!({ "type": "array", "maxItems": 1 }));
+        let new = resolve(json!({ "not": { "minItems": 2 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_maxitems_becomes_array_lower_count() {
+        let old = resolve(json!({ "type": "array", "minItems": 3 }));
+        let new = resolve(json!({ "not": { "maxItems": 2 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_minproperties_becomes_object_upper_count() {
+        let old = resolve(json!({ "type": "object", "maxProperties": 1 }));
+        let new = resolve(json!({ "not": { "minProperties": 2 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_untyped_maxproperties_becomes_object_lower_count() {
+        let old = resolve(json!({ "type": "object", "minProperties": 3 }));
+        let new = resolve(json!({ "not": { "maxProperties": 2 } }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn mixed_oneof_disjoint_complement_is_subset_of_negated_side() {
+        let old = resolve(json!({ "not": { "type": "array" } }));
+        let new = resolve(json!({
+            "oneOf": [ { "type": "array" }, { "not": { "const": {} } } ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+
+        let old_other = resolve(json!({ "not": { "const": {} } }));
+        assert!(is_subschema_of(&new, &old_other));
+    }
+
+    #[test]
+    fn mixed_oneof_disjoint_complement_fits_negated_union_arm() {
+        let old = resolve(json!({
+            "anyOf": [ { "type": "object" }, { "not": { "enum": [1, 2] } } ]
+        }));
+        let new = resolve(json!({
+            "oneOf": [ { "type": "number" }, { "not": { "type": "object" } } ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn mixed_oneof_disjoint_complement_fits_negated_intersection_target() {
+        let old = resolve(json!({
+            "allOf": [ { "not": { "const": 0 } }, { "not": { "const": 1 } } ]
+        }));
+        let new = resolve(json!({
+            "oneOf": [ { "type": "integer" }, { "not": { "const": [1] } } ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn mixed_oneof_disjoint_complement_fits_comparable_mixed_xor_target() {
+        let old = resolve(json!({
+            "oneOf": [ { "const": false }, { "not": { "type": "boolean" } } ]
+        }));
+        let new = resolve(json!({
+            "oneOf": [ { "const": true }, { "not": { "const": {} } } ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn mixed_oneof_disjoint_complement_fits_union_with_finite_negated_remainder() {
+        let old = resolve(json!({
+            "anyOf": [ { "const": 1 }, { "not": { "enum": [1, 2] } } ]
+        }));
+        let new = resolve(json!({
+            "oneOf": [ { "const": 2 }, { "not": { "type": "string" } } ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn comparable_positive_oneof_difference_fits_negated_union() {
+        let old = resolve(json!({
+            "not": { "anyOf": [ { "const": false }, { "const": "b" } ] }
+        }));
+        let new = resolve(json!({
+            "oneOf": [ { "const": "b" }, { "type": "string" } ]
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_double_complement_xor_fits_mixed_finite_difference() {
+        let old = resolve(json!({
+            "oneOf": [ { "enum": [1, "a", null] }, { "not": { "const": 1 } } ]
+        }));
+        let new = resolve(json!({
+            "not": { "oneOf": [ { "not": { "type": "null" } }, { "not": { "type": "string" } } ] }
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_disjoint_xor_fits_mixed_finite_difference() {
+        let old = resolve(json!({
+            "oneOf": [ { "enum": [[], {}] }, { "not": { "const": {} } } ]
+        }));
+        let new = resolve(json!({
+            "not": { "oneOf": [ { "const": 3 }, { "type": "array" } ] }
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_disjoint_xor_fits_mixed_opposite_finite_difference() {
+        let old = resolve(json!({
+            "oneOf": [ { "const": 1 }, { "not": { "enum": [1, 2] } } ]
+        }));
+        let new = resolve(json!({
+            "not": { "oneOf": [ { "const": [2] }, { "enum": [2, 3] } ] }
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_comparable_xor_excludes_mixed_finite_gap() {
+        let old = resolve(json!({
+            "oneOf": [ { "enum": [[], {}] }, { "not": { "const": {} } } ]
+        }));
+        let new = resolve(json!({
+            "not": { "oneOf": [ { "const": 0 }, { "not": { "type": "object" } } ] }
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn negated_xor_covers_infinite_mixed_gap_with_finite_overlap() {
+        let old = resolve(json!({
+            "oneOf": [ { "type": "object" }, { "not": { "const": {} } } ]
+        }));
+        let new = resolve(json!({
+            "not": { "oneOf": [ { "enum": [[], {}] }, { "type": "object" } ] }
+        }));
+        assert!(is_subschema_of(&new, &old));
+    }
+
+    #[test]
+    fn constant_true_conditional_reduces_to_then_branch() {
+        let sup = resolve(json!({
+            "if": true,
+            "then": { "allOf": [ { "type": "number" }, { "multipleOf": 1 } ] },
+            "else": false
+        }));
+        let sub = resolve(json!({ "enum": [1, 3] }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn constant_false_conditional_reduces_to_else_branch() {
+        let sup = resolve(json!({
+            "if": false,
+            "then": false,
+            "else": { "type": "string", "enum": ["a", "b"] }
+        }));
+        let sub = resolve(json!({ "const": "a" }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn array_schema_fits_negated_numeric_union_by_type_mask() {
+        let sup = resolve(json!({
+            "not": { "anyOf": [ { "type": "number", "minimum": 0, "maximum": 2 } ] }
+        }));
+        let sub = resolve(json!({
+            "type": "array",
+            "prefixItems": [true],
+            "items": { "type": "array" },
+            "maxItems": 1
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn non_arrays_fit_negated_constant_true_conditional_array_branch() {
+        let sup = resolve(json!({
+            "not": {
+                "if": true,
+                "then": { "type": "array" },
+                "else": { "const": 0 }
+            }
+        }));
+        let sub = resolve(json!({
+            "anyOf": [
+                { "type": "integer" },
+                { "type": "string" },
+                { "type": "boolean" }
+            ]
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn bounded_number_lattice_singleton_fits_integer_conditional_else() {
+        let sup = resolve(json!({
+            "if": { "type": "array", "minItems": 2 },
+            "then": { "type": "object" },
+            "else": { "type": "integer", "multipleOf": 2 }
+        }));
+        let sub = resolve(json!({
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0,
+            "multipleOf": 2
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn nested_singleton_oneof_fits_negated_empty_enum_intersection() {
+        let sub = resolve(json!({ "oneOf": [{ "oneOf": [true] }] }));
+        let sup = resolve(json!({
+            "not": {
+                "allOf": [
+                    { "type": "string", "minLength": 2, "maxLength": 2, "enum": ["b"] }
+                ]
+            }
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn impossible_contains_requirement_makes_array_branch_empty() {
+        let sub = resolve(json!({
+            "type": "array",
+            "contains": false,
+            "minContains": 1
+        }));
+        let sup = resolve(json!({ "type": "string" }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn disjoint_contains_matcher_makes_array_branch_empty_across_types() {
+        let sup = resolve(json!({ "type": "object" }));
+        let homogeneous = resolve(json!({
+            "type": "array",
+            "items": { "type": "string" },
+            "contains": { "type": "number" },
+            "minContains": 1
+        }));
+        assert!(is_subschema_of(&homogeneous, &sup));
+
+        let closed_tuple = resolve(json!({
+            "type": "array",
+            "prefixItems": [{ "type": "string" }],
+            "items": false,
+            "minItems": 1,
+            "contains": { "type": "number" },
+            "minContains": 1
+        }));
+        assert!(is_subschema_of(&closed_tuple, &sup));
+    }
+
+    #[test]
+    fn locally_impossible_unique_array_branch_is_vacuous_across_types() {
+        let sup = resolve(json!({ "type": "string" }));
+        let finite_tail = resolve(json!({
+            "type": "array",
+            "uniqueItems": true,
+            "minItems": 2,
+            "items": { "enum": [1] }
+        }));
+        assert!(is_subschema_of(&finite_tail, &sup));
+
+        let repeated_prefix = resolve(json!({
+            "type": "array",
+            "uniqueItems": true,
+            "prefixItems": [{ "const": 1 }, { "const": 1 }],
+            "minItems": 2
+        }));
+        assert!(is_subschema_of(&repeated_prefix, &sup));
+    }
+
+    #[test]
+    fn negated_split_allof_object_property_contradiction_is_universal() {
+        let sup = resolve(json!({
+            "not": {
+                "allOf": [
+                    { "type": "object", "required": ["a"], "properties": { "a": { "type": "string" } } },
+                    { "type": "object", "required": ["a"], "properties": { "a": { "type": "number" } } }
+                ]
+            }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_split_allof_array_items_contains_contradiction_is_universal() {
+        let sup = resolve(json!({
+            "not": {
+                "allOf": [
+                    { "type": "array", "items": { "type": "string" } },
+                    { "type": "array", "contains": { "type": "number" }, "minContains": 1 }
+                ]
+            }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_split_allof_array_length_contradiction_is_universal() {
+        let sup = resolve(json!({
+            "not": { "allOf": [
+                { "type": "array", "minItems": 3 },
+                { "type": "array", "maxItems": 1 }
+            ] }
+        }));
+        assert!(is_subschema_of(&resolve(json!(true)), &sup));
+    }
+
+    #[test]
+    fn negated_split_allof_object_count_contradiction_is_universal() {
+        let sup = resolve(json!({
+            "not": { "allOf": [
+                { "type": "object", "minProperties": 3 },
+                { "type": "object", "maxProperties": 1 }
+            ] }
+        }));
+        assert!(is_subschema_of(&resolve(json!(true)), &sup));
+    }
+
+    #[test]
+    fn negated_split_allof_numeric_range_contradiction_is_universal() {
+        let sup = resolve(json!({
+            "not": {
+                "allOf": [
+                    { "type": "number", "minimum": 3 },
+                    { "type": "number", "maximum": 1 }
+                ]
+            }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_split_allof_string_length_contradiction_is_universal() {
+        let sup = resolve(json!({
+            "not": {
+                "allOf": [
+                    { "type": "string", "minLength": 3 },
+                    { "type": "string", "maxLength": 1 }
+                ]
+            }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_duplicate_oneof_branches_are_universal() {
+        let sup = resolve(json!({
+            "not": { "oneOf": [ { "type": "string" }, { "type": "string" } ] }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_conditional_with_locally_impossible_branches_is_universal() {
+        let sup = resolve(json!({
+            "not": {
+                "if": { "type": "string" },
+                "then": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "minItems": 3,
+                    "items": { "type": "boolean" }
+                },
+                "else": {
+                    "type": "object",
+                    "properties": { "a": false },
+                    "required": ["a"]
+                }
+            }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn negated_locally_impossible_unique_array_is_universal() {
+        let sup = resolve(json!({
+            "not": {
+                "type": "array",
+                "uniqueItems": true,
+                "minItems": 3,
+                "items": { "type": "boolean" }
+            }
+        }));
+        let sub = resolve(json!(true));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn locally_impossible_object_branch_is_vacuous_across_types() {
+        let sub = resolve(json!({
+            "type": "object",
+            "properties": { "a": false },
+            "required": ["a"]
+        }));
+        let sup = resolve(json!({ "type": "array" }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn locally_empty_contains_matcher_makes_array_branch_empty() {
+        let sub = resolve(json!({
+            "type": "array",
+            "contains": { "type": "string", "enum": [1] },
+            "minContains": 1
+        }));
+        let sup = resolve(json!({ "type": "number" }));
+        assert!(is_subschema_of(&sub, &sup));
+
+        let constrained = resolve(json!({
+            "type": "array",
+            "contains": { "type": "string", "minLength": 2, "maxLength": 2, "enum": ["b"] },
+            "minContains": 1
+        }));
+        assert!(is_subschema_of(&constrained, &sup));
+    }
+
+    #[test]
+    fn forbidden_optional_property_skips_superset_property_constraint() {
+        let sub = resolve(json!({
+            "type": "object",
+            "propertyNames": { "enum": ["b"] }
+        }));
+        let sup = resolve(json!({
+            "type": "object",
+            "properties": { "k": { "type": "number" } }
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_object_presence_partition_allows_optional_property_target() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "object" },
+                { "type": "object", "required": ["a"] }
+            ]
+        }));
+        let sup = resolve(json!({
+            "type": "object",
+            "properties": { "a": { "type": "number" } }
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+
+        let conditional = resolve(json!({
+            "if": { "type": "string", "minLength": 1 },
+            "then": { "type": "integer" },
+            "else": {
+                "type": "object",
+                "properties": { "a": { "type": "number" } }
+            }
+        }));
+        assert!(is_subschema_of(&sub, &conditional));
+    }
+
+    #[test]
+    fn oneof_object_presence_partition_does_not_ignore_other_requirements() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "object" },
+                { "type": "object", "required": ["a"] }
+            ]
+        }));
+        let sup = resolve(json!({
+            "type": "object",
+            "required": ["b"]
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_array_nonempty_partition_is_empty_array() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "array" },
+                { "type": "array", "minItems": 1 }
+            ]
+        }));
+        let sup = resolve(json!({ "type": "array", "maxItems": 1 }));
+        assert!(is_subschema_of(&sub, &sup));
+
+        let conditional = resolve(json!({
+            "if": { "type": "object" },
+            "then": false,
+            "else": { "type": "array", "maxItems": 0 }
+        }));
+        assert!(is_subschema_of(&sub, &conditional));
+    }
+
+    #[test]
+    fn oneof_array_nonempty_partition_respects_contains_minimum() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "array" },
+                { "type": "array", "minItems": 1 }
+            ]
+        }));
+        let sup = resolve(json!({
+            "type": "array",
+            "contains": true,
+            "minContains": 1
+        }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_string_nonempty_partition_is_empty_string() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "string" },
+                { "type": "string", "minLength": 1 }
+            ]
+        }));
+        let sup = resolve(json!({ "type": "string", "maxLength": 0 }));
+        assert!(is_subschema_of(&sub, &sup));
+
+        let conditional = resolve(json!({
+            "if": { "type": "array" },
+            "then": false,
+            "else": { "type": "string", "maxLength": 0 }
+        }));
+        assert!(is_subschema_of(&sub, &conditional));
+    }
+
+    #[test]
+    fn oneof_string_nonempty_partition_does_not_assume_patterns() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "string" },
+                { "type": "string", "minLength": 1 }
+            ]
+        }));
+        let sup = resolve(json!({ "type": "string", "pattern": "^x" }));
+        assert!(!is_subschema_of(&sub, &sup));
+    }
+
+    #[test]
+    fn oneof_object_nonempty_partition_is_empty_object() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "object" },
+                { "type": "object", "minProperties": 1 }
+            ]
+        }));
+        let sup = resolve(json!({
+            "type": "object",
+            "maxProperties": 0,
+            "properties": { "a": false }
+        }));
+        assert!(is_subschema_of(&sub, &sup));
+
+        let conditional = resolve(json!({
+            "if": { "type": "array" },
+            "then": false,
+            "else": { "type": "object", "maxProperties": 0 }
+        }));
+        assert!(is_subschema_of(&sub, &conditional));
+    }
+
+    #[test]
+    fn oneof_object_nonempty_partition_respects_required_target() {
+        let sub = resolve(json!({
+            "oneOf": [
+                { "type": "object" },
+                { "type": "object", "minProperties": 1 }
+            ]
+        }));
+        let sup = resolve(json!({ "type": "object", "required": ["a"] }));
+        assert!(!is_subschema_of(&sub, &sup));
     }
 }
