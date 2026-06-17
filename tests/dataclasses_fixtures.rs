@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 
 #[path = "support/python_env.rs"]
 mod python_env;
@@ -35,6 +36,7 @@ fn dataclass_snapshots_are_up_to_date_for_all_sample_schemas() {
     snapshot_stamp_example(repo_root, update, &mut expected_paths);
 
     prune_or_validate_stale_snapshots(repo_root, update, &expected_paths);
+    assert_python_syntax(&expected_paths);
 }
 
 fn snapshot_backcompat_fixtures(
@@ -166,10 +168,6 @@ fn assert_snapshot(
         "dataclass snapshot is stale: {}. Run `just regen-dataclasses-fixtures`.",
         snapshot_path.display()
     );
-
-    if matches!(snapshot.kind, SnapshotKind::Python) {
-        assert_python_syntax(&snapshot_path);
-    }
 }
 
 fn normalized_newlines(contents: &str) -> String {
@@ -284,19 +282,30 @@ fn read_json(path: impl AsRef<Path>) -> Value {
     .unwrap_or_else(|error| panic!("parse json {}: {error}", path.as_ref().display()))
 }
 
-fn assert_python_syntax(path: &Path) {
-    let status = python_env::python_command()
+fn assert_python_syntax(expected_paths: &BTreeSet<PathBuf>) {
+    let python_paths = expected_paths
+        .iter()
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("py"))
+        .collect::<Vec<_>>();
+    let mut child = python_env::python_command()
         .arg("-B")
         .arg("-c")
         .arg(
-            "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), filename=sys.argv[1])",
+            "import ast, json, pathlib, sys\nfor raw_path in json.load(sys.stdin):\n    path = pathlib.Path(raw_path)\n    ast.parse(path.read_text(encoding='utf-8'), filename=str(path))",
         )
-        .arg(path)
-        .status()
-        .expect("run python syntax check");
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("start python syntax check");
+
+    serde_json::to_writer(
+        child.stdin.take().expect("python syntax check stdin"),
+        &python_paths,
+    )
+    .expect("write generated dataclass paths");
+
+    let status = child.wait().expect("run python syntax check");
     assert!(
         status.success(),
-        "generated dataclass fixture {} did not compile",
-        path.display()
+        "generated dataclass fixtures did not compile"
     );
 }
