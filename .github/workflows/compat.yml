@@ -45,7 +45,7 @@ jobs:
         id: merge_base
         run: |
           git fetch origin main
-          echo "MERGE_BASE=$(git merge-base HEAD origin/main)" >> $GITHUB_OUTPUT
+          echo "MERGE_BASE=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout stamp example schema from MERGE_BASE
         id: stamp_example
