@@ -189,6 +189,8 @@ def clear_runtime_caches() -> None:
     getattr(dc._jsoncompat_type_hints_for, "cache_clear")()
     getattr(dc._jsoncompat_object_spec_for, "cache_clear")()
     getattr(dc._jsoncompat_root_annotation_for, "cache_clear")()
+    getattr(dc._jsoncompat_discriminator_plans_for, "cache_clear")()
+    getattr(dc._jsoncompat_dataclass_fields_for_type, "cache_clear")()
 
 
 def infer_all_specs() -> None:

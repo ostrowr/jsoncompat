@@ -954,4 +954,16 @@ def _jsoncompat_empty_extra() -> dict[str, Any]:
 def _jsoncompat_dataclass_fields(
     model_or_instance: object,
 ) -> tuple[dataclasses.Field[Any], ...]:
-    return dataclasses.fields(cast(Any, model_or_instance))
+    model_type = (
+        model_or_instance
+        if isinstance(model_or_instance, type)
+        else type(model_or_instance)
+    )
+    return _jsoncompat_dataclass_fields_for_type(model_type)
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_dataclass_fields_for_type(
+    model_type: type[Any],
+) -> tuple[dataclasses.Field[Any], ...]:
+    return dataclasses.fields(model_type)
