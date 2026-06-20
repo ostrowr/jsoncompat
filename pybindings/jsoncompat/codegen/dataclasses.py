@@ -6,6 +6,7 @@ import types
 from collections.abc import Mapping
 from typing import (
     Any,
+    Callable,
     ClassVar,
     Literal,
     NoReturn,
@@ -63,6 +64,9 @@ class JsoncompatMissingType:
 JSONCOMPAT_MISSING = JsoncompatMissingType()
 
 type Omittable[T] = T | JsoncompatMissingType
+type _JsoncompatConstructor = Callable[[Any, bool], Any]
+type _JsoncompatSerializer = Callable[[Any], Any]
+type _JsoncompatPythonValidator = Callable[[Any], None]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -71,6 +75,9 @@ class _JsoncompatFieldSpec:
     json_name: str
     annotation: Any
     omittable: bool
+    constructor: _JsoncompatConstructor
+    serializer: _JsoncompatSerializer
+    python_validator: _JsoncompatPythonValidator
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -78,6 +85,9 @@ class _JsoncompatObjectSpec:
     fields: tuple[_JsoncompatFieldSpec, ...]
     known_json_names: frozenset[str]
     extra_annotation: Any | None
+    extra_constructor: _JsoncompatConstructor | None
+    extra_serializer: _JsoncompatSerializer | None
+    extra_python_validator: _JsoncompatPythonValidator | None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -233,36 +243,36 @@ class DataclassModel:
                 if field_spec.omittable:
                     kwargs[field_spec.py_name] = JSONCOMPAT_MISSING
                 continue
-            kwargs[field_spec.py_name] = _jsoncompat_construct_value(
-                field_spec.annotation,
+            kwargs[field_spec.py_name] = field_spec.constructor(
                 value_object[field_spec.json_name],
-                validate_union_branches=_validate_union_branches,
+                _validate_union_branches,
             )
 
-        if object_spec.extra_annotation is not None:
-            kwargs[JSONCOMPAT_EXTRA_FIELD] = _jsoncompat_construct_extra(
-                object_spec.extra_annotation,
-                {
-                    key: item
-                    for key, item in value_object.items()
-                    if key not in object_spec.known_json_names
-                },
-                validate_union_branches=_validate_union_branches,
-            )
+        if object_spec.extra_constructor is not None:
+            kwargs[JSONCOMPAT_EXTRA_FIELD] = {
+                key: object_spec.extra_constructor(item, _validate_union_branches)
+                for key, item in value_object.items()
+                if key not in object_spec.known_json_names
+            }
 
         return _jsoncompat_new_unchecked(cls, kwargs)
 
     def jsoncompat_to_value_unchecked(self) -> Any:
         output: dict[str, Any] = {}
-        for field in _jsoncompat_dataclass_fields(self):
-            field_value = getattr(self, field.name)
-            if field.name == JSONCOMPAT_EXTRA_FIELD:
-                output.update(_jsoncompat_serialize_value(field_value))
-                continue
+        object_spec = _jsoncompat_object_spec_for(type(self))
+        for field_spec in object_spec.fields:
+            field_value = getattr(self, field_spec.py_name)
             if field_value is JSONCOMPAT_MISSING:
                 continue
-            json_name = field.metadata.get(JSONCOMPAT_JSON_NAME_METADATA, field.name)
-            output[json_name] = _jsoncompat_serialize_value(field_value)
+            output[field_spec.json_name] = field_spec.serializer(field_value)
+        if object_spec.extra_serializer is not None:
+            extra = cast(dict[str, Any], getattr(self, JSONCOMPAT_EXTRA_FIELD))
+            output.update(
+                {
+                    key: object_spec.extra_serializer(item)
+                    for key, item in extra.items()
+                }
+            )
         return output
 
 
@@ -302,7 +312,9 @@ class DataclassRootModel(DataclassModel):
         )
 
     def jsoncompat_to_value_unchecked(self) -> Any:
-        return _jsoncompat_serialize_value(self.root)
+        return _jsoncompat_serializer_for(_jsoncompat_root_annotation_for(type(self)))(
+            self.root
+        )
 
 
 class ReaderDataclassModel(DataclassModel):
@@ -412,14 +424,37 @@ def _jsoncompat_object_spec_for(
                 json_name=json_name,
                 annotation=annotation,
                 omittable=omittable,
+                constructor=_jsoncompat_constructor_for(annotation),
+                serializer=_jsoncompat_serializer_for(annotation),
+                python_validator=_jsoncompat_python_validator_for(annotation),
             )
         )
         known_json_names.add(json_name)
 
+    extra_value_annotation = (
+        _jsoncompat_extra_value_annotation(extra_annotation)
+        if extra_annotation is not None
+        else None
+    )
     return _JsoncompatObjectSpec(
         fields=tuple(fields),
         known_json_names=frozenset(known_json_names),
         extra_annotation=extra_annotation,
+        extra_constructor=(
+            _jsoncompat_constructor_for(extra_value_annotation)
+            if extra_annotation is not None
+            else None
+        ),
+        extra_serializer=(
+            _jsoncompat_serializer_for(extra_value_annotation)
+            if extra_annotation is not None
+            else None
+        ),
+        extra_python_validator=(
+            _jsoncompat_python_validator_for(extra_value_annotation)
+            if extra_annotation is not None
+            else None
+        ),
     )
 
 
@@ -451,108 +486,148 @@ def _jsoncompat_root_annotation_for(model_type: type[DataclassRootModel]) -> Any
     )
 
 
-def _jsoncompat_construct_extra(
-    annotation: Any,
-    value: dict[str, Any],
-    *,
-    validate_union_branches: bool,
-) -> dict[str, Any]:
-    value_annotation = _jsoncompat_extra_value_annotation(annotation)
-    return {
-        key: _jsoncompat_construct_value(
-            value_annotation,
-            item,
-            validate_union_branches=validate_union_branches,
-        )
-        for key, item in value.items()
-    }
-
-
 def _jsoncompat_construct_value(
     annotation: Any,
     value: Any,
     *,
     validate_union_branches: bool,
 ) -> Any:
+    return _jsoncompat_constructor_for(annotation)(value, validate_union_branches)
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
     if annotation is Any:
-        return value
+        return lambda value, validate_union_branches: value
     if annotation is JsoncompatMissingType:
-        if value is JSONCOMPAT_MISSING:
-            return value
-        raise TypeError("expected JSONCOMPAT_MISSING sentinel")
+        def construct_missing(value: Any, validate_union_branches: bool) -> Any:
+            _ = validate_union_branches
+            if value is JSONCOMPAT_MISSING:
+                return value
+            raise TypeError("expected JSONCOMPAT_MISSING sentinel")
+
+        return construct_missing
     if annotation is str:
-        if isinstance(value, str):
-            return value
-        raise TypeError(f"expected str, got {type(value).__name__}")
+        def construct_str(value: Any, validate_union_branches: bool) -> str:
+            _ = validate_union_branches
+            if isinstance(value, str):
+                return value
+            raise TypeError(f"expected str, got {type(value).__name__}")
+
+        return construct_str
     if annotation is int:
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        raise TypeError(f"expected int, got {type(value).__name__}")
+        def construct_int(value: Any, validate_union_branches: bool) -> int:
+            _ = validate_union_branches
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+            if isinstance(value, float) and value.is_integer():
+                return int(value)
+            raise TypeError(f"expected int, got {type(value).__name__}")
+
+        return construct_int
     if annotation is float:
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return value
-        raise TypeError(f"expected number, got {type(value).__name__}")
+        def construct_float(value: Any, validate_union_branches: bool) -> int | float:
+            _ = validate_union_branches
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return value
+            raise TypeError(f"expected number, got {type(value).__name__}")
+
+        return construct_float
     if annotation is bool:
-        if isinstance(value, bool):
-            return value
-        raise TypeError(f"expected bool, got {type(value).__name__}")
+        def construct_bool(value: Any, validate_union_branches: bool) -> bool:
+            _ = validate_union_branches
+            if isinstance(value, bool):
+                return value
+            raise TypeError(f"expected bool, got {type(value).__name__}")
+
+        return construct_bool
     if annotation is None or annotation is type(None):
-        if value is None:
-            return None
-        raise TypeError(f"expected null, got {type(value).__name__}")
+        def construct_none(value: Any, validate_union_branches: bool) -> None:
+            _ = validate_union_branches
+            if value is None:
+                return None
+            raise TypeError(f"expected null, got {type(value).__name__}")
+
+        return construct_none
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        return annotation.jsoncompat_from_validated(
-            value,
-            _validate_union_branches=validate_union_branches,
-        )
+        model_type = annotation
+
+        def construct_model(value: Any, validate_union_branches: bool) -> Any:
+            return model_type.jsoncompat_from_validated(
+                value,
+                _validate_union_branches=validate_union_branches,
+            )
+
+        return construct_model
 
     origin = get_origin(annotation)
     if origin is list:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
-        if not isinstance(value, list):
-            raise TypeError(f"expected list, got {type(value).__name__}")
-        value_items = cast(list[Any], value)
-        return [
-            _jsoncompat_construct_value(
-                item_annotation,
-                item,
-                validate_union_branches=validate_union_branches,
-            )
-            for item in value_items
-        ]
+        item_constructor = _jsoncompat_constructor_for(item_annotation)
+
+        def construct_list(value: Any, validate_union_branches: bool) -> list[Any]:
+            if not isinstance(value, list):
+                raise TypeError(f"expected list, got {type(value).__name__}")
+            value_items = cast(list[Any], value)
+            return [
+                item_constructor(item, validate_union_branches)
+                for item in value_items
+            ]
+
+        return construct_list
     if origin is dict:
         key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-        if not isinstance(value, dict):
-            raise TypeError(f"expected dict, got {type(value).__name__}")
-        value_object = cast(dict[Any, Any], value)
-        return {
-            _jsoncompat_construct_value(
-                key_annotation,
-                key,
-                validate_union_branches=validate_union_branches,
-            ): _jsoncompat_construct_value(
-                value_annotation,
-                item,
+        key_constructor = _jsoncompat_constructor_for(key_annotation)
+        value_constructor = _jsoncompat_constructor_for(value_annotation)
+
+        def construct_dict(value: Any, validate_union_branches: bool) -> dict[Any, Any]:
+            if not isinstance(value, dict):
+                raise TypeError(f"expected dict, got {type(value).__name__}")
+            value_object = cast(dict[Any, Any], value)
+            return {
+                key_constructor(key, validate_union_branches): value_constructor(
+                    item,
+                    validate_union_branches,
+                )
+                for key, item in value_object.items()
+            }
+
+        return construct_dict
+    if origin in {types.UnionType, Union}:
+        branches = get_args(annotation)
+
+        def construct_union(value: Any, validate_union_branches: bool) -> Any:
+            return _jsoncompat_construct_union(
+                branches,
+                value,
                 validate_union_branches=validate_union_branches,
             )
-            for key, item in value_object.items()
-        }
-    if origin in {types.UnionType, Union}:
-        return _jsoncompat_construct_union(
-            get_args(annotation),
-            value,
-            validate_union_branches=validate_union_branches,
-        )
-    if origin is Literal:
-        literal = _jsoncompat_literal_value(get_args(annotation), value)
-        if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
-            return literal
-        raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
 
-    raise TypeError(f"unsupported runtime annotation {annotation!r}")
+        return construct_union
+    if origin is Literal:
+        literals = get_args(annotation)
+        literals_by_key = _jsoncompat_literals_by_key(literals)
+
+        def construct_literal(value: Any, validate_union_branches: bool) -> Any:
+            _ = validate_union_branches
+            literal_key = _jsoncompat_literal_key(value)
+            literal = (
+                literals_by_key.get(literal_key, _JSONCOMPAT_MISSING_TYPE_HINT)
+                if literal_key is not None
+                else _JSONCOMPAT_MISSING_TYPE_HINT
+            )
+            if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
+                return literal
+            raise TypeError(f"expected one of {literals!r}, got {value!r}")
+
+        return construct_literal
+
+    def construct_unsupported(value: Any, validate_union_branches: bool) -> NoReturn:
+        _ = (value, validate_union_branches)
+        raise TypeError(f"unsupported runtime annotation {annotation!r}")
+
+    return construct_unsupported
 
 
 def _jsoncompat_construct_union(
@@ -722,6 +797,17 @@ def _jsoncompat_literal_key(value: Any) -> tuple[str, Any] | None:
     return (type(value).__qualname__, value)
 
 
+def _jsoncompat_literals_by_key(
+    literals: tuple[Any, ...],
+) -> Mapping[tuple[str, Any], Any]:
+    values: dict[tuple[str, Any], Any] = {}
+    for literal in literals:
+        literal_key = _jsoncompat_literal_key(literal)
+        if literal_key is not None and literal_key not in values:
+            values[literal_key] = literal
+    return types.MappingProxyType(values)
+
+
 def _jsoncompat_branch_matches_value_kind(branch: Any, value: Any) -> bool:
     if branch is Any:
         return True
@@ -776,10 +862,9 @@ def _jsoncompat_literal_value(literals: tuple[Any, ...], value: Any) -> Any:
 
 def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
     if isinstance(model, DataclassRootModel):
-        _jsoncompat_validate_python_value(
-            _jsoncompat_root_annotation_for(type(model)),
-            model.root,
-        )
+        _jsoncompat_python_validator_for(
+            _jsoncompat_root_annotation_for(type(model))
+        )(model.root)
         return
 
     object_spec = _jsoncompat_object_spec_for(type(model))
@@ -792,13 +877,13 @@ def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
                 f"{type(model).__name__}.{field_spec.py_name} cannot be JSONCOMPAT_MISSING"
             )
         try:
-            _jsoncompat_validate_python_value(field_spec.annotation, field_value)
+            field_spec.python_validator(field_value)
         except TypeError as error:
             raise TypeError(
                 f"{type(model).__name__}.{field_spec.py_name}: {error}"
             ) from None
 
-    if object_spec.extra_annotation is None:
+    if object_spec.extra_python_validator is None:
         return
 
     extra = getattr(model, JSONCOMPAT_EXTRA_FIELD)
@@ -809,14 +894,13 @@ def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
         )
 
     extra_values = cast(dict[Any, Any], extra)
-    value_annotation = _jsoncompat_extra_value_annotation(object_spec.extra_annotation)
     for json_name, item in extra_values.items():
         if not isinstance(json_name, str):
             raise TypeError(
                 f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} keys must be str"
             )
         try:
-            _jsoncompat_validate_python_value(value_annotation, item)
+            object_spec.extra_python_validator(item)
         except TypeError as error:
             raise TypeError(
                 f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD}[{json_name!r}]: {error}"
@@ -838,76 +922,120 @@ def _jsoncompat_dict_annotations(annotation: Any) -> tuple[Any, Any]:
     return Any, Any
 
 
-def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_python_validator_for(
+    annotation: Any,
+) -> _JsoncompatPythonValidator:
     if annotation is Any:
-        return
+        return lambda value: None
     if annotation is JsoncompatMissingType:
-        if value is JSONCOMPAT_MISSING:
-            return
-        raise TypeError("expected JSONCOMPAT_MISSING sentinel")
+        def validate_missing(value: Any) -> None:
+            if value is not JSONCOMPAT_MISSING:
+                raise TypeError("expected JSONCOMPAT_MISSING sentinel")
+
+        return validate_missing
     if annotation is str:
-        if isinstance(value, str):
-            return
-        raise TypeError(f"expected str, got {type(value).__name__}")
+        def validate_str(value: Any) -> None:
+            if not isinstance(value, str):
+                raise TypeError(f"expected str, got {type(value).__name__}")
+
+        return validate_str
     if annotation is int:
-        if isinstance(value, int) and not isinstance(value, bool):
-            return
-        raise TypeError(f"expected int, got {type(value).__name__}")
+        def validate_int(value: Any) -> None:
+            if not (isinstance(value, int) and not isinstance(value, bool)):
+                raise TypeError(f"expected int, got {type(value).__name__}")
+
+        return validate_int
     if annotation is float:
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return
-        raise TypeError(f"expected number, got {type(value).__name__}")
+        def validate_float(value: Any) -> None:
+            if not (
+                isinstance(value, (int, float)) and not isinstance(value, bool)
+            ):
+                raise TypeError(f"expected number, got {type(value).__name__}")
+
+        return validate_float
     if annotation is bool:
-        if isinstance(value, bool):
-            return
-        raise TypeError(f"expected bool, got {type(value).__name__}")
+        def validate_bool(value: Any) -> None:
+            if not isinstance(value, bool):
+                raise TypeError(f"expected bool, got {type(value).__name__}")
+
+        return validate_bool
     if annotation is None or annotation is type(None):
-        if value is None:
-            return
-        raise TypeError(f"expected null, got {type(value).__name__}")
+        def validate_none(value: Any) -> None:
+            if value is not None:
+                raise TypeError(f"expected null, got {type(value).__name__}")
+
+        return validate_none
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        if isinstance(value, annotation):
-            return
-        raise TypeError(
-            f"expected {annotation.__name__}, got {type(value).__name__}"
-        )
+        model_type = annotation
+
+        def validate_model(value: Any) -> None:
+            if not isinstance(value, model_type):
+                raise TypeError(
+                    f"expected {model_type.__name__}, got {type(value).__name__}"
+                )
+
+        return validate_model
 
     origin = get_origin(annotation)
     if origin is list:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
-        if not isinstance(value, list):
-            raise TypeError(f"expected list, got {type(value).__name__}")
-        value_items = cast(list[Any], value)
-        for item in value_items:
-            _jsoncompat_validate_python_value(item_annotation, item)
-        return
+        item_validator = _jsoncompat_python_validator_for(item_annotation)
+
+        def validate_list(value: Any) -> None:
+            if not isinstance(value, list):
+                raise TypeError(f"expected list, got {type(value).__name__}")
+            value_items = cast(list[Any], value)
+            for item in value_items:
+                item_validator(item)
+
+        return validate_list
     if origin is dict:
         key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-        if not isinstance(value, dict):
-            raise TypeError(f"expected dict, got {type(value).__name__}")
-        value_object = cast(dict[Any, Any], value)
-        for key, item in value_object.items():
-            _jsoncompat_validate_python_value(key_annotation, key)
-            _jsoncompat_validate_python_value(value_annotation, item)
-        return
-    if origin in {types.UnionType, Union}:
-        for branch in get_args(annotation):
-            try:
-                _jsoncompat_validate_python_value(branch, value)
-            except TypeError:
-                continue
-            return
-        raise TypeError(f"value {value!r} does not match any union branch")
-    if origin is Literal:
-        if (
-            _jsoncompat_literal_value(get_args(annotation), value)
-            is not _JSONCOMPAT_MISSING_TYPE_HINT
-        ):
-            return
-        raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
+        key_validator = _jsoncompat_python_validator_for(key_annotation)
+        value_validator = _jsoncompat_python_validator_for(value_annotation)
 
-    raise TypeError(f"unsupported runtime annotation {annotation!r}")
+        def validate_dict(value: Any) -> None:
+            if not isinstance(value, dict):
+                raise TypeError(f"expected dict, got {type(value).__name__}")
+            value_object = cast(dict[Any, Any], value)
+            for key, item in value_object.items():
+                key_validator(key)
+                value_validator(item)
+
+        return validate_dict
+    if origin in {types.UnionType, Union}:
+        branch_validators = tuple(
+            _jsoncompat_python_validator_for(branch) for branch in get_args(annotation)
+        )
+
+        def validate_union(value: Any) -> None:
+            for branch_validator in branch_validators:
+                try:
+                    branch_validator(value)
+                except TypeError:
+                    continue
+                return
+            raise TypeError(f"value {value!r} does not match any union branch")
+
+        return validate_union
+    if origin is Literal:
+        literals = get_args(annotation)
+        literals_by_key = _jsoncompat_literals_by_key(literals)
+
+        def validate_literal(value: Any) -> None:
+            literal_key = _jsoncompat_literal_key(value)
+            if literal_key is None or literal_key not in literals_by_key:
+                raise TypeError(f"expected one of {literals!r}, got {value!r}")
+
+        return validate_literal
+
+    def validate_unsupported(value: Any) -> NoReturn:
+        _ = value
+        raise TypeError(f"unsupported runtime annotation {annotation!r}")
+
+    return validate_unsupported
 
 
 def _jsoncompat_new_unchecked[JSONCOMPAT_MODEL_T: DataclassModel](
@@ -928,6 +1056,47 @@ def _jsoncompat_new_unchecked[JSONCOMPAT_MODEL_T: DataclassModel](
             )
         object.__setattr__(instance, field.name, value)
     return instance
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_serializer_for(annotation: Any) -> _JsoncompatSerializer:
+    if annotation in {
+        str,
+        int,
+        float,
+        bool,
+        None,
+        type(None),
+        JsoncompatMissingType,
+    } or get_origin(annotation) is Literal:
+        return lambda value: value
+    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
+        return lambda value: value.jsoncompat_to_value_unchecked()
+
+    origin = get_origin(annotation)
+    if origin is list:
+        args = get_args(annotation)
+        item_annotation = args[0] if args else Any
+        item_serializer = _jsoncompat_serializer_for(item_annotation)
+
+        def serialize_list(value: Any) -> list[Any]:
+            value_items = cast(list[Any], value)
+            return [item_serializer(item) for item in value_items]
+
+        return serialize_list
+    if origin is dict:
+        _, value_annotation = _jsoncompat_dict_annotations(annotation)
+        value_serializer = _jsoncompat_serializer_for(value_annotation)
+
+        def serialize_dict(value: Any) -> dict[str, Any]:
+            value_object = cast(dict[str, Any], value)
+            return {
+                key: value_serializer(item)
+                for key, item in value_object.items()
+            }
+
+        return serialize_dict
+    return _jsoncompat_serialize_value
 
 
 def _jsoncompat_serialize_value(value: Any) -> Any:
