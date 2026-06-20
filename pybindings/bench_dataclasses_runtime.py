@@ -192,8 +192,11 @@ def clear_runtime_caches() -> None:
     getattr(dc._jsoncompat_discriminator_plans_for, "cache_clear")()
     getattr(dc._jsoncompat_dataclass_fields_for_type, "cache_clear")()
     getattr(dc._jsoncompat_constructor_for, "cache_clear")()
+    getattr(dc._jsoncompat_validated_constructor_for, "cache_clear")()
     getattr(dc._jsoncompat_serializer_for, "cache_clear")()
     getattr(dc._jsoncompat_python_validator_for, "cache_clear")()
+    getattr(dc._jsoncompat_object_constructor_for, "cache_clear")()
+    getattr(dc._jsoncompat_object_serializer_for, "cache_clear")()
 
 
 def infer_all_specs() -> None:

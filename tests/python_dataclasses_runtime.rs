@@ -312,6 +312,12 @@ for format in SerializationFormat:
     encoded = serialize_value(value, format=format)
     assert deserialize_value(encoded, format=format) == value
 
+large_integer = 10**80
+assert deserialize_value(serialize_value({"value": large_integer})) == {
+    "value": large_integer,
+}
+assert deserialize_value(b'{"name":"Ada"}') == {"name": "Ada"}
+
 cyclic = []
 cyclic.append(cyclic)
 
@@ -404,6 +410,26 @@ spec.loader.exec_module(module)
 model = module.InventoryItem
 valid = model.from_value({"sku": "abc", "quantity": 3, "tags": ["new"]})
 assert valid.to_value() == {"sku": "abc", "quantity": 3, "tags": ["new"]}
+
+large_integer = 10**80
+from_json = model.deserialize(
+    f'{{"sku":"abc","quantity":{large_integer}}}'
+)
+assert from_json.quantity == large_integer
+assert model.deserialize(b'{"sku":"abc","quantity":3}').quantity == 3
+
+invalid_json_payloads = (
+    '{"sku":"abc","sku":"duplicate","quantity":3}',
+    '{"sku":"abc","quantity":1e999}',
+    '{"sku":"abc","quantity":NaN}',
+)
+for payload in invalid_json_payloads:
+    try:
+        model.deserialize(payload)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"invalid JSON payload was accepted: {payload!r}")
 
 invalid_values = [
     {"sku": "", "quantity": 3},

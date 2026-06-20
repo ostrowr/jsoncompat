@@ -12,7 +12,8 @@ doc = false
 
 [dependencies]
 pyo3 = { version = "0.28.3", features = ["extension-module", "generate-import-lib"] }
-serde_json = "1.0.149"
+serde_json = { version = "1.0.149", features = ["arbitrary_precision"] }
+jiter = { version = "0.15.0", features = ["python"] }
 anyhow = "1.0.102"
 rand = "0.10.0"
 

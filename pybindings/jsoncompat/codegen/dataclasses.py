@@ -67,6 +67,8 @@ type Omittable[T] = T | JsoncompatMissingType
 type _JsoncompatConstructor = Callable[[Any, bool], Any]
 type _JsoncompatSerializer = Callable[[Any], Any]
 type _JsoncompatPythonValidator = Callable[[Any], None]
+type _JsoncompatModelConstructor = Callable[[Any, bool], DataclassModel]
+type _JsoncompatModelSerializer = Callable[[DataclassModel], Any]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -76,6 +78,7 @@ class _JsoncompatFieldSpec:
     annotation: Any
     omittable: bool
     constructor: _JsoncompatConstructor
+    validated_constructor: _JsoncompatConstructor
     serializer: _JsoncompatSerializer
     python_validator: _JsoncompatPythonValidator
 
@@ -86,6 +89,7 @@ class _JsoncompatObjectSpec:
     known_json_names: frozenset[str]
     extra_annotation: Any | None
     extra_constructor: _JsoncompatConstructor | None
+    extra_validated_constructor: _JsoncompatConstructor | None
     extra_serializer: _JsoncompatSerializer | None
     extra_python_validator: _JsoncompatPythonValidator | None
 
@@ -164,8 +168,20 @@ class DataclassModel:
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
+        selected_format = SerializationFormat(format)
+        if selected_format is SerializationFormat.JSON and not skip_validation:
+            schema_json = _jsoncompat_schema_for(cls)
+            if schema_json is None:
+                raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
+            is_valid, value = _jsoncompat_validator_for(cls).parse_json(payload)
+            if not is_valid:
+                raise ValueError(f"value does not satisfy {cls.__name__} schema")
+            return cls.jsoncompat_from_validated(
+                value,
+                _validate_union_branches=True,
+            )
         return cls.from_value(
-            deserialize_value(payload, format=format),
+            deserialize_value(payload, format=selected_format),
             skip_validation=skip_validation,
         )
 
@@ -220,9 +236,27 @@ class DataclassModel:
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> str | bytes:
+        selected_format = SerializationFormat(format)
+        if selected_format is SerializationFormat.JSON:
+            value = self.jsoncompat_to_value_unchecked()
+            if skip_validation:
+                return serialize_value(cast(JsonValue, value))
+            schema_json = _jsoncompat_schema_for(type(self))
+            if schema_json is None:
+                raise TypeError(
+                    f"{type(self).__name__} is missing __jsoncompat_schema__"
+                )
+            encoded = _jsoncompat_validator_for(type(self)).serialize_json(
+                cast(JsonValue, value)
+            )
+            if encoded is None:
+                raise ValueError(
+                    f"{type(self).__name__} instance does not satisfy its JSON Schema"
+                )
+            return encoded
         return serialize_value(
             self.to_value(skip_validation=skip_validation),
-            format=format,
+            format=selected_format,
         )
 
     @classmethod
@@ -232,48 +266,14 @@ class DataclassModel:
         *,
         _validate_union_branches: bool = True,
     ) -> JSONCOMPAT_MODEL_T:
-        if not isinstance(value, dict):
-            raise TypeError(f"{cls.__name__} expects a JSON object")
-
-        value_object = cast(dict[str, Any], value)
-        object_spec = _jsoncompat_object_spec_for(cls)
-        kwargs: dict[str, Any] = {}
-        for field_spec in object_spec.fields:
-            if field_spec.json_name not in value_object:
-                if field_spec.omittable:
-                    kwargs[field_spec.py_name] = JSONCOMPAT_MISSING
-                continue
-            kwargs[field_spec.py_name] = field_spec.constructor(
-                value_object[field_spec.json_name],
-                _validate_union_branches,
-            )
-
-        if object_spec.extra_constructor is not None:
-            kwargs[JSONCOMPAT_EXTRA_FIELD] = {
-                key: object_spec.extra_constructor(item, _validate_union_branches)
-                for key, item in value_object.items()
-                if key not in object_spec.known_json_names
-            }
-
-        return _jsoncompat_new_unchecked(cls, kwargs)
+        constructor = _jsoncompat_object_constructor_for(cls)
+        return cast(
+            JSONCOMPAT_MODEL_T,
+            constructor(value, _validate_union_branches),
+        )
 
     def jsoncompat_to_value_unchecked(self) -> Any:
-        output: dict[str, Any] = {}
-        object_spec = _jsoncompat_object_spec_for(type(self))
-        for field_spec in object_spec.fields:
-            field_value = getattr(self, field_spec.py_name)
-            if field_value is JSONCOMPAT_MISSING:
-                continue
-            output[field_spec.json_name] = field_spec.serializer(field_value)
-        if object_spec.extra_serializer is not None:
-            extra = cast(dict[str, Any], getattr(self, JSONCOMPAT_EXTRA_FIELD))
-            output.update(
-                {
-                    key: object_spec.extra_serializer(item)
-                    for key, item in extra.items()
-                }
-            )
-        return output
+        return _jsoncompat_object_serializer_for(type(self))(self)
 
 
 class DataclassAdditionalModel[JSONCOMPAT_ADDITIONAL_T](DataclassModel):
@@ -425,6 +425,7 @@ def _jsoncompat_object_spec_for(
                 annotation=annotation,
                 omittable=omittable,
                 constructor=_jsoncompat_constructor_for(annotation),
+                validated_constructor=_jsoncompat_validated_constructor_for(annotation),
                 serializer=_jsoncompat_serializer_for(annotation),
                 python_validator=_jsoncompat_python_validator_for(annotation),
             )
@@ -442,6 +443,11 @@ def _jsoncompat_object_spec_for(
         extra_annotation=extra_annotation,
         extra_constructor=(
             _jsoncompat_constructor_for(extra_value_annotation)
+            if extra_annotation is not None
+            else None
+        ),
+        extra_validated_constructor=(
+            _jsoncompat_validated_constructor_for(extra_value_annotation)
             if extra_annotation is not None
             else None
         ),
@@ -486,13 +492,150 @@ def _jsoncompat_root_annotation_for(model_type: type[DataclassRootModel]) -> Any
     )
 
 
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_object_constructor_for(
+    model_type: type[DataclassModel],
+) -> _JsoncompatModelConstructor:
+    object_spec = _jsoncompat_object_spec_for(model_type)
+    fields_by_name = {
+        field.name: field for field in _jsoncompat_dataclass_fields(model_type)
+    }
+    missing_factories = tuple(
+        _jsoncompat_missing_value_factory(
+            model_type,
+            fields_by_name[field_spec.py_name],
+            field_spec.omittable,
+        )
+        for field_spec in object_spec.fields
+    )
+
+    lines = [
+        "def construct(value, validate_union_branches):",
+        "    if not isinstance(value, dict):",
+        "        raise TypeError(_object_error)",
+        "    instance = _new(_model_type)",
+    ]
+    for index, field_spec in enumerate(object_spec.fields):
+        json_name = repr(field_spec.json_name)
+        py_name = repr(field_spec.py_name)
+        lines.extend(
+            [
+                f"    if {json_name} in value:",
+                "        _setattr("
+                f"instance, {py_name}, "
+                "_constructor_sets[validate_union_branches]"
+                f"[{index}](value[{json_name}], validate_union_branches)"
+                ")",
+                "    else:",
+                f"        _setattr(instance, {py_name}, _missing_factories[{index}]())",
+            ]
+        )
+    if object_spec.extra_constructor is not None:
+        lines.extend(
+            [
+                "    extra = {}",
+                "    for key, item in value.items():",
+                "        if key not in _known_json_names:",
+                "            extra[key] = _extra_constructors["
+                "validate_union_branches]("
+                "item, validate_union_branches)",
+                f"    _setattr(instance, {JSONCOMPAT_EXTRA_FIELD!r}, extra)",
+            ]
+        )
+    lines.append("    return instance")
+
+    namespace: dict[str, Any] = {
+        "_constructor_sets": (
+            tuple(field_spec.constructor for field_spec in object_spec.fields),
+            tuple(
+                field_spec.validated_constructor for field_spec in object_spec.fields
+            ),
+        ),
+        "_extra_constructors": (
+            object_spec.extra_constructor,
+            object_spec.extra_validated_constructor,
+        ),
+        "_known_json_names": object_spec.known_json_names,
+        "_missing_factories": missing_factories,
+        "_model_type": model_type,
+        "_new": object.__new__,
+        "_object_error": f"{model_type.__name__} expects a JSON object",
+        "_setattr": object.__setattr__,
+    }
+    source = "\n".join(lines)
+    exec(compile(source, f"<{model_type.__name__} jsoncompat constructor>", "exec"), namespace)
+    return cast(_JsoncompatModelConstructor, namespace["construct"])
+
+
+def _jsoncompat_missing_value_factory(
+    model_type: type[DataclassModel],
+    field: dataclasses.Field[Any],
+    omittable: bool,
+) -> Callable[[], Any]:
+    if omittable:
+        return lambda: JSONCOMPAT_MISSING
+    if field.default is not dataclasses.MISSING:
+        return lambda: field.default
+    if field.default_factory is not dataclasses.MISSING:
+        return field.default_factory
+
+    def missing_required_field() -> NoReturn:
+        raise TypeError(f"{model_type.__name__} is missing required field {field.name}")
+
+    return missing_required_field
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_object_serializer_for(
+    model_type: type[DataclassModel],
+) -> _JsoncompatModelSerializer:
+    object_spec = _jsoncompat_object_spec_for(model_type)
+    lines = [
+        "def serialize(model):",
+        "    output = {}",
+    ]
+    for index, field_spec in enumerate(object_spec.fields):
+        py_name = field_spec.py_name
+        lines.extend(
+            [
+                f"    value = model.{py_name}",
+                "    if value is not _missing:",
+                f"        output[{field_spec.json_name!r}] = _serializers[{index}](value)",
+            ]
+        )
+    if object_spec.extra_serializer is not None:
+        lines.extend(
+            [
+                f"    for key, item in model.{JSONCOMPAT_EXTRA_FIELD}.items():",
+                "        output[key] = _extra_serializer(item)",
+            ]
+        )
+    lines.append("    return output")
+
+    namespace: dict[str, Any] = {
+        "_extra_serializer": object_spec.extra_serializer,
+        "_missing": JSONCOMPAT_MISSING,
+        "_serializers": tuple(
+            field_spec.serializer for field_spec in object_spec.fields
+        ),
+    }
+    source = "\n".join(lines)
+    exec(compile(source, f"<{model_type.__name__} jsoncompat serializer>", "exec"), namespace)
+    return cast(_JsoncompatModelSerializer, namespace["serialize"])
+
+
 def _jsoncompat_construct_value(
     annotation: Any,
     value: Any,
     *,
     validate_union_branches: bool,
 ) -> Any:
-    return _jsoncompat_constructor_for(annotation)(value, validate_union_branches)
+    constructor = (
+        _jsoncompat_validated_constructor_for(annotation)
+        if validate_union_branches
+        else _jsoncompat_constructor_for(annotation)
+    )
+    return constructor(value, validate_union_branches)
 
 
 @functools.lru_cache(maxsize=None)
@@ -628,6 +771,90 @@ def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
         raise TypeError(f"unsupported runtime annotation {annotation!r}")
 
     return construct_unsupported
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_validated_constructor_for(
+    annotation: Any,
+) -> _JsoncompatConstructor:
+    if annotation in {Any, str, float, bool, None, type(None)}:
+        return lambda value, validate_union_branches: value
+    if annotation is JsoncompatMissingType:
+        return _jsoncompat_constructor_for(annotation)
+    if annotation is int:
+        return lambda value, validate_union_branches: (
+            int(value) if isinstance(value, float) else value
+        )
+    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
+        model_type = annotation
+
+        def construct_model(value: Any, validate_union_branches: bool) -> Any:
+            return model_type.jsoncompat_from_validated(
+                value,
+                _validate_union_branches=validate_union_branches,
+            )
+
+        return construct_model
+
+    origin = get_origin(annotation)
+    if origin is list:
+        args = get_args(annotation)
+        item_annotation = args[0] if args else Any
+        item_constructor = _jsoncompat_validated_constructor_for(item_annotation)
+
+        def construct_list(value: Any, validate_union_branches: bool) -> list[Any]:
+            value_items = cast(list[Any], value)
+            return [
+                item_constructor(item, validate_union_branches)
+                for item in value_items
+            ]
+
+        return construct_list
+    if origin is dict:
+        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
+        key_constructor = _jsoncompat_validated_constructor_for(key_annotation)
+        value_constructor = _jsoncompat_validated_constructor_for(value_annotation)
+
+        def construct_dict(value: Any, validate_union_branches: bool) -> dict[Any, Any]:
+            value_object = cast(dict[Any, Any], value)
+            return {
+                key_constructor(key, validate_union_branches): value_constructor(
+                    item,
+                    validate_union_branches,
+                )
+                for key, item in value_object.items()
+            }
+
+        return construct_dict
+    if origin in {types.UnionType, Union}:
+        branches = get_args(annotation)
+
+        def construct_union(value: Any, validate_union_branches: bool) -> Any:
+            return _jsoncompat_construct_union(
+                branches,
+                value,
+                validate_union_branches=validate_union_branches,
+            )
+
+        return construct_union
+    if origin is Literal:
+        literals = get_args(annotation)
+        literals_by_key = _jsoncompat_literals_by_key(literals)
+
+        def construct_literal(value: Any, validate_union_branches: bool) -> Any:
+            _ = validate_union_branches
+            literal_key = _jsoncompat_literal_key(value)
+            literal = (
+                literals_by_key.get(literal_key, _JSONCOMPAT_MISSING_TYPE_HINT)
+                if literal_key is not None
+                else _JSONCOMPAT_MISSING_TYPE_HINT
+            )
+            if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
+                return literal
+            raise TypeError(f"expected one of {literals!r}, got {value!r}")
+
+        return construct_literal
+    return _jsoncompat_constructor_for(cast(Any, annotation))
 
 
 def _jsoncompat_construct_union(

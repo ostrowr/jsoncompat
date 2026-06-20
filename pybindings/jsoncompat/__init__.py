@@ -25,6 +25,8 @@ GenerateValueFn = Callable[[str, int], str]
 IsValidFn = Callable[[str, str], bool]
 GeneratorForFn = Callable[[str], "Generator"]
 ValidatorForFn = Callable[[str], "Validator"]
+DeserializeJsonFn = Callable[[str | bytes], "JsonValue"]
+SerializeJsonFn = Callable[["JsonValue"], str]
 
 
 class Generator(Protocol):
@@ -34,6 +36,8 @@ class Generator(Protocol):
 class Validator(Protocol):
     def is_valid_json(self, instance_json: str) -> bool: ...
     def is_valid_value(self, instance: JsonValue) -> bool: ...
+    def parse_json(self, payload: str | bytes) -> tuple[bool, JsonValue]: ...
+    def serialize_json(self, instance: JsonValue) -> str | None: ...
 
 
 class NativeModule(Protocol):
@@ -49,6 +53,10 @@ class NativeModule(Protocol):
     def generator_for(self, schema_json: str) -> Generator: ...
 
     def validator_for(self, schema_json: str) -> Validator: ...
+
+    def deserialize_json(self, payload: str | bytes) -> JsonValue: ...
+
+    def serialize_json(self, value: JsonValue) -> str: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
 
@@ -103,6 +111,22 @@ def _missing_validator_for(schema_json: str) -> NoReturn:
     )
 
 
+def _missing_deserialize_json(payload: str | bytes) -> NoReturn:
+    _ = payload
+    raise ModuleNotFoundError(
+        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
+        "before deserializing JSON."
+    )
+
+
+def _missing_serialize_json(value: JsonValue) -> NoReturn:
+    _ = value
+    raise ModuleNotFoundError(
+        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
+        "before serializing JSON."
+    )
+
+
 def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
@@ -110,8 +134,16 @@ def _load_repo_native() -> NativeModule:
     if cargo_target_dir := os.environ.get("CARGO_TARGET_DIR"):
         target_roots.insert(0, Path(cargo_target_dir).expanduser())
 
+    native_profile = os.environ.get("JSONCOMPAT_NATIVE_PROFILE")
+    if native_profile is None:
+        build_dirs = ("debug", "release")
+    elif native_profile in {"debug", "release"}:
+        build_dirs = (native_profile,)
+    else:
+        raise ValueError("JSONCOMPAT_NATIVE_PROFILE must be 'debug' or 'release'")
+
     for target_root in target_roots:
-        for build_dir in ("debug", "release"):
+        for build_dir in build_dirs:
             for filename in ("libjsoncompat.dylib", "libjsoncompat.so", "jsoncompat.dll"):
                 native_path = target_root / build_dir / "deps" / filename
                 if not native_path.exists():
@@ -142,8 +174,12 @@ def _has_reusable_schema_api(module: object) -> bool:
     return (
         hasattr(module, "generator_for")
         and hasattr(module, "validator_for")
+        and hasattr(module, "deserialize_json")
+        and hasattr(module, "serialize_json")
         and hasattr(validator, "is_valid_json")
         and hasattr(validator, "is_valid_value")
+        and hasattr(validator, "parse_json")
+        and hasattr(validator, "serialize_json")
     )
 
 
@@ -159,12 +195,16 @@ except ModuleNotFoundError as error:
         _generate_value_native: GenerateValueFn = _missing_generate_value
         _generator_for_native: GeneratorForFn = _missing_generator_for
         _validator_for_native: ValidatorForFn = _missing_validator_for
+        _deserialize_json_native: DeserializeJsonFn = _missing_deserialize_json
+        _serialize_json_native: SerializeJsonFn = _missing_serialize_json
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _check_compat_native = _repo_native.check_compat
         _generate_value_native = _repo_native.generate_value
         _generator_for_native = _repo_native.generator_for
         _validator_for_native = _repo_native.validator_for
+        _deserialize_json_native = _repo_native.deserialize_json
+        _serialize_json_native = _repo_native.serialize_json
         _is_valid_native = _repo_native.is_valid
 else:
     if not _has_reusable_schema_api(_native_module):
@@ -173,6 +213,8 @@ else:
     _generate_value_native = _native_module.generate_value
     _generator_for_native = _native_module.generator_for
     _validator_for_native = _native_module.validator_for
+    _deserialize_json_native = _native_module.deserialize_json
+    _serialize_json_native = _native_module.serialize_json
     _is_valid_native = _native_module.is_valid
 
 
@@ -204,6 +246,16 @@ def generator_for(schema_json: str) -> Generator:
 def validator_for(schema_json: str) -> Validator:
     validator_for_native = _validator_for_native
     return validator_for_native(schema_json)
+
+
+def deserialize_json_value(payload: str | bytes) -> JsonValue:
+    deserialize_json_native = _deserialize_json_native
+    return deserialize_json_native(payload)
+
+
+def serialize_json_value(value: JsonValue) -> str:
+    serialize_json_native = _serialize_json_native
+    return serialize_json_native(value)
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:

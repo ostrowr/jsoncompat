@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import functools
 import importlib
-import json
 import math
 from enum import StrEnum
 from typing import Any, Literal, NoReturn, cast, overload
 
-from jsoncompat import JsonValue
+from jsoncompat import JsonValue, deserialize_json_value, serialize_json_value
 
 
 __all__ = [
@@ -63,13 +62,7 @@ def serialize_value(
     selected_format = SerializationFormat(format)
 
     if selected_format is SerializationFormat.JSON:
-        _validate_json_mapping_keys(value)
-        return json.dumps(
-            value,
-            allow_nan=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+        return serialize_json_value(value)
 
     normalized = _normalize_json_value(value)
     if selected_format is SerializationFormat.YAML:
@@ -98,13 +91,7 @@ def deserialize_value(
     selected_format = SerializationFormat(format)
 
     if selected_format is SerializationFormat.JSON:
-        decoded = json.loads(
-            payload,
-            object_pairs_hook=_unique_mapping,
-            parse_constant=_reject_json_constant,
-            parse_float=_parse_json_float,
-        )
-        return cast(JsonValue, decoded)
+        return deserialize_json_value(payload)
     elif selected_format is SerializationFormat.YAML:
         yaml = _optional_module("yaml", "yaml")
         decoded = yaml.load(payload, Loader=_yaml_loader_type())
@@ -172,56 +159,9 @@ def _yaml_loader_type() -> Any:
     return loader_type
 
 
-def _reject_json_constant(value: str) -> NoReturn:
-    raise ValueError(f"JSON constant {value!r} is not a finite JSON number")
-
-
-def _parse_json_float(value: str) -> float:
-    parsed = float(value)
-    if not math.isfinite(parsed):
-        raise ValueError(f"JSON number {value!r} is not finite")
-    return parsed
-
-
 def _reject_msgpack_extension(code: int, data: bytes) -> NoReturn:
     _ = data
     raise ValueError(f"MessagePack extension type {code} is not a JSON value")
-
-
-def _validate_json_mapping_keys(
-    value: Any,
-    *,
-    active_containers: set[int] | None = None,
-) -> None:
-    if not isinstance(value, (list, tuple, dict)):
-        return
-
-    container = cast(list[Any] | tuple[Any, ...] | dict[Any, Any], value)
-    if active_containers is None:
-        active_containers = set()
-    container_id = id(container)
-    if container_id in active_containers:
-        return
-    active_containers.add(container_id)
-    try:
-        if isinstance(container, dict):
-            mapping = container
-            for key, item in mapping.items():
-                if not isinstance(key, str):
-                    raise TypeError(f"JSON object key {key!r} is not a string")
-                _validate_json_mapping_keys(
-                    item,
-                    active_containers=active_containers,
-                )
-            return
-
-        for item in container:
-            _validate_json_mapping_keys(
-                item,
-                active_containers=active_containers,
-            )
-    finally:
-        active_containers.remove(container_id)
 
 
 def _normalize_json_value(
