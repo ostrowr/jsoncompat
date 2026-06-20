@@ -83,6 +83,18 @@ strict, frozen Pydantic models. Pydantic's dump methods do not revalidate the
 model, so their closest jsoncompat comparison is the `skip_validation=True`
 serialization path.
 
+For a larger workload, benchmark a balanced recursive graph containing
+discriminated unions, lists, mappings, and omitted fields:
+
+```bash
+just python-bench-scale
+```
+
+The default depth and fanout produce 1,365 model nodes. Override them, along
+with the iteration and repeat counts, as positional recipe arguments. The
+underlying script also accepts `--profile` to print cumulative Python profiles
+for checked and trusted JSON deserialization.
+
 ## License
 
 MIT License. See:

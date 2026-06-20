@@ -29,15 +29,21 @@ bench-check:
   @echo "[just] smoke-checking Rust benchmarks …"
   cargo bench --workspace --all-features --bench '*' --locked -- --test
 
-python-bench iterations="10000" repeats="5":
+_build-python-release:
   @echo "[just] building release Python extension for representative timings …"
   if [ "$(uname)" = "Darwin" ]; then \
     cargo rustc --release -p jsoncompat_py --lib -- -C link-arg=-undefined -C link-arg=dynamic_lookup; \
   else \
     cargo build --release -p jsoncompat_py; \
   fi
+
+python-bench iterations="10000" repeats="5": _build-python-release
   @echo "[just] benchmarking generated Python dataclasses against Pydantic v2 …"
   env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_dataclasses_runtime.py --iterations {{iterations}} --repeats {{repeats}}
+
+python-bench-scale depth="5" fanout="4" iterations="100" repeats="5": _build-python-release
+  @echo "[just] benchmarking a large recursive dataclass graph against Pydantic v2 …"
+  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_dataclasses_scaling.py --depth {{depth}} --fanout {{fanout}} --iterations {{iterations}} --repeats {{repeats}}
 
 # ---- Basic python smoke test ----
 
