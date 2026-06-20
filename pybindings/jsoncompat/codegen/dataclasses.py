@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import types
+from collections.abc import Mapping
 from typing import (
     Any,
     ClassVar,
@@ -79,6 +80,12 @@ class _JsoncompatObjectSpec:
     extra_annotation: Any | None
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _JsoncompatDiscriminatorPlan:
+    json_name: str
+    branches_by_literal: Mapping[tuple[str, Any], type[DataclassModel]]
+
+
 def field(
     json_name: str,
     *,
@@ -134,7 +141,10 @@ class DataclassModel:
             value
         ):
             raise ValueError(f"value does not satisfy {cls.__name__} schema")
-        return cls.jsoncompat_from_validated(value)
+        return cls.jsoncompat_from_validated(
+            value,
+            _validate_union_branches=not skip_validation,
+        )
 
     @classmethod
     def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
@@ -209,6 +219,8 @@ class DataclassModel:
     def jsoncompat_from_validated[JSONCOMPAT_MODEL_T: DataclassModel](
         cls: type[JSONCOMPAT_MODEL_T],
         value: Any,
+        *,
+        _validate_union_branches: bool = True,
     ) -> JSONCOMPAT_MODEL_T:
         if not isinstance(value, dict):
             raise TypeError(f"{cls.__name__} expects a JSON object")
@@ -224,6 +236,7 @@ class DataclassModel:
             kwargs[field_spec.py_name] = _jsoncompat_construct_value(
                 field_spec.annotation,
                 value_object[field_spec.json_name],
+                validate_union_branches=_validate_union_branches,
             )
 
         if object_spec.extra_annotation is not None:
@@ -234,6 +247,7 @@ class DataclassModel:
                     for key, item in value_object.items()
                     if key not in object_spec.known_json_names
                 },
+                validate_union_branches=_validate_union_branches,
             )
 
         return _jsoncompat_new_unchecked(cls, kwargs)
@@ -273,6 +287,8 @@ class DataclassRootModel(DataclassModel):
     def jsoncompat_from_validated[JSONCOMPAT_ROOT_MODEL_T: DataclassRootModel](
         cls: type[JSONCOMPAT_ROOT_MODEL_T],
         value: Any,
+        *,
+        _validate_union_branches: bool = True,
     ) -> JSONCOMPAT_ROOT_MODEL_T:
         return _jsoncompat_new_unchecked(
             cls,
@@ -280,6 +296,7 @@ class DataclassRootModel(DataclassModel):
                 "root": _jsoncompat_construct_value(
                     _jsoncompat_root_annotation_for(cls),
                     value,
+                    validate_union_branches=_validate_union_branches,
                 )
             },
         )
@@ -434,15 +451,29 @@ def _jsoncompat_root_annotation_for(model_type: type[DataclassRootModel]) -> Any
     )
 
 
-def _jsoncompat_construct_extra(annotation: Any, value: dict[str, Any]) -> dict[str, Any]:
+def _jsoncompat_construct_extra(
+    annotation: Any,
+    value: dict[str, Any],
+    *,
+    validate_union_branches: bool,
+) -> dict[str, Any]:
     value_annotation = _jsoncompat_extra_value_annotation(annotation)
     return {
-        key: _jsoncompat_construct_value(value_annotation, item)
+        key: _jsoncompat_construct_value(
+            value_annotation,
+            item,
+            validate_union_branches=validate_union_branches,
+        )
         for key, item in value.items()
     }
 
 
-def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
+def _jsoncompat_construct_value(
+    annotation: Any,
+    value: Any,
+    *,
+    validate_union_branches: bool,
+) -> Any:
     if annotation is Any:
         return value
     if annotation is JsoncompatMissingType:
@@ -472,7 +503,10 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
             return None
         raise TypeError(f"expected null, got {type(value).__name__}")
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        return annotation.jsoncompat_from_validated(value)
+        return annotation.jsoncompat_from_validated(
+            value,
+            _validate_union_branches=validate_union_branches,
+        )
 
     origin = get_origin(annotation)
     if origin is list:
@@ -482,7 +516,11 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
             raise TypeError(f"expected list, got {type(value).__name__}")
         value_items = cast(list[Any], value)
         return [
-            _jsoncompat_construct_value(item_annotation, item)
+            _jsoncompat_construct_value(
+                item_annotation,
+                item,
+                validate_union_branches=validate_union_branches,
+            )
             for item in value_items
         ]
     if origin is dict:
@@ -491,14 +529,23 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
             raise TypeError(f"expected dict, got {type(value).__name__}")
         value_object = cast(dict[Any, Any], value)
         return {
-            _jsoncompat_construct_value(key_annotation, key): _jsoncompat_construct_value(
+            _jsoncompat_construct_value(
+                key_annotation,
+                key,
+                validate_union_branches=validate_union_branches,
+            ): _jsoncompat_construct_value(
                 value_annotation,
                 item,
+                validate_union_branches=validate_union_branches,
             )
             for key, item in value_object.items()
         }
     if origin in {types.UnionType, Union}:
-        return _jsoncompat_construct_union(get_args(annotation), value)
+        return _jsoncompat_construct_union(
+            get_args(annotation),
+            value,
+            validate_union_branches=validate_union_branches,
+        )
     if origin is Literal:
         literal = _jsoncompat_literal_value(get_args(annotation), value)
         if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
@@ -508,25 +555,60 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
     raise TypeError(f"unsupported runtime annotation {annotation!r}")
 
 
-def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
+def _jsoncompat_construct_union(
+    branches: tuple[Any, ...],
+    value: Any,
+    *,
+    validate_union_branches: bool,
+) -> Any:
     discriminated_branch = _jsoncompat_discriminated_branch(branches, value)
     if discriminated_branch is not None:
-        return discriminated_branch.jsoncompat_from_validated(value)
+        return discriminated_branch.jsoncompat_from_validated(
+            value,
+            _validate_union_branches=validate_union_branches,
+        )
+
+    matching_branches = tuple(
+        branch
+        for branch in branches
+        if _jsoncompat_branch_matches_value_kind(branch, value)
+    )
+    if len(matching_branches) == 1:
+        return _jsoncompat_construct_value(
+            matching_branches[0],
+            value,
+            validate_union_branches=validate_union_branches,
+        )
+
+    candidate_branches = matching_branches or branches
 
     rejected_dataclass_branches: list[type[DataclassModel]] = []
-    for branch in branches:
+    for branch in candidate_branches:
         if branch is JsoncompatMissingType and value is JSONCOMPAT_MISSING:
             return JSONCOMPAT_MISSING
         if isinstance(branch, type) and issubclass(branch, DataclassModel):
-            schema_json = _jsoncompat_schema_for(branch)
-            if schema_json is None:
+            if validate_union_branches:
+                schema_json = _jsoncompat_schema_for(branch)
+                if schema_json is None:
+                    continue
+                if not _jsoncompat_validator_for(branch).is_valid_value(value):
+                    rejected_dataclass_branches.append(branch)
+                    continue
+            try:
+                return branch.jsoncompat_from_validated(
+                    value,
+                    _validate_union_branches=validate_union_branches,
+                )
+            except (TypeError, ValueError):
+                if validate_union_branches:
+                    raise
                 continue
-            if not _jsoncompat_validator_for(branch).is_valid_value(value):
-                rejected_dataclass_branches.append(branch)
-                continue
-            return branch.jsoncompat_from_validated(value)
         try:
-            return _jsoncompat_construct_value(branch, value)
+            return _jsoncompat_construct_value(
+                branch,
+                value,
+                validate_union_branches=validate_union_branches,
+            )
         except (TypeError, ValueError):
             continue
 
@@ -534,7 +616,10 @@ def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
     # containing schema, so keep a structural fallback before rejecting.
     for branch in rejected_dataclass_branches:
         try:
-            return branch.jsoncompat_from_validated(value)
+            return branch.jsoncompat_from_validated(
+                value,
+                _validate_union_branches=validate_union_branches,
+            )
         except (TypeError, ValueError):
             continue
 
@@ -549,23 +634,44 @@ def _jsoncompat_discriminated_branch(
         return None
     value_object = cast(dict[Any, Any], value)
 
+    for plan in _jsoncompat_discriminator_plans_for(branches):
+        if plan.json_name not in value_object:
+            continue
+        literal_key = _jsoncompat_literal_key(value_object[plan.json_name])
+        if literal_key is None:
+            continue
+        branch = plan.branches_by_literal.get(literal_key)
+        if branch is not None:
+            return branch
+
+    return None
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_discriminator_plans_for(
+    branches: tuple[Any, ...],
+) -> tuple[_JsoncompatDiscriminatorPlan, ...]:
     model_branches: list[type[DataclassModel]] = []
     for branch in branches:
         if isinstance(branch, type) and issubclass(branch, DataclassModel):
             model_branches.append(branch)
         elif branch not in {JsoncompatMissingType, None, type(None)}:
-            return None
+            return ()
     if len(model_branches) < 2:
-        return None
+        return ()
 
     branch_specs = [
         (branch, _jsoncompat_object_spec_for(branch)) for branch in model_branches
     ]
+    plans: list[_JsoncompatDiscriminatorPlan] = []
     for candidate_field in branch_specs[0][1].fields:
-        if candidate_field.omittable or candidate_field.json_name not in value_object:
+        if candidate_field.omittable:
             continue
 
-        matching_branches: list[type[DataclassModel]] = []
+        branches_by_literal: dict[
+            tuple[str, Any],
+            type[DataclassModel] | None,
+        ] = {}
         for branch, object_spec in branch_specs:
             branch_field = next(
                 (
@@ -578,16 +684,81 @@ def _jsoncompat_discriminated_branch(
             )
             if branch_field is None or get_origin(branch_field.annotation) is not Literal:
                 break
-            if _jsoncompat_literal_value(
-                get_args(branch_field.annotation),
-                value_object[candidate_field.json_name],
-            ) is not _JSONCOMPAT_MISSING_TYPE_HINT:
-                matching_branches.append(branch)
+            for literal in get_args(branch_field.annotation):
+                literal_key = _jsoncompat_literal_key(literal)
+                if literal_key is None:
+                    continue
+                if literal_key in branches_by_literal:
+                    branches_by_literal[literal_key] = None
+                else:
+                    branches_by_literal[literal_key] = branch
         else:
-            if len(matching_branches) == 1:
-                return matching_branches[0]
+            unique_branches = {
+                literal_key: branch
+                for literal_key, branch in branches_by_literal.items()
+                if branch is not None
+            }
+            if unique_branches:
+                plans.append(
+                    _JsoncompatDiscriminatorPlan(
+                        json_name=candidate_field.json_name,
+                        branches_by_literal=types.MappingProxyType(unique_branches),
+                    )
+                )
+    return tuple(plans)
 
-    return None
+
+def _jsoncompat_literal_key(value: Any) -> tuple[str, Any] | None:
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, (int, float)):
+        return ("number", value)
+    if value is None:
+        return ("null", None)
+    try:
+        hash(value)
+    except TypeError:
+        return None
+    return (type(value).__qualname__, value)
+
+
+def _jsoncompat_branch_matches_value_kind(branch: Any, value: Any) -> bool:
+    if branch is Any:
+        return True
+    if branch is JsoncompatMissingType:
+        return value is JSONCOMPAT_MISSING
+    if branch is str:
+        return isinstance(value, str)
+    if branch is int:
+        return (
+            (isinstance(value, int) and not isinstance(value, bool))
+            or (isinstance(value, float) and value.is_integer())
+        )
+    if branch is float:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if branch is bool:
+        return isinstance(value, bool)
+    if branch is None or branch is type(None):
+        return value is None
+    if isinstance(branch, type) and issubclass(branch, DataclassModel):
+        return isinstance(value, dict)
+
+    origin = get_origin(branch)
+    if origin is list:
+        return isinstance(value, list)
+    if origin is dict:
+        return isinstance(value, dict)
+    if origin in {types.UnionType, Union}:
+        return any(
+            _jsoncompat_branch_matches_value_kind(nested_branch, value)
+            for nested_branch in get_args(branch)
+        )
+    if origin is Literal:
+        return (
+            _jsoncompat_literal_value(get_args(branch), value)
+            is not _JSONCOMPAT_MISSING_TYPE_HINT
+        )
+    return True
 
 
 def _jsoncompat_literal_value(literals: tuple[Any, ...], value: Any) -> Any:

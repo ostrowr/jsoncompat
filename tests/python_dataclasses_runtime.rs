@@ -18,6 +18,7 @@ import typing
 from typing import ClassVar, Literal
 
 from jsoncompat.codegen import SerializationFormat
+from jsoncompat.codegen import dataclasses as dc
 from jsoncompat.codegen.dataclasses import (
     DataclassAdditionalModel,
     DataclassModel,
@@ -208,6 +209,55 @@ trusted_reader = ProfileReader.from_value(
 )
 assert isinstance(trusted_reader.root, ProfileReaderV1)
 assert trusted_reader.root.data.name == ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RecursiveNode(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"node":{"type":"object","properties":{"value":{"type":"integer"},"next":{"anyOf":[{"$ref":"#/$defs/node"},{"type":"null"}]}},"required":["value","next"],"additionalProperties":false}},"$ref":"#/$defs/node"}'
+
+    value: int = field("value")
+    next: "RecursiveNode | None" = field("next")
+
+
+recursive_value = None
+for index in range(50):
+    recursive_value = {"value": index, "next": recursive_value}
+
+validator_calls = []
+original_validator_for = dc._jsoncompat_validator_for
+
+
+def tracking_validator_for(model_type):
+    validator_calls.append(model_type)
+    return original_validator_for(model_type)
+
+
+dc._jsoncompat_validator_for = tracking_validator_for
+try:
+    checked_recursive = RecursiveNode.from_value(recursive_value)
+    assert validator_calls == [RecursiveNode]
+
+    validator_calls.clear()
+    trusted_recursive = RecursiveNode.from_value(
+        recursive_value,
+        skip_validation=True,
+    )
+    assert validator_calls == []
+finally:
+    dc._jsoncompat_validator_for = original_validator_for
+
+assert checked_recursive.to_value() == recursive_value
+assert trusted_recursive.to_value(skip_validation=True) == recursive_value
+
+try:
+    RecursiveNode.from_value(
+        {"value": 0, "next": "not-a-node"},
+        skip_validation=True,
+    )
+except TypeError:
+    pass
+else:
+    raise AssertionError("trusted union construction accepted an invalid shape")
 
 try:
     ProfileReader.from_value({"version": 1, "data": {"name": ""}})
