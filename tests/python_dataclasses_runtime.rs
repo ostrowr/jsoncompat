@@ -312,10 +312,16 @@ for format in SerializationFormat:
     encoded = serialize_value(value, format=format)
     assert deserialize_value(encoded, format=format) == value
 
+cyclic = []
+cyclic.append(cyclic)
 
 invalid_inputs = (
     (ValueError, lambda: deserialize_value('{"name":"Ada","name":"Grace"}')),
     (ValueError, lambda: deserialize_value('{"score":NaN}')),
+    (ValueError, lambda: deserialize_value('{"score":1e999}')),
+    (TypeError, lambda: serialize_value({1: "not-json"})),
+    (ValueError, lambda: serialize_value({"score": float("inf")})),
+    (ValueError, lambda: serialize_value(cyclic)),
     (
         ValueError,
         lambda: deserialize_value(
