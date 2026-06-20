@@ -11,10 +11,10 @@ jsoncompat codegen --target dataclasses examples/stamp/writer.schema.json > exam
 jsoncompat codegen --target dataclasses examples/stamp/reader.schema.json > examples/stamp/reader_models.py
 ```
 
-`demo.py` is the canonical generated-model example. It exercises checked and
-trusted construction, Python JSON values, JSON/YAML/MessagePack serialization,
-current and historical readers, invalid input, and reader/writer direction
-guards:
+`demo.py` is the canonical stamped-schema generated-model example. It exercises
+checked and trusted construction, Python JSON values, JSON/YAML/MessagePack
+serialization, current and historical readers, invalid input, and
+reader/writer direction guards:
 
 ```bash
 uv run examples/stamp/demo.py

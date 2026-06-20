@@ -56,9 +56,10 @@ already guarantees schema validity. It skips only the attached JSON Schema
 check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
 
-See the [canonical generated-model example](../examples/stamp/demo.py) for
-checked and trusted construction, all three wire formats, stamped history, and
-reader/writer direction guards.
+See the [canonical plain-schema example](../examples/dataclasses/demo.py) for an
+ordinary generated model that both serializes and deserializes. The
+[canonical stamped-schema example](../examples/stamp/demo.py) covers versioned
+writer/reader envelopes and historical schemas.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 

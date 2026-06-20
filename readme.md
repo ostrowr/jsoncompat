@@ -103,7 +103,7 @@ jsoncompat codegen --target schema reader.schema.json
 jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 ```
 
-### Dataclass code generation
+## Dataclass code generation
 
 `jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
 canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
@@ -111,6 +111,10 @@ frozen, slotted Python dataclasses that import shared construction and
 serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
 carry the original input schema in `__jsoncompat_schema__`, cache a
 `jsoncompat.validator_for(...)` validator for runtime checks, and expose:
+
+```bash
+jsoncompat codegen --target dataclasses schema.json > models.py
+```
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;
@@ -144,8 +148,10 @@ Every decoded format is restricted to JSON-compatible values before model
 construction; format-specific values such as YAML timestamps or MessagePack
 binary/extension values are rejected.
 
-See the [canonical generated-model example](examples/stamp/demo.py) for the
-complete writer-to-reader lifecycle across Python values and all wire formats.
+See the [canonical plain-schema example](examples/dataclasses/demo.py) for an
+ordinary model that both serializes and deserializes. The
+[canonical stamped-schema example](examples/stamp/demo.py) covers separate
+writer/reader envelopes and historical versions.
 
 ## Choose a role
 
