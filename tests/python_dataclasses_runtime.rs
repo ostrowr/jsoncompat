@@ -413,9 +413,12 @@ assert valid.to_value() == {"sku": "abc", "quantity": 3, "tags": ["new"]}
 
 large_integer = 10**80
 from_json = model.deserialize(
-    f'{{"sku":"abc","quantity":{large_integer}}}'
+    f'{{"sku":"abc","quantity":{large_integer}}}',
 )
 assert from_json.quantity == large_integer
+assert model.deserialize(
+    from_json.serialize(),
+).quantity == large_integer
 assert model.deserialize(b'{"sku":"abc","quantity":3}').quantity == 3
 
 invalid_json_payloads = (

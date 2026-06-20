@@ -246,9 +246,15 @@ class DataclassModel:
                 raise TypeError(
                     f"{type(self).__name__} is missing __jsoncompat_schema__"
                 )
-            encoded = _jsoncompat_validator_for(type(self)).serialize_json(
-                cast(JsonValue, value)
-            )
+            validator = _jsoncompat_validator_for(type(self))
+            try:
+                encoded = validator.serialize_json(cast(JsonValue, value))
+            except OverflowError:
+                if not validator.is_valid_value(cast(JsonValue, value)):
+                    raise ValueError(
+                        f"{type(self).__name__} instance does not satisfy its JSON Schema"
+                    ) from None
+                return serialize_value(cast(JsonValue, value))
             if encoded is None:
                 raise ValueError(
                     f"{type(self).__name__} instance does not satisfy its JSON Schema"

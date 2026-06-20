@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use jiter::{JsonValue as JiterJsonValue, PythonParse, StringCacheMode, map_json_error};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 
@@ -38,13 +38,32 @@ fn validate_value_for_schema(schema: &SchemaDocument, instance: &JsonValue) -> P
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
 }
 
+#[derive(Clone, Copy)]
+enum BigIntegerHandling {
+    ApproximateForValidation,
+    RejectLossySerialization,
+}
+
 fn py_to_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
-    py_to_json_value_inner(value, &mut HashSet::new())
+    py_to_json_value_inner(
+        value,
+        &mut HashSet::new(),
+        BigIntegerHandling::ApproximateForValidation,
+    )
+}
+
+fn py_to_serializable_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
+    py_to_json_value_inner(
+        value,
+        &mut HashSet::new(),
+        BigIntegerHandling::RejectLossySerialization,
+    )
 }
 
 fn py_to_json_value_inner(
     value: &Bound<'_, PyAny>,
     active_containers: &mut HashSet<usize>,
+    big_integer_handling: BigIntegerHandling,
 ) -> PyResult<JsonValue> {
     if value.is_none() {
         return Ok(JsonValue::Null);
@@ -53,16 +72,15 @@ fn py_to_json_value_inner(
         return Ok(JsonValue::Bool(value.extract::<bool>()?));
     }
     if value.is_instance_of::<PyInt>() {
-        return py_int_to_json_value(value);
+        return py_int_to_json_value(value, big_integer_handling);
     }
     if value.is_instance_of::<PyFloat>() {
         let number = value.extract::<f64>()?;
         if !number.is_finite() {
             return Err(PyErr::new::<PyValueError, _>("JSON numbers must be finite"));
         }
-        return Ok(JsonValue::Number(
-            JsonNumber::from_f64(number).expect("finite f64 must be a JSON number"),
-        ));
+        let rendered = value.str()?.to_str()?.to_owned();
+        return parse_json(&rendered);
     }
     if value.is_instance_of::<PyString>() {
         return Ok(JsonValue::String(value.extract::<String>()?));
@@ -71,7 +89,7 @@ fn py_to_json_value_inner(
         let container_id = enter_python_container(value, active_containers)?;
         let result = list
             .iter()
-            .map(|item| py_to_json_value_inner(&item, active_containers))
+            .map(|item| py_to_json_value_inner(&item, active_containers, big_integer_handling))
             .collect::<PyResult<Vec<_>>>()
             .map(JsonValue::Array);
         active_containers.remove(&container_id);
@@ -81,7 +99,7 @@ fn py_to_json_value_inner(
         let container_id = enter_python_container(value, active_containers)?;
         let result = tuple
             .iter()
-            .map(|item| py_to_json_value_inner(&item, active_containers))
+            .map(|item| py_to_json_value_inner(&item, active_containers, big_integer_handling))
             .collect::<PyResult<Vec<_>>>()
             .map(JsonValue::Array);
         active_containers.remove(&container_id);
@@ -104,7 +122,8 @@ fn py_to_json_value_inner(
                     return Err(error);
                 }
             };
-            let item = match py_to_json_value_inner(&item, active_containers) {
+            let item = match py_to_json_value_inner(&item, active_containers, big_integer_handling)
+            {
                 Ok(item) => item,
                 Err(error) => {
                     active_containers.remove(&container_id);
@@ -163,15 +182,25 @@ fn ensure_finite_python_json_numbers(value: &Bound<'_, PyAny>) -> PyResult<()> {
     Ok(())
 }
 
-fn py_int_to_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
+fn py_int_to_json_value(
+    value: &Bound<'_, PyAny>,
+    big_integer_handling: BigIntegerHandling,
+) -> PyResult<JsonValue> {
     if let Ok(number) = value.extract::<i64>() {
         return Ok(JsonValue::Number(JsonNumber::from(number)));
     }
     if let Ok(number) = value.extract::<u64>() {
         return Ok(JsonValue::Number(JsonNumber::from(number)));
     }
-    let rendered = value.str()?.to_str()?.to_owned();
-    parse_json(&rendered)
+    match big_integer_handling {
+        BigIntegerHandling::ApproximateForValidation => {
+            let rendered = value.str()?.to_str()?.to_owned();
+            parse_json(&rendered)
+        }
+        BigIntegerHandling::RejectLossySerialization => Err(PyErr::new::<PyOverflowError, _>(
+            "JSON integer cannot be serialized losslessly by the native encoder",
+        )),
+    }
 }
 
 #[pyclass(name = "Validator", module = "jsoncompat._native", unsendable)]
@@ -219,7 +248,7 @@ impl ValidatorPy {
 
     /// Validate and serialize a Python JSON-compatible value in one traversal.
     fn serialize_json(&self, instance: &Bound<'_, PyAny>) -> PyResult<Option<String>> {
-        let instance = py_to_json_value(instance)?;
+        let instance = py_to_serializable_json_value(instance)?;
         if validate_value_for_schema(&self.schema, &instance)? {
             serialize_json_value(&instance).map(Some)
         } else {
@@ -312,12 +341,7 @@ fn jiter_to_serde_json(value: &JiterJsonValue<'_>) -> PyResult<JsonValue> {
         JiterJsonValue::Null => Ok(JsonValue::Null),
         JiterJsonValue::Bool(value) => Ok(JsonValue::Bool(*value)),
         JiterJsonValue::Int(value) => Ok(JsonValue::Number(JsonNumber::from(*value))),
-        JiterJsonValue::BigInt(value) => {
-            // Jiter has already verified that this string is a syntactically valid JSON integer.
-            Ok(JsonValue::Number(JsonNumber::from_string_unchecked(
-                value.to_string(),
-            )))
-        }
+        JiterJsonValue::BigInt(value) => parse_json(&value.to_string()),
         JiterJsonValue::Float(value) => JsonNumber::from_f64(*value)
             .map(JsonValue::Number)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("JSON numbers must be finite")),
@@ -496,7 +520,7 @@ fn deserialize_json_py(py: Python<'_>, payload: &Bound<'_, PyAny>) -> PyResult<P
 #[pyfunction]
 #[pyo3(signature = (value), name = "serialize_json")]
 fn serialize_json_py(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    serialize_json_value(&py_to_json_value(value)?)
+    serialize_json_value(&py_to_serializable_json_value(value)?)
 }
 
 /// Check whether a JSON value satisfies a schema.

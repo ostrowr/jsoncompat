@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import importlib
+import json
 import math
 from enum import StrEnum
 from typing import Any, Literal, NoReturn, cast, overload
@@ -62,7 +63,16 @@ def serialize_value(
     selected_format = SerializationFormat(format)
 
     if selected_format is SerializationFormat.JSON:
-        return serialize_json_value(value)
+        try:
+            return serialize_json_value(value)
+        except OverflowError:
+            normalized = _normalize_json_value(value)
+            return json.dumps(
+                normalized,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
 
     normalized = _normalize_json_value(value)
     if selected_format is SerializationFormat.YAML:
