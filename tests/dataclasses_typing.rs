@@ -57,10 +57,12 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
 from typing import assert_type
 
 from generated_models import InventoryItem, InventoryItemMetadata, JSONCOMPAT_MODEL
+from jsoncompat import JsonValue
+from jsoncompat.codegen import SerializationFormat
 from jsoncompat.codegen.dataclasses import JSONCOMPAT_MISSING, JsoncompatMissingType, Omittable
 
 
-item = InventoryItem.from_json({
+item = InventoryItem.from_value({
     "sku": "sku-123",
     "metadata": {"warehouse": "west"},
     "quantity": 10,
@@ -70,6 +72,11 @@ item = InventoryItem.from_json({
 
 assert_type(JSONCOMPAT_MODEL, type[InventoryItem])
 assert_type(item, InventoryItem)
+assert_type(item.to_value(), JsonValue)
+assert_type(item.serialize(), str)
+assert_type(item.serialize(format=SerializationFormat.YAML), str)
+assert_type(item.serialize(format=SerializationFormat.MSGPACK), bytes)
+assert_type(InventoryItem.deserialize(item.serialize()), InventoryItem)
 assert_type(item.sku, str)
 assert_type(item.quantity, Omittable[int])
 assert_type(item.metadata, InventoryItemMetadata)
@@ -91,8 +98,13 @@ item_from_constructor = InventoryItem(
     warehouseCode="WH-123",
     coordinates=["aisle", 7],
     __jsoncompat_extra__={"priority": 2.5},
+    skip_validation=True,
 )
 assert_type(item_from_constructor, InventoryItem)
+assert_type(
+    InventoryItem.from_value(item.to_value(), skip_validation=True),
+    InventoryItem,
+)
 "#,
         r#"
 # pyright: strict
@@ -117,6 +129,22 @@ InventoryItem(
     metadata=InventoryItemMetadata(warehouse="east"),
     coordinates=[{}],
 )
+
+InventoryItem(
+    sku="sku-456",
+    metadata=InventoryItemMetadata(warehouse="east"),
+    skip_validation="yes",
+)
+
+InventoryItem.from_value(
+    {"sku": "sku-456", "metadata": {"warehouse": "east"}},
+    skip_validation="yes",
+)
+
+InventoryItem(
+    sku="sku-456",
+    metadata=InventoryItemMetadata(warehouse="east"),
+).serialize(format="json")
 "#,
     )?;
 
@@ -172,7 +200,7 @@ from generated_models import LabeledRecord
 from jsoncompat.codegen.dataclasses import JsoncompatMissingType
 
 
-record = LabeledRecord.from_json({"name": "Ada", "x-rank": 7})
+record = LabeledRecord.from_value({"name": "Ada", "x-rank": 7})
 assert_type(record.__jsoncompat_extra__, dict[str, int])
 assert_type(
     record.get_additional_property("x-rank"),

@@ -112,10 +112,12 @@ serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
 carry the original input schema in `__jsoncompat_schema__`, cache a
 `jsoncompat.validator_for(...)` validator for runtime checks, and expose:
 
-- `from_json(...)` / `from_json_string(...)` constructors for schema-checked
-  deserialization;
-- `to_json(...)` / `to_json_string(...)` serializers that validate emitted
-  JSON against the attached schema;
+- `from_value(...)` / `to_value(...)` for schema-checked conversion between
+  generated models and Python JSON values;
+- `deserialize(...)` / `serialize(...)` for JSON, YAML, and MessagePack wire
+  formats, with JSON as the default;
+- keyword-only `skip_validation=True` on direct construction and every
+  conversion method when the caller can guarantee the value is schema-valid;
 - `__jsoncompat_extra__` for schema-admitted object properties that are not
   declared under `properties`, including `additionalProperties` and
   `patternProperties`;
@@ -132,6 +134,18 @@ generated writer envelopes inherit from `WriterDataclassModel`, which disables
 deserialization methods, and generated reader envelopes inherit from
 `ReaderDataclassModel` / `ReaderDataclassRootModel`, which disable
 serialization methods.
+
+`skip_validation=True` skips only the attached JSON Schema check. Wire-format
+parsing and JSON-value normalization, runtime type conversion, and reader/writer
+direction guards still apply.
+
+Install optional codecs with `jsoncompat[yaml]` and `jsoncompat[msgpack]`.
+Every decoded format is restricted to JSON-compatible values before model
+construction; format-specific values such as YAML timestamps or MessagePack
+binary/extension values are rejected.
+
+See the [canonical generated-model example](examples/stamp/demo.py) for the
+complete writer-to-reader lifecycle across Python values and all wire formats.
 
 ## Choose a role
 

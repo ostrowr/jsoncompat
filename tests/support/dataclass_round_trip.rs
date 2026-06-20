@@ -294,11 +294,11 @@ for raw_line in sys.stdin:
     mode, raw_json = raw_line.split("\t", 1)
     candidate = json.loads(raw_json)
     try:
-        model = reader_model.from_json(candidate)
+        model = reader_model.from_value(candidate)
         if mode == "reject_invalid":
             print("accepted", flush=True)
             continue
-        emitted = model.to_json()
+        emitted = model.to_value()
         candidate_json = json.dumps(candidate, separators=(",", ":"), sort_keys=True)
         emitted_json = json.dumps(emitted, separators=(",", ":"), sort_keys=True)
         if not json_equivalent(candidate, emitted):
@@ -378,14 +378,14 @@ writer_payload_model = getattr(writer_module, writer_payload_name)
 
 
 def writer_from_payload(payload):
-    data = writer_payload_model.from_json(payload)
+    data = writer_payload_model.from_value(payload)
     return writer_model(version=writer_version, data=data)
 
 
 def reader_envelope_from_model(model):
     return {
         "version": model.root.version,
-        "data": model.root.data.to_json(),
+        "data": model.root.data.to_value(),
     }
 
 
@@ -394,7 +394,7 @@ for raw_line in sys.stdin:
     candidate = json.loads(raw_json)
     try:
         if mode == "writer_round_trip":
-            emitted = writer_from_payload(candidate).to_json()
+            emitted = writer_from_payload(candidate).to_value()
             if emitted["version"] != writer_version or not json_equivalent(
                 candidate, emitted["data"]
             ):
@@ -409,7 +409,7 @@ for raw_line in sys.stdin:
             print("accepted", flush=True)
             continue
         elif mode == "reader_round_trip":
-            emitted = reader_envelope_from_model(reader_model.from_json(candidate))
+            emitted = reader_envelope_from_model(reader_model.from_value(candidate))
             if not json_equivalent(candidate, emitted):
                 print(
                     "err\tgenerated stamped reader changed envelope during round-trip: "
@@ -418,7 +418,7 @@ for raw_line in sys.stdin:
                 )
                 continue
         elif mode == "reader_reject":
-            reader_model.from_json(candidate)
+            reader_model.from_value(candidate)
             print("accepted", flush=True)
             continue
         else:

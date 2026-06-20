@@ -1822,10 +1822,11 @@ fn python_keyword_or_reserved(name: &str) -> bool {
             | "while"
             | "with"
             | "yield"
-            | "from_json"
-            | "from_json_string"
-            | "to_json"
-            | "to_json_string"
+            | "deserialize"
+            | "from_value"
+            | "serialize"
+            | "skip_validation"
+            | "to_value"
             | "root"
             | EXTRA_FIELD_NAME
     )
@@ -1925,6 +1926,39 @@ mod tests {
         assert!(source.contains("class UserProfile(dc.DataclassModel):"));
         assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
+    }
+
+    #[test]
+    fn generated_fields_do_not_shadow_model_conversion_interfaces() {
+        let schema = json!({
+            "title": "interface names",
+            "type": "object",
+            "properties": {
+                "deserialize": { "type": "string" },
+                "from_value": { "type": "string" },
+                "serialize": { "type": "string" },
+                "skip_validation": { "type": "boolean" },
+                "to_value": { "type": "string" }
+            },
+            "required": [
+                "deserialize",
+                "from_value",
+                "serialize",
+                "skip_validation",
+                "to_value"
+            ],
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("deserialize_: str = dc.field(\"deserialize\")"));
+        assert!(source.contains("from_value_: str = dc.field(\"from_value\")"));
+        assert!(source.contains("serialize_: str = dc.field(\"serialize\")"));
+        assert!(source.contains(
+            "skip_validation_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"skip_validation\")"
+        ));
+        assert!(source.contains("to_value_: str = dc.field(\"to_value\")"));
     }
 
     #[test]

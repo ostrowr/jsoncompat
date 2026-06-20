@@ -47,6 +47,19 @@ print(example)
 - `jsoncompat.codegen.dataclasses` runtime helpers for generated dataclass models
 - `Role.SERIALIZER`, `Role.DESERIALIZER`, and `Role.BOTH` are string constants accepted by `check_compat`.
 
+Generated dataclasses use `from_value(...)` / `to_value(...)` for Python JSON
+values and `deserialize(...)` / `serialize(...)` for encoded JSON, YAML, and
+MessagePack. JSON is the default format. Install optional codecs with
+`jsoncompat[yaml]` or `jsoncompat[msgpack]`. All direct constructors and
+conversion methods accept keyword-only `skip_validation=True` when the caller
+already guarantees schema validity. It skips only the attached JSON Schema
+check; wire-format parsing and JSON-value normalization, runtime type
+conversion, and reader/writer direction guards still apply.
+
+See the [canonical generated-model example](../examples/stamp/demo.py) for
+checked and trusted construction, all three wire formats, stamped history, and
+reader/writer direction guards.
+
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 
 ## More detail
@@ -61,7 +74,7 @@ Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and
 Run the generated dataclass runtime microbenchmark from the repository root:
 
 ```bash
-env -u VIRTUAL_ENV uv run --project pybindings python pybindings/bench_dataclasses_runtime.py
+env -u VIRTUAL_ENV uv run --no-config --project pybindings --all-extras --locked python pybindings/bench_dataclasses_runtime.py
 ```
 
 ## License

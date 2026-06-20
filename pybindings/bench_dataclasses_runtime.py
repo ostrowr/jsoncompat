@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal
 
 from jsoncompat import validator_for
+from jsoncompat.codegen import SerializationFormat
 from jsoncompat.codegen import dataclasses as dc
+
+
+STAMP_EXAMPLE_DIR = Path(__file__).resolve().parents[1] / "examples" / "stamp"
+sys.path.insert(0, str(STAMP_EXAMPLE_DIR))
+from reader_models import UserProfileReader  # noqa: E402
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -124,6 +132,15 @@ PAYLOAD = {
     "traceId": "trace_123",
 }
 PAYLOAD_JSON = json.dumps(PAYLOAD, separators=(",", ":"), sort_keys=True)
+STAMPED_VALUE = {
+    "version": 2,
+    "data": {
+        "name": "Ada",
+        "age": 37,
+        "interests": 3,
+    },
+}
+STAMPED_JSON = json.dumps(STAMPED_VALUE, separators=(",", ":"), sort_keys=True)
 
 
 def clear_runtime_caches() -> None:
@@ -148,12 +165,36 @@ def cached_spec_lookup() -> None:
     infer_all_specs()
 
 
-def from_json() -> BenchEvent:
-    return BenchEvent.from_json(PAYLOAD)
+def from_value() -> BenchEvent:
+    return BenchEvent.from_value(PAYLOAD)
 
 
-def to_json(instance: BenchEvent) -> object:
-    return instance.to_json()
+def from_value_trusted() -> BenchEvent:
+    return BenchEvent.from_value(PAYLOAD, skip_validation=True)
+
+
+def to_value(instance: BenchEvent) -> object:
+    return instance.to_value()
+
+
+def to_value_trusted(instance: BenchEvent) -> object:
+    return instance.to_value(skip_validation=True)
+
+
+def stamped_from_value() -> UserProfileReader:
+    return UserProfileReader.from_value(STAMPED_VALUE)
+
+
+def stamped_from_value_trusted() -> UserProfileReader:
+    return UserProfileReader.from_value(STAMPED_VALUE, skip_validation=True)
+
+
+def stamped_deserialize() -> UserProfileReader:
+    return UserProfileReader.deserialize(STAMPED_JSON)
+
+
+def stamped_deserialize_trusted() -> UserProfileReader:
+    return UserProfileReader.deserialize(STAMPED_JSON, skip_validation=True)
 
 
 def bench(name: str, iterations: int, callback: Callable[[], Any]) -> None:
@@ -162,7 +203,7 @@ def bench(name: str, iterations: int, callback: Callable[[], Any]) -> None:
         callback()
     elapsed = time.perf_counter() - start
     print(
-        f"{name:24} iterations={iterations:>8} "
+        f"{name:28} iterations={iterations:>8} "
         f"total={elapsed:.6f}s per_iter={elapsed / iterations * 1_000_000:.2f}us"
     )
 
@@ -174,16 +215,19 @@ def main() -> None:
 
     clear_runtime_caches()
     infer_all_specs()
-    instance = from_json()
+    instance = from_value()
+    json_wire = instance.serialize()
+    yaml_wire = instance.serialize(format=SerializationFormat.YAML)
+    msgpack_wire = instance.serialize(format=SerializationFormat.MSGPACK)
     validator = validator_for(BenchEvent.__jsoncompat_schema__)
-    assert instance.to_json() == PAYLOAD
+    assert instance.to_value() == PAYLOAD
     assert validator.is_valid_json(PAYLOAD_JSON)
     assert validator.is_valid_value(PAYLOAD)
 
     bench("cold spec inference", args.iterations, cold_spec_inference)
     clear_runtime_caches()
     infer_all_specs()
-    from_json()
+    from_value()
     bench("cached spec lookup", args.iterations, cached_spec_lookup)
     bench(
         "validator.is_valid_json",
@@ -195,8 +239,56 @@ def main() -> None:
         args.iterations,
         lambda: validator.is_valid_value(PAYLOAD),
     )
-    bench("from_json", args.iterations, from_json)
-    bench("to_json", args.iterations, lambda: to_json(instance))
+    bench("from_value checked", args.iterations, from_value)
+    bench("from_value trusted", args.iterations, from_value_trusted)
+    bench("to_value checked", args.iterations, lambda: to_value(instance))
+    bench("to_value trusted", args.iterations, lambda: to_value_trusted(instance))
+    bench("serialize JSON checked", args.iterations, instance.serialize)
+    bench(
+        "serialize JSON trusted",
+        args.iterations,
+        lambda: instance.serialize(skip_validation=True),
+    )
+    bench(
+        "deserialize JSON checked",
+        args.iterations,
+        lambda: BenchEvent.deserialize(json_wire),
+    )
+    bench(
+        "deserialize JSON trusted",
+        args.iterations,
+        lambda: BenchEvent.deserialize(json_wire, skip_validation=True),
+    )
+    bench(
+        "serialize YAML checked",
+        args.iterations,
+        lambda: instance.serialize(format=SerializationFormat.YAML),
+    )
+    bench(
+        "deserialize YAML checked",
+        args.iterations,
+        lambda: BenchEvent.deserialize(
+            yaml_wire,
+            format=SerializationFormat.YAML,
+        ),
+    )
+    bench(
+        "serialize msgpack checked",
+        args.iterations,
+        lambda: instance.serialize(format=SerializationFormat.MSGPACK),
+    )
+    bench(
+        "deserialize msgpack checked",
+        args.iterations,
+        lambda: BenchEvent.deserialize(
+            msgpack_wire,
+            format=SerializationFormat.MSGPACK,
+        ),
+    )
+    bench("stamped value checked", args.iterations, stamped_from_value)
+    bench("stamped value trusted", args.iterations, stamped_from_value_trusted)
+    bench("stamped JSON checked", args.iterations, stamped_deserialize)
+    bench("stamped JSON trusted", args.iterations, stamped_deserialize_trusted)
 
 
 if __name__ == "__main__":

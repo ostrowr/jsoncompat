@@ -9,6 +9,10 @@ description = "JSON Schema compatibility checker for evolving schemas"
 readme = "README.md"
 requires-python = ">=3.12"
 
+[project.optional-dependencies]
+msgpack = ["msgpack>=1.1.1"]
+yaml = ["PyYAML>=6.0.2"]
+
 [tool.maturin]
 module-name = "jsoncompat._native"
 python-source = "."

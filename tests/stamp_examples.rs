@@ -34,15 +34,44 @@ fn stamp_example_snapshots_are_up_to_date() {
     assert_eq!(bundle, read_json(root.join("bundle.json")));
     assert_eq!(
         normalized_newlines(&writer_dataclasses),
-        normalized_newlines(&read_text(root.join("writer.dataclasses.py")))
+        normalized_newlines(&read_text(root.join("writer_models.py")))
     );
     assert_eq!(
         normalized_newlines(&reader_dataclasses),
-        normalized_newlines(&read_text(root.join("reader.dataclasses.py")))
+        normalized_newlines(&read_text(root.join("reader_models.py")))
     );
 
-    assert_python_compiles(&root.join("writer.dataclasses.py"));
-    assert_python_compiles(&root.join("reader.dataclasses.py"));
+    assert_python_compiles(&root.join("writer_models.py"));
+    assert_python_compiles(&root.join("reader_models.py"));
+    assert_python_compiles(&root.join("demo.py"));
+}
+
+#[test]
+fn stamp_python_example_exercises_generated_model_lifecycle() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/stamp");
+
+    let mut command = python_env::python_command();
+    command
+        .env_remove("PYTHONSAFEPATH")
+        .args(["-B", root.join("demo.py").to_str().unwrap()]);
+    let demo = command.output().expect("run canonical Python example");
+    assert!(
+        demo.status.success(),
+        "canonical Python example failed: {}",
+        String::from_utf8_lossy(&demo.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(demo.stdout).unwrap(),
+        concat!(
+            "JSON: v2 profile: Ada, age 37, interests 3\n",
+            "YAML: v2 profile: Ada, age 37, interests 3\n",
+            "MessagePack: v2 profile: Ada, age 37, interests 3\n",
+            "Historical: v1 profile: Grace, age 85\n",
+            "Trusted paths match checked paths\n",
+            "Invalid input rejected\n",
+            "Reader/writer direction guards enforced\n",
+        )
+    );
 }
 
 fn normalized_newlines(contents: &str) -> String {

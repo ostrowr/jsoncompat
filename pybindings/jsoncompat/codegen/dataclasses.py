@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import json
 import types
 from typing import (
     Any,
@@ -15,9 +14,16 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
+    overload,
 )
 
-from jsoncompat import validator_for
+from jsoncompat import JsonValue, validator_for
+
+from .serialization import (
+    SerializationFormat,
+    deserialize_value,
+    serialize_value,
+)
 
 
 __all__ = [
@@ -30,6 +36,7 @@ __all__ = [
     "ReaderDataclassModel",
     "ReaderDataclassRootModel",
     "Omittable",
+    "SerializationFormat",
     "WriterDataclassModel",
     "extra_field",
     "field",
@@ -94,53 +101,109 @@ def root_field() -> Any:
     return dataclasses.field()
 
 
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class DataclassModel:
-    __slots__ = ()
+    skip_validation: dataclasses.InitVar[bool] = False
 
     __jsoncompat_schema__: ClassVar[str]
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, skip_validation: bool) -> None:
         schema_json = _jsoncompat_schema_for(type(self))
         if schema_json is None:
             return
         _jsoncompat_validate_model_instance(self)
-        value = self.jsoncompat_to_json_unchecked()
+        if skip_validation:
+            return
+        value = self.jsoncompat_to_value_unchecked()
         if not _jsoncompat_validator_for(type(self)).is_valid_value(value):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
 
     @classmethod
-    def from_json[JSONCOMPAT_MODEL_T: DataclassModel](
+    def from_value[JSONCOMPAT_MODEL_T: DataclassModel](
         cls: type[JSONCOMPAT_MODEL_T],
-        value: Any,
-    ) -> JSONCOMPAT_MODEL_T:
-        return cls.jsoncompat_from_json_checked(value)
-
-    @classmethod
-    def from_json_string[JSONCOMPAT_MODEL_T: DataclassModel](
-        cls: type[JSONCOMPAT_MODEL_T],
-        value_json: str,
-    ) -> JSONCOMPAT_MODEL_T:
-        return cls.from_json(json.loads(value_json))
-
-    def to_json(self) -> Any:
-        return self.jsoncompat_to_json_checked()
-
-    def to_json_string(self) -> str:
-        return json.dumps(self.to_json(), separators=(",", ":"), sort_keys=True)
-
-    @classmethod
-    def jsoncompat_from_json_checked[JSONCOMPAT_MODEL_T: DataclassModel](
-        cls: type[JSONCOMPAT_MODEL_T],
-        value: Any,
+        value: JsonValue,
+        *,
+        skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
         schema_json = _jsoncompat_schema_for(cls)
         if schema_json is None:
             raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
-        if not _jsoncompat_validator_for(cls).is_valid_value(value):
+        if not skip_validation and not _jsoncompat_validator_for(cls).is_valid_value(
+            value
+        ):
             raise ValueError(f"value does not satisfy {cls.__name__} schema")
         return cls.jsoncompat_from_validated(value)
+
+    @classmethod
+    def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
+        cls: type[JSONCOMPAT_MODEL_T],
+        payload: str | bytes,
+        *,
+        format: SerializationFormat = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> JSONCOMPAT_MODEL_T:
+        return cls.from_value(
+            deserialize_value(payload, format=format),
+            skip_validation=skip_validation,
+        )
+
+    def to_value(self, *, skip_validation: bool = False) -> JsonValue:
+        value = self.jsoncompat_to_value_unchecked()
+        schema_json = _jsoncompat_schema_for(type(self))
+        if schema_json is None:
+            raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
+        if not skip_validation and not _jsoncompat_validator_for(
+            type(self)
+        ).is_valid_value(value):
+            raise ValueError(
+                f"{type(self).__name__} instance does not satisfy its JSON Schema"
+            )
+        return cast(JsonValue, value)
+
+    @overload
+    def serialize(
+        self,
+        *,
+        format: Literal[SerializationFormat.JSON] = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> str: ...
+
+    @overload
+    def serialize(
+        self,
+        *,
+        format: Literal[SerializationFormat.YAML],
+        skip_validation: bool = False,
+    ) -> str: ...
+
+    @overload
+    def serialize(
+        self,
+        *,
+        format: Literal[SerializationFormat.MSGPACK],
+        skip_validation: bool = False,
+    ) -> bytes: ...
+
+    @overload
+    def serialize(
+        self,
+        *,
+        format: SerializationFormat,
+        skip_validation: bool = False,
+    ) -> str | bytes: ...
+
+    def serialize(
+        self,
+        *,
+        format: SerializationFormat = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> str | bytes:
+        return serialize_value(
+            self.to_value(skip_validation=skip_validation),
+            format=format,
+        )
 
     @classmethod
     def jsoncompat_from_validated[JSONCOMPAT_MODEL_T: DataclassModel](
@@ -175,18 +238,7 @@ class DataclassModel:
 
         return _jsoncompat_new_unchecked(cls, kwargs)
 
-    def jsoncompat_to_json_checked(self) -> Any:
-        value = self.jsoncompat_to_json_unchecked()
-        schema_json = _jsoncompat_schema_for(type(self))
-        if schema_json is None:
-            raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
-        if not _jsoncompat_validator_for(type(self)).is_valid_value(value):
-            raise ValueError(
-                f"{type(self).__name__} instance does not satisfy its JSON Schema"
-            )
-        return value
-
-    def jsoncompat_to_json_unchecked(self) -> Any:
+    def jsoncompat_to_value_unchecked(self) -> Any:
         output: dict[str, Any] = {}
         for field in _jsoncompat_dataclass_fields(self):
             field_value = getattr(self, field.name)
@@ -232,27 +284,41 @@ class DataclassRootModel(DataclassModel):
             },
         )
 
-    def jsoncompat_to_json_unchecked(self) -> Any:
+    def jsoncompat_to_value_unchecked(self) -> Any:
         return _jsoncompat_serialize_value(self.root)
 
 
 class ReaderDataclassModel(DataclassModel):
     __slots__ = ()
 
-    def to_json(self) -> NoReturn:
+    def to_value(self, *, skip_validation: bool = False) -> NoReturn:
+        _ = skip_validation
         raise TypeError("Reader dataclasses do not support serialization")
 
-    def to_json_string(self) -> NoReturn:
+    def serialize(
+        self,
+        *,
+        format: SerializationFormat = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> NoReturn:
+        _ = (format, skip_validation)
         raise TypeError("Reader dataclasses do not support serialization")
 
 
 class ReaderDataclassRootModel(DataclassRootModel):
     __slots__ = ()
 
-    def to_json(self) -> NoReturn:
+    def to_value(self, *, skip_validation: bool = False) -> NoReturn:
+        _ = skip_validation
         raise TypeError("Reader dataclasses do not support serialization")
 
-    def to_json_string(self) -> NoReturn:
+    def serialize(
+        self,
+        *,
+        format: SerializationFormat = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> NoReturn:
+        _ = (format, skip_validation)
         raise TypeError("Reader dataclasses do not support serialization")
 
 
@@ -260,13 +326,24 @@ class WriterDataclassModel(DataclassModel):
     __slots__ = ()
 
     @classmethod
-    def from_json(cls, value: Any) -> NoReturn:
-        _ = value
+    def from_value(
+        cls,
+        value: JsonValue,
+        *,
+        skip_validation: bool = False,
+    ) -> NoReturn:
+        _ = (value, skip_validation)
         raise TypeError("Writer dataclasses do not support deserialization")
 
     @classmethod
-    def from_json_string(cls, value_json: str) -> NoReturn:
-        _ = value_json
+    def deserialize(
+        cls,
+        payload: str | bytes,
+        *,
+        format: SerializationFormat = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> NoReturn:
+        _ = (payload, format, skip_validation)
         raise TypeError("Writer dataclasses do not support deserialization")
 
 
@@ -423,14 +500,19 @@ def _jsoncompat_construct_value(annotation: Any, value: Any) -> Any:
     if origin in {types.UnionType, Union}:
         return _jsoncompat_construct_union(get_args(annotation), value)
     if origin is Literal:
-        if value in get_args(annotation):
-            return value
+        literal = _jsoncompat_literal_value(get_args(annotation), value)
+        if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
+            return literal
         raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
 
     raise TypeError(f"unsupported runtime annotation {annotation!r}")
 
 
 def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
+    discriminated_branch = _jsoncompat_discriminated_branch(branches, value)
+    if discriminated_branch is not None:
+        return discriminated_branch.jsoncompat_from_validated(value)
+
     rejected_dataclass_branches: list[type[DataclassModel]] = []
     for branch in branches:
         if branch is JsoncompatMissingType and value is JSONCOMPAT_MISSING:
@@ -457,6 +539,68 @@ def _jsoncompat_construct_union(branches: tuple[Any, ...], value: Any) -> Any:
             continue
 
     raise TypeError(f"value {value!r} does not match any union branch")
+
+
+def _jsoncompat_discriminated_branch(
+    branches: tuple[Any, ...],
+    value: Any,
+) -> type[DataclassModel] | None:
+    if not isinstance(value, dict):
+        return None
+    value_object = cast(dict[Any, Any], value)
+
+    model_branches: list[type[DataclassModel]] = []
+    for branch in branches:
+        if isinstance(branch, type) and issubclass(branch, DataclassModel):
+            model_branches.append(branch)
+        elif branch not in {JsoncompatMissingType, None, type(None)}:
+            return None
+    if len(model_branches) < 2:
+        return None
+
+    branch_specs = [
+        (branch, _jsoncompat_object_spec_for(branch)) for branch in model_branches
+    ]
+    for candidate_field in branch_specs[0][1].fields:
+        if candidate_field.omittable or candidate_field.json_name not in value_object:
+            continue
+
+        matching_branches: list[type[DataclassModel]] = []
+        for branch, object_spec in branch_specs:
+            branch_field = next(
+                (
+                    field_spec
+                    for field_spec in object_spec.fields
+                    if field_spec.json_name == candidate_field.json_name
+                    and not field_spec.omittable
+                ),
+                None,
+            )
+            if branch_field is None or get_origin(branch_field.annotation) is not Literal:
+                break
+            if _jsoncompat_literal_value(
+                get_args(branch_field.annotation),
+                value_object[candidate_field.json_name],
+            ) is not _JSONCOMPAT_MISSING_TYPE_HINT:
+                matching_branches.append(branch)
+        else:
+            if len(matching_branches) == 1:
+                return matching_branches[0]
+
+    return None
+
+
+def _jsoncompat_literal_value(literals: tuple[Any, ...], value: Any) -> Any:
+    for literal in literals:
+        if isinstance(literal, bool) or isinstance(value, bool):
+            if type(literal) is type(value) and literal == value:
+                return literal
+        elif isinstance(literal, (int, float)) and isinstance(value, (int, float)):
+            if literal == value:
+                return literal
+        elif type(literal) is type(value) and literal == value:
+            return literal
+    return _JSONCOMPAT_MISSING_TYPE_HINT
 
 
 def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
@@ -585,7 +729,10 @@ def _jsoncompat_validate_python_value(annotation: Any, value: Any) -> None:
             return
         raise TypeError(f"value {value!r} does not match any union branch")
     if origin is Literal:
-        if value in get_args(annotation):
+        if (
+            _jsoncompat_literal_value(get_args(annotation), value)
+            is not _JSONCOMPAT_MISSING_TYPE_HINT
+        ):
             return
         raise TypeError(f"expected one of {get_args(annotation)!r}, got {value!r}")
 
@@ -616,7 +763,7 @@ def _jsoncompat_serialize_value(value: Any) -> Any:
     if value is JSONCOMPAT_MISSING:
         return JSONCOMPAT_MISSING
     if isinstance(value, DataclassModel):
-        return value.jsoncompat_to_json_unchecked()
+        return value.jsoncompat_to_value_unchecked()
     if isinstance(value, list):
         value_items = cast(list[Any], value)
         return [_jsoncompat_serialize_value(item) for item in value_items]

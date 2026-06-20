@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import typing
 from typing import ClassVar, Literal
 
+from jsoncompat.codegen import SerializationFormat
 from jsoncompat.codegen.dataclasses import (
     DataclassAdditionalModel,
     DataclassModel,
@@ -33,7 +34,7 @@ from jsoncompat.codegen.dataclasses import (
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Profile(DataclassAdditionalModel[str]):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}'
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"name":{"type":"string","minLength":1},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}'
 
     name: str = field("name")
     age: int | None = field("age", omittable=True)
@@ -42,18 +43,27 @@ class Profile(DataclassAdditionalModel[str]):
 
 profile_hints = typing.get_type_hints(Profile)
 assert profile_hints["__jsoncompat_extra__"] == dict[str, str]
+assert not hasattr(Profile, "from_json")
+assert not hasattr(Profile, "from_json_string")
+assert not hasattr(Profile, "to_json")
+assert not hasattr(Profile, "to_json_string")
 
-profile = Profile.from_json({"name": "Ada", "nickname": "ace"})
+profile = Profile.from_value({"name": "Ada", "nickname": "ace"})
 assert profile.name == "Ada"
 assert profile.age is JSONCOMPAT_MISSING
 assert profile.__jsoncompat_extra__ == {"nickname": "ace"}
 assert profile.get_additional_property("nickname") == "ace"
 assert profile.get_additional_property("missing") is JSONCOMPAT_MISSING
-assert profile.to_json() == {"name": "Ada", "nickname": "ace"}
-assert profile.to_json_string() == '{"name":"Ada","nickname":"ace"}'
+assert profile.to_value() == {"name": "Ada", "nickname": "ace"}
+assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
+
+for format in SerializationFormat:
+    encoded = profile.serialize(format=format)
+    decoded = Profile.deserialize(encoded, format=format)
+    assert decoded.to_value() == {"name": "Ada", "nickname": "ace"}
 
 profile_with_age = Profile(name="Ada", age=37, __jsoncompat_extra__={"nickname": "ace"})
-assert profile_with_age.to_json() == {
+assert profile_with_age.to_value() == {
     "name": "Ada",
     "age": 37,
     "nickname": "ace",
@@ -61,8 +71,8 @@ assert profile_with_age.to_json() == {
 
 for factory in (
     lambda: Profile(name=1),
-    lambda: Profile.from_json({"name": 1}),
-    lambda: Profile.from_json({"name": "Ada", "age": "37"}),
+    lambda: Profile.from_value({"name": 1}),
+    lambda: Profile.from_value({"name": "Ada", "age": "37"}),
     lambda: Profile(name="Ada", __jsoncompat_extra__={"nickname": 1}),
 ):
     try:
@@ -81,8 +91,8 @@ class AuditContext(DataclassModel):
 
 
 context = AuditContext(tags={"team": "schema"})
-assert context.to_json() == {"tags": {"team": "schema"}}
-assert AuditContext.from_json({"tags": {"team": "schema"}}).tags == {
+assert context.to_value() == {"tags": {"team": "schema"}}
+assert AuditContext.from_value({"tags": {"team": "schema"}}).tags == {
     "team": "schema"
 }
 
@@ -121,8 +131,21 @@ class ProfileRoot(DataclassRootModel):
     root: str = root_field()
 
 
-assert ProfileRoot.from_json("ok").root == "ok"
-assert ProfileRoot(root="ok").to_json() == "ok"
+assert ProfileRoot.from_value("ok").root == "ok"
+assert ProfileRoot(root="ok").to_value() == "ok"
+
+trusted_root = ProfileRoot(root="", skip_validation=True)
+assert trusted_root.to_value(skip_validation=True) == ""
+assert ProfileRoot.from_value("", skip_validation=True).root == ""
+assert ProfileRoot.deserialize('""', skip_validation=True).root == ""
+
+try:
+    trusted_root.to_value()
+except ValueError:
+    pass
+else:
+    raise AssertionError("checked serialization accepted a trusted invalid model")
+
 try:
     ProfileRoot(root="")
 except ValueError:
@@ -133,7 +156,7 @@ else:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileWriter(WriterDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}},"required":["version","data"],"additionalProperties":false}'
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":false}},"required":["version","data"],"additionalProperties":false}'
 
     version: Literal[1] = field("version")
     data: Profile = field("data")
@@ -141,24 +164,57 @@ class ProfileWriter(WriterDataclassModel):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileReaderV1(ReaderDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}'
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}'
 
     version: Literal[1] = field("version")
     data: Profile = field("data")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileReader(ReaderDataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"oneOf":[{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}]}'
+class ProfileReaderV2(ReaderDataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":2},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}'
 
-    root: ProfileReaderV1 = root_field()
+    version: Literal[2] = field("version")
+    data: Profile = field("data")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProfileReader(ReaderDataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"oneOf":[{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false},{"type":"object","properties":{"version":{"const":2},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}]}'
+
+    root: ProfileReaderV1 | ProfileReaderV2 = root_field()
 
 
 writer = ProfileWriter(version=1, data=Profile(name="Ada"))
-assert writer.to_json() == {"version": 1, "data": {"name": "Ada"}}
-reader = ProfileReader.from_json({"version": 1, "data": {"name": "Ada"}})
+assert writer.to_value() == {"version": 1, "data": {"name": "Ada"}}
+reader = ProfileReader.from_value({"version": 1, "data": {"name": "Ada"}})
 assert reader.root.version == 1
 assert reader.root.data.name == "Ada"
+
+try:
+    ProfileWriter(
+        version=True,
+        data=Profile(name="Ada"),
+        skip_validation=True,
+    )
+except TypeError:
+    pass
+else:
+    raise AssertionError("trusted construction conflated boolean and integer literals")
+
+trusted_reader = ProfileReader.from_value(
+    {"version": 1, "data": {"name": ""}},
+    skip_validation=True,
+)
+assert isinstance(trusted_reader.root, ProfileReaderV1)
+assert trusted_reader.root.data.name == ""
+
+try:
+    ProfileReader.from_value({"version": 1, "data": {"name": ""}})
+except ValueError:
+    pass
+else:
+    raise AssertionError("checked discriminated reader accepted invalid data")
 
 try:
     ProfileWriter(version=1, data={"name": "Ada"})
@@ -168,11 +224,11 @@ else:
     raise AssertionError("constructor accepted raw nested JSON instead of a Profile")
 
 for forbidden in (
-    lambda: ProfileWriter.from_json({"version": 1, "data": {"name": "Ada"}}),
-    lambda: ProfileWriter.from_json_string('{"version":1,"data":{"name":"Ada"}}'),
-    lambda: ProfileReaderV1(version=1, data=Profile(name="Ada")).to_json(),
-    lambda: reader.to_json(),
-    lambda: reader.to_json_string(),
+    lambda: ProfileWriter.from_value({"version": 1, "data": {"name": "Ada"}}),
+    lambda: ProfileWriter.deserialize('{"version":1,"data":{"name":"Ada"}}'),
+    lambda: ProfileReaderV1(version=1, data=Profile(name="Ada")).to_value(),
+    lambda: reader.to_value(),
+    lambda: reader.serialize(),
 ):
     try:
         forbidden()
@@ -186,6 +242,76 @@ for forbidden in (
     assert!(
         output.status.success(),
         "dataclass helper module test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn serialization_formats_reject_values_outside_the_json_data_model() {
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import msgpack
+
+from jsoncompat.codegen import SerializationFormat
+from jsoncompat.codegen.serialization import deserialize_value, serialize_value
+
+
+value = {"name": "Ada", "scores": [1, 2, 3]}
+for format in SerializationFormat:
+    encoded = serialize_value(value, format=format)
+    assert deserialize_value(encoded, format=format) == value
+
+
+invalid_inputs = (
+    (ValueError, lambda: deserialize_value('{"name":"Ada","name":"Grace"}')),
+    (ValueError, lambda: deserialize_value('{"score":NaN}')),
+    (
+        ValueError,
+        lambda: deserialize_value(
+            "name: Ada\nname: Grace\n",
+            format=SerializationFormat.YAML,
+        ),
+    ),
+    (
+        TypeError,
+        lambda: deserialize_value(
+            "when: 2026-06-20\n",
+            format=SerializationFormat.YAML,
+        ),
+    ),
+    (
+        TypeError,
+        lambda: deserialize_value(
+            msgpack.packb({"value": b"not-json"}, use_bin_type=True),
+            format=SerializationFormat.MSGPACK,
+        ),
+    ),
+    (
+        ValueError,
+        lambda: deserialize_value(
+            msgpack.packb(
+                {"value": msgpack.ExtType(1, b"not-json")},
+                use_bin_type=True,
+            ),
+            format=SerializationFormat.MSGPACK,
+        ),
+    ),
+)
+
+for error_type, callback in invalid_inputs:
+    try:
+        callback()
+    except error_type:
+        pass
+    else:
+        raise AssertionError(f"{callback!r} accepted a non-JSON value")
+"###,
+    );
+    let output = command.output().expect("run serialization format test");
+    assert!(
+        output.status.success(),
+        "serialization format test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -220,8 +346,8 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 model = module.InventoryItem
-valid = model.from_json({"sku": "abc", "quantity": 3, "tags": ["new"]})
-assert valid.to_json() == {"sku": "abc", "quantity": 3, "tags": ["new"]}
+valid = model.from_value({"sku": "abc", "quantity": 3, "tags": ["new"]})
+assert valid.to_value() == {"sku": "abc", "quantity": 3, "tags": ["new"]}
 
 invalid_values = [
     {"sku": "", "quantity": 3},
@@ -233,7 +359,7 @@ invalid_values = [
 
 for value in invalid_values:
     try:
-        model.from_json(value)
+        model.from_value(value)
     except (TypeError, ValueError):
         pass
     else:
@@ -278,10 +404,10 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-counter = module.Counter.from_json({"count": 1.0})
+counter = module.Counter.from_value({"count": 1.0})
 assert counter.count == 1
 assert isinstance(counter.count, int)
-assert counter.to_json() == {"count": 1}
+assert counter.to_value() == {"count": 1}
 
 try:
     module.Counter(count=1.0)
@@ -327,11 +453,11 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-value = module.JSONCOMPAT_MODEL.from_json("Ada")
-assert value.to_json() == "Ada"
+value = module.JSONCOMPAT_MODEL.from_value("Ada")
+assert value.to_value() == "Ada"
 
 try:
-    module.JSONCOMPAT_MODEL.from_json(42)
+    module.JSONCOMPAT_MODEL.from_value(42)
 except ValueError:
     pass
 else:
@@ -376,11 +502,11 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-model = module.GeneratedSchema.from_json({"foo": "a"})
-assert model.to_json() == {"foo": "a"}
+model = module.GeneratedSchema.from_value({"foo": "a"})
+assert model.to_value() == {"foo": "a"}
 
 try:
-    module.GeneratedSchema.from_json({"bar": "a"})
+    module.GeneratedSchema.from_value({"bar": "a"})
 except ValueError:
     pass
 else:
@@ -435,15 +561,15 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 point = module.TracePoint(coordinates=["aisle", 7])
-assert point.to_json() == {"coordinates": ["aisle", 7]}
-assert module.TracePoint.from_json({"coordinates": ["aisle", 7]}).to_json() == {
+assert point.to_value() == {"coordinates": ["aisle", 7]}
+assert module.TracePoint.from_value({"coordinates": ["aisle", 7]}).to_value() == {
     "coordinates": ["aisle", 7]
 }
 
 for factory in (
     lambda: module.TracePoint(coordinates=[7, "aisle"]),
     lambda: module.TracePoint(coordinates=["aisle", 7, 9]),
-    lambda: module.TracePoint.from_json({"coordinates": [7, "aisle"]}),
+    lambda: module.TracePoint.from_value({"coordinates": [7, "aisle"]}),
 ):
     try:
         factory()
@@ -494,9 +620,9 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-record = module.LabeledRecord.from_json({"name": "Ada", "x-rank": 7})
+record = module.LabeledRecord.from_value({"name": "Ada", "x-rank": 7})
 assert record.__jsoncompat_extra__ == {"x-rank": 7}
-assert record.to_json() == {"name": "Ada", "x-rank": 7}
+assert record.to_value() == {"name": "Ada", "x-rank": 7}
 "###,
     );
     command.arg(module_path);
@@ -707,7 +833,7 @@ event = module.GeneratedSchema(
     currency="USD",
 )
 assert event.couponCode is JSONCOMPAT_MISSING
-assert event.to_json() == {
+assert event.to_value() == {
     "event": "checkout.completed",
     "customer": {
         "id": "cus_123",
@@ -725,7 +851,7 @@ assert event.to_json() == {
     "currency": "USD",
 }
 
-parsed = module.GeneratedSchema.from_json({
+parsed = module.GeneratedSchema.from_value({
     "event": "checkout.completed",
     "customer": {
         "id": "cus_123",
@@ -794,10 +920,10 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 payload = module.CollisionV1(name="Ada")
-assert payload.to_json() == {"name": "Ada"}
+assert payload.to_value() == {"name": "Ada"}
 
 writer = module.CollisionWriter(version=1, data=payload)
-assert writer.to_json() == {"version": 1, "data": {"name": "Ada"}}
+assert writer.to_value() == {"version": 1, "data": {"name": "Ada"}}
 "###,
     );
     command.arg(module_path);
