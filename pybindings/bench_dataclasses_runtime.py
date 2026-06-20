@@ -1,12 +1,25 @@
+"""Benchmark generated dataclasses and an equivalent strict Pydantic v2 graph.
+
+Pydantic dump methods do not re-run model validation, so compare them primarily
+with jsoncompat's trusted serialization paths. All comparisons use the same
+already-valid nested payload; coercion and error-reporting semantics differ.
+"""
+
 from __future__ import annotations
 
 import argparse
+import gc
 import json
+import platform
+import statistics
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal
+
+import pydantic
+from pydantic import BaseModel, ConfigDict, Field
 
 from jsoncompat import validator_for
 from jsoncompat.codegen import SerializationFormat
@@ -113,6 +126,34 @@ class BenchEvent(dc.DataclassAdditionalModel[str]):
     __jsoncompat_extra__: dict[str, str] = dc.extra_field()
 
 
+class PydanticCustomer(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    email: str
+    id: str
+    segment: Literal["enterprise", "self_serve", "startup"]
+    trialDaysRemaining: int = 0
+
+
+class PydanticItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    quantity: int
+    sku: Literal["audit-log", "starter-seat", "team-seat"]
+    unitPrice: int
+
+
+class PydanticEvent(BaseModel):
+    model_config = ConfigDict(extra="allow", frozen=True, strict=True)
+
+    __pydantic_extra__: dict[str, str] = Field(init=False)
+    couponCode: str | None = None
+    currency: Literal["EUR", "GBP", "USD"]
+    customer: PydanticCustomer
+    event: Literal["checkout.completed", "checkout.failed"]
+    items: list[PydanticItem]
+
+
 PAYLOAD = {
     "event": "checkout.completed",
     "customer": {
@@ -165,6 +206,20 @@ def cached_spec_lookup() -> None:
     infer_all_specs()
 
 
+def cold_validator_compile() -> None:
+    getattr(dc._jsoncompat_validator_for, "cache_clear")()
+    dc._jsoncompat_validator_for(BenchEvent)
+
+
+def cached_validator_lookup() -> None:
+    dc._jsoncompat_validator_for(BenchEvent)
+
+
+def cold_first_from_value() -> BenchEvent:
+    clear_runtime_caches()
+    return BenchEvent.from_value(PAYLOAD)
+
+
 def from_value() -> BenchEvent:
     return BenchEvent.from_value(PAYLOAD)
 
@@ -179,6 +234,30 @@ def to_value(instance: BenchEvent) -> object:
 
 def to_value_trusted(instance: BenchEvent) -> object:
     return instance.to_value(skip_validation=True)
+
+
+def pydantic_from_value() -> PydanticEvent:
+    return PydanticEvent.model_validate(PAYLOAD)
+
+
+def pydantic_from_json() -> PydanticEvent:
+    return PydanticEvent.model_validate_json(PAYLOAD_JSON)
+
+
+def pydantic_to_value(instance: PydanticEvent) -> dict[str, Any]:
+    return instance.model_dump(mode="json", exclude_unset=True)
+
+
+def pydantic_to_json(instance: PydanticEvent) -> str:
+    return instance.model_dump_json(exclude_unset=True)
+
+
+def stdlib_json_loads() -> Any:
+    return json.loads(PAYLOAD_JSON)
+
+
+def stdlib_json_dumps() -> str:
+    return json.dumps(PAYLOAD, separators=(",", ":"), sort_keys=True)
 
 
 def stamped_from_value() -> UserProfileReader:
@@ -197,25 +276,56 @@ def stamped_deserialize_trusted() -> UserProfileReader:
     return UserProfileReader.deserialize(STAMPED_JSON, skip_validation=True)
 
 
-def bench(name: str, iterations: int, callback: Callable[[], Any]) -> None:
-    start = time.perf_counter()
-    for _ in range(iterations):
+def bench(
+    name: str,
+    iterations: int,
+    repeats: int,
+    callback: Callable[[], Any],
+) -> None:
+    for _ in range(min(iterations, 100)):
         callback()
-    elapsed = time.perf_counter() - start
+
+    samples: list[float] = []
+    gc_was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        for _ in range(repeats):
+            start = time.perf_counter()
+            for _ in range(iterations):
+                callback()
+            samples.append(time.perf_counter() - start)
+    finally:
+        if gc_was_enabled:
+            gc.enable()
+
+    median = statistics.median(samples) / iterations * 1_000_000
+    best = min(samples) / iterations * 1_000_000
     print(
         f"{name:28} iterations={iterations:>8} "
-        f"total={elapsed:.6f}s per_iter={elapsed / iterations * 1_000_000:.2f}us"
+        f"median={median:.2f}us best={best:.2f}us"
     )
+
+
+def positive_int(raw_value: str) -> int:
+    value = int(raw_value)
+    if value < 1:
+        raise argparse.ArgumentTypeError("value must be at least 1")
+    return value
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--iterations", type=int, default=10_000)
+    parser.add_argument("--iterations", type=positive_int, default=10_000)
+    parser.add_argument("--repeats", type=positive_int, default=5)
     args = parser.parse_args()
+
+    def run(name: str, callback: Callable[[], Any]) -> None:
+        bench(name, args.iterations, args.repeats, callback)
 
     clear_runtime_caches()
     infer_all_specs()
     instance = from_value()
+    pydantic_instance = pydantic_from_value()
     json_wire = instance.serialize()
     yaml_wire = instance.serialize(format=SerializationFormat.YAML)
     msgpack_wire = instance.serialize(format=SerializationFormat.MSGPACK)
@@ -223,72 +333,85 @@ def main() -> None:
     assert instance.to_value() == PAYLOAD
     assert validator.is_valid_json(PAYLOAD_JSON)
     assert validator.is_valid_value(PAYLOAD)
+    assert pydantic_to_value(pydantic_instance) == PAYLOAD
+    assert json.loads(pydantic_to_json(pydantic_instance)) == PAYLOAD
 
-    bench("cold spec inference", args.iterations, cold_spec_inference)
+    print(f"Python {platform.python_version()}, Pydantic {pydantic.__version__}")
+
+    run("cold spec inference", cold_spec_inference)
     clear_runtime_caches()
     infer_all_specs()
     from_value()
-    bench("cached spec lookup", args.iterations, cached_spec_lookup)
-    bench(
+    run("cached spec lookup", cached_spec_lookup)
+    run("cold validator compile", cold_validator_compile)
+    run("cached validator lookup", cached_validator_lookup)
+    run("cold first from_value", cold_first_from_value)
+    clear_runtime_caches()
+    infer_all_specs()
+    from_value()
+    run(
         "validator.is_valid_json",
-        args.iterations,
         lambda: validator.is_valid_json(PAYLOAD_JSON),
     )
-    bench(
+    run(
         "validator.is_valid_value",
-        args.iterations,
         lambda: validator.is_valid_value(PAYLOAD),
     )
-    bench("from_value checked", args.iterations, from_value)
-    bench("from_value trusted", args.iterations, from_value_trusted)
-    bench("to_value checked", args.iterations, lambda: to_value(instance))
-    bench("to_value trusted", args.iterations, lambda: to_value_trusted(instance))
-    bench("serialize JSON checked", args.iterations, instance.serialize)
-    bench(
+    run("stdlib json.loads", stdlib_json_loads)
+    run("stdlib json.dumps", stdlib_json_dumps)
+    run("from_value checked", from_value)
+    run("pydantic model_validate", pydantic_from_value)
+    run("from_value trusted", from_value_trusted)
+    run("to_value checked", lambda: to_value(instance))
+    run(
+        "pydantic model_dump",
+        lambda: pydantic_to_value(pydantic_instance),
+    )
+    run("to_value trusted", lambda: to_value_trusted(instance))
+    run("serialize JSON checked", instance.serialize)
+    run(
         "serialize JSON trusted",
-        args.iterations,
         lambda: instance.serialize(skip_validation=True),
     )
-    bench(
+    run(
+        "pydantic model_dump_json",
+        lambda: pydantic_to_json(pydantic_instance),
+    )
+    run(
         "deserialize JSON checked",
-        args.iterations,
         lambda: BenchEvent.deserialize(json_wire),
     )
-    bench(
+    run(
         "deserialize JSON trusted",
-        args.iterations,
         lambda: BenchEvent.deserialize(json_wire, skip_validation=True),
     )
-    bench(
+    run("pydantic model_validate_json", pydantic_from_json)
+    run(
         "serialize YAML checked",
-        args.iterations,
         lambda: instance.serialize(format=SerializationFormat.YAML),
     )
-    bench(
+    run(
         "deserialize YAML checked",
-        args.iterations,
         lambda: BenchEvent.deserialize(
             yaml_wire,
             format=SerializationFormat.YAML,
         ),
     )
-    bench(
+    run(
         "serialize msgpack checked",
-        args.iterations,
         lambda: instance.serialize(format=SerializationFormat.MSGPACK),
     )
-    bench(
+    run(
         "deserialize msgpack checked",
-        args.iterations,
         lambda: BenchEvent.deserialize(
             msgpack_wire,
             format=SerializationFormat.MSGPACK,
         ),
     )
-    bench("stamped value checked", args.iterations, stamped_from_value)
-    bench("stamped value trusted", args.iterations, stamped_from_value_trusted)
-    bench("stamped JSON checked", args.iterations, stamped_deserialize)
-    bench("stamped JSON trusted", args.iterations, stamped_deserialize_trusted)
+    run("stamped value checked", stamped_from_value)
+    run("stamped value trusted", stamped_from_value_trusted)
+    run("stamped JSON checked", stamped_deserialize)
+    run("stamped JSON trusted", stamped_deserialize_trusted)
 
 
 if __name__ == "__main__":

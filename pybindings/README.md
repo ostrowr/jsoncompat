@@ -75,8 +75,13 @@ Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and
 Run the generated dataclass runtime microbenchmark from the repository root:
 
 ```bash
-env -u VIRTUAL_ENV uv run --no-config --project pybindings --all-extras --locked python pybindings/bench_dataclasses_runtime.py
+just python-bench
 ```
+
+The benchmark pins Pydantic v2 and compares the same valid nested payload using
+strict, frozen Pydantic models. Pydantic's dump methods do not revalidate the
+model, so their closest jsoncompat comparison is the `skip_validation=True`
+serialization path.
 
 ## License
 
