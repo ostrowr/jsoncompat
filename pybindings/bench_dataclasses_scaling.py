@@ -119,8 +119,8 @@ class PydanticFile(BaseModel):
     kind: Literal["file"]
     labels: list[str]
     metadata: dict[str, str]
-    name: str
-    size: int
+    name: Annotated[str, Field(min_length=1)]
+    size: Annotated[int, Field(ge=0)]
 
 
 class PydanticDirectory(BaseModel):
@@ -134,7 +134,7 @@ class PydanticDirectory(BaseModel):
     ]
     kind: Literal["directory"]
     metadata: dict[str, str]
-    name: str
+    name: Annotated[str, Field(min_length=1)]
     owner: str | None
 
 

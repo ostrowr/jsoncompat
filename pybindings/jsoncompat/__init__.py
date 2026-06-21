@@ -7,7 +7,7 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Callable, Literal, NoReturn, Protocol, TypeAlias, cast
+from typing import Any, Callable, Literal, NoReturn, Protocol, TypeAlias, cast
 
 RoleLiteral = Literal["serializer", "deserializer", "both"]
 JsonValue: TypeAlias = (
@@ -27,6 +27,10 @@ GeneratorForFn = Callable[[str], "Generator"]
 ValidatorForFn = Callable[[str], "Validator"]
 DeserializeJsonFn = Callable[[str | bytes], "JsonValue"]
 SerializeJsonFn = Callable[["JsonValue"], str]
+CompileModelConverterFn = Callable[
+    [list[tuple[Any, ...]], int],
+    "ModelConverter",
+]
 
 
 class Generator(Protocol):
@@ -36,8 +40,29 @@ class Generator(Protocol):
 class Validator(Protocol):
     def is_valid_json(self, instance_json: str) -> bool: ...
     def is_valid_value(self, instance: JsonValue) -> bool: ...
+    def construct_value(
+        self,
+        instance: JsonValue,
+        converter: ModelConverter,
+    ) -> Any | None: ...
+    def construct_json(
+        self,
+        payload: str | bytes,
+        converter: ModelConverter,
+        validate: bool = True,
+    ) -> Any | None: ...
+    def serialize_model(
+        self,
+        instance: Any,
+        converter: ModelConverter,
+        validate: bool = True,
+    ) -> str | None: ...
     def parse_json(self, payload: str | bytes) -> tuple[bool, JsonValue]: ...
     def serialize_json(self, instance: JsonValue) -> str | None: ...
+
+
+class ModelConverter(Protocol):
+    def construct(self, value: Any, validated: bool) -> Any: ...
 
 
 class NativeModule(Protocol):
@@ -57,6 +82,12 @@ class NativeModule(Protocol):
     def deserialize_json(self, payload: str | bytes) -> JsonValue: ...
 
     def serialize_json(self, value: JsonValue) -> str: ...
+
+    def compile_model_converter(
+        self,
+        descriptors: list[tuple[Any, ...]],
+        root: int,
+    ) -> ModelConverter: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
 
@@ -127,6 +158,17 @@ def _missing_serialize_json(value: JsonValue) -> NoReturn:
     )
 
 
+def _missing_compile_model_converter(
+    descriptors: list[tuple[Any, ...]],
+    root: int,
+) -> NoReturn:
+    _ = (descriptors, root)
+    raise ModuleNotFoundError(
+        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
+        "before constructing generated models."
+    )
+
+
 def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
@@ -176,8 +218,12 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "validator_for")
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
+        and hasattr(module, "compile_model_converter")
         and hasattr(validator, "is_valid_json")
         and hasattr(validator, "is_valid_value")
+        and hasattr(validator, "construct_value")
+        and hasattr(validator, "construct_json")
+        and hasattr(validator, "serialize_model")
         and hasattr(validator, "parse_json")
         and hasattr(validator, "serialize_json")
     )
@@ -197,6 +243,9 @@ except ModuleNotFoundError as error:
         _validator_for_native: ValidatorForFn = _missing_validator_for
         _deserialize_json_native: DeserializeJsonFn = _missing_deserialize_json
         _serialize_json_native: SerializeJsonFn = _missing_serialize_json
+        _compile_model_converter_native: CompileModelConverterFn = (
+            _missing_compile_model_converter
+        )
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _check_compat_native = _repo_native.check_compat
@@ -205,6 +254,7 @@ except ModuleNotFoundError as error:
         _validator_for_native = _repo_native.validator_for
         _deserialize_json_native = _repo_native.deserialize_json
         _serialize_json_native = _repo_native.serialize_json
+        _compile_model_converter_native = _repo_native.compile_model_converter
         _is_valid_native = _repo_native.is_valid
 else:
     if not _has_reusable_schema_api(_native_module):
@@ -215,6 +265,7 @@ else:
     _validator_for_native = _native_module.validator_for
     _deserialize_json_native = _native_module.deserialize_json
     _serialize_json_native = _native_module.serialize_json
+    _compile_model_converter_native = _native_module.compile_model_converter
     _is_valid_native = _native_module.is_valid
 
 
@@ -256,6 +307,14 @@ def deserialize_json_value(payload: str | bytes) -> JsonValue:
 def serialize_json_value(value: JsonValue) -> str:
     serialize_json_native = _serialize_json_native
     return serialize_json_native(value)
+
+
+def compile_model_converter(
+    descriptors: list[tuple[Any, ...]],
+    root: int,
+) -> ModelConverter:
+    compile_native = _compile_model_converter_native
+    return compile_native(descriptors, root)
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:

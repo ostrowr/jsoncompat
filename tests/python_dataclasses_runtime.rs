@@ -57,6 +57,19 @@ assert profile.get_additional_property("nickname") == "ace"
 assert profile.get_additional_property("missing") is JSONCOMPAT_MISSING
 assert profile.to_value() == {"name": "Ada", "nickname": "ace"}
 assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
+assert Profile.deserialize('{"name":"Ada","nickname":"ace"}') == profile
+
+for invalid_json in (
+    '{"name":""}',
+    '{"name":"Ada","nickname":1}',
+    '{"name":"Ada","name":"Grace"}',
+):
+    try:
+        Profile.deserialize(invalid_json)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"checked JSON accepted {invalid_json}")
 
 for format in SerializationFormat:
     encoded = profile.serialize(format=format)
@@ -156,6 +169,46 @@ else:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class PatternRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"string","pattern":"^A"}'
+
+    root: str = root_field()
+
+
+assert PatternRoot.deserialize('"Ada"').root == "Ada"
+try:
+    PatternRoot.deserialize('"Grace"')
+except ValueError:
+    pass
+else:
+    raise AssertionError("generic-validator fallback ignored a string pattern")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BigIntegerRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"integer"}'
+
+    root: int = root_field()
+
+
+big_integer = 10**80
+assert BigIntegerRoot.from_value(big_integer).root == big_integer
+assert BigIntegerRoot.deserialize(str(big_integer)).root == big_integer
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AnyOrProfileRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = "true"
+
+    root: typing.Any | Profile = root_field()
+
+
+assert AnyOrProfileRoot(root=profile).serialize() == (
+    '{"name":"Ada","nickname":"ace"}'
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileWriter(WriterDataclassModel):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":false}},"required":["version","data"],"additionalProperties":false}'
 
@@ -191,6 +244,9 @@ assert writer.to_value() == {"version": 1, "data": {"name": "Ada"}}
 reader = ProfileReader.from_value({"version": 1, "data": {"name": "Ada"}})
 assert reader.root.version == 1
 assert reader.root.data.name == "Ada"
+json_reader = ProfileReader.deserialize('{"version":1,"data":{"name":"Ada"}}')
+assert isinstance(json_reader.root, ProfileReaderV1)
+assert json_reader.root.data.name == "Ada"
 
 try:
     ProfileWriter(
@@ -258,6 +314,15 @@ except TypeError:
     pass
 else:
     raise AssertionError("trusted union construction accepted an invalid shape")
+
+cyclic_node = {"value": 0}
+cyclic_node["next"] = cyclic_node
+try:
+    RecursiveNode.from_value(cyclic_node, skip_validation=True)
+except ValueError as error:
+    assert "maximum nesting depth" in str(error)
+else:
+    raise AssertionError("cyclic trusted input was not bounded")
 
 try:
     ProfileReader.from_value({"version": 1, "data": {"name": ""}})

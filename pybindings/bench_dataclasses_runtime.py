@@ -193,10 +193,13 @@ def clear_runtime_caches() -> None:
     getattr(dc._jsoncompat_dataclass_fields_for_type, "cache_clear")()
     getattr(dc._jsoncompat_constructor_for, "cache_clear")()
     getattr(dc._jsoncompat_validated_constructor_for, "cache_clear")()
+    getattr(dc._jsoncompat_validated_conversion_is_identity, "cache_clear")()
+    getattr(dc._jsoncompat_compiled_union_constructor_for, "cache_clear")()
     getattr(dc._jsoncompat_serializer_for, "cache_clear")()
     getattr(dc._jsoncompat_python_validator_for, "cache_clear")()
     getattr(dc._jsoncompat_object_constructor_for, "cache_clear")()
     getattr(dc._jsoncompat_object_serializer_for, "cache_clear")()
+    getattr(dc._jsoncompat_native_converter_for, "cache_clear")()
 
 
 def infer_all_specs() -> None:
@@ -330,6 +333,12 @@ def main() -> None:
     def run(name: str, callback: Callable[[], Any]) -> None:
         bench(name, args.iterations, args.repeats, callback)
 
+    def run_cold(name: str, callback: Callable[[], Any]) -> None:
+        # Cold-path benchmarks deliberately clear and rebuild every cache. A
+        # smaller sample is sufficient and keeps high-iteration warm-path runs
+        # practical.
+        bench(name, min(args.iterations, 1_000), args.repeats, callback)
+
     clear_runtime_caches()
     infer_all_specs()
     instance = from_value()
@@ -346,14 +355,14 @@ def main() -> None:
 
     print(f"Python {platform.python_version()}, Pydantic {pydantic.__version__}")
 
-    run("cold spec inference", cold_spec_inference)
+    run_cold("cold spec inference", cold_spec_inference)
     clear_runtime_caches()
     infer_all_specs()
     from_value()
     run("cached spec lookup", cached_spec_lookup)
-    run("cold validator compile", cold_validator_compile)
+    run_cold("cold validator compile", cold_validator_compile)
     run("cached validator lookup", cached_validator_lookup)
-    run("cold first from_value", cold_first_from_value)
+    run_cold("cold first from_value", cold_first_from_value)
     clear_runtime_caches()
     infer_all_specs()
     from_value()
