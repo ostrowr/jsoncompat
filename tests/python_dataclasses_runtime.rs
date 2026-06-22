@@ -58,7 +58,17 @@ assert profile.get_additional_property("nickname") == "ace"
 assert profile.get_additional_property("missing") is JSONCOMPAT_MISSING
 assert profile.to_value() == {"name": "Ada", "nickname": "ace"}
 assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
+assert profile.serialize(skip_validation=True) == profile.serialize()
 assert Profile.deserialize('{"name":"Ada","nickname":"ace"}') == profile
+
+# Generated model graphs are deeply immutable, including additional properties.
+try:
+    profile.__jsoncompat_extra__["name"] = "Grace"
+except TypeError:
+    pass
+else:
+    raise AssertionError("additional properties remained mutable")
+assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
 
 for invalid_json in (
     '{"name":""}',
@@ -107,6 +117,16 @@ class AuditContext(DataclassModel):
 
 context = AuditContext(tags={"team": "schema"})
 assert context.to_value() == {"tags": {"team": "schema"}}
+try:
+    context.tags["team"] = "runtime"
+except TypeError:
+    pass
+else:
+    raise AssertionError("nested JSON objects remained mutable")
+ordered_context = AuditContext(tags={"z-last": "z", "a-first": "a"})
+assert ordered_context.serialize(skip_validation=True) == (
+    '{"tags":{"a-first":"a","z-last":"z"}}'
+)
 assert AuditContext.from_value({"tags": {"team": "schema"}}).tags == {
     "team": "schema"
 }
@@ -195,6 +215,7 @@ class BigIntegerRoot(DataclassRootModel):
 big_integer = 10**80
 assert BigIntegerRoot.from_value(big_integer).root == big_integer
 assert BigIntegerRoot.deserialize(str(big_integer)).root == big_integer
+assert BigIntegerRoot(root=big_integer).serialize(skip_validation=True) == str(big_integer)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -231,6 +252,14 @@ class AnyOrProfileRoot(DataclassRootModel):
 assert AnyOrProfileRoot(root=profile).serialize() == (
     '{"name":"Ada","nickname":"ace"}'
 )
+
+generic_json_value = {
+    "z-last": -0.0,
+    "a-first": ["line\nbreak", True, None, 1.25e100],
+}
+generic_root = AnyOrProfileRoot(root=generic_json_value)
+assert generic_root.serialize(skip_validation=True) == generic_root.serialize()
+assert json.loads(generic_root.serialize(skip_validation=True)) == generic_json_value
 
 cyclic_json_value = []
 cyclic_json_value.append(cyclic_json_value)

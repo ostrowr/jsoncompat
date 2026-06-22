@@ -12,7 +12,9 @@ use std::collections::HashSet;
 use jiter::{JsonValue as JiterJsonValue, PythonParse, StringCacheMode, map_json_error};
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{
+    PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple, PyType,
+};
 
 use ::jsoncompat::{Role, SchemaDocument, check_compat, validate_compatibility_input};
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
@@ -272,10 +274,25 @@ impl ValidatorPy {
         instance: &Bound<'_, PyAny>,
         converter: PyRef<'_, ModelConverterPy>,
     ) -> PyResult<Option<Py<PyAny>>> {
-        if !validate_python_for_schema(&self.schema, instance)? {
+        let converted = match converter.construct_python_unvalidated(py, instance) {
+            Ok(converted) => converted,
+            Err(conversion_error) => {
+                if !validate_python_for_schema(&self.schema, instance)? {
+                    return Ok(None);
+                }
+                return Err(conversion_error);
+            }
+        };
+        let is_valid = self
+            .schema
+            .is_valid_instance_assuming_json(JSONInstanceRef::from_python(instance))
+            .map_err(|error| {
+                PyErr::new::<PyValueError, _>(format!("Validation failed: {error}"))
+            })?;
+        if !is_valid {
             return Ok(None);
         }
-        converter.construct_python(py, instance).map(Some)
+        converter.mark_validated(py, converted).map(Some)
     }
 
     /// Parse JSON and construct a generated model without materializing an intermediate dict.
@@ -307,6 +324,30 @@ impl ValidatorPy {
         parse_and_validate_json_to_python(&self.schema, py, payload)
     }
 
+    /// Materialize a generated model's logical JSON value from its slots.
+    #[pyo3(signature = (instance, converter, validate=true))]
+    fn model_to_value(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+        converter: PyRef<'_, ModelConverterPy>,
+        validate: bool,
+    ) -> PyResult<(bool, Py<PyAny>)> {
+        let value = converter.to_python_value(py, instance)?;
+        if !validate {
+            return Ok((true, value));
+        }
+        let projection = converter.projection();
+        let projected = projection.instance(instance);
+        let is_valid = self
+            .schema
+            .is_valid_instance_assuming_json(projected)
+            .map_err(|error| {
+                PyErr::new::<PyValueError, _>(format!("Validation failed: {error}"))
+            })?;
+        Ok((is_valid, value))
+    }
+
     /// Serialize a generated model directly from its slots.
     #[pyo3(signature = (instance, converter, validate=true))]
     fn serialize_model(
@@ -316,11 +357,24 @@ impl ValidatorPy {
         converter: PyRef<'_, ModelConverterPy>,
         validate: bool,
     ) -> PyResult<Option<String>> {
-        let json_value = converter.serialize_to_json(py, instance)?;
-        if validate && !validate_value_for_schema(&self.schema, &json_value)? {
+        if !validate {
+            return converter.serialize_to_json_string(py, instance).map(Some);
+        }
+        // Direct serialization proves the projected graph is a finite JSON
+        // value and preserves serialization errors before schema errors.
+        let serialized = converter.serialize_to_json_string(py, instance)?;
+        let projection = converter.projection();
+        let projected = projection.instance(instance);
+        let is_valid = self
+            .schema
+            .is_valid_instance_assuming_json(projected)
+            .map_err(|error| {
+                PyErr::new::<PyValueError, _>(format!("Validation failed: {error}"))
+            })?;
+        if !is_valid {
             return Ok(None);
         }
-        serialize_json_value(&json_value).map(Some)
+        Ok(Some(serialized))
     }
 
     /// Validate and serialize a Python JSON-compatible value in one traversal.
@@ -345,12 +399,12 @@ impl ValidatorPy {
         let parsed = JiterJsonValue::parse(payload, false)
             .map_err(|error| map_json_error(payload, &error))?;
         if !validate {
-            return converter.construct_jiter(py, &parsed).map(Some);
+            return converter.construct_jiter(py, &parsed, false).map(Some);
         }
         if !validate_jiter_for_schema(&self.schema, &parsed)? {
             return Ok(None);
         }
-        converter.construct_jiter(py, &parsed).map(Some)
+        converter.construct_jiter(py, &parsed, true).map(Some)
     }
 }
 
@@ -606,13 +660,15 @@ fn validator_for_py(schema_json: &str) -> PyResult<ValidatorPy> {
 
 /// Compile a generated-model conversion plan for repeated native construction.
 #[pyfunction]
-#[pyo3(signature = (descriptors, root), name = "compile_model_converter")]
+#[pyo3(signature = (descriptors, root, frozen_list_type, frozen_dict_type), name = "compile_model_converter")]
 fn compile_model_converter_py(
     py: Python<'_>,
     descriptors: &Bound<'_, PyList>,
     root: usize,
+    frozen_list_type: &Bound<'_, PyType>,
+    frozen_dict_type: &Bound<'_, PyType>,
 ) -> PyResult<ModelConverterPy> {
-    compile_model_converter(py, descriptors, root)
+    compile_model_converter(py, descriptors, root, frozen_list_type, frozen_dict_type)
 }
 
 /// Parse a JSON string or byte sequence directly into Python JSON values.

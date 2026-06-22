@@ -200,6 +200,7 @@ def clear_runtime_caches() -> None:
     getattr(dc._jsoncompat_object_constructor_for, "cache_clear")()
     getattr(dc._jsoncompat_object_serializer_for, "cache_clear")()
     getattr(dc._jsoncompat_native_converter_for, "cache_clear")()
+    getattr(dc._jsoncompat_native_runtime_for, "cache_clear")()
 
 
 def infer_all_specs() -> None:

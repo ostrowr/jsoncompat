@@ -1031,6 +1031,7 @@ dependencies = [
  "jsoncompat",
  "jsonschema",
  "pyo3",
+ "pyo3-build-config",
  "rand",
  "serde_json",
 ]
@@ -1053,7 +1054,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.45.0"
-source = "git+https://github.com/ostrowr/jsonschema.git?rev=caa1aa31729adceeaff01b81d58f7adb9ceb758d#caa1aa31729adceeaff01b81d58f7adb9ceb758d"
+source = "git+https://github.com/ostrowr/jsonschema?rev=7f9ee578e1368f0043cc407cf34041dd59d87b78#7f9ee578e1368f0043cc407cf34041dd59d87b78"
 dependencies = [
  "ahash",
  "bytecount",
@@ -1577,7 +1578,7 @@ dependencies = [
 [[package]]
 name = "referencing"
 version = "0.45.0"
-source = "git+https://github.com/ostrowr/jsonschema.git?rev=caa1aa31729adceeaff01b81d58f7adb9ceb758d#caa1aa31729adceeaff01b81d58f7adb9ceb758d"
+source = "git+https://github.com/ostrowr/jsonschema?rev=7f9ee578e1368f0043cc407cf34041dd59d87b78#7f9ee578e1368f0043cc407cf34041dd59d87b78"
 dependencies = [
  "ahash",
  "fluent-uri",

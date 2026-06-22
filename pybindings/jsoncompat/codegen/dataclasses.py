@@ -32,6 +32,8 @@ __all__ = [
     "DataclassAdditionalModel",
     "DataclassModel",
     "DataclassRootModel",
+    "FrozenDict",
+    "FrozenList",
     "JSONCOMPAT_EXTRA_FIELD",
     "JSONCOMPAT_MISSING",
     "JsoncompatMissingType",
@@ -48,6 +50,7 @@ __all__ = [
 
 JSONCOMPAT_EXTRA_FIELD = "__jsoncompat_extra__"
 JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
+JSONCOMPAT_VALIDATED_FIELD = "_jsoncompat_validated"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
 _JSONCOMPAT_MISSING_TYPE_HINT = object()
@@ -122,13 +125,59 @@ def root_field() -> Any:
     return dataclasses.field()
 
 
-@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class FrozenList[T](list[T]):
+    """A JSON array that rejects every in-place mutation."""
+
+    __slots__ = ()
+
+    def _immutable(self, *args: Any, **kwargs: Any) -> NoReturn:
+        _ = (args, kwargs)
+        raise TypeError("generated model JSON arrays are immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    __iadd__ = _immutable
+    __imul__ = _immutable
+    append = _immutable
+    clear = _immutable
+    extend = _immutable
+    insert = _immutable
+    pop = _immutable
+    remove = _immutable
+    reverse = _immutable
+    sort = _immutable  # pyright: ignore[reportAssignmentType]
+
+
+class FrozenDict[K, V](dict[K, V]):
+    """A JSON object that rejects every in-place mutation."""
+
+    __slots__ = ()
+
+    def _immutable(self, *args: Any, **kwargs: Any) -> NoReturn:
+        _ = (args, kwargs)
+        raise TypeError("generated model JSON objects are immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    __ior__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable  # pyright: ignore[reportAssignmentType]
+    update = _immutable  # pyright: ignore[reportAssignmentType]
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class DataclassModel:
+    __slots__ = (JSONCOMPAT_VALIDATED_FIELD,)
+
     skip_validation: dataclasses.InitVar[bool] = False
 
     __jsoncompat_schema__: ClassVar[str]
 
     def __post_init__(self, skip_validation: bool) -> None:
+        object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, False)
+        _jsoncompat_freeze_model_instance(self)
         schema_json = _jsoncompat_schema_for(type(self))
         if schema_json is None:
             return
@@ -140,6 +189,7 @@ class DataclassModel:
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
+        object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
 
     @classmethod
     def from_value[JSONCOMPAT_MODEL_T: DataclassModel](
@@ -148,19 +198,19 @@ class DataclassModel:
         *,
         skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
-        schema_json = _jsoncompat_schema_for(cls)
-        if schema_json is None:
-            raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
         if not skip_validation:
-            validator = _jsoncompat_validator_for(cls)
-            native_converter = _jsoncompat_native_converter_for(cls)
-            if native_converter is not None:
+            runtime = _jsoncompat_native_runtime_for(cls)
+            if runtime is not None:
+                validator, native_converter = runtime
                 converted = validator.construct_value(value, native_converter)
                 if converted is None:
                     raise ValueError(f"value does not satisfy {cls.__name__} schema")
                 return cast(JSONCOMPAT_MODEL_T, converted)
+            validator = _jsoncompat_validator_for(cls)
             if not validator.is_valid_value(value):
                 raise ValueError(f"value does not satisfy {cls.__name__} schema")
+        elif _jsoncompat_schema_for(cls) is None:
+            raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
         return cls.jsoncompat_from_validated(
             value,
             _validate_union_branches=not skip_validation,
@@ -174,14 +224,16 @@ class DataclassModel:
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
-        selected_format = SerializationFormat(format)
+        selected_format = (
+            SerializationFormat.JSON
+            if format is SerializationFormat.JSON
+            else SerializationFormat(format)
+        )
         if selected_format is SerializationFormat.JSON:
-            schema_json = _jsoncompat_schema_for(cls)
-            if schema_json is None:
-                raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
-            native_converter = _jsoncompat_native_converter_for(cls)
-            if native_converter is not None:
-                converted = _jsoncompat_validator_for(cls).construct_json(
+            runtime = _jsoncompat_native_runtime_for(cls)
+            if runtime is not None:
+                validator, native_converter = runtime
+                converted = validator.construct_json(
                     payload,
                     native_converter,
                     not skip_validation,
@@ -203,16 +255,35 @@ class DataclassModel:
         )
 
     def to_value(self, *, skip_validation: bool = False) -> JsonValue:
-        value = self.jsoncompat_to_value_unchecked()
+        needs_validation = not skip_validation and not getattr(
+            self, JSONCOMPAT_VALIDATED_FIELD, False
+        )
+        runtime = _jsoncompat_native_runtime_for(type(self))
+        if runtime is not None:
+            validator, native_converter = runtime
+            is_valid, value = validator.model_to_value(
+                self,
+                native_converter,
+                needs_validation,
+            )
+            if not is_valid:
+                raise ValueError(
+                    f"{type(self).__name__} instance does not satisfy its JSON Schema"
+                )
+            if needs_validation:
+                object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
+            return cast(JsonValue, value)
+
         schema_json = _jsoncompat_schema_for(type(self))
         if schema_json is None:
             raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
-        if not skip_validation and not _jsoncompat_validator_for(
-            type(self)
-        )._is_valid_borrowed_value(value):
-            raise ValueError(
-                f"{type(self).__name__} instance does not satisfy its JSON Schema"
-            )
+        value = self.jsoncompat_to_value_unchecked()
+        if needs_validation:
+            if not _jsoncompat_validator_for(type(self))._is_valid_borrowed_value(value):
+                raise ValueError(
+                    f"{type(self).__name__} instance does not satisfy its JSON Schema"
+                )
+            object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
         return cast(JsonValue, value)
 
     @overload
@@ -253,17 +324,23 @@ class DataclassModel:
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> str | bytes:
-        selected_format = SerializationFormat(format)
+        selected_format = (
+            SerializationFormat.JSON
+            if format is SerializationFormat.JSON
+            else SerializationFormat(format)
+        )
         if selected_format is SerializationFormat.JSON:
-            schema_json = _jsoncompat_schema_for(type(self))
-            native_converter = _jsoncompat_native_converter_for(type(self))
-            if schema_json is not None and native_converter is not None:
-                validator = _jsoncompat_validator_for(type(self))
+            runtime = _jsoncompat_native_runtime_for(type(self))
+            if runtime is not None:
+                validator, native_converter = runtime
+                needs_validation = not skip_validation and not getattr(
+                    self, JSONCOMPAT_VALIDATED_FIELD, False
+                )
                 try:
                     encoded = validator.serialize_model(
                         self,
                         native_converter,
-                        not skip_validation,
+                        needs_validation,
                     )
                 except OverflowError:
                     pass
@@ -272,8 +349,11 @@ class DataclassModel:
                         raise ValueError(
                             f"{type(self).__name__} instance does not satisfy its JSON Schema"
                         )
+                    if needs_validation:
+                        object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
                     return encoded
 
+            schema_json = _jsoncompat_schema_for(type(self))
             value = self.jsoncompat_to_value_unchecked()
             if skip_validation:
                 return serialize_value(cast(JsonValue, value))
@@ -282,6 +362,8 @@ class DataclassModel:
                     f"{type(self).__name__} is missing __jsoncompat_schema__"
                 )
             validator = _jsoncompat_validator_for(type(self))
+            if getattr(self, JSONCOMPAT_VALIDATED_FIELD, False):
+                return serialize_value(cast(JsonValue, value))
             try:
                 encoded = validator.serialize_json(cast(JsonValue, value))
             except OverflowError:
@@ -289,11 +371,13 @@ class DataclassModel:
                     raise ValueError(
                         f"{type(self).__name__} instance does not satisfy its JSON Schema"
                     ) from None
+                object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
                 return serialize_value(cast(JsonValue, value))
             if encoded is None:
                 raise ValueError(
                     f"{type(self).__name__} instance does not satisfy its JSON Schema"
                 )
+            object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
             return encoded
         return serialize_value(
             self.to_value(skip_validation=skip_validation),
@@ -316,7 +400,10 @@ class DataclassModel:
         constructor = _jsoncompat_object_constructor_for(cls)
         return cast(
             JSONCOMPAT_MODEL_T,
-            constructor(value, _validate_union_branches),
+            _jsoncompat_finalize_native_model(
+                constructor(value, _validate_union_branches),
+                _validate_union_branches,
+            ),
         )
 
     def jsoncompat_to_value_unchecked(self) -> Any:
@@ -353,15 +440,21 @@ class DataclassRootModel(DataclassModel):
                 JSONCOMPAT_ROOT_MODEL_T,
                 native_converter.construct(value, _validate_union_branches),
             )
-        return _jsoncompat_new_unchecked(
-            cls,
-            {
-                "root": _jsoncompat_construct_value(
-                    _jsoncompat_root_annotation_for(cls),
-                    value,
-                    validate_union_branches=_validate_union_branches,
-                )
-            },
+        return cast(
+            JSONCOMPAT_ROOT_MODEL_T,
+            _jsoncompat_finalize_native_model(
+                _jsoncompat_new_unchecked(
+                    cls,
+                    {
+                        "root": _jsoncompat_construct_value(
+                            _jsoncompat_root_annotation_for(cls),
+                            value,
+                            validate_union_branches=_validate_union_branches,
+                        )
+                    },
+                ),
+                _validate_union_branches,
+            ),
         )
 
     def jsoncompat_to_value_unchecked(self) -> Any:
@@ -683,7 +776,25 @@ def _jsoncompat_native_converter_for(
     except _JsoncompatNativePlanUnsupported:
         return None
     descriptors, root = builder.finish(root)
-    return compile_model_converter(descriptors, root)
+    return compile_model_converter(
+        descriptors,
+        root,
+        FrozenList,
+        FrozenDict,
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_native_runtime_for(
+    model_type: type[DataclassModel],
+) -> tuple[Any, ModelConverter] | None:
+    schema_json = _jsoncompat_schema_for(model_type)
+    if schema_json is None:
+        raise TypeError(f"{model_type.__name__} is missing __jsoncompat_schema__")
+    converter = _jsoncompat_native_converter_for(model_type)
+    if converter is None:
+        return None
+    return _jsoncompat_validator_for(model_type), converter
 
 
 @functools.lru_cache(maxsize=None)
@@ -1485,6 +1596,83 @@ def _jsoncompat_literal_value(literals: tuple[Any, ...], value: Any) -> Any:
         elif type(literal) is type(value) and literal == value:
             return literal
     return _JSONCOMPAT_MISSING_TYPE_HINT
+
+
+def _jsoncompat_deep_freeze(value: Any, active: set[int]) -> Any:
+    if isinstance(value, DataclassModel):
+        _jsoncompat_freeze_model_instance(value, active)
+        return value
+    if isinstance(value, list):
+        value_items = cast(list[Any], value)
+        identity = id(value_items)
+        if identity in active:
+            raise ValueError("cyclic containers are not JSON values")
+        active.add(identity)
+        try:
+            return FrozenList(
+                _jsoncompat_deep_freeze(item, active) for item in value_items
+            )
+        finally:
+            active.remove(identity)
+    if isinstance(value, tuple):
+        value_items = cast(tuple[Any, ...], value)
+        identity = id(value_items)
+        if identity in active:
+            raise ValueError("cyclic containers are not JSON values")
+        active.add(identity)
+        try:
+            return FrozenList(
+                _jsoncompat_deep_freeze(item, active) for item in value_items
+            )
+        finally:
+            active.remove(identity)
+    if isinstance(value, dict):
+        value_object = cast(dict[Any, Any], value)
+        identity = id(value_object)
+        if identity in active:
+            raise ValueError("cyclic containers are not JSON values")
+        active.add(identity)
+        try:
+            return FrozenDict[Any, Any](
+                (key, _jsoncompat_deep_freeze(item, active))
+                for key, item in value_object.items()
+            )
+        finally:
+            active.remove(identity)
+    return value
+
+
+def _jsoncompat_freeze_model_instance(
+    model: DataclassModel,
+    active: set[int] | None = None,
+) -> None:
+    if getattr(model, JSONCOMPAT_VALIDATED_FIELD, False):
+        return
+    if active is None:
+        active = set()
+    identity = id(model)
+    if identity in active:
+        raise ValueError("cyclic generated model graphs are not JSON values")
+    active.add(identity)
+    try:
+        for field in _jsoncompat_dataclass_fields(model):
+            value = getattr(model, field.name)
+            frozen = _jsoncompat_deep_freeze(value, active)
+            if frozen is not value:
+                object.__setattr__(model, field.name, frozen)
+        if not hasattr(model, JSONCOMPAT_VALIDATED_FIELD):
+            object.__setattr__(model, JSONCOMPAT_VALIDATED_FIELD, False)
+    finally:
+        active.remove(identity)
+
+
+def _jsoncompat_finalize_native_model(
+    model: DataclassModel,
+    validated: bool,
+) -> DataclassModel:
+    _jsoncompat_freeze_model_instance(model)
+    object.__setattr__(model, JSONCOMPAT_VALIDATED_FIELD, validated)
+    return model
 
 
 def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:

@@ -28,7 +28,12 @@ ValidatorForFn = Callable[[str], "Validator"]
 DeserializeJsonFn = Callable[[str | bytes], "JsonValue"]
 SerializeJsonFn = Callable[["JsonValue"], str]
 CompileModelConverterFn = Callable[
-    [list[tuple[Any, ...]], int],
+    [
+        list[tuple[Any, ...]],
+        int,
+        type[list[Any]],
+        type[dict[Any, Any]],
+    ],
     "ModelConverter",
 ]
 
@@ -52,6 +57,12 @@ class Validator(Protocol):
         converter: ModelConverter,
         validate: bool = True,
     ) -> Any | None: ...
+    def model_to_value(
+        self,
+        instance: Any,
+        converter: ModelConverter,
+        validate: bool = True,
+    ) -> tuple[bool, JsonValue]: ...
     def serialize_model(
         self,
         instance: Any,
@@ -88,6 +99,8 @@ class NativeModule(Protocol):
         self,
         descriptors: list[tuple[Any, ...]],
         root: int,
+        frozen_list_type: type[list[Any]],
+        frozen_dict_type: type[dict[Any, Any]],
     ) -> ModelConverter: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
@@ -162,8 +175,10 @@ def _missing_serialize_json(value: JsonValue) -> NoReturn:
 def _missing_compile_model_converter(
     descriptors: list[tuple[Any, ...]],
     root: int,
+    frozen_list_type: type[list[Any]],
+    frozen_dict_type: type[dict[Any, Any]],
 ) -> NoReturn:
-    _ = (descriptors, root)
+    _ = (descriptors, root, frozen_list_type, frozen_dict_type)
     raise ModuleNotFoundError(
         "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
         "before constructing generated models."
@@ -225,6 +240,7 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(validator, "_is_valid_borrowed_value")
         and hasattr(validator, "construct_value")
         and hasattr(validator, "construct_json")
+        and hasattr(validator, "model_to_value")
         and hasattr(validator, "serialize_model")
         and hasattr(validator, "parse_json")
         and hasattr(validator, "serialize_json")
@@ -324,9 +340,11 @@ def serialize_json_value(value: JsonValue) -> str:
 def compile_model_converter(
     descriptors: list[tuple[Any, ...]],
     root: int,
+    frozen_list_type: type[list[Any]],
+    frozen_dict_type: type[dict[Any, Any]],
 ) -> ModelConverter:
     compile_native = _compile_model_converter_native
-    return compile_native(descriptors, root)
+    return compile_native(descriptors, root, frozen_list_type, frozen_dict_type)
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:
