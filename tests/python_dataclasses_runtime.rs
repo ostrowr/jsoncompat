@@ -137,6 +137,24 @@ assert profile_with_age.to_value() == {
     "nickname": "ace",
 }
 
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IntegerSequence(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"values":{"type":"array","items":{"type":"integer"}}},"required":["values"],"additionalProperties":false}'
+
+    values: typing.Sequence[int] = field("values")
+
+
+sequence_from_range = IntegerSequence(values=range(3))
+assert sequence_from_range.values == [0, 1, 2]
+assert sequence_from_range.to_value() == {"values": [0, 1, 2]}
+try:
+    IntegerSequence(values=b"\x00\x01")
+except TypeError:
+    pass
+else:
+    raise AssertionError("byte strings were treated as generated array inputs")
+
 unchecked_profile = Profile(name="", skip_validation=True)
 assert unchecked_profile.to_value(skip_validation=True) == {"name": ""}
 try:

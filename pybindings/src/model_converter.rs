@@ -18,7 +18,8 @@ use pyo3::exceptions::{PyIndexError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyMapping, PyString, PyTuple, PyType,
+    PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PySequence, PyString,
+    PyTuple, PyType,
 };
 
 const MAX_MODEL_DEPTH: u16 = 255;
@@ -435,7 +436,24 @@ impl ModelConverterPy {
                         )?)?;
                     }
                 } else {
-                    return Err(expected_type("sequence", value)?);
+                    if value.is_instance_of::<PyString>()
+                        || value.is_instance_of::<PyBytes>()
+                        || value.cast::<PyMapping>().is_ok()
+                    {
+                        return Err(expected_type("sequence", value)?);
+                    }
+                    let input = value
+                        .cast::<PySequence>()
+                        .map_err(|_| expected_type("sequence", value).unwrap())?;
+                    for item_value in input.try_iter()? {
+                        output.append(self.convert_direct(
+                            py,
+                            *item,
+                            &item_value?,
+                            remaining_depth - 1,
+                            json_proven,
+                        )?)?;
+                    }
                 }
                 self.freeze_list(py, &output)
             }
