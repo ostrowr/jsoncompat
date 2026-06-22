@@ -181,6 +181,12 @@ class FrozenList[T](tuple[T, ...]):
             return tuple(self) == tuple(other_items)
         return NotImplemented
 
+    def __ne__(self, other: object) -> bool:
+        equal = self.__eq__(other)
+        if equal is NotImplemented:
+            return NotImplemented
+        return not equal
+
     __hash__ = None  # type: ignore[assignment]
 
 

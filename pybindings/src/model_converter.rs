@@ -737,21 +737,17 @@ impl ModelConverterPy {
                 )?;
                 output.append(converted)?;
             }
-        } else if validated {
-            if let Ok(items) = value.cast::<PyTuple>() {
-                for item in items {
-                    let converted = self.convert(
-                        py,
-                        item_node,
-                        &item,
-                        validated,
-                        validate_union_branches,
-                        remaining_depth - 1,
-                    )?;
-                    output.append(converted)?;
-                }
-            } else {
-                return Err(expected_type("list", value)?);
+        } else if let Ok(items) = value.cast::<PyTuple>() {
+            for item in items {
+                let converted = self.convert(
+                    py,
+                    item_node,
+                    &item,
+                    validated,
+                    validate_union_branches,
+                    remaining_depth - 1,
+                )?;
+                output.append(converted)?;
             }
         } else {
             return Err(expected_type("list", value)?);

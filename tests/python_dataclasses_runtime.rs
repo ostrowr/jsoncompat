@@ -222,6 +222,8 @@ class TagListRoot(DataclassRootModel):
 
 tag_list = TagListRoot(root=["schema"])
 assert tag_list.root == ["schema"]
+assert not tag_list.root != ["schema"]
+assert tag_list.root != ["runtime"]
 tag_list.root.__init__(["runtime"])
 assert tag_list.root == ["schema"]
 try:
@@ -231,6 +233,14 @@ except TypeError:
 else:
     raise AssertionError("nested JSON arrays were mutable through a base API")
 assert tag_list.to_value() == ["schema"]
+
+for skip_validation in (False, True):
+    tuple_tag_list = TagListRoot.from_value(
+        ("schema",),
+        skip_validation=skip_validation,
+    )
+    assert tuple_tag_list.root == ["schema"]
+    assert tuple_tag_list.to_value(skip_validation=True) == ["schema"]
 
 for factory in (
     lambda: AuditContext(tags="oops"),
