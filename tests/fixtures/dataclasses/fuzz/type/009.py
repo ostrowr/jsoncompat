@@ -19,7 +19,7 @@ class GeneratedSchemaBranch1(dc.DataclassAdditionalModel[typing.Any]):
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -30,6 +30,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     "object"
   ]
 }"""
-    root: (GeneratedSchemaBranch1 | list[GeneratedSchemaItem]) = dc.root_field()
+    root: (GeneratedSchemaBranch1 | typing.Sequence[GeneratedSchemaItem]) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

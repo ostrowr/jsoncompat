@@ -22,7 +22,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedItems": false
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch22(dc.DataclassAdditionalModel[typing.Any]):
@@ -40,7 +40,7 @@ class GeneratedSchemaBranch22(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedItems": false
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -71,6 +71,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "unevaluatedItems": false
 }"""
-    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[typing.Any] | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | float | list[typing.Any] | str | None)) = dc.root_field()
+    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[typing.Any] | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | float | str | typing.Sequence[typing.Any] | None)) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

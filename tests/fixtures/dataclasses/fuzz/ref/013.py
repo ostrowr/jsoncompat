@@ -19,7 +19,7 @@ class GeneratedSchemaABranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaAItem(dc.DataclassRootModel):
@@ -36,7 +36,7 @@ class GeneratedSchemaA(dc.DataclassRootModel):
   },
   "unevaluatedProperties": false
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | float | list[GeneratedSchemaAItem] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | float | str | typing.Sequence[GeneratedSchemaAItem] | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):

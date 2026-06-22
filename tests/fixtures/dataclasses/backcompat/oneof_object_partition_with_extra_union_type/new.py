@@ -11,7 +11,7 @@ class GeneratedSchemaBranch0(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch02(dc.DataclassAdditionalModel[typing.Any]):
@@ -19,7 +19,7 @@ class GeneratedSchemaBranch02(dc.DataclassAdditionalModel[typing.Any]):
   "minProperties": 1,
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):

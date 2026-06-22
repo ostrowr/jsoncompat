@@ -54,7 +54,7 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
         r#"
 # pyright: strict
 
-from typing import assert_type
+from typing import Mapping, Sequence, assert_type
 
 from generated_models import InventoryItem, InventoryItemMetadata, JSONCOMPAT_MODEL
 from jsoncompat import JsonValue
@@ -81,10 +81,10 @@ assert_type(item.sku, str)
 assert_type(item.quantity, Omittable[int])
 assert_type(item.metadata, InventoryItemMetadata)
 assert_type(item.metadata.warehouse, str)
-assert_type(item.tags, Omittable[list[str]])
+assert_type(item.tags, Omittable[Sequence[str]])
 assert_type(item.warehouseCode, Omittable[str])
-assert_type(item.coordinates, Omittable[list[int | str]])
-assert_type(item.__jsoncompat_extra__, dict[str, float])
+assert_type(item.coordinates, Omittable[Sequence[int | str]])
+assert_type(item.__jsoncompat_extra__, Mapping[str, float])
 assert_type(
     item.get_additional_property("priority"),
     float | JsoncompatMissingType,
@@ -194,14 +194,14 @@ fn patterned_additional_properties_keep_precise_extra_types() -> Result<(), Box<
         r#"
 # pyright: strict
 
-from typing import assert_type
+from typing import Mapping, assert_type
 
 from generated_models import LabeledRecord
 from jsoncompat.codegen.dataclasses import JsoncompatMissingType
 
 
 record = LabeledRecord.from_value({"name": "Ada", "x-rank": 7})
-assert_type(record.__jsoncompat_extra__, dict[str, int])
+assert_type(record.__jsoncompat_extra__, Mapping[str, int])
 assert_type(
     record.get_additional_property("x-rank"),
     int | JsoncompatMissingType,
@@ -236,7 +236,7 @@ LabeledRecord(name="Ada", __jsoncompat_extra__={"x-rank": "high"})
     let invalid_stdout = String::from_utf8_lossy(&invalid_output.stdout);
     assert!(
         invalid_stdout.contains("__jsoncompat_extra__")
-            && invalid_stdout.contains("dict[str, int]"),
+            && invalid_stdout.contains("Mapping[str, int]"),
         "pyright failure did not report the patterned extra value mismatch:\n{invalid_stdout}",
     );
 

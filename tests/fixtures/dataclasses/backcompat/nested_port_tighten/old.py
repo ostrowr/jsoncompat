@@ -62,6 +62,6 @@ class GeneratedSchema(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    servers: list[GeneratedSchemaItem] = dc.field("servers")
+    servers: typing.Sequence[GeneratedSchemaItem] = dc.field("servers")
 
 JSONCOMPAT_MODEL = GeneratedSchema

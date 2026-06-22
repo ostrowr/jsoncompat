@@ -27,7 +27,7 @@ class GeneratedSchema(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    children: dc.Omittable[list[GeneratedSchema]] = dc.field("children", omittable=True)
+    children: dc.Omittable[typing.Sequence[GeneratedSchema]] = dc.field("children", omittable=True)
     value: int = dc.field("value")
 
 JSONCOMPAT_MODEL = GeneratedSchema

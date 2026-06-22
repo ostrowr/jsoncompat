@@ -17,6 +17,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "array"
 }"""
-    root: list[GeneratedSchemaItem] = dc.root_field()
+    root: typing.Sequence[GeneratedSchemaItem] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

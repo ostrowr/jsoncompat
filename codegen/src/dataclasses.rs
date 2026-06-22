@@ -12,6 +12,7 @@ const READER_MODEL_CLASS: &str = "ReaderDataclassModel";
 const READER_ROOT_MODEL_CLASS: &str = "ReaderDataclassRootModel";
 const WRITER_MODEL_CLASS: &str = "WriterDataclassModel";
 const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
+const VALIDATED_FIELD_NAME: &str = "_jsoncompat_validated";
 const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
 const OMITTABLE_TYPE_NAME: &str = "Omittable";
 const DATACLASSES_RUNTIME_MODULE: &str = "dc";
@@ -355,7 +356,7 @@ impl<'a> DataclassModuleBuilder<'a> {
         {
             let item_annotation =
                 self.inline_annotation(items, &join_pointer(pointer, "items"), scope_name, "Item")?;
-            return Ok(format!("list[{item_annotation}]"));
+            return Ok(format!("{}[{item_annotation}]", typing_symbol("Sequence")));
         }
 
         if let Some(type_annotation) = parse_type_annotation(obj, pointer)? {
@@ -426,12 +427,20 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         if has_unconstrained_prefix_item {
-            return Ok(format!("list[{}]", typing_symbol("Any")));
+            return Ok(format!(
+                "{}[{}]",
+                typing_symbol("Sequence"),
+                typing_symbol("Any")
+            ));
         }
 
         match obj.get("items") {
             None | Some(Value::Bool(true)) => {
-                return Ok(format!("list[{}]", typing_symbol("Any")));
+                return Ok(format!(
+                    "{}[{}]",
+                    typing_symbol("Sequence"),
+                    typing_symbol("Any")
+                ));
             }
             Some(Value::Bool(false)) => {}
             Some(items) => item_annotations.push(self.inline_annotation(
@@ -443,10 +452,18 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         if item_annotations.is_empty() {
-            return Ok(format!("list[{}]", typing_symbol("Any")));
+            return Ok(format!(
+                "{}[{}]",
+                typing_symbol("Sequence"),
+                typing_symbol("Any")
+            ));
         }
 
-        Ok(format!("list[{}]", union_annotation(&item_annotations)))
+        Ok(format!(
+            "{}[{}]",
+            typing_symbol("Sequence"),
+            union_annotation(&item_annotations)
+        ))
     }
 
     fn inline_annotation(
@@ -749,7 +766,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
             if let Some(extra_annotation) = extra_annotation {
                 writeln!(
                     output,
-                    "    {EXTRA_FIELD_NAME}: dict[str, {extra_annotation}] = {}.extra_field()",
+                    "    {EXTRA_FIELD_NAME}: typing.Mapping[str, {extra_annotation}] = {}.extra_field()",
                     DATACLASSES_RUNTIME_MODULE,
                 )
                 .expect("writing to String cannot fail");
@@ -1288,8 +1305,16 @@ fn single_type_annotation(type_name: &str, pointer: &str) -> Result<String, Data
         "number" => Ok("float".to_owned()),
         "boolean" => Ok("bool".to_owned()),
         "null" => Ok("None".to_owned()),
-        "array" => Ok(format!("list[{}]", typing_symbol("Any"))),
-        "object" => Ok(format!("dict[str, {}]", typing_symbol("Any"))),
+        "array" => Ok(format!(
+            "{}[{}]",
+            typing_symbol("Sequence"),
+            typing_symbol("Any")
+        )),
+        "object" => Ok(format!(
+            "{}[str, {}]",
+            typing_symbol("Mapping"),
+            typing_symbol("Any")
+        )),
         _ => Err(invalid_schema(
             join_pointer(pointer, "type"),
             format!("unsupported JSON Schema type '{type_name}'"),
@@ -1934,6 +1959,7 @@ fn python_keyword_or_reserved(name: &str) -> bool {
             | "skip_validation"
             | "to_value"
             | "root"
+            | VALIDATED_FIELD_NAME
             | EXTRA_FIELD_NAME
     )
 }
@@ -2042,6 +2068,7 @@ mod tests {
             "properties": {
                 "deserialize": { "type": "string" },
                 "from_value": { "type": "string" },
+                "_jsoncompat_validated": { "type": "boolean" },
                 "serialize": { "type": "string" },
                 "skip_validation": { "type": "boolean" },
                 "to_value": { "type": "string" }
@@ -2049,6 +2076,7 @@ mod tests {
             "required": [
                 "deserialize",
                 "from_value",
+                "_jsoncompat_validated",
                 "serialize",
                 "skip_validation",
                 "to_value"
@@ -2060,6 +2088,9 @@ mod tests {
 
         assert!(source.contains("deserialize_: str = dc.field(\"deserialize\")"));
         assert!(source.contains("from_value_: str = dc.field(\"from_value\")"));
+        assert!(source.contains(
+            "_jsoncompat_validated_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"_jsoncompat_validated\")"
+        ));
         assert!(source.contains("serialize_: str = dc.field(\"serialize\")"));
         assert!(source.contains(
             "skip_validation_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"skip_validation\")"
@@ -2214,7 +2245,7 @@ mod tests {
 
         assert!(source.contains("class GeneratedSchema(dc.DataclassRootModel):"));
         assert!(source.contains("root: typing.Literal[\"scalar\"] = dc.root_field()"));
-        assert!(!source.contains("root: list["));
+        assert!(!source.contains("root: typing.Sequence["));
     }
 
     #[test]
@@ -2306,8 +2337,14 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("coordinates: list[(int | str)] = dc.field(\"coordinates\")"));
-        assert!(!source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
+        assert!(
+            source
+                .contains("coordinates: typing.Sequence[(int | str)] = dc.field(\"coordinates\")")
+        );
+        assert!(
+            !source
+                .contains("coordinates: typing.Sequence[typing.Any] = dc.field(\"coordinates\")")
+        );
     }
 
     #[test]
@@ -2328,7 +2365,9 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
+        assert!(
+            source.contains("coordinates: typing.Sequence[typing.Any] = dc.field(\"coordinates\")")
+        );
         assert!(!source.contains("PrefixItem"));
     }
 
@@ -2346,7 +2385,9 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("class Labels(dc.DataclassAdditionalModel[int]):"));
-        assert!(source.contains("__jsoncompat_extra__: dict[str, int] = dc.extra_field()"));
+        assert!(
+            source.contains("__jsoncompat_extra__: typing.Mapping[str, int] = dc.extra_field()")
+        );
     }
 
     #[test]

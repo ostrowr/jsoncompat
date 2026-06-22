@@ -56,6 +56,11 @@ already guarantees schema validity. It skips only the attached JSON Schema
 check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
 
+Generated array and object fields accept ordinary lists and dictionaries at
+construction boundaries, then store them as deeply immutable values exposed as
+`Sequence[...]` and `Mapping[...]`. Use `to_value()` when a mutable JSON-value
+tree is required by another API.
+
 See the [canonical plain-schema example](../examples/dataclasses/demo.py) for an
 ordinary generated model that both serializes and deserializes. The
 [canonical stamped-schema example](../examples/stamp/demo.py) covers versioned

@@ -28,7 +28,7 @@ class GeneratedSchemaBarBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     bar: dc.Omittable[str] = dc.field("bar", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBarItem(dc.DataclassRootModel):
@@ -53,7 +53,7 @@ class GeneratedSchemaBar(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[GeneratedSchemaBarItem] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | str | typing.Sequence[GeneratedSchemaBarItem] | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -78,6 +78,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "unevaluatedProperties": false
 }"""
     foo: dc.Omittable[str] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

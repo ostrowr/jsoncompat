@@ -63,6 +63,13 @@ assert not hasattr(Profile, "from_json_string")
 assert not hasattr(Profile, "to_json")
 assert not hasattr(Profile, "to_json_string")
 
+try:
+    Profile.deserialize('{"name":"Ada"}', format=None)
+except (TypeError, ValueError):
+    pass
+else:
+    raise AssertionError("explicit format=None was treated as an omitted format")
+
 profile = Profile.from_value({"name": "Ada", "nickname": "ace"})
 assert profile.name == "Ada"
 assert profile.age is JSONCOMPAT_MISSING
@@ -73,6 +80,12 @@ assert profile.to_value() == {"name": "Ada", "nickname": "ace"}
 assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
 assert profile.serialize(skip_validation=True) == profile.serialize()
 assert Profile.deserialize('{"name":"Ada","nickname":"ace"}') == profile
+try:
+    Profile.deserialize('{"name":"Ada"}', format=None)
+except (TypeError, ValueError):
+    pass
+else:
+    raise AssertionError("bound deserializer accepted explicit format=None")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -91,6 +104,13 @@ except TypeError:
     pass
 else:
     raise AssertionError("additional properties remained mutable")
+try:
+    profile.__jsoncompat_extra__.__init__({"name": "Grace"})
+except TypeError:
+    pass
+else:
+    raise AssertionError("additional properties accepted a second initialization")
+assert profile.__jsoncompat_extra__ == {"nickname": "ace"}
 assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
 
 for invalid_json in (
@@ -192,6 +212,26 @@ assert AuditContext.from_value({"tags": {"team": "schema"}}).tags == {
     "team": "schema"
 }
 
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TagListRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"array","items":{"type":"string"}}'
+
+    root: list[str] = root_field()
+
+
+tag_list = TagListRoot(root=["schema"])
+assert tag_list.root == ["schema"]
+tag_list.root.__init__(["runtime"])
+assert tag_list.root == ["schema"]
+try:
+    list.append(tag_list.root, "runtime")
+except TypeError:
+    pass
+else:
+    raise AssertionError("nested JSON arrays were mutable through a base API")
+assert tag_list.to_value() == ["schema"]
+
 for factory in (
     lambda: AuditContext(tags="oops"),
     lambda: AuditContext(tags={1: "schema"}),
@@ -279,6 +319,41 @@ assert BigIntegerRoot.deserialize(str(big_integer)).root == big_integer
 assert BigIntegerRoot(root=big_integer).serialize(skip_validation=True) == str(big_integer)
 
 
+class HostileIntegralFloat(float):
+    def __int__(self) -> int:
+        return -1
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NonnegativeIntegerRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"integer","minimum":0}'
+
+    root: int = root_field()
+
+
+converted_integer = NonnegativeIntegerRoot.from_value(HostileIntegralFloat(1.0))
+assert converted_integer.root == 1
+assert type(converted_integer.root) is int
+assert converted_integer.serialize() == "1"
+
+
+class HostileRenderedFloat(float):
+    def __str__(self) -> str:
+        return "99"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundedNumberRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"number","maximum":10}'
+
+    root: float = root_field()
+
+
+bounded_number = BoundedNumberRoot(root=1.5)
+object.__setattr__(bounded_number, "root", HostileRenderedFloat(1.5))
+assert bounded_number.serialize() == "1.5"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class LargeFractionBoundary(DataclassRootModel):
     __jsoncompat_schema__: ClassVar[str] = '{"exclusiveMaximum":9.727837981879871e+26}'
@@ -327,7 +402,7 @@ parsed_generic_root = AnyOrProfileRoot.deserialize(
 )
 try:
     parsed_generic_root.root["items"].append(3)
-except TypeError:
+except (AttributeError, TypeError):
     pass
 else:
     raise AssertionError("parsed Any containers remained mutable")
@@ -1170,6 +1245,51 @@ assert "generator_for" in str(caught[0].message)
 }
 
 #[test]
+fn generated_dataclasses_keep_validation_cache_separate_from_json_properties() {
+    let source = generate_dataclass_models(&json!({
+        "title": "cache collision",
+        "type": "object",
+        "properties": {
+            "_jsoncompat_validated": { "type": "boolean" }
+        },
+        "required": ["_jsoncompat_validated"],
+        "additionalProperties": false
+    }))
+    .expect("generate dataclasses with validation-cache property collision");
+    let module_path = write_temp_module("validation_cache_collision", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("validation_cache_collision", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model = module.CacheCollision.from_value({"_jsoncompat_validated": False})
+assert model._jsoncompat_validated_ is False
+assert model._jsoncompat_validated is True
+assert model.to_value() == {"_jsoncompat_validated": False}
+assert model.serialize() == '{"_jsoncompat_validated":false}'
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run validation-cache collision test");
+    assert!(
+        output.status.success(),
+        "validation-cache collision test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_for_checkout_demo_are_python_usable() {
     let source = generate_dataclass_models(&json!({
         "type": "object",
@@ -1236,7 +1356,7 @@ model_hints = typing.get_type_hints(module.GeneratedSchema)
 customer_hints = typing.get_type_hints(module.GeneratedSchemaCustomer)
 item_hints = typing.get_type_hints(module.GeneratedSchemaItem)
 assert model_hints["customer"] is module.GeneratedSchemaCustomer
-assert model_hints["items"] == list[module.GeneratedSchemaItem]
+assert model_hints["items"] == typing.Sequence[module.GeneratedSchemaItem]
 assert customer_hints["id"] is str
 assert item_hints["quantity"] is int
 

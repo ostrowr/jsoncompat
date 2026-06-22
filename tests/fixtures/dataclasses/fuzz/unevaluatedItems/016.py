@@ -23,7 +23,7 @@ class GeneratedSchemaBarBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBar(dc.DataclassRootModel):
@@ -45,7 +45,7 @@ class GeneratedSchemaBar(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | list[typing.Any] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | str | typing.Sequence[typing.Any] | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):

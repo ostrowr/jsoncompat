@@ -17,6 +17,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[str]):
   },
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, str] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, str] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

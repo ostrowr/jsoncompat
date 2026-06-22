@@ -19,6 +19,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "unevaluatedProperties": false
 }"""
     x: dc.Omittable[GeneratedSchema] = dc.field("x", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

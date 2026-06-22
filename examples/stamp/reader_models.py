@@ -88,7 +88,7 @@ class UserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
 }"""
     age: int = dc.field("age")
     name: str = dc.field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
@@ -177,7 +177,7 @@ class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2Reader(dc.ReaderDataclassModel):

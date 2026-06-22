@@ -65,7 +65,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
     foo_bar4: GeneratedSchemaBranch2FooBar4 = dc.field("foo\rbar")
     foo_bar5: GeneratedSchemaBranch2FooBar5 = dc.field("foo\"bar")
     foo_bar6: GeneratedSchemaBranch2FooBar6 = dc.field("foo\\bar")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -85,6 +85,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     "foo\\fbar"
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

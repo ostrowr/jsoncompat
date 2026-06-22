@@ -40,7 +40,7 @@ class GeneratedSchemaItem(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[GeneratedSchemaSubItem] = dc.root_field()
+    root: typing.Sequence[GeneratedSchemaSubItem] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaSubItemFoo(dc.DataclassRootModel):
@@ -76,7 +76,7 @@ class GeneratedSchemaSubItem(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     foo: GeneratedSchemaSubItemFoo = dc.field("foo")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -116,6 +116,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: list[GeneratedSchemaItem] = dc.root_field()
+    root: typing.Sequence[GeneratedSchemaItem] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

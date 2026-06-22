@@ -19,7 +19,7 @@ class GeneratedSchemaFlags(dc.DataclassAdditionalModel[(typing.Literal[False] | 
   },
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -44,6 +44,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     flags: GeneratedSchemaFlags = dc.field("flags")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

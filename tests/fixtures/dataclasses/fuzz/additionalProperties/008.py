@@ -83,6 +83,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     "foo2": {}
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

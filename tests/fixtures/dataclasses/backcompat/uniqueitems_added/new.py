@@ -15,6 +15,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   "type": "array",
   "uniqueItems": true
 }"""
-    root: list[int] = dc.root_field()
+    root: typing.Sequence[int] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

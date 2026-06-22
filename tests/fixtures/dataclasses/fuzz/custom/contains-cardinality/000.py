@@ -24,6 +24,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   "minItems": 2,
   "type": "array"
 }"""
-    root: list[GeneratedSchemaItem] = dc.root_field()
+    root: typing.Sequence[GeneratedSchemaItem] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

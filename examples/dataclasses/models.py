@@ -239,7 +239,7 @@ class Order(dc.DataclassModel):
 }"""
     customer: Customer = dc.field("customer")
     id: str = dc.field("id")
-    items: list[OrderItem] = dc.field("items")
+    items: typing.Sequence[OrderItem] = dc.field("items")
     note: dc.Omittable[str | None] = dc.field("note", omittable=True)
     status: (typing.Literal["paid"] | typing.Literal["pending"]) = dc.field("status")
 

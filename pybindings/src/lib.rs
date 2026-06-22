@@ -14,7 +14,7 @@ use jiter::{JsonValue as JiterJsonValue, PythonParse, StringCacheMode, map_json_
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{
-    PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple, PyType,
+    PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyString, PyTuple, PyType,
 };
 
 use ::jsoncompat::{Role, SchemaDocument, check_compat, validate_compatibility_input};
@@ -72,8 +72,9 @@ fn py_to_json_value_inner(
         if !number.is_finite() {
             return Err(PyErr::new::<PyValueError, _>("JSON numbers must be finite"));
         }
-        let rendered = value.str()?.to_str()?.to_owned();
-        return parse_json(&rendered);
+        return Ok(JsonValue::Number(
+            JsonNumber::from_f64(number).expect("finite f64 values are JSON numbers"),
+        ));
     }
     if value.is_instance_of::<PyString>() {
         return Ok(JsonValue::String(value.extract::<String>()?));
@@ -81,16 +82,6 @@ fn py_to_json_value_inner(
     if let Ok(list) = value.cast::<PyList>() {
         let container_id = enter_python_container(value, active_containers)?;
         let result = list
-            .iter()
-            .map(|item| py_to_json_value_inner(&item, active_containers))
-            .collect::<PyResult<Vec<_>>>()
-            .map(JsonValue::Array);
-        active_containers.remove(&container_id);
-        return result;
-    }
-    if let Ok(tuple) = value.cast::<PyTuple>() {
-        let container_id = enter_python_container(value, active_containers)?;
-        let result = tuple
             .iter()
             .map(|item| py_to_json_value_inner(&item, active_containers))
             .collect::<PyResult<Vec<_>>>()
@@ -127,6 +118,56 @@ fn py_to_json_value_inner(
         active_containers.remove(&container_id);
         return Ok(JsonValue::Object(object));
     }
+    if let Ok(mapping) = value.cast::<PyMapping>() {
+        let container_id = enter_python_container(value, active_containers)?;
+        let mut object = JsonMap::with_capacity(mapping.len()?);
+        for entry in mapping.items()? {
+            let pair = entry.cast::<PyTuple>().map_err(|_| {
+                PyErr::new::<PyTypeError, _>("mapping items must be key-value pairs")
+            })?;
+            if pair.len() != 2 {
+                active_containers.remove(&container_id);
+                return Err(PyErr::new::<PyTypeError, _>(
+                    "mapping items must be key-value pairs",
+                ));
+            }
+            let key = pair.get_item(0)?;
+            let item = pair.get_item(1)?;
+            if !key.is_instance_of::<PyString>() {
+                active_containers.remove(&container_id);
+                return Err(PyErr::new::<PyTypeError, _>(
+                    "JSON object keys must be strings",
+                ));
+            }
+            let key = match key.extract::<String>() {
+                Ok(key) => key,
+                Err(error) => {
+                    active_containers.remove(&container_id);
+                    return Err(error);
+                }
+            };
+            let item = match py_to_json_value_inner(&item, active_containers) {
+                Ok(item) => item,
+                Err(error) => {
+                    active_containers.remove(&container_id);
+                    return Err(error);
+                }
+            };
+            object.insert(key, item);
+        }
+        active_containers.remove(&container_id);
+        return Ok(JsonValue::Object(object));
+    }
+    if let Ok(tuple) = value.cast::<PyTuple>() {
+        let container_id = enter_python_container(value, active_containers)?;
+        let result = tuple
+            .iter()
+            .map(|item| py_to_json_value_inner(&item, active_containers))
+            .collect::<PyResult<Vec<_>>>()
+            .map(JsonValue::Array);
+        active_containers.remove(&container_id);
+        return result;
+    }
 
     Err(PyErr::new::<PyTypeError, _>(format!(
         "expected a JSON-compatible value, got {}",
@@ -160,14 +201,28 @@ fn ensure_finite_python_json_numbers(value: &Bound<'_, PyAny>) -> PyResult<()> {
         }
         return Ok(());
     }
-    if let Ok(tuple) = value.cast::<PyTuple>() {
-        for item in tuple {
+    if let Ok(dict) = value.cast::<PyDict>() {
+        for (_, item) in dict {
             ensure_finite_python_json_numbers(&item)?;
         }
         return Ok(());
     }
-    if let Ok(dict) = value.cast::<PyDict>() {
-        for (_, item) in dict {
+    if let Ok(mapping) = value.cast::<PyMapping>() {
+        for entry in mapping.items()? {
+            let pair = entry.cast::<PyTuple>().map_err(|_| {
+                PyErr::new::<PyTypeError, _>("mapping items must be key-value pairs")
+            })?;
+            if pair.len() != 2 {
+                return Err(PyErr::new::<PyTypeError, _>(
+                    "mapping items must be key-value pairs",
+                ));
+            }
+            ensure_finite_python_json_numbers(&pair.get_item(1)?)?;
+        }
+        return Ok(());
+    }
+    if let Ok(tuple) = value.cast::<PyTuple>() {
+        for item in tuple {
             ensure_finite_python_json_numbers(&item)?;
         }
     }
@@ -181,7 +236,12 @@ fn py_int_to_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
     if let Ok(number) = value.extract::<u64>() {
         return Ok(JsonValue::Number(JsonNumber::from(number)));
     }
-    let rendered = value.str()?.to_str()?.to_owned();
+    let rendered = value
+        .py()
+        .get_type::<PyInt>()
+        .getattr("__repr__")?
+        .call1((value,))?
+        .extract::<String>()?;
     parse_json(&rendered)
 }
 
@@ -247,8 +307,9 @@ impl ValidatorPy {
                 return Err(conversion_error);
             }
         };
-        let is_valid =
-            self.validate_instance_assuming_json(JSONInstanceRef::from_python(instance))?;
+        let projection = converter.projection();
+        let projected = projection.instance(converted.bind(py));
+        let is_valid = self.validate_instance_assuming_json(projected)?;
         if !is_valid {
             return Ok(None);
         }
@@ -388,24 +449,19 @@ impl ValidatorPy {
 
 #[pymethods]
 impl ModelRuntimePy {
-    #[pyo3(signature = (payload, *, format=None, skip_validation=false))]
+    #[pyo3(signature = (payload, *, format="json".to_owned(), skip_validation=false))]
     fn deserialize(
         &self,
         py: Python<'_>,
         payload: &Bound<'_, PyAny>,
-        format: Option<&Bound<'_, PyAny>>,
+        format: String,
         skip_validation: bool,
     ) -> PyResult<Py<PyAny>> {
-        let is_json = match format {
-            None => true,
-            Some(format) => format
-                .extract::<String>()
-                .is_ok_and(|format| format == "json"),
-        };
+        let is_json = format == "json";
         if !is_json {
             let dataclasses = py.import("jsoncompat.codegen.dataclasses")?;
             let kwargs = PyDict::new(py);
-            kwargs.set_item("format", format.expect("non-JSON format is present"))?;
+            kwargs.set_item("format", &format)?;
             kwargs.set_item("skip_validation", skip_validation)?;
             return Ok(dataclasses
                 .getattr("_jsoncompat_deserialize_fallback")?

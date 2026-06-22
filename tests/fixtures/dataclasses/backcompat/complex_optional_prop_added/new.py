@@ -75,6 +75,6 @@ class GeneratedSchema(dc.DataclassModel):
     id: str = dc.field("id")
     name: str = dc.field("name")
     nested: dc.Omittable[GeneratedSchemaNested] = dc.field("nested", omittable=True)
-    tags: dc.Omittable[list[str]] = dc.field("tags", omittable=True)
+    tags: dc.Omittable[typing.Sequence[str]] = dc.field("tags", omittable=True)
 
 JSONCOMPAT_MODEL = GeneratedSchema

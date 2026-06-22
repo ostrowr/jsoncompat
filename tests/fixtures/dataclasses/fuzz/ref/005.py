@@ -21,7 +21,7 @@ class GeneratedSchemaReffed(dc.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[GeneratedSchemaReffedItem] = dc.root_field()
+    root: typing.Sequence[GeneratedSchemaReffedItem] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):

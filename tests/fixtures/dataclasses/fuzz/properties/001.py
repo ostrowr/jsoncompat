@@ -23,7 +23,7 @@ class GeneratedSchemaBranch2Branch2(dc.DataclassAdditionalModel[typing.Any]):
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2Item3(dc.DataclassRootModel):
@@ -31,7 +31,7 @@ class GeneratedSchemaBranch2Item3(dc.DataclassRootModel):
     root: typing.Any = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[(((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item3] | str | None) | int)]):
+class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[(((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | str | typing.Sequence[GeneratedSchemaBranch2Item3] | None) | int)]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": {
@@ -88,9 +88,9 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[(((typing.Literal[False
   },
   "type": "object"
 }"""
-    bar: dc.Omittable[list[GeneratedSchemaBranch2Item]] = dc.field("bar", omittable=True)
-    foo: dc.Omittable[list[GeneratedSchemaBranch2Item2]] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | list[GeneratedSchemaBranch2Item3] | str | None) | int)] = dc.extra_field()
+    bar: dc.Omittable[typing.Sequence[GeneratedSchemaBranch2Item]] = dc.field("bar", omittable=True)
+    foo: dc.Omittable[typing.Sequence[GeneratedSchemaBranch2Item2]] = dc.field("foo", omittable=True)
+    __jsoncompat_extra__: typing.Mapping[str, (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | str | typing.Sequence[GeneratedSchemaBranch2Item3] | None) | int)] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -119,6 +119,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

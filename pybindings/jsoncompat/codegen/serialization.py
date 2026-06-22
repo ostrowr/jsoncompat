@@ -4,6 +4,7 @@ import functools
 import importlib
 import json
 import math
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Any, Literal, NoReturn, cast, overload
 
@@ -180,20 +181,48 @@ def _normalize_json_value(
     path: str = "$",
     active_containers: set[int] | None = None,
 ) -> JsonValue:
-    if value is None or isinstance(value, (bool, str)):
+    if value is None or isinstance(value, bool):
         return value
+    if isinstance(value, str):
+        return str.__str__(value)
     if isinstance(value, int):
-        return value
+        return int.__int__(value)
     if isinstance(value, float):
-        if not math.isfinite(value):
+        number = float.__float__(value)
+        if not math.isfinite(number):
             raise ValueError(f"{path} contains a non-finite number")
-        return value
+        return number
 
     if active_containers is None:
         active_containers = set()
 
-    if isinstance(value, (list, tuple)):
-        sequence = cast(list[Any] | tuple[Any, ...], value)
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[Any, Any], value)
+        container_id = id(mapping)
+        if container_id in active_containers:
+            raise ValueError(f"{path} contains a cyclic mapping")
+        active_containers.add(container_id)
+        try:
+            output: dict[str, JsonValue] = {}
+            for key, item in mapping.items():
+                if not isinstance(key, str):
+                    raise TypeError(
+                        f"{path} contains non-string mapping key {key!r}"
+                    )
+                key = str.__str__(key)
+                output[key] = _normalize_json_value(
+                    item,
+                    path=f"{path}.{key}",
+                    active_containers=active_containers,
+                )
+            return output
+        finally:
+            active_containers.remove(container_id)
+
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, Mapping)
+    ):
+        sequence = cast(Sequence[Any], value)
         container_id = id(sequence)
         if container_id in active_containers:
             raise ValueError(f"{path} contains a cyclic sequence")
@@ -207,28 +236,6 @@ def _normalize_json_value(
                 )
                 for index, item in enumerate(sequence)
             ]
-        finally:
-            active_containers.remove(container_id)
-
-    if isinstance(value, dict):
-        mapping = cast(dict[Any, Any], value)
-        container_id = id(mapping)
-        if container_id in active_containers:
-            raise ValueError(f"{path} contains a cyclic mapping")
-        active_containers.add(container_id)
-        try:
-            output: dict[str, JsonValue] = {}
-            for key, item in mapping.items():
-                if not isinstance(key, str):
-                    raise TypeError(
-                        f"{path} contains non-string mapping key {key!r}"
-                    )
-                output[key] = _normalize_json_value(
-                    item,
-                    path=f"{path}.{key}",
-                    active_containers=active_containers,
-                )
-            return output
         finally:
             active_containers.remove(container_id)
 

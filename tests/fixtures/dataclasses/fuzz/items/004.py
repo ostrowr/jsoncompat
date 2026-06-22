@@ -24,6 +24,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: list[list[list[list[float]]]] = dc.root_field()
+    root: typing.Sequence[typing.Sequence[typing.Sequence[typing.Sequence[float]]]] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

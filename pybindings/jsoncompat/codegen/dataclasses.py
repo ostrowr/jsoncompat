@@ -3,8 +3,9 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
+import math
 import types
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import (
     Any,
     Callable,
@@ -166,46 +167,73 @@ def root_field() -> Any:
     return dataclasses.field()
 
 
-class FrozenList[T](list[T]):
-    """A JSON array that rejects every in-place mutation."""
+class FrozenList[T](tuple[T, ...]):
+    """An immutable JSON array with sequence semantics."""
 
     __slots__ = ()
 
-    def _immutable(self, *args: Any, **kwargs: Any) -> NoReturn:
-        _ = (args, kwargs)
-        raise TypeError("generated model JSON arrays are immutable")
+    def __eq__(self, other: object) -> bool:
+        if (
+            isinstance(other, Sequence)
+            and not isinstance(other, (str, bytes, Mapping))
+        ):
+            other_items = cast(Sequence[Any], other)
+            return tuple(self) == tuple(other_items)
+        return NotImplemented
 
-    __setitem__ = _immutable
-    __delitem__ = _immutable
-    __iadd__ = _immutable
-    __imul__ = _immutable
-    append = _immutable
-    clear = _immutable
-    extend = _immutable
-    insert = _immutable
-    pop = _immutable
-    remove = _immutable
-    reverse = _immutable
-    sort = _immutable  # pyright: ignore[reportAssignmentType]
+    __hash__ = None  # type: ignore[assignment]
 
 
-class FrozenDict[K, V](dict[K, V]):
-    """A JSON object that rejects every in-place mutation."""
+class FrozenDict[K, V](Mapping[K, V]):
+    """An immutable JSON object backed by an immutable tuple of pairs."""
 
-    __slots__ = ()
+    __slots__ = ("_items",)
 
-    def _immutable(self, *args: Any, **kwargs: Any) -> NoReturn:
-        _ = (args, kwargs)
+    _items: tuple[tuple[K, V], ...]
+
+    def __init__(
+        self,
+        values: Mapping[K, V] | Iterable[tuple[K, V]] = (),
+    ) -> None:
+        if hasattr(self, "_items"):
+            raise TypeError("generated model JSON objects are immutable")
+        if isinstance(values, Mapping):
+            mapping_values = cast(Mapping[K, V], values)
+            materialized: dict[K, V] = dict(mapping_values.items())
+        else:
+            materialized = dict(values)
+        object.__setattr__(self, "_items", tuple(materialized.items()))
+
+    def __setattr__(self, name: str, value: Any) -> NoReturn:
+        _ = (name, value)
         raise TypeError("generated model JSON objects are immutable")
 
-    __setitem__ = _immutable
-    __delitem__ = _immutable
-    __ior__ = _immutable
-    clear = _immutable
-    pop = _immutable
-    popitem = _immutable
-    setdefault = _immutable  # pyright: ignore[reportAssignmentType]
-    update = _immutable  # pyright: ignore[reportAssignmentType]
+    def __delattr__(self, name: str) -> NoReturn:
+        _ = name
+        raise TypeError("generated model JSON objects are immutable")
+
+    def __getitem__(self, key: K) -> V:
+        for candidate, value in self._items:
+            if candidate == key:
+                return value
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[K]:
+        return (key for key, _ in self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __repr__(self) -> str:
+        return f"FrozenDict({dict(self._items)!r})"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Mapping):
+            other_mapping = cast(Mapping[Any, Any], other)
+            return dict(self._items) == dict(other_mapping.items())
+        return NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -482,7 +510,7 @@ def _jsoncompat_deserialize_fallback(  # pyright: ignore[reportUnusedFunction]
 class DataclassAdditionalModel[JSONCOMPAT_ADDITIONAL_T](DataclassModel):
     __slots__ = ()
 
-    __jsoncompat_extra__: dict[str, JSONCOMPAT_ADDITIONAL_T]
+    __jsoncompat_extra__: Mapping[str, JSONCOMPAT_ADDITIONAL_T]
 
     def get_additional_property(
         self,
@@ -750,11 +778,11 @@ class _JsoncompatNativePlanBuilder:
             return self._model_descriptor(annotation)
 
         origin = get_origin(annotation)
-        if origin is list:
+        if origin in {list, Sequence}:
             args = get_args(annotation)
             item_annotation = args[0] if args else Any
             return ("list", self.add(item_annotation))
-        if origin is dict:
+        if origin in {dict, Mapping}:
             key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
             return (
                 "dict",
@@ -846,7 +874,7 @@ class _JsoncompatNativePlanBuilder:
 def _jsoncompat_native_branch_is_object_like(annotation: Any) -> bool:
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
         return True
-    return get_origin(annotation) is dict
+    return get_origin(annotation) in {dict, Mapping}
 
 
 @functools.lru_cache(maxsize=None)
@@ -961,6 +989,10 @@ def _jsoncompat_object_constructor_for(
         "def construct(value, validate_union_branches):",
         "    if not isinstance(value, dict):",
         "        raise TypeError(_object_error)",
+        "    if _reject_unknown:",
+        "        for key in value:",
+        "            if key not in _known_json_names:",
+        "                raise TypeError(f'generated model cannot represent property {key!r}')",
         "    instance = _new(_model_type)",
         "    if validate_union_branches:",
     ]
@@ -1077,6 +1109,7 @@ def _jsoncompat_object_constructor_for(
         "_model_type": model_type,
         "_new": object.__new__,
         "_object_error": f"{model_type.__name__} expects a JSON object",
+        "_reject_unknown": object_spec.extra_constructor is None,
         "_setattr": object.__setattr__,
         "_object_constructor_for": _jsoncompat_object_constructor_for,
     }
@@ -1100,12 +1133,12 @@ def _jsoncompat_validated_inline_expression(
         )
 
     origin = get_origin(annotation)
-    if origin is list:
+    if origin in {list, Sequence}:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
         if _jsoncompat_validated_conversion_is_identity(item_annotation):
             return f"list({value_expression})"
-    if origin is dict:
+    if origin in {dict, Mapping}:
         key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
         if _jsoncompat_validated_conversion_is_identity(
             key_annotation
@@ -1118,7 +1151,7 @@ def _jsoncompat_validated_inline_expression(
 def _jsoncompat_validated_discriminated_list_plan(
     annotation: Any,
 ) -> tuple[str, Mapping[str, type[DataclassModel]]] | None:
-    if get_origin(annotation) is not list:
+    if get_origin(annotation) not in {list, Sequence}:
         return None
     args = get_args(annotation)
     if len(args) != 1:
@@ -1248,7 +1281,7 @@ def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
         def construct_str(value: Any, validate_union_branches: bool) -> str:
             _ = validate_union_branches
             if isinstance(value, str):
-                return value
+                return str.__str__(value)
             raise TypeError(f"expected str, got {type(value).__name__}")
 
         return construct_str
@@ -1256,17 +1289,19 @@ def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
         def construct_int(value: Any, validate_union_branches: bool) -> int:
             _ = validate_union_branches
             if isinstance(value, int) and not isinstance(value, bool):
-                return value
-            if isinstance(value, float) and value.is_integer():
-                return int(value)
+                return int.__int__(value)
+            if isinstance(value, float) and float.is_integer(value):
+                return float.__int__(value)
             raise TypeError(f"expected int, got {type(value).__name__}")
 
         return construct_int
     if annotation is float:
         def construct_float(value: Any, validate_union_branches: bool) -> int | float:
             _ = validate_union_branches
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
+            if isinstance(value, int) and not isinstance(value, bool):
+                return int.__int__(value)
+            if isinstance(value, float):
+                return float.__float__(value)
             raise TypeError(f"expected number, got {type(value).__name__}")
 
         return construct_float
@@ -1298,30 +1333,32 @@ def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
         return construct_model
 
     origin = get_origin(annotation)
-    if origin is list:
+    if origin in {list, Sequence}:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
         item_constructor = _jsoncompat_constructor_for(item_annotation)
 
         def construct_list(value: Any, validate_union_branches: bool) -> list[Any]:
-            if not isinstance(value, list):
-                raise TypeError(f"expected list, got {type(value).__name__}")
-            value_items = cast(list[Any], value)
+            if not isinstance(value, Sequence) or isinstance(
+                value, (str, bytes, Mapping)
+            ):
+                raise TypeError(f"expected sequence, got {type(value).__name__}")
+            value_items = cast(Sequence[Any], value)
             return [
                 item_constructor(item, validate_union_branches)
                 for item in value_items
             ]
 
         return construct_list
-    if origin is dict:
+    if origin in {dict, Mapping}:
         key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
         key_constructor = _jsoncompat_constructor_for(key_annotation)
         value_constructor = _jsoncompat_constructor_for(value_annotation)
 
         def construct_dict(value: Any, validate_union_branches: bool) -> dict[Any, Any]:
-            if not isinstance(value, dict):
-                raise TypeError(f"expected dict, got {type(value).__name__}")
-            value_object = cast(dict[Any, Any], value)
+            if not isinstance(value, Mapping):
+                raise TypeError(f"expected mapping, got {type(value).__name__}")
+            value_object = cast(Mapping[Any, Any], value)
             return {
                 key_constructor(key, validate_union_branches): value_constructor(
                     item,
@@ -1373,13 +1410,23 @@ def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
 def _jsoncompat_validated_constructor_for(
     annotation: Any,
 ) -> _JsoncompatConstructor:
-    if annotation in {Any, JsonValue, str, float, bool, None, type(None)}:
+    if annotation in {Any, JsonValue, bool, None, type(None)}:
         return lambda value, validate_union_branches: value
+    if annotation is str:
+        return lambda value, validate_union_branches: str.__str__(value)
     if annotation is JsoncompatMissingType:
         return _jsoncompat_constructor_for(annotation)
     if annotation is int:
         return lambda value, validate_union_branches: (
-            int(value) if isinstance(value, float) else value
+            float.__int__(value)
+            if isinstance(value, float)
+            else int.__int__(value)
+        )
+    if annotation is float:
+        return lambda value, validate_union_branches: (
+            float.__float__(value)
+            if isinstance(value, float)
+            else int.__int__(value)
         )
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
         model_type = annotation
@@ -1393,26 +1440,26 @@ def _jsoncompat_validated_constructor_for(
         return construct_model
 
     origin = get_origin(annotation)
-    if origin is list:
+    if origin in {list, Sequence}:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
         item_constructor = _jsoncompat_validated_constructor_for(item_annotation)
 
         def construct_list(value: Any, validate_union_branches: bool) -> list[Any]:
-            value_items = cast(list[Any], value)
+            value_items = cast(Sequence[Any], value)
             return [
                 item_constructor(item, validate_union_branches)
                 for item in value_items
             ]
 
         return construct_list
-    if origin is dict:
+    if origin in {dict, Mapping}:
         key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
         key_constructor = _jsoncompat_validated_constructor_for(key_annotation)
         value_constructor = _jsoncompat_validated_constructor_for(value_annotation)
 
         def construct_dict(value: Any, validate_union_branches: bool) -> dict[Any, Any]:
-            value_object = cast(dict[Any, Any], value)
+            value_object = cast(Mapping[Any, Any], value)
             return {
                 key_constructor(key, validate_union_branches): value_constructor(
                     item,
@@ -1698,7 +1745,7 @@ def _jsoncompat_branch_matches_value_kind(branch: Any, value: Any) -> bool:
     if branch is int:
         return (
             (isinstance(value, int) and not isinstance(value, bool))
-            or (isinstance(value, float) and value.is_integer())
+            or (isinstance(value, float) and float.is_integer(value))
         )
     if branch is float:
         return isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -1710,10 +1757,12 @@ def _jsoncompat_branch_matches_value_kind(branch: Any, value: Any) -> bool:
         return isinstance(value, dict)
 
     origin = get_origin(branch)
-    if origin is list:
-        return isinstance(value, list)
-    if origin is dict:
-        return isinstance(value, dict)
+    if origin in {list, Sequence}:
+        return isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, Mapping)
+        )
+    if origin in {dict, Mapping}:
+        return isinstance(value, Mapping)
     if origin in {types.UnionType, Union}:
         return any(
             _jsoncompat_branch_matches_value_kind(nested_branch, value)
@@ -1744,43 +1793,47 @@ def _jsoncompat_deep_freeze(value: Any, active: set[int]) -> Any:
     if isinstance(value, DataclassModel):
         _jsoncompat_freeze_model_instance(value, active)
         return value
-    if isinstance(value, list):
-        value_items = cast(list[Any], value)
-        identity = id(value_items)
-        if identity in active:
-            raise ValueError("cyclic containers are not JSON values")
-        active.add(identity)
-        try:
-            return FrozenList(
-                _jsoncompat_deep_freeze(item, active) for item in value_items
-            )
-        finally:
-            active.remove(identity)
-    if isinstance(value, tuple):
-        value_items = cast(tuple[Any, ...], value)
-        identity = id(value_items)
-        if identity in active:
-            raise ValueError("cyclic containers are not JSON values")
-        active.add(identity)
-        try:
-            return FrozenList(
-                _jsoncompat_deep_freeze(item, active) for item in value_items
-            )
-        finally:
-            active.remove(identity)
-    if isinstance(value, dict):
-        value_object = cast(dict[Any, Any], value)
+    if isinstance(value, Mapping):
+        value_object = cast(Mapping[Any, Any], value)
         identity = id(value_object)
         if identity in active:
             raise ValueError("cyclic containers are not JSON values")
         active.add(identity)
         try:
             return FrozenDict[Any, Any](
-                (key, _jsoncompat_deep_freeze(item, active))
+                (
+                    _jsoncompat_deep_freeze(key, active),
+                    _jsoncompat_deep_freeze(item, active),
+                )
                 for key, item in value_object.items()
             )
         finally:
             active.remove(identity)
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, Mapping)
+    ):
+        value_items = cast(Sequence[Any], value)
+        identity = id(value_items)
+        if identity in active:
+            raise ValueError("cyclic containers are not JSON values")
+        active.add(identity)
+        try:
+            return FrozenList(
+                _jsoncompat_deep_freeze(item, active) for item in value_items
+            )
+        finally:
+            active.remove(identity)
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return int.__int__(value)
+    if isinstance(value, float):
+        number = float.__float__(value)
+        if not math.isfinite(number):
+            raise ValueError("JSON numbers must be finite")
+        return number
+    if isinstance(value, str):
+        return str.__str__(value)
     return value
 
 
@@ -1844,13 +1897,13 @@ def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
         return
 
     extra = getattr(model, JSONCOMPAT_EXTRA_FIELD)
-    if not isinstance(extra, dict):
+    if not isinstance(extra, Mapping):
         raise TypeError(
-            f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} expected dict, "
+            f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} expected mapping, "
             f"got {type(extra).__name__}"
         )
 
-    extra_values = cast(dict[Any, Any], extra)
+    extra_values = cast(Mapping[Any, Any], extra)
     for json_name, item in extra_values.items():
         if not isinstance(json_name, str):
             raise TypeError(
@@ -1866,7 +1919,7 @@ def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
 
 def _jsoncompat_extra_value_annotation(annotation: Any) -> Any:
     origin = get_origin(annotation)
-    if origin is dict:
+    if origin in {dict, Mapping}:
         args = get_args(annotation)
         return args[1] if len(args) == 2 else Any
     return Any
@@ -1935,28 +1988,30 @@ def _jsoncompat_python_validator_for(
         return validate_model
 
     origin = get_origin(annotation)
-    if origin is list:
+    if origin in {list, Sequence}:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
         item_validator = _jsoncompat_python_validator_for(item_annotation)
 
         def validate_list(value: Any) -> None:
-            if not isinstance(value, list):
-                raise TypeError(f"expected list, got {type(value).__name__}")
-            value_items = cast(list[Any], value)
+            if not isinstance(value, Sequence) or isinstance(
+                value, (str, bytes, Mapping)
+            ):
+                raise TypeError(f"expected sequence, got {type(value).__name__}")
+            value_items = cast(Sequence[Any], value)
             for item in value_items:
                 item_validator(item)
 
         return validate_list
-    if origin is dict:
+    if origin in {dict, Mapping}:
         key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
         key_validator = _jsoncompat_python_validator_for(key_annotation)
         value_validator = _jsoncompat_python_validator_for(value_annotation)
 
         def validate_dict(value: Any) -> None:
-            if not isinstance(value, dict):
-                raise TypeError(f"expected dict, got {type(value).__name__}")
-            value_object = cast(dict[Any, Any], value)
+            if not isinstance(value, Mapping):
+                raise TypeError(f"expected mapping, got {type(value).__name__}")
+            value_object = cast(Mapping[Any, Any], value)
             for key, item in value_object.items():
                 key_validator(key)
                 value_validator(item)
@@ -2031,22 +2086,22 @@ def _jsoncompat_serializer_for(annotation: Any) -> _JsoncompatSerializer:
         return lambda value: value.jsoncompat_to_value_unchecked()
 
     origin = get_origin(annotation)
-    if origin is list:
+    if origin in {list, Sequence}:
         args = get_args(annotation)
         item_annotation = args[0] if args else Any
         item_serializer = _jsoncompat_serializer_for(item_annotation)
 
         def serialize_list(value: Any) -> list[Any]:
-            value_items = cast(list[Any], value)
+            value_items = cast(Sequence[Any], value)
             return [item_serializer(item) for item in value_items]
 
         return serialize_list
-    if origin is dict:
+    if origin in {dict, Mapping}:
         _, value_annotation = _jsoncompat_dict_annotations(annotation)
         value_serializer = _jsoncompat_serializer_for(value_annotation)
 
         def serialize_dict(value: Any) -> dict[str, Any]:
-            value_object = cast(dict[str, Any], value)
+            value_object = cast(Mapping[str, Any], value)
             return {
                 key: value_serializer(item)
                 for key, item in value_object.items()
@@ -2061,15 +2116,17 @@ def _jsoncompat_serialize_value(value: Any) -> Any:
         return JSONCOMPAT_MISSING
     if isinstance(value, DataclassModel):
         return value.jsoncompat_to_value_unchecked()
-    if isinstance(value, list):
-        value_items = cast(list[Any], value)
-        return [_jsoncompat_serialize_value(item) for item in value_items]
-    if isinstance(value, dict):
-        value_object = cast(dict[str, Any], value)
+    if isinstance(value, Mapping):
+        value_object = cast(Mapping[str, Any], value)
         return {
             key: _jsoncompat_serialize_value(item)
             for key, item in value_object.items()
         }
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, Mapping)
+    ):
+        value_items = cast(Sequence[Any], value)
+        return [_jsoncompat_serialize_value(item) for item in value_items]
     return value
 
 

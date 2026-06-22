@@ -29,6 +29,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
 }"""
     bar: typing.Literal["bar"] = dc.field("bar")
     foo: dc.Omittable[typing.Literal["foo"]] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

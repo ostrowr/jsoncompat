@@ -36,6 +36,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: ((list[GeneratedSchemaItem2] | str) | list[GeneratedSchemaItem]) = dc.root_field()
+    root: ((str | typing.Sequence[GeneratedSchemaItem2]) | typing.Sequence[GeneratedSchemaItem]) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

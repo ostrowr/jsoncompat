@@ -6,6 +6,7 @@ import importlib.util
 import os
 import sys
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable, Literal, NoReturn, Protocol, cast
 
@@ -31,8 +32,8 @@ CompileModelConverterFn = Callable[
     [
         list[tuple[Any, ...]],
         int,
-        type[list[Any]],
-        type[dict[Any, Any]],
+        type[tuple[Any, ...]],
+        type[Mapping[Any, Any]],
     ],
     "ModelConverter",
 ]
@@ -92,7 +93,7 @@ class ModelRuntime(Protocol):
         self,
         payload: str | bytes,
         *,
-        format: Any = None,
+        format: Any = "json",
         skip_validation: bool = False,
     ) -> Any: ...
 
@@ -119,8 +120,8 @@ class NativeModule(Protocol):
         self,
         descriptors: list[tuple[Any, ...]],
         root: int,
-        frozen_list_type: type[list[Any]],
-        frozen_dict_type: type[dict[Any, Any]],
+        frozen_list_type: type[tuple[Any, ...]],
+        frozen_dict_type: type[Mapping[Any, Any]],
     ) -> ModelConverter: ...
 
     def bind_model_runtime(
@@ -202,8 +203,8 @@ def _missing_serialize_json(value: JsonValue) -> NoReturn:
 def _missing_compile_model_converter(
     descriptors: list[tuple[Any, ...]],
     root: int,
-    frozen_list_type: type[list[Any]],
-    frozen_dict_type: type[dict[Any, Any]],
+    frozen_list_type: type[tuple[Any, ...]],
+    frozen_dict_type: type[Mapping[Any, Any]],
 ) -> NoReturn:
     _ = (descriptors, root, frozen_list_type, frozen_dict_type)
     raise ModuleNotFoundError(
@@ -384,8 +385,8 @@ def serialize_json_value(value: JsonValue) -> str:
 def compile_model_converter(
     descriptors: list[tuple[Any, ...]],
     root: int,
-    frozen_list_type: type[list[Any]],
-    frozen_dict_type: type[dict[Any, Any]],
+    frozen_list_type: type[tuple[Any, ...]],
+    frozen_dict_type: type[Mapping[Any, Any]],
 ) -> ModelConverter:
     compile_native = _compile_model_converter_native
     return compile_native(descriptors, root, frozen_list_type, frozen_dict_type)
