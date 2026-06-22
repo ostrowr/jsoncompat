@@ -13,7 +13,8 @@ pub fn python_command() -> Command {
         .arg(repo_pybindings_path())
         .arg("--all-extras")
         .arg("--locked")
-        .arg("python");
+        .arg("python")
+        .env("JSONCOMPAT_NATIVE_PROFILE", "debug");
     add_repo_python_path(&mut command);
     command
 }

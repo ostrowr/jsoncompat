@@ -14,6 +14,7 @@ fn packaged_dataclasses_runtime_helpers_construct_validate_and_guard_directional
     command.arg("-B").arg("-c").arg(
         r###"
 from dataclasses import dataclass
+import json
 import typing
 from typing import ClassVar, Literal
 
@@ -194,6 +195,30 @@ class BigIntegerRoot(DataclassRootModel):
 big_integer = 10**80
 assert BigIntegerRoot.from_value(big_integer).root == big_integer
 assert BigIntegerRoot.deserialize(str(big_integer)).root == big_integer
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LargeFractionBoundary(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"exclusiveMaximum":9.727837981879871e+26}'
+
+    root: float = root_field()
+
+
+below_boundary = json.loads("9.72783798187987e+26")
+assert LargeFractionBoundary.from_value(below_boundary).root == below_boundary
+
+boundary_source = "972783798187987123879878123.188781371"
+boundary_value = json.loads(boundary_source)
+for factory in (
+    lambda: LargeFractionBoundary.from_value(boundary_value),
+    lambda: LargeFractionBoundary.deserialize(boundary_source),
+):
+    try:
+        factory()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("borrowed numeric validation lost decimal precision")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

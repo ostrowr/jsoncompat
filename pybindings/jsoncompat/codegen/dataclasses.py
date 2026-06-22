@@ -136,7 +136,7 @@ class DataclassModel:
         if skip_validation:
             return
         value = self.jsoncompat_to_value_unchecked()
-        if not _jsoncompat_validator_for(type(self)).is_valid_value(value):
+        if not _jsoncompat_validator_for(type(self))._is_valid_borrowed_value(value):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
@@ -209,7 +209,7 @@ class DataclassModel:
             raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
         if not skip_validation and not _jsoncompat_validator_for(
             type(self)
-        ).is_valid_value(value):
+        )._is_valid_borrowed_value(value):
             raise ValueError(
                 f"{type(self).__name__} instance does not satisfy its JSON Schema"
             )
@@ -285,7 +285,7 @@ class DataclassModel:
             try:
                 encoded = validator.serialize_json(cast(JsonValue, value))
             except OverflowError:
-                if not validator.is_valid_value(cast(JsonValue, value)):
+                if not validator._is_valid_borrowed_value(cast(JsonValue, value)):
                     raise ValueError(
                         f"{type(self).__name__} instance does not satisfy its JSON Schema"
                     ) from None
@@ -1293,7 +1293,7 @@ def _jsoncompat_construct_union(
                 schema_json = _jsoncompat_schema_for(branch)
                 if schema_json is None:
                     continue
-                if not _jsoncompat_validator_for(branch).is_valid_value(value):
+                if not _jsoncompat_validator_for(branch)._is_valid_borrowed_value(value):
                     rejected_dataclass_branches.append(branch)
                     continue
             try:

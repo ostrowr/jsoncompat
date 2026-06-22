@@ -260,6 +260,11 @@ impl ValidatorPy {
         validate_value_for_schema(&self.schema, &instance)
     }
 
+    /// Check a Python JSON value in place without allocating a serde value tree.
+    fn _is_valid_borrowed_value(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
+        validate_python_for_schema(&self.schema, instance)
+    }
+
     /// Convert and validate a Python value while constructing a generated model.
     fn construct_value(
         &self,

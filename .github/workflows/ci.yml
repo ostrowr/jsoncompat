@@ -65,6 +65,20 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
 
+      - name: Build Python extension for Rust integration tests (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            cargo rustc -p jsoncompat_py --lib --locked -- -C link-arg=-undefined -C link-arg=dynamic_lookup
+          else
+            cargo build -p jsoncompat_py --locked
+          fi
+
+      - name: Build Python extension for Rust integration tests (Windows)
+        if: runner.os == 'Windows'
+        run: cargo build -p jsoncompat_py --locked
+
       - name: cargo test
         # The Python binding is a cdylib with no Rust tests. Excluding it keeps
         # PyO3's extension-module linker mode out of ordinary Rust test binaries.

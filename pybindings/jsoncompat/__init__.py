@@ -40,6 +40,7 @@ class Generator(Protocol):
 class Validator(Protocol):
     def is_valid_json(self, instance_json: str) -> bool: ...
     def is_valid_value(self, instance: JsonValue) -> bool: ...
+    def _is_valid_borrowed_value(self, instance: JsonValue) -> bool: ...
     def construct_value(
         self,
         instance: JsonValue,
@@ -221,6 +222,7 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "compile_model_converter")
         and hasattr(validator, "is_valid_json")
         and hasattr(validator, "is_valid_value")
+        and hasattr(validator, "_is_valid_borrowed_value")
         and hasattr(validator, "construct_value")
         and hasattr(validator, "construct_json")
         and hasattr(validator, "serialize_model")
@@ -229,9 +231,19 @@ def _has_reusable_schema_api(module: object) -> bool:
     )
 
 
+_force_repo_native = os.environ.get("JSONCOMPAT_NATIVE_PROFILE") is not None
+
 try:
-    _native_module = cast(NativeModule, importlib.import_module("jsoncompat._native"))
+    if _force_repo_native:
+        _native_module = _load_repo_native()
+    else:
+        _native_module = cast(
+            NativeModule,
+            importlib.import_module("jsoncompat._native"),
+        )
 except ModuleNotFoundError as error:
+    if _force_repo_native:
+        raise
     if error.name != "jsoncompat._native":
         raise
     try:
@@ -257,7 +269,7 @@ except ModuleNotFoundError as error:
         _compile_model_converter_native = _repo_native.compile_model_converter
         _is_valid_native = _repo_native.is_valid
 else:
-    if not _has_reusable_schema_api(_native_module):
+    if not _force_repo_native and not _has_reusable_schema_api(_native_module):
         _native_module = _load_repo_native()
     _check_compat_native = _native_module.check_compat
     _generate_value_native = _native_module.generate_value
