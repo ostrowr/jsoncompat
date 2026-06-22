@@ -14,6 +14,7 @@ fn packaged_dataclasses_runtime_helpers_construct_validate_and_guard_directional
     command.arg("-B").arg("-c").arg(
         r###"
 from dataclasses import dataclass
+import inspect
 import json
 import typing
 from typing import ClassVar, Literal
@@ -43,6 +44,18 @@ class Profile(DataclassAdditionalModel[str]):
     __jsoncompat_extra__: dict[str, str] = extra_field()
 
 
+profile_signature = inspect.signature(Profile)
+assert tuple(profile_signature.parameters) == (
+    "skip_validation",
+    "name",
+    "age",
+    "__jsoncompat_extra__",
+)
+assert all(
+    parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    for parameter in profile_signature.parameters.values()
+)
+
 profile_hints = typing.get_type_hints(Profile)
 assert profile_hints["__jsoncompat_extra__"] == dict[str, str]
 assert not hasattr(Profile, "from_json")
@@ -60,6 +73,16 @@ assert profile.to_value() == {"name": "Ada", "nickname": "ace"}
 assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
 assert profile.serialize(skip_validation=True) == profile.serialize()
 assert Profile.deserialize('{"name":"Ada","nickname":"ace"}') == profile
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DerivedProfile(Profile):
+    pass
+
+
+derived_profile = DerivedProfile.deserialize('{"name":"Ada"}')
+assert type(derived_profile) is DerivedProfile
+assert derived_profile.name == "Ada"
 
 # Generated model graphs are deeply immutable, including additional properties.
 try:
@@ -94,6 +117,22 @@ assert profile_with_age.to_value() == {
     "nickname": "ace",
 }
 
+unchecked_profile = Profile(name="", skip_validation=True)
+assert unchecked_profile.to_value(skip_validation=True) == {"name": ""}
+try:
+    unchecked_profile.serialize()
+except ValueError:
+    pass
+else:
+    raise AssertionError("checked output trusted an unchecked direct constructor")
+
+try:
+    Profile(name="Ada", __jsoncompat_extra__={"name": "Grace"})
+except ValueError:
+    pass
+else:
+    raise AssertionError("additional properties collided with a declared field")
+
 for factory in (
     lambda: Profile(name=1),
     lambda: Profile.from_value({"name": 1}),
@@ -106,6 +145,28 @@ for factory in (
         pass
     else:
         raise AssertionError("invalid dataclass payload was accepted")
+
+
+custom_init_calls = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CustomInitialized(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"value":{"type":"integer","minimum":1}},"required":["value"],"additionalProperties":false}'
+
+    value: int = field("value")
+
+    def __init__(self, *, value: int, skip_validation: bool = False) -> None:
+        global custom_init_calls
+        custom_init_calls += 1
+        object.__setattr__(self, "value", value + 1)
+        self.__post_init__(skip_validation)
+
+
+custom_initialized = CustomInitialized(value=0)
+assert custom_init_calls == 1
+assert custom_initialized.value == 1
+assert dc._jsoncompat_direct_runtime_for(CustomInitialized) is None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -260,6 +321,34 @@ generic_json_value = {
 generic_root = AnyOrProfileRoot(root=generic_json_value)
 assert generic_root.serialize(skip_validation=True) == generic_root.serialize()
 assert json.loads(generic_root.serialize(skip_validation=True)) == generic_json_value
+parsed_generic_root = AnyOrProfileRoot.deserialize(
+    '{"items":[1,2]}',
+    skip_validation=True,
+)
+try:
+    parsed_generic_root.root["items"].append(3)
+except TypeError:
+    pass
+else:
+    raise AssertionError("parsed Any containers remained mutable")
+
+for skip_validation in (False, True):
+    try:
+        AnyOrProfileRoot.deserialize(
+            '{"duplicate":1,"duplicate":2}',
+            skip_validation=skip_validation,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Any conversion erased a duplicate JSON key")
+
+try:
+    AnyOrProfileRoot(root=float("nan"))
+except ValueError:
+    pass
+else:
+    raise AssertionError("direct construction accepted a non-finite JSON number")
 
 cyclic_json_value = []
 cyclic_json_value.append(cyclic_json_value)
@@ -283,6 +372,20 @@ class ProfileWriter(WriterDataclassModel):
     __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":false}},"required":["version","data"],"additionalProperties":false}'
 
     version: Literal[1] = field("version")
+    data: Profile = field("data")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProfileRefWriter(WriterDataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"profile":{"type":"object","properties":{"name":{"type":"string","minLength":1},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}},"type":"object","properties":{"data":{"$ref":"#/$defs/profile"}},"required":["data"],"additionalProperties":false}'
+
+    data: Profile = field("data")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProfileConstrainedRefWriter(WriterDataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"profile":{"type":"object","properties":{"name":{"type":"string","minLength":1},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}},"type":"object","properties":{"data":{"$ref":"#/$defs/profile","maxProperties":0}},"required":["data"],"additionalProperties":false}'
+
     data: Profile = field("data")
 
 
@@ -311,6 +414,15 @@ class ProfileReader(ReaderDataclassRootModel):
 
 writer = ProfileWriter(version=1, data=Profile(name="Ada"))
 assert writer.to_value() == {"version": 1, "data": {"name": "Ada"}}
+referenced_writer = ProfileRefWriter(data=Profile(name="Ada"))
+assert referenced_writer.to_value() == {"data": {"name": "Ada"}}
+try:
+    ProfileConstrainedRefWriter(data=Profile(name="Ada"))
+except ValueError:
+    pass
+else:
+    raise AssertionError("prevalidated $ref target skipped an adjacent constraint")
+
 reader = ProfileReader.from_value({"version": 1, "data": {"name": "Ada"}})
 assert reader.root.version == 1
 assert reader.root.data.name == "Ada"
@@ -335,6 +447,68 @@ trusted_reader = ProfileReader.from_value(
 )
 assert isinstance(trusted_reader.root, ProfileReaderV1)
 assert trusted_reader.root.data.name == ""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NarrowObject(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"a":{"type":"integer"}},"required":["a"],"additionalProperties":false}'
+
+    a: int = field("a")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WideObject(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}'
+
+    a: int = field("a")
+    b: int = field("b")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AmbiguousObjectRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"anyOf":[{"type":"object","properties":{"a":{"type":"integer"}},"required":["a"],"additionalProperties":false},{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}]}'
+
+    root: NarrowObject | WideObject = root_field()
+
+
+assert dc._jsoncompat_native_converter_for(AmbiguousObjectRoot) is not None
+narrow = AmbiguousObjectRoot.from_value({"a": 1})
+assert isinstance(narrow.root, NarrowObject)
+assert narrow.to_value() == {"a": 1}
+wide = AmbiguousObjectRoot.from_value({"a": 1, "b": 2})
+assert isinstance(wide.root, WideObject)
+assert wide.to_value() == {"a": 1, "b": 2}
+wide_json = AmbiguousObjectRoot.deserialize('{"a":1,"b":2}')
+assert isinstance(wide_json.root, WideObject)
+assert wide_json.to_value() == {"a": 1, "b": 2}
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NonnegativeObject(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"x":{"type":"integer","minimum":0}},"required":["x"],"additionalProperties":false}'
+
+    x: int = field("x")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NegativeObject(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"x":{"type":"integer","maximum":-1}},"required":["x"],"additionalProperties":false}'
+
+    x: int = field("x")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ConstraintDisambiguatedRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"anyOf":[{"type":"object","properties":{"x":{"type":"integer","minimum":0}},"required":["x"],"additionalProperties":false},{"type":"object","properties":{"x":{"type":"integer","maximum":-1}},"required":["x"],"additionalProperties":false}]}'
+
+    root: NonnegativeObject | NegativeObject = root_field()
+
+
+assert dc._jsoncompat_native_converter_for(ConstraintDisambiguatedRoot) is not None
+negative = ConstraintDisambiguatedRoot.from_value({"x": -2})
+assert isinstance(negative.root, NegativeObject)
+negative_json = ConstraintDisambiguatedRoot.deserialize('{"x":-2}')
+assert isinstance(negative_json.root, NegativeObject)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -408,19 +582,26 @@ except TypeError:
 else:
     raise AssertionError("constructor accepted raw nested JSON instead of a Profile")
 
-for forbidden in (
-    lambda: ProfileWriter.from_value({"version": 1, "data": {"name": "Ada"}}),
-    lambda: ProfileWriter.deserialize('{"version":1,"data":{"name":"Ada"}}'),
-    lambda: ProfileReaderV1(version=1, data=Profile(name="Ada")).to_value(),
-    lambda: reader.to_value(),
-    lambda: reader.serialize(),
+try:
+    ProfileWriter(version=1, data=Profile(name="", skip_validation=True))
+except ValueError:
+    pass
+else:
+    raise AssertionError("checked parent trusted an unchecked nested model")
+
+for operation, forbidden in (
+    ("writer from_value", lambda: ProfileWriter.from_value({"version": 1, "data": {"name": "Ada"}})),
+    ("writer deserialize", lambda: ProfileWriter.deserialize('{"version":1,"data":{"name":"Ada"}}')),
+    ("reader constructor to_value", lambda: ProfileReaderV1(version=1, data=Profile(name="Ada")).to_value()),
+    ("reader from_value to_value", lambda: reader.to_value()),
+    ("reader serialize", lambda: reader.serialize()),
 ):
     try:
         forbidden()
     except TypeError:
         pass
     else:
-        raise AssertionError("directional dataclass guard did not fire")
+        raise AssertionError(f"directional dataclass guard did not fire: {operation}")
 "###,
     );
     let output = command.output().expect("run dataclass helper module test");

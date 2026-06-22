@@ -21,7 +21,7 @@ rand = "0.10.0"
 jsoncompat = { path = ".." }
 json_schema_ast = { path = "../schema" }
 json_schema_fuzz = { path = "../fuzz" }
-jsonschema = { git = "https://github.com/ostrowr/jsonschema", rev = "7f9ee578e1368f0043cc407cf34041dd59d87b78", default-features = false, features = ["jiter", "python"] }
+jsonschema = { git = "https://github.com/ostrowr/jsonschema", rev = "42dabfa9706d113e7c27bae924d8c27b674a8acf", default-features = false, features = ["jiter", "python"] }
 
 [build-dependencies]
 pyo3-build-config = "0.28.3"

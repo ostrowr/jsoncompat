@@ -20,6 +20,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$ref": "#/$defs/bool",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }"""
-    root: GeneratedSchemaBool = dc.root_field()
+    root: dc.JsonValue = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

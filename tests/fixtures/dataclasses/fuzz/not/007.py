@@ -14,6 +14,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     "not": {}
   }
 }"""
-    root: typing.Any = dc.root_field()
+    root: dc.JsonValue = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

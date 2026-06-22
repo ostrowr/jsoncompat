@@ -7,10 +7,10 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Literal, NoReturn, Protocol, TypeAlias, cast
+from typing import Any, Callable, Literal, NoReturn, Protocol, cast
 
 RoleLiteral = Literal["serializer", "deserializer", "both"]
-JsonValue: TypeAlias = (
+type JsonValue = (
     None
     | bool
     | int
@@ -36,6 +36,10 @@ CompileModelConverterFn = Callable[
     ],
     "ModelConverter",
 ]
+BindModelRuntimeFn = Callable[
+    [type[Any], "Validator", "ModelConverter"],
+    "ModelRuntime",
+]
 
 
 class Generator(Protocol):
@@ -50,6 +54,12 @@ class Validator(Protocol):
         self,
         instance: JsonValue,
         converter: ModelConverter,
+    ) -> Any | None: ...
+    def construct_kwargs(
+        self,
+        kwargs: dict[str, Any],
+        converter: ModelConverter,
+        validate: bool = True,
     ) -> Any | None: ...
     def construct_json(
         self,
@@ -77,6 +87,16 @@ class ModelConverter(Protocol):
     def construct(self, value: Any, validated: bool) -> Any: ...
 
 
+class ModelRuntime(Protocol):
+    def deserialize(
+        self,
+        payload: str | bytes,
+        *,
+        format: Any = None,
+        skip_validation: bool = False,
+    ) -> Any: ...
+
+
 class NativeModule(Protocol):
     def check_compat(
         self,
@@ -102,6 +122,13 @@ class NativeModule(Protocol):
         frozen_list_type: type[list[Any]],
         frozen_dict_type: type[dict[Any, Any]],
     ) -> ModelConverter: ...
+
+    def bind_model_runtime(
+        self,
+        model_type: type[Any],
+        validator: Validator,
+        converter: ModelConverter,
+    ) -> ModelRuntime: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
 
@@ -185,6 +212,18 @@ def _missing_compile_model_converter(
     )
 
 
+def _missing_bind_model_runtime(
+    model_type: type[Any],
+    validator: Validator,
+    converter: ModelConverter,
+) -> NoReturn:
+    _ = (model_type, validator, converter)
+    raise ModuleNotFoundError(
+        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
+        "before constructing generated models."
+    )
+
+
 def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
@@ -235,10 +274,12 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
         and hasattr(module, "compile_model_converter")
+        and hasattr(module, "bind_model_runtime")
         and hasattr(validator, "is_valid_json")
         and hasattr(validator, "is_valid_value")
         and hasattr(validator, "_is_valid_borrowed_value")
         and hasattr(validator, "construct_value")
+        and hasattr(validator, "construct_kwargs")
         and hasattr(validator, "construct_json")
         and hasattr(validator, "model_to_value")
         and hasattr(validator, "serialize_model")
@@ -274,6 +315,7 @@ except ModuleNotFoundError as error:
         _compile_model_converter_native: CompileModelConverterFn = (
             _missing_compile_model_converter
         )
+        _bind_model_runtime_native: BindModelRuntimeFn = _missing_bind_model_runtime
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _check_compat_native = _repo_native.check_compat
@@ -283,6 +325,7 @@ except ModuleNotFoundError as error:
         _deserialize_json_native = _repo_native.deserialize_json
         _serialize_json_native = _repo_native.serialize_json
         _compile_model_converter_native = _repo_native.compile_model_converter
+        _bind_model_runtime_native = _repo_native.bind_model_runtime
         _is_valid_native = _repo_native.is_valid
 else:
     if not _force_repo_native and not _has_reusable_schema_api(_native_module):
@@ -294,6 +337,7 @@ else:
     _deserialize_json_native = _native_module.deserialize_json
     _serialize_json_native = _native_module.serialize_json
     _compile_model_converter_native = _native_module.compile_model_converter
+    _bind_model_runtime_native = _native_module.bind_model_runtime
     _is_valid_native = _native_module.is_valid
 
 
@@ -345,6 +389,15 @@ def compile_model_converter(
 ) -> ModelConverter:
     compile_native = _compile_model_converter_native
     return compile_native(descriptors, root, frozen_list_type, frozen_dict_type)
+
+
+def bind_model_runtime(
+    model_type: type[Any],
+    validator: Validator,
+    converter: ModelConverter,
+) -> ModelRuntime:
+    bind_native = _bind_model_runtime_native
+    return bind_native(model_type, validator, converter)
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:

@@ -173,6 +173,28 @@ PAYLOAD = {
     "traceId": "trace_123",
 }
 PAYLOAD_JSON = json.dumps(PAYLOAD, separators=(",", ":"), sort_keys=True)
+DIRECT_CUSTOMER = BenchCustomer(
+    email="ada@example.com",
+    id="cus_123",
+    segment="enterprise",
+    trialDaysRemaining=7,
+)
+DIRECT_ITEM = BenchItem(
+    quantity=2,
+    sku="team-seat",
+    unitPrice=120,
+)
+PYDANTIC_DIRECT_CUSTOMER = PydanticCustomer(
+    email="ada@example.com",
+    id="cus_123",
+    segment="enterprise",
+    trialDaysRemaining=7,
+)
+PYDANTIC_DIRECT_ITEM = PydanticItem(
+    quantity=2,
+    sku="team-seat",
+    unitPrice=120,
+)
 STAMPED_VALUE = {
     "version": 2,
     "data": {
@@ -185,6 +207,7 @@ STAMPED_JSON = json.dumps(STAMPED_VALUE, separators=(",", ":"), sort_keys=True)
 
 
 def clear_runtime_caches() -> None:
+    dc._jsoncompat_reset_bound_deserializers()
     getattr(dc._jsoncompat_validator_for, "cache_clear")()
     getattr(dc._jsoncompat_type_hints_for, "cache_clear")()
     getattr(dc._jsoncompat_object_spec_for, "cache_clear")()
@@ -201,6 +224,7 @@ def clear_runtime_caches() -> None:
     getattr(dc._jsoncompat_object_serializer_for, "cache_clear")()
     getattr(dc._jsoncompat_native_converter_for, "cache_clear")()
     getattr(dc._jsoncompat_native_runtime_for, "cache_clear")()
+    getattr(dc._jsoncompat_direct_runtime_for, "cache_clear")()
 
 
 def infer_all_specs() -> None:
@@ -254,6 +278,54 @@ def pydantic_from_value() -> PydanticEvent:
 
 def pydantic_from_json() -> PydanticEvent:
     return PydanticEvent.model_validate_json(PAYLOAD_JSON)
+
+
+def direct_leaf() -> BenchItem:
+    return BenchItem(quantity=2, sku="team-seat", unitPrice=120)
+
+
+def direct_leaf_trusted() -> BenchItem:
+    return BenchItem(
+        quantity=2,
+        sku="team-seat",
+        unitPrice=120,
+        skip_validation=True,
+    )
+
+
+def pydantic_direct_leaf() -> PydanticItem:
+    return PydanticItem(quantity=2, sku="team-seat", unitPrice=120)
+
+
+def direct_model() -> BenchEvent:
+    return BenchEvent(
+        currency="USD",
+        customer=DIRECT_CUSTOMER,
+        event="checkout.completed",
+        items=[DIRECT_ITEM],
+        __jsoncompat_extra__={"traceId": "trace_123"},
+    )
+
+
+def direct_model_trusted() -> BenchEvent:
+    return BenchEvent(
+        currency="USD",
+        customer=DIRECT_CUSTOMER,
+        event="checkout.completed",
+        items=[DIRECT_ITEM],
+        __jsoncompat_extra__={"traceId": "trace_123"},
+        skip_validation=True,
+    )
+
+
+def pydantic_direct_model() -> PydanticEvent:
+    return PydanticEvent(
+        currency="USD",
+        customer=PYDANTIC_DIRECT_CUSTOMER,
+        event="checkout.completed",
+        items=[PYDANTIC_DIRECT_ITEM],
+        traceId="trace_123",
+    )
 
 
 def pydantic_to_value(instance: PydanticEvent) -> dict[str, Any]:
@@ -380,6 +452,12 @@ def main() -> None:
     run("from_value checked", from_value)
     run("pydantic model_validate", pydantic_from_value)
     run("from_value trusted", from_value_trusted)
+    run("direct leaf Model(...)", direct_leaf)
+    run("direct leaf trusted", direct_leaf_trusted)
+    run("pydantic direct leaf", pydantic_direct_leaf)
+    run("direct nested Model(...)", direct_model)
+    run("direct nested trusted", direct_model_trusted)
+    run("pydantic direct nested", pydantic_direct_model)
     run("to_value checked", lambda: to_value(instance))
     run(
         "pydantic model_dump",

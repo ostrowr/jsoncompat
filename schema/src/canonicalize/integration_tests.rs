@@ -1162,6 +1162,27 @@ fn canonicalize_simplifies_allof_and_anyof_boolean_branches() {
             .into_value(),
         json!({ "not": true })
     );
+
+    assert_eq!(
+        canonicalize_schema(&json!({ "oneOf": [true, false, false] }))
+            .unwrap()
+            .into_value(),
+        json!(true)
+    );
+    assert_eq!(
+        canonicalize_schema(&json!({
+            "oneOf": [true, true, { "type": "string" }]
+        }))
+        .unwrap()
+        .into_value(),
+        json!({ "not": true })
+    );
+    assert_eq!(
+        canonicalize_schema(&json!({ "oneOf": [false, false] }))
+            .unwrap()
+            .into_value(),
+        json!({ "not": true })
+    );
 }
 
 #[test]

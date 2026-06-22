@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import inspect
 import types
 from collections.abc import Mapping
 from typing import (
@@ -19,7 +20,13 @@ from typing import (
     overload,
 )
 
-from jsoncompat import JsonValue, ModelConverter, compile_model_converter, validator_for
+from jsoncompat import (
+    JsonValue,
+    ModelConverter,
+    bind_model_runtime,
+    compile_model_converter,
+    validator_for,
+)
 
 from .serialization import (
     SerializationFormat,
@@ -36,6 +43,7 @@ __all__ = [
     "FrozenList",
     "JSONCOMPAT_EXTRA_FIELD",
     "JSONCOMPAT_MISSING",
+    "JsonValue",
     "JsoncompatMissingType",
     "ReaderDataclassModel",
     "ReaderDataclassRootModel",
@@ -55,6 +63,7 @@ JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
 _JSONCOMPAT_MISSING_TYPE_HINT = object()
 JSONCOMPAT_ADDITIONAL_T = TypeVar("JSONCOMPAT_ADDITIONAL_T")
+_DATACLASS_MODEL_T = TypeVar("_DATACLASS_MODEL_T", bound="DataclassModel")
 
 
 class JsoncompatMissingType:
@@ -72,6 +81,38 @@ type _JsoncompatSerializer = Callable[[Any], Any]
 type _JsoncompatPythonValidator = Callable[[Any], None]
 type _JsoncompatModelConstructor = Callable[[Any, bool], DataclassModel]
 type _JsoncompatModelSerializer = Callable[[DataclassModel], Any]
+
+
+class _DataclassModelMeta(type):
+    @property
+    def __signature__(cls) -> inspect.Signature:
+        signature = inspect.signature(cls.__init__)
+        return signature.replace(parameters=tuple(signature.parameters.values())[1:])
+
+    def __call__(
+        cls: type[_DATACLASS_MODEL_T],  # pyright: ignore[reportGeneralTypeIssues]
+        *args: Any,
+        **kwargs: Any,
+    ) -> _DATACLASS_MODEL_T:
+        # Generated dataclasses are keyword-only. Positional calls and custom
+        # post-init hooks retain the ordinary dataclass behavior and errors.
+        if args:
+            return cast(_DATACLASS_MODEL_T, super().__call__(*args, **kwargs))
+
+        runtime = _jsoncompat_direct_runtime_for(cls)
+        if runtime is None:
+            return cast(_DATACLASS_MODEL_T, super().__call__(**kwargs))
+
+        skip_validation = kwargs.pop("skip_validation", False)
+        validator, native_converter = runtime
+        converted = validator.construct_kwargs(
+            kwargs,
+            native_converter,
+            not skip_validation,
+        )
+        if converted is None:
+            raise ValueError(f"{cls.__name__} instance does not satisfy its JSON Schema")
+        return cast(_DATACLASS_MODEL_T, converted)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -168,10 +209,25 @@ class FrozenDict[K, V](dict[K, V]):
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
-class DataclassModel:
+class DataclassModel(metaclass=_DataclassModelMeta):
     __slots__ = (JSONCOMPAT_VALIDATED_FIELD,)
 
     skip_validation: dataclasses.InitVar[bool] = False
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # A generated parent may have installed a bound native deserializer.
+        # Restore the appropriate inherited dispatcher so each subclass can
+        # enforce its direction guard and bind a runtime for its exact schema.
+        if "deserialize" not in cls.__dict__:
+            inherited: object | None = None
+            for base in cls.__mro__[1:]:
+                descriptor: object | None = base.__dict__.get("deserialize")
+                if isinstance(descriptor, classmethod):
+                    inherited = cast(object, descriptor)
+                    break
+            if inherited is not None:
+                setattr(cls, "deserialize", inherited)
 
     __jsoncompat_schema__: ClassVar[str]
 
@@ -408,6 +464,19 @@ class DataclassModel:
 
     def jsoncompat_to_value_unchecked(self) -> Any:
         return _jsoncompat_object_serializer_for(type(self))(self)
+
+
+def _jsoncompat_deserialize_fallback(  # pyright: ignore[reportUnusedFunction]
+    model_type: type[DataclassModel],
+    payload: str | bytes,
+    *,
+    format: SerializationFormat,
+    skip_validation: bool,
+) -> DataclassModel:
+    return model_type.from_value(
+        deserialize_value(payload, format=SerializationFormat(format)),
+        skip_validation=skip_validation,
+    )
 
 
 class DataclassAdditionalModel[JSONCOMPAT_ADDITIONAL_T](DataclassModel):
@@ -663,7 +732,7 @@ class _JsoncompatNativePlanBuilder:
         return cast(list[tuple[Any, ...]], self.nodes), root
 
     def _descriptor(self, annotation: Any) -> tuple[Any, ...]:
-        if annotation is Any:
+        if annotation is Any or annotation is JsonValue:
             return ("any",)
         if annotation is JsoncompatMissingType:
             return ("missing", JSONCOMPAT_MISSING)
@@ -752,10 +821,17 @@ class _JsoncompatNativePlanBuilder:
                     branches_by_value,
                 )
 
-        object_like_branches = sum(
-            _jsoncompat_native_branch_is_object_like(branch) for branch in branches
+        object_like_branches = tuple(
+            branch
+            for branch in branches
+            if _jsoncompat_native_branch_is_object_like(branch)
         )
-        if object_like_branches > 1:
+        if len(object_like_branches) > 1 and not all(
+            isinstance(branch, type) and issubclass(branch, DataclassModel)
+            for branch in object_like_branches
+        ):
+            # Plain dict annotations do not retain enough branch-specific
+            # schema information for constraint-aware native selection.
             raise _JsoncompatNativePlanUnsupported
         return ("union", branch_ids, None, None)
 
@@ -794,7 +870,66 @@ def _jsoncompat_native_runtime_for(
     converter = _jsoncompat_native_converter_for(model_type)
     if converter is None:
         return None
-    return _jsoncompat_validator_for(model_type), converter
+    validator = _jsoncompat_validator_for(model_type)
+    _jsoncompat_bind_native_deserializer(model_type, validator, converter)
+    return validator, converter
+
+
+_JSONCOMPAT_BOUND_DESERIALIZERS: dict[
+    type[DataclassModel], tuple[object | None, object]
+] = {}
+
+
+def _jsoncompat_bind_native_deserializer(
+    model_type: type[DataclassModel],
+    validator: Any,
+    converter: ModelConverter,
+) -> None:
+    generic = DataclassModel.__dict__["deserialize"]
+    resolved = next(
+        base.__dict__["deserialize"]
+        for base in model_type.__mro__
+        if "deserialize" in base.__dict__
+    )
+    if resolved is not generic:
+        return
+    previous = model_type.__dict__.get("deserialize")
+    runtime = bind_model_runtime(model_type, validator, converter)
+    bound = runtime.deserialize
+    _JSONCOMPAT_BOUND_DESERIALIZERS[model_type] = (previous, bound)
+    setattr(model_type, "deserialize", bound)
+
+
+def _jsoncompat_reset_bound_deserializers() -> None:  # pyright: ignore[reportUnusedFunction]
+    for model_type, (previous, bound) in _JSONCOMPAT_BOUND_DESERIALIZERS.items():
+        if model_type.__dict__.get("deserialize") is not bound:
+            continue
+        if previous is None:
+            delattr(model_type, "deserialize")
+        else:
+            setattr(model_type, "deserialize", previous)
+    _JSONCOMPAT_BOUND_DESERIALIZERS.clear()
+
+
+@functools.lru_cache(maxsize=None)
+def _jsoncompat_direct_runtime_for(
+    model_type: type[DataclassModel],
+) -> tuple[Any, ModelConverter] | None:
+    init = model_type.__dict__.get("__init__")
+    if (
+        not isinstance(init, types.FunctionType)
+        or init.__code__.co_filename != "<string>"
+        or init.__code__.co_qualname != "__create_fn__.<locals>.__init__"
+        or getattr(model_type, "__new__", None) is not object.__new__
+    ):
+        # Native allocation intentionally bypasses Python construction hooks;
+        # only dataclasses' generated initializer has equivalent semantics.
+        return None
+    if getattr(model_type, "__post_init__", None) is not DataclassModel.__post_init__:
+        return None
+    if _jsoncompat_schema_for(model_type) is None:
+        return None
+    return _jsoncompat_native_runtime_for(model_type)
 
 
 @functools.lru_cache(maxsize=None)
@@ -1092,7 +1227,7 @@ def _jsoncompat_construct_value(
 
 @functools.lru_cache(maxsize=None)
 def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
-    if annotation is Any:
+    if annotation is Any or annotation is JsonValue:
         return lambda value, validate_union_branches: value
     if annotation is JsoncompatMissingType:
         def construct_missing(value: Any, validate_union_branches: bool) -> Any:
@@ -1231,7 +1366,7 @@ def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
 def _jsoncompat_validated_constructor_for(
     annotation: Any,
 ) -> _JsoncompatConstructor:
-    if annotation in {Any, str, float, bool, None, type(None)}:
+    if annotation in {Any, JsonValue, str, float, bool, None, type(None)}:
         return lambda value, validate_union_branches: value
     if annotation is JsoncompatMissingType:
         return _jsoncompat_constructor_for(annotation)
@@ -1741,7 +1876,7 @@ def _jsoncompat_dict_annotations(annotation: Any) -> tuple[Any, Any]:
 def _jsoncompat_python_validator_for(
     annotation: Any,
 ) -> _JsoncompatPythonValidator:
-    if annotation is Any:
+    if annotation is Any or annotation is JsonValue:
         return lambda value: None
     if annotation is JsoncompatMissingType:
         def validate_missing(value: Any) -> None:

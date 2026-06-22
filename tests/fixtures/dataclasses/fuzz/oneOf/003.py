@@ -7,21 +7,6 @@ from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch0(dc.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.root_field()
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch1(dc.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = """false"""
-    root: typing.Any = dc.root_field()
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch2(dc.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = """false"""
-    root: typing.Any = dc.root_field()
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -31,6 +16,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     false
   ]
 }"""
-    root: (GeneratedSchemaBranch0 | GeneratedSchemaBranch1 | GeneratedSchemaBranch2) = dc.root_field()
+    root: dc.JsonValue = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

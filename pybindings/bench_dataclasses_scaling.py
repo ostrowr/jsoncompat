@@ -21,6 +21,7 @@ from typing import Annotated, Any, Callable, ClassVar, Literal
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
+from jsoncompat import validator_for
 from jsoncompat.codegen import dataclasses as dc
 
 
@@ -263,6 +264,7 @@ def main() -> None:
     instance = ScaleTree.from_value(payload)
     pydantic_instance = PydanticTree.model_validate(payload)
     wire = instance.serialize(skip_validation=True)
+    validator = validator_for(ScaleTree.__jsoncompat_schema__)
 
     assert instance.to_value() == payload
     assert pydantic_instance.model_dump(mode="json", exclude_unset=True) == payload
@@ -316,6 +318,7 @@ def main() -> None:
         "pydantic model_validate_json",
         lambda: PydanticTree.model_validate_json(payload_json),
     )
+    run("jsoncompat validate JSON only", lambda: validator.is_valid_json(wire))
 
     if args.profile:
         profile(

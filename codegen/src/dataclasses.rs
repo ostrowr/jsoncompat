@@ -1,6 +1,6 @@
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
-use json_schema_ast::{SchemaBuildError, SchemaDocument};
-use serde_json::{Map, Value};
+use json_schema_ast::{SchemaBuildError, SchemaDocument, SchemaNodeKind};
+use serde_json::{Map, Value, json};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
@@ -15,6 +15,7 @@ const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
 const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
 const OMITTABLE_TYPE_NAME: &str = "Omittable";
 const DATACLASSES_RUNTIME_MODULE: &str = "dc";
+const CODEGEN_ANY_KEY: &str = "__jsoncompat_codegen_any";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataclassError {
@@ -312,11 +313,22 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
     ) -> Result<String, DataclassError> {
+        if obj.get(CODEGEN_ANY_KEY).and_then(Value::as_bool) == Some(true) {
+            return Ok("dc.JsonValue".to_owned());
+        }
         if let Some(ref_value) = obj.get("$ref") {
             let ref_value = ref_value.as_str().ok_or_else(|| {
                 invalid_schema(join_pointer(pointer, "$ref"), "$ref must be a string")
             })?;
             return self.ref_annotation(ref_value, pointer);
+        }
+
+        // Adjacent applicators can narrow an explicit scalar type, but they
+        // cannot make values of another JSON type valid. Keep that hard type
+        // boundary in the generated API instead of expanding constraint-only
+        // branches into a union of every JSON value kind.
+        if let Some(type_annotation) = parse_explicit_scalar_type_annotation(obj, pointer)? {
+            return Ok(type_annotation);
         }
 
         if obj.contains_key("oneOf") {
@@ -528,9 +540,80 @@ pub fn generate_dataclass_models(schema: &Value) -> Result<String, DataclassErro
 pub fn generate_dataclass_models_from_document(
     document: &SchemaDocument,
 ) -> Result<String, DataclassError> {
-    render_dataclass_module(
-        document.canonical_schema_json()?,
-        document.source_schema_json(),
+    let canonical = document.canonical_schema_json()?;
+    if canonical_schema_is_unconstrained(canonical)
+        || document.root().is_ok_and(|root| {
+            matches!(
+                root.kind(),
+                SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+            )
+        })
+    {
+        let codegen_schema = unconstrained_codegen_schema(canonical);
+        return render_dataclass_module(&codegen_schema, document.source_schema_json());
+    }
+    render_dataclass_module(canonical, document.source_schema_json())
+}
+
+fn unconstrained_codegen_schema(canonical: &Value) -> Value {
+    let Value::Object(object) = canonical else {
+        return Value::Bool(true);
+    };
+    let metadata = object
+        .iter()
+        .filter(|(key, _)| is_codegen_metadata_key(key))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Map<_, _>>();
+    if metadata.is_empty() {
+        Value::Bool(true)
+    } else {
+        let mut metadata = metadata;
+        metadata.insert(CODEGEN_ANY_KEY.to_owned(), Value::Bool(true));
+        Value::Object(metadata)
+    }
+}
+
+fn canonical_schema_is_unconstrained(canonical: &Value) -> bool {
+    if canonical == &Value::Bool(true) {
+        return true;
+    }
+    let Some(object) = canonical.as_object() else {
+        return false;
+    };
+    if !object.iter().all(|(key, value)| {
+        key == "anyOf"
+            || is_codegen_metadata_key(key)
+            || (key == "dependencies"
+                && value.as_object().is_some_and(|dependencies| {
+                    dependencies
+                        .values()
+                        .all(|dependency| dependency.as_array().is_some_and(Vec::is_empty))
+                }))
+    }) {
+        return false;
+    }
+    object.get("anyOf")
+        == Some(&json!([
+            {"enum": [null]},
+            {"enum": [false, true]},
+            {"minProperties": 0, "properties": {}, "type": "object"},
+            {"items": true, "minItems": 0, "type": "array"},
+            {"minLength": 0, "type": "string"},
+            {"type": "number"}
+        ]))
+}
+
+fn is_codegen_metadata_key(key: &str) -> bool {
+    matches!(
+        key,
+        "$schema"
+            | "$id"
+            | "$anchor"
+            | "$dynamicAnchor"
+            | "$defs"
+            | "definitions"
+            | "title"
+            | JSONCOMPAT_METADATA_KEY
     )
 }
 
@@ -1172,6 +1255,29 @@ fn parse_type_annotation(
             join_pointer(pointer, "type"),
             "type must be a string or an array of strings",
         )),
+    }
+}
+
+fn parse_explicit_scalar_type_annotation(
+    obj: &Map<String, Value>,
+    pointer: &str,
+) -> Result<Option<String>, DataclassError> {
+    let Some(type_value) = obj.get("type") else {
+        return Ok(None);
+    };
+    let is_scalar = |type_name: &str| !matches!(type_name, "array" | "object");
+    match type_value {
+        Value::String(type_name) if is_scalar(type_name) => parse_type_annotation(obj, pointer),
+        Value::Array(type_names)
+            if !type_names.is_empty()
+                && type_names
+                    .iter()
+                    .all(|type_name| type_name.as_str().is_some_and(&is_scalar)) =>
+        {
+            parse_type_annotation(obj, pointer)
+        }
+        Value::String(_) | Value::Array(_) => Ok(None),
+        _ => parse_type_annotation(obj, pointer),
     }
 }
 
@@ -2296,5 +2402,51 @@ mod tests {
 
         assert!(source.contains("class GeneratedSchemaValue(dc.DataclassRootModel):"));
         assert!(source.contains("    root: typing.Any = dc.root_field()"));
+    }
+
+    #[test]
+    fn explicit_scalar_type_bounds_constraint_only_union_branches() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "anyOf": [
+                {"maxLength": 2},
+                {"minLength": 4}
+            ]
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("    root: str = dc.root_field()"));
+        assert!(!source.contains("class GeneratedSchemaBranch"));
+        assert!(!source.contains("typing.Any |"));
+    }
+
+    #[test]
+    fn semantically_unconstrained_root_does_not_emit_primitive_union_wrappers() {
+        for schema in [
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "oneOf": [true, false, false]
+            }),
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "dependencies": {"unused": []}
+            }),
+        ] {
+            let document = SchemaDocument::from_json(&schema).unwrap();
+            let canonical = document.canonical_schema_json().unwrap();
+            let source = generate_dataclass_models_from_document(&document).unwrap();
+
+            assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+            assert!(
+                !source.contains("class GeneratedSchemaBranch"),
+                "canonical={canonical}\n{source}"
+            );
+            assert!(
+                !source.contains("class GeneratedSchemaItem"),
+                "canonical={canonical}\n{source}"
+            );
+        }
     }
 }
