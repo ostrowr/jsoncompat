@@ -45,6 +45,10 @@ python-bench-scale depth="5" fanout="4" iterations="100" repeats="5": _build-pyt
   @echo "[just] benchmarking a large recursive dataclass graph against Pydantic v2 …"
   env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_dataclasses_scaling.py --depth {{depth}} --fanout {{fanout}} --iterations {{iterations}} --repeats {{repeats}}
 
+python-bench-fixtures iterations="200" repeats="5": _build-python-release
+  @echo "[just] benchmarking every generated fixture model against Pydantic v2 …"
+  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_fixture_models.py --iterations {{iterations}} --repeats {{repeats}} --reuse-models
+
 # ---- Basic python smoke test ----
 
 python-demo:

@@ -95,6 +95,27 @@ with the iteration and repeat counts, as positional recipe arguments. The
 underlying script also accepts `--profile` to print cumulative Python profiles
 for checked and trusted JSON deserialization.
 
+To cover the complete checked-in JSON Schema fixture corpus, generate a
+candidate Pydantic v2 peer with the pinned `datamodel-code-generator` version
+and benchmark every pair that passes the equivalence screen:
+
+```bash
+just python-bench-fixtures
+```
+
+This includes every embedded fuzz schema and both sides of every backcompat
+fixture. Generated Pydantic modules and the detailed JSON report are written to
+`target/python-fixture-benchmark`. The report retains explicit entries for
+jsoncompat or Pydantic generation failures, semantic mismatches, and schemas
+without a shared valid value; those cases are never silently removed from the
+denominator. Before timing, generated Pydantic validators are screened against
+the jsoncompat schema validator with every fixture test plus deterministic type
+and property mutations. This prevents ignored JSON Schema keywords from looking
+like performance wins. Pydantic uses one precompiled `TypeAdapter` per generated
+type, as recommended for repeated validation. Shared generated values are
+checked in separately from the generated model artifacts so fresh clones
+benchmark the same values.
+
 ## License
 
 MIT License. See:

@@ -14,7 +14,10 @@ msgpack = ["msgpack>=1.1.1"]
 yaml = ["PyYAML>=6.0.2"]
 
 [dependency-groups]
-benchmark = ["pydantic==2.13.4"]
+benchmark = [
+    "datamodel-code-generator==0.60.0",
+    "pydantic[email]==2.13.4",
+]
 
 [tool.maturin]
 module-name = "jsoncompat._native"
