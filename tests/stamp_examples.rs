@@ -60,8 +60,9 @@ fn stamp_python_example_exercises_generated_model_lifecycle() {
         "canonical Python example failed: {}",
         String::from_utf8_lossy(&demo.stderr)
     );
+    let stdout = String::from_utf8(demo.stdout).unwrap();
     assert_eq!(
-        String::from_utf8(demo.stdout).unwrap(),
+        normalized_newlines(&stdout),
         concat!(
             "JSON: v2 profile: Ada, age 37, interests 3\n",
             "YAML: v2 profile: Ada, age 37, interests 3\n",

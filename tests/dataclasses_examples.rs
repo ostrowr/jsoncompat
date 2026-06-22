@@ -46,8 +46,9 @@ fn plain_schema_python_example_exercises_generated_model_lifecycle() {
         "canonical plain-schema Python example failed: {}",
         String::from_utf8_lossy(&demo.stderr)
     );
+    let stdout = String::from_utf8(demo.stdout).unwrap();
     assert_eq!(
-        String::from_utf8(demo.stdout).unwrap(),
+        normalized_newlines(&stdout),
         concat!(
             "Python value: order-123: 3 units for Ada\n",
             "JSON: order-123: 3 units for Ada\n",
