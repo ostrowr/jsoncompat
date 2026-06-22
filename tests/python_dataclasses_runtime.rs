@@ -512,6 +512,33 @@ assert isinstance(negative_json.root, NegativeObject)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class BooleanTaggedObject(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tag":{"const":true}},"required":["tag"],"additionalProperties":false}'
+
+    tag: Literal[True] = field("tag")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IntegerTaggedObject(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tag":{"const":1}},"required":["tag"],"additionalProperties":false}'
+
+    tag: Literal[1] = field("tag")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ScalarTaggedRoot(DataclassRootModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"anyOf":[{"type":"object","properties":{"tag":{"const":true}},"required":["tag"],"additionalProperties":false},{"type":"object","properties":{"tag":{"const":1}},"required":["tag"],"additionalProperties":false}]}'
+
+    root: BooleanTaggedObject | IntegerTaggedObject = root_field()
+
+
+assert isinstance(ScalarTaggedRoot.from_value({"tag": True}).root, BooleanTaggedObject)
+assert isinstance(ScalarTaggedRoot.from_value({"tag": 1}).root, IntegerTaggedObject)
+assert isinstance(ScalarTaggedRoot.deserialize('{"tag":true}').root, BooleanTaggedObject)
+assert isinstance(ScalarTaggedRoot.deserialize('{"tag":1}').root, IntegerTaggedObject)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class RecursiveNode(DataclassModel):
     __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"node":{"type":"object","properties":{"value":{"type":"integer"},"next":{"anyOf":[{"$ref":"#/$defs/node"},{"type":"null"}]}},"required":["value","next"],"additionalProperties":false}},"$ref":"#/$defs/node"}'
 

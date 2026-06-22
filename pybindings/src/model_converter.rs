@@ -34,7 +34,15 @@ enum ScalarKind {
 
 struct DiscriminatorPlan {
     json_name: String,
-    branches_by_value: HashMap<String, usize>,
+    branches_by_value: HashMap<DiscriminatorKey, usize>,
+}
+
+#[derive(Eq, Hash, PartialEq)]
+enum DiscriminatorKey {
+    Null,
+    Boolean(bool),
+    Integer(i64),
+    String(String),
 }
 
 struct FieldPlan {
@@ -739,7 +747,7 @@ impl ModelConverterPy {
     ) -> PyResult<Py<PyAny>> {
         if let (Some(plan), Ok(object)) = (discriminator, value.cast::<PyDict>())
             && let Some(tag) = object.get_item(&plan.json_name)?
-            && let Ok(tag) = tag.extract::<String>()
+            && let Some(tag) = python_discriminator_key(&tag)
             && let Some(branch) = plan.branches_by_value.get(&tag)
         {
             return self.convert(
@@ -1327,10 +1335,11 @@ impl ModelConverterPy {
         validate_union_branches: bool,
     ) -> PyResult<Py<PyAny>> {
         if let (Some(plan), JiterJsonValue::Object(entries)) = (discriminator, value)
-            && let Some((_, JiterJsonValue::Str(tag))) = entries
+            && let Some((_, tag)) = entries
                 .iter()
                 .find(|(key, _)| key.as_ref() == plan.json_name)
-            && let Some(branch) = plan.branches_by_value.get(tag.as_ref())
+            && let Some(tag) = jiter_discriminator_key(tag)
+            && let Some(branch) = plan.branches_by_value.get(&tag)
         {
             return self.convert_jiter(py, *branch, value, validate_union_branches);
         }
@@ -3133,6 +3142,36 @@ fn scalar_node(kind: ScalarKind) -> ConversionNode {
     }
 }
 
+fn python_discriminator_key(value: &Bound<'_, PyAny>) -> Option<DiscriminatorKey> {
+    if value.is_none() {
+        return Some(DiscriminatorKey::Null);
+    }
+    if value.is_instance_of::<PyBool>() {
+        return value.extract::<bool>().ok().map(DiscriminatorKey::Boolean);
+    }
+    if value.is_instance_of::<PyInt>() {
+        return value.extract::<i64>().ok().map(DiscriminatorKey::Integer);
+    }
+    value
+        .cast::<PyString>()
+        .ok()
+        .and_then(|value| value.to_str().ok())
+        .map(|value| DiscriminatorKey::String(value.to_owned()))
+}
+
+fn jiter_discriminator_key(value: &JiterJsonValue<'_>) -> Option<DiscriminatorKey> {
+    match value {
+        JiterJsonValue::Null => Some(DiscriminatorKey::Null),
+        JiterJsonValue::Bool(value) => Some(DiscriminatorKey::Boolean(*value)),
+        JiterJsonValue::Int(value) => Some(DiscriminatorKey::Integer(*value)),
+        JiterJsonValue::Str(value) => Some(DiscriminatorKey::String(value.as_ref().to_owned())),
+        JiterJsonValue::BigInt(_)
+        | JiterJsonValue::Float(_)
+        | JiterJsonValue::Array(_)
+        | JiterJsonValue::Object(_) => None,
+    }
+}
+
 fn parse_union_node(descriptor: &Bound<'_, PyTuple>) -> PyResult<ConversionNode> {
     let branches = descriptor.get_item(1)?.cast_into::<PyTuple>()?;
     let branches = branches
@@ -3143,10 +3182,22 @@ fn parse_union_node(descriptor: &Bound<'_, PyTuple>) -> PyResult<ConversionNode>
     let discriminator = if discriminator_name.is_none() {
         None
     } else {
-        let mapping = descriptor.get_item(3)?.cast_into::<PyDict>()?;
-        let mut branches_by_value = HashMap::with_capacity(mapping.len());
-        for (value, branch) in mapping {
-            branches_by_value.insert(value.extract::<String>()?, branch.extract::<usize>()?);
+        let entries = descriptor.get_item(3)?.cast_into::<PyTuple>()?;
+        let mut branches_by_value = HashMap::with_capacity(entries.len());
+        for entry in entries {
+            let entry = entry.cast_into::<PyTuple>()?;
+            let value = entry.get_item(0)?;
+            let value = python_discriminator_key(&value).ok_or_else(|| {
+                PyErr::new::<PyTypeError, _>(
+                    "native discriminator values must be null, bool, i64, or str",
+                )
+            })?;
+            let branch = entry.get_item(1)?.extract::<usize>()?;
+            if branches_by_value.insert(value, branch).is_some() {
+                return Err(PyErr::new::<PyValueError, _>(
+                    "native discriminator values must be unique",
+                ));
+            }
         }
         Some(DiscriminatorPlan {
             json_name: discriminator_name.extract()?,

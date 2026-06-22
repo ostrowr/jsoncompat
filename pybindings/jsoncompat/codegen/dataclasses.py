@@ -808,17 +808,24 @@ class _JsoncompatNativePlanBuilder:
         plans = _jsoncompat_discriminator_plans_for(branches)
         if plans:
             plan = plans[0]
-            branches_by_value: dict[str, int] = {}
+            branches_by_value: list[tuple[Any, int]] = []
             for literal_key, branch in plan.branches_by_literal.items():
-                if literal_key[0] != "str" or not isinstance(literal_key[1], str):
+                kind, value = literal_key
+                if kind == "number" and (
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or not -(2**63) <= value < 2**63
+                ):
                     break
-                branches_by_value[literal_key[1]] = self.node_ids[branch]
+                if kind not in {"str", "bool", "number", "null"}:
+                    break
+                branches_by_value.append((value, self.node_ids[branch]))
             else:
                 return (
                     "union",
                     branch_ids,
                     plan.json_name,
-                    branches_by_value,
+                    tuple(branches_by_value),
                 )
 
         object_like_branches = tuple(
