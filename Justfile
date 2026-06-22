@@ -23,11 +23,11 @@ regen-dataclasses-fixtures:
 
 bench:
   @echo "[just] running Rust benchmarks …"
-  cargo bench --workspace --all-features --bench '*' --locked
+  cargo bench --workspace --exclude jsoncompat_py --all-features --bench '*' --locked
 
 bench-check:
   @echo "[just] smoke-checking Rust benchmarks …"
-  cargo bench --workspace --all-features --bench '*' --locked -- --test
+  cargo bench --workspace --exclude jsoncompat_py --all-features --bench '*' --locked -- --test
 
 _build-python-release:
   @echo "[just] building release Python extension for representative timings …"
