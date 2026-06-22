@@ -1029,6 +1029,7 @@ dependencies = [
  "json_schema_ast",
  "json_schema_fuzz",
  "jsoncompat",
+ "jsonschema",
  "pyo3",
  "rand",
  "serde_json",
@@ -1052,8 +1053,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.45.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f29616f6e19415398eb186964fb7cbbeef572c79bede3622a8277667924bbe3"
+source = "git+https://github.com/ostrowr/jsonschema.git?rev=fa69ad5888f3ae61cd63575cdee26eff5ae885b7#fa69ad5888f3ae61cd63575cdee26eff5ae885b7"
 dependencies = [
  "ahash",
  "bytecount",
@@ -1064,9 +1064,12 @@ dependencies = [
  "getrandom 0.3.4",
  "idna",
  "itoa",
+ "jiter",
+ "num-bigint",
  "num-cmp",
  "num-traits",
  "percent-encoding",
+ "pyo3",
  "referencing",
  "regex",
  "regex-syntax",
@@ -1574,8 +1577,7 @@ dependencies = [
 [[package]]
 name = "referencing"
 version = "0.45.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8a618c14f8ba29d8193bb55e2bf13e4fb2b1115313ecb7ae94b43100c7ac7d5"
+source = "git+https://github.com/ostrowr/jsonschema.git?rev=fa69ad5888f3ae61cd63575cdee26eff5ae885b7#fa69ad5888f3ae61cd63575cdee26eff5ae885b7"
 dependencies = [
  "ahash",
  "fluent-uri",

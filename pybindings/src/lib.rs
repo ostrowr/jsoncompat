@@ -5,7 +5,6 @@
 //! strings and report invalid inputs or hard unsupported core-library cases as
 //! `ValueError`.
 
-mod fast_validation;
 mod model_converter;
 
 use std::collections::HashSet;
@@ -17,6 +16,7 @@ use pyo3::types::{PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyStri
 
 use ::jsoncompat::{Role, SchemaDocument, check_compat, validate_compatibility_input};
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
+use jsonschema::InstanceRef as JSONInstanceRef;
 
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
@@ -40,6 +40,24 @@ fn compatibility_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
 fn validate_value_for_schema(schema: &SchemaDocument, instance: &JsonValue) -> PyResult<bool> {
     schema
         .is_valid(instance)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
+}
+
+fn validate_jiter_for_schema(
+    schema: &SchemaDocument,
+    instance: &JiterJsonValue<'_>,
+) -> PyResult<bool> {
+    schema
+        .is_valid_instance(JSONInstanceRef::from_jiter(instance))
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
+}
+
+fn validate_python_for_schema(
+    schema: &SchemaDocument,
+    instance: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
+    schema
+        .is_valid_instance(JSONInstanceRef::from_python(instance))
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Validation failed: {e}")))
 }
 
@@ -211,7 +229,6 @@ fn py_int_to_json_value(
 #[pyclass(name = "Validator", module = "jsoncompat._native", unsendable)]
 struct ValidatorPy {
     schema: SchemaDocument,
-    fast_validation_supported: bool,
 }
 
 #[pyclass(name = "Generator", module = "jsoncompat._native", unsendable)]
@@ -239,12 +256,6 @@ impl ValidatorPy {
 
     /// Check whether a Python JSON-compatible value satisfies this validator's schema.
     fn is_valid_value(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
-        if self.fast_validation_supported
-            && let Some(valid) = fast_validation::is_valid_python(&self.schema, instance)?
-            && valid
-        {
-            return Ok(true);
-        }
         let instance = py_to_json_value(instance)?;
         validate_value_for_schema(&self.schema, &instance)
     }
@@ -256,27 +267,10 @@ impl ValidatorPy {
         instance: &Bound<'_, PyAny>,
         converter: PyRef<'_, ModelConverterPy>,
     ) -> PyResult<Option<Py<PyAny>>> {
-        if self.fast_validation_supported
-            && let Some(valid) = fast_validation::is_valid_python(&self.schema, instance)?
-            && valid
-        {
-            return converter.construct_python(py, instance).map(Some);
+        if !validate_python_for_schema(&self.schema, instance)? {
+            return Ok(None);
         }
-        let (model, json_value) = match converter.construct_with_json(py, instance) {
-            Ok(result) => result,
-            Err(conversion_error) => {
-                let json_value = py_to_json_value(instance)?;
-                if !validate_value_for_schema(&self.schema, &json_value)? {
-                    return Ok(None);
-                }
-                return Err(conversion_error);
-            }
-        };
-        if validate_value_for_schema(&self.schema, &json_value)? {
-            Ok(Some(model))
-        } else {
-            Ok(None)
-        }
+        converter.construct_python(py, instance).map(Some)
     }
 
     /// Parse JSON and construct a generated model without materializing an intermediate dict.
@@ -348,29 +342,10 @@ impl ValidatorPy {
         if !validate {
             return converter.construct_jiter(py, &parsed).map(Some);
         }
-        if self.fast_validation_supported
-            && let Some(valid) = fast_validation::is_valid(&self.schema, &parsed)
-        {
-            if !valid {
-                return Ok(None);
-            }
-            return converter.construct_jiter(py, &parsed).map(Some);
+        if !validate_jiter_for_schema(&self.schema, &parsed)? {
+            return Ok(None);
         }
-        let (model, json_value) = match converter.construct_jiter_with_json(py, &parsed) {
-            Ok(result) => result,
-            Err(conversion_error) => {
-                let json_value = jiter_to_serde_json(&parsed)?;
-                if !validate_value_for_schema(&self.schema, &json_value)? {
-                    return Ok(None);
-                }
-                return Err(conversion_error);
-            }
-        };
-        if validate_value_for_schema(&self.schema, &json_value)? {
-            Ok(Some(model))
-        } else {
-            Ok(None)
-        }
+        converter.construct_jiter(py, &parsed).map(Some)
     }
 }
 
@@ -499,11 +474,7 @@ fn parse_schema(schema_json: &str) -> PyResult<SchemaDocument> {
 
 fn validator_for_schema(schema_json: &str) -> PyResult<ValidatorPy> {
     let schema = parse_schema(schema_json)?;
-    let fast_validation_supported = fast_validation::supports(&schema);
-    Ok(ValidatorPy {
-        schema,
-        fast_validation_supported,
-    })
+    Ok(ValidatorPy { schema })
 }
 
 fn generator_for_schema(schema_json: &str) -> PyResult<GeneratorPy> {

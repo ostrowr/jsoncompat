@@ -207,6 +207,22 @@ assert AnyOrProfileRoot(root=profile).serialize() == (
     '{"name":"Ada","nickname":"ace"}'
 )
 
+cyclic_json_value = []
+cyclic_json_value.append(cyclic_json_value)
+for non_json_value in (
+    object(),
+    {1: "non-string key"},
+    float("nan"),
+    float("inf"),
+    cyclic_json_value,
+):
+    try:
+        AnyOrProfileRoot.from_value(non_json_value)
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError(f"checked construction accepted {non_json_value!r}")
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProfileWriter(WriterDataclassModel):

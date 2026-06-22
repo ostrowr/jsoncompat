@@ -21,6 +21,7 @@ rand = "0.10.0"
 jsoncompat = { path = ".." }
 json_schema_ast = { path = "../schema" }
 json_schema_fuzz = { path = "../fuzz" }
+jsonschema = { git = "https://github.com/ostrowr/jsonschema.git", rev = "fa69ad5888f3ae61cd63575cdee26eff5ae885b7", default-features = false, features = ["jiter", "python"] }
 
 [features]
 default = []
