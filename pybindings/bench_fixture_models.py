@@ -1366,15 +1366,24 @@ def main() -> None:
                     case.case_id,
                     "jsoncompat_e2e",
                 )
-                if expected_runtime_error is not None:
-                    raise AssertionError(
-                        "runtime-unsupported manifest is stale: model imported successfully"
-                    )
                 jsoncompat_e2e_model = model_from_module(
                     jsoncompat_e2e_module,
                     "JSONCOMPAT_MODEL",
                 )
-                if unsatisfiable_fixture is not None:
+                if expected_runtime_error is not None:
+                    if not case.fixture_candidates:
+                        raise AssertionError(
+                            "runtime-unsupported fixture has no value with which to "
+                            "verify its checked conversion error"
+                        )
+                    jsoncompat_e2e_model.deserialize(
+                        canonical_json(case.fixture_candidates[0])
+                    )
+                    raise AssertionError(
+                        "runtime-unsupported manifest is stale: checked conversion "
+                        "succeeded"
+                    )
+                elif unsatisfiable_fixture is not None:
                     record["jsoncompat_end_to_end_status"] = "unsatisfiable"
                     record["jsoncompat_end_to_end_error"] = unsatisfiable_fixture[
                         "reason"
