@@ -127,12 +127,14 @@ for format in SerializationFormat:
     assert Profile.deserialize(encoded, format=format).to_value() == value
 
 assert isinstance(profile.tags, dc.FrozenList)
+assert gc.is_tracked(profile.tags)
 assert is_dataclass(profile.attributes)
 assert isinstance(profile.attributes.__jsoncompat_extra__, dc.FrozenDict)
 assert isinstance(
     profile.attributes.__jsoncompat_extra__["scores"],
     dc.FrozenList,
 )
+assert gc.is_tracked(profile.attributes.__jsoncompat_extra__["scores"])
 assert isinstance(profile.__jsoncompat_extra__, dc.FrozenDict)
 for mutation in (
     lambda: setattr(profile, "name", "Grace"),
@@ -171,6 +173,24 @@ if hasattr(sys, "getrefcount"):
     assert sys.getrefcount(stored_value) == value_refs - 1, (
         value_refs,
         sys.getrefcount(stored_value),
+    )
+
+    lifetime_item = "".join(("jsoncompat", "-native-list-item"))
+    lifetime_profile = Profile.from_value(
+        {
+            "name": "Ada",
+            "tags": [lifetime_item],
+            "attributes": {},
+        },
+        skip_validation=True,
+    )
+    stored_item = lifetime_profile.tags[0]
+    item_refs = sys.getrefcount(stored_item)
+    del lifetime_profile
+    gc.collect()
+    assert sys.getrefcount(stored_item) == item_refs - 1, (
+        item_refs,
+        sys.getrefcount(stored_item),
     )
 
 try:
