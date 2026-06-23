@@ -133,27 +133,3 @@ class UserProfileWriter(dc.WriterDataclassModel):
     data: UserProfileV2 = dc.field("data")
 
 JSONCOMPAT_MODEL = UserProfileWriter
-
-dc.bind_generated_models((
-    (
-        UserProfileV2,
-        "object",
-        (
-            ("age", "age", int, False),
-            ("interests", "interests", int, False),
-            ("name", "name", str, False),
-        ),
-        True,
-        typing.Any,
-    ),
-    (
-        UserProfileWriter,
-        "object",
-        (
-            ("version", "version", typing.Literal[2], False),
-            ("data", "data", UserProfileV2, False),
-        ),
-        False,
-        None,
-    ),
-))

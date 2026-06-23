@@ -87,18 +87,3 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (GeneratedSchemaBranch2Foo2, "root", typing.Any),
-    (
-        GeneratedSchemaBranch2,
-        "object",
-        (
-            ("foo2", "foo2", GeneratedSchemaBranch2Foo2, True),
-        ),
-        False,
-        None,
-    ),
-    (GeneratedSchemaItem, "root", typing.Any),
-    (GeneratedSchema, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None)),
-))

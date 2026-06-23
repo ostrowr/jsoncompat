@@ -261,7 +261,6 @@ struct ModelPlanPy {
 
 #[pyclass(name = "ModelRuntime", module = "jsoncompat._native", unsendable)]
 struct ModelRuntimePy {
-    schema: Rc<SchemaDocument>,
     plan_owner: Option<Py<ModelPlanPy>>,
     plan: Weak<ModelConverterPlan>,
     root: usize,
@@ -359,8 +358,12 @@ impl ModelRuntimePy {
         skip_validation: bool,
     ) -> PyResult<Py<PyAny>> {
         let converter = self.converter()?;
-        let converted =
-            construct_model_kwargs(&self.schema, py, kwargs, &converter, !skip_validation)?;
+        let schema = if skip_validation {
+            None
+        } else {
+            Some(converter.schema()?)
+        };
+        let converted = construct_model_kwargs(schema, py, kwargs, &converter)?;
         self.require_valid(py, converted)
     }
 
@@ -374,8 +377,12 @@ impl ModelRuntimePy {
         skip_validation: bool,
     ) -> PyResult<Py<PyAny>> {
         let converter = self.converter()?;
-        let converted =
-            construct_model_value(&self.schema, py, value, &converter, !skip_validation)?;
+        let schema = if skip_validation {
+            None
+        } else {
+            Some(converter.schema()?)
+        };
+        let converted = construct_model_value(schema, py, value, &converter)?;
         self.require_valid(py, converted)
     }
 
@@ -388,22 +395,15 @@ impl ModelRuntimePy {
         skip_validation: bool,
     ) -> PyResult<Py<PyAny>> {
         let converter = self.converter()?;
+        let schema = if skip_validation {
+            None
+        } else {
+            Some(converter.schema()?)
+        };
         let converted = if let Ok(text) = payload.cast::<PyString>() {
-            construct_model_json_bytes(
-                &self.schema,
-                py,
-                text.to_str()?.as_bytes(),
-                &converter,
-                !skip_validation,
-            )?
+            construct_model_json_bytes(schema, py, text.to_str()?.as_bytes(), &converter)?
         } else if let Ok(bytes) = payload.cast::<PyBytes>() {
-            construct_model_json_bytes(
-                &self.schema,
-                py,
-                bytes.as_bytes(),
-                &converter,
-                !skip_validation,
-            )?
+            construct_model_json_bytes(schema, py, bytes.as_bytes(), &converter)?
         } else {
             return Err(PyErr::new::<PyTypeError, _>(
                 "JSON payloads must be str or bytes",
@@ -423,7 +423,12 @@ impl ModelRuntimePy {
         self.ensure_model_instance(py, instance)?;
         let converter = self.converter()?;
         let validate = !skip_validation && !model_is_validated(instance);
-        let (is_valid, value) = model_to_value(&self.schema, py, instance, &converter, validate)?;
+        let schema = if validate {
+            Some(converter.schema()?)
+        } else {
+            None
+        };
+        let (is_valid, value) = model_to_value(schema, py, instance, &converter)?;
         if !is_valid {
             return self.require_valid(py, None);
         }
@@ -444,7 +449,12 @@ impl ModelRuntimePy {
         self.ensure_model_instance(py, instance)?;
         let converter = self.converter()?;
         let validate = !skip_validation && !model_is_validated(instance);
-        let serialized = serialize_model(&self.schema, py, instance, &converter, validate)?;
+        let schema = if validate {
+            Some(converter.schema()?)
+        } else {
+            None
+        };
+        let serialized = serialize_model(schema, py, instance, &converter)?;
         let Some(serialized) = serialized else {
             return self.require_valid(py, None);
         };
@@ -513,15 +523,14 @@ fn model_is_validated(instance: &Bound<'_, PyAny>) -> bool {
 }
 
 fn construct_model_value(
-    schema: &SchemaDocument,
+    schema: Option<&SchemaDocument>,
     py: Python<'_>,
     instance: &Bound<'_, PyAny>,
     converter: &ModelConverterPy,
-    validate: bool,
 ) -> PyResult<Option<Py<PyAny>>> {
-    if !validate {
+    let Some(schema) = schema else {
         return converter.construct(py, instance, false).map(Some);
-    }
+    };
     let is_valid = schema
         .is_valid_instance(JSONInstanceRef::from_python(instance))
         .map_err(validation_error)?;
@@ -532,16 +541,15 @@ fn construct_model_value(
 }
 
 fn construct_model_kwargs(
-    schema: &SchemaDocument,
+    schema: Option<&SchemaDocument>,
     py: Python<'_>,
     kwargs: &Bound<'_, PyDict>,
     converter: &ModelConverterPy,
-    validate: bool,
 ) -> PyResult<Option<Py<PyAny>>> {
     let (converted, json_proven) = converter.construct_kwargs_unvalidated(py, kwargs)?;
-    if !validate {
+    let Some(schema) = schema else {
         return converter.finalize(py, converted, false).map(Some);
-    }
+    };
     let projection = converter.projection();
     let projected = projection.instance(converted.bind(py));
     let is_valid = if json_proven {
@@ -557,16 +565,15 @@ fn construct_model_kwargs(
 }
 
 fn model_to_value(
-    schema: &SchemaDocument,
+    schema: Option<&SchemaDocument>,
     py: Python<'_>,
     instance: &Bound<'_, PyAny>,
     converter: &ModelConverterPy,
-    validate: bool,
 ) -> PyResult<(bool, Py<PyAny>)> {
     let value = converter.to_python_value(py, instance)?;
-    if !validate {
+    let Some(schema) = schema else {
         return Ok((true, value));
-    }
+    };
     let projection = converter.projection();
     let projected = projection.instance(instance);
     let is_valid = schema
@@ -576,18 +583,17 @@ fn model_to_value(
 }
 
 fn serialize_model(
-    schema: &SchemaDocument,
+    schema: Option<&SchemaDocument>,
     py: Python<'_>,
     instance: &Bound<'_, PyAny>,
     converter: &ModelConverterPy,
-    validate: bool,
 ) -> PyResult<Option<String>> {
     // Serialize first so structural JSON errors take precedence over schema
     // errors and the checked and trusted paths share one native writer.
     let serialized = converter.serialize_to_json_string(py, instance)?;
-    if !validate {
+    let Some(schema) = schema else {
         return Ok(Some(serialized));
-    }
+    };
     let projection = converter.projection();
     let projected = projection.instance(instance);
     let is_valid = schema
@@ -597,17 +603,16 @@ fn serialize_model(
 }
 
 fn construct_model_json_bytes(
-    schema: &SchemaDocument,
+    schema: Option<&SchemaDocument>,
     py: Python<'_>,
     payload: &[u8],
     converter: &ModelConverterPy,
-    validate: bool,
 ) -> PyResult<Option<Py<PyAny>>> {
     let parsed =
         JiterJsonValue::parse(payload, false).map_err(|error| map_json_error(payload, &error))?;
-    if !validate {
+    let Some(schema) = schema else {
         return converter.construct_jiter(py, &parsed, false).map(Some);
-    }
+    };
     // Jiter has already enforced JSON scalar syntax and finite numbers; the
     // model converter that immediately follows rejects duplicate keys at every
     // object node. Avoid repeating those shape checks here.
@@ -907,15 +912,10 @@ fn compile_model_runtimes_py(
         }
         let model_type = model_root.get_item(0)?.cast_into::<PyType>()?;
         let root = model_root.get_item(1)?.extract::<usize>()?;
-        let schema_json = model_type
-            .getattr("__jsoncompat_schema__")?
-            .extract::<String>()?;
-        let schema = Rc::new(parse_schema(&schema_json)?);
         model_converter_for_root(py, Rc::clone(&plan), &model_type, root)?;
         runtimes.push(Py::new(
             py,
             ModelRuntimePy {
-                schema,
                 plan_owner: Some(plan_owner.clone_ref(py)),
                 plan: plan_weak.clone(),
                 root,

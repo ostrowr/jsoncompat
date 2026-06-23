@@ -139,18 +139,3 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: GeneratedSchemaTree = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchemaTreeBranch1,
-        "object",
-        (
-            ("left", "left", GeneratedSchemaTree, False),
-            ("right", "right", GeneratedSchemaTree, False),
-        ),
-        False,
-        None,
-    ),
-    (GeneratedSchemaTree, "root", (GeneratedSchemaTreeBranch1 | None)),
-    (GeneratedSchema, "root", GeneratedSchemaTree),
-))

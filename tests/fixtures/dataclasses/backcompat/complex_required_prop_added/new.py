@@ -63,27 +63,3 @@ class GeneratedSchema(dc.DataclassModel):
     name: str = dc.field("name")
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchemaConfig,
-        "object",
-        (
-            ("enable", "enable", (typing.Literal[False] | typing.Literal[True]), False),
-        ),
-        False,
-        None,
-    ),
-    (
-        GeneratedSchema,
-        "object",
-        (
-            ("config", "config", GeneratedSchemaConfig, True),
-            ("description", "description", str, False),
-            ("id", "id", str, False),
-            ("name", "name", str, False),
-        ),
-        False,
-        None,
-    ),
-))

@@ -32,16 +32,3 @@ class GeneratedSchema(dc.DataclassModel):
     value: int = dc.field("value")
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchema,
-        "object",
-        (
-            ("children", "children", collections.abc.Sequence[GeneratedSchema], True),
-            ("value", "value", int, False),
-        ),
-        False,
-        None,
-    ),
-))

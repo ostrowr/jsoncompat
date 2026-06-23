@@ -55,24 +55,3 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchemaFoo,
-        "object",
-        (
-            ("bar", "bar", str, True),
-        ),
-        True,
-        typing.Any,
-    ),
-    (
-        GeneratedSchema,
-        "object",
-        (
-            ("foo", "foo", GeneratedSchemaFoo, True),
-        ),
-        True,
-        typing.Any,
-    ),
-))

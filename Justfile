@@ -59,6 +59,13 @@ _python-bench-runtime iterations repeats profile: _verify-dataclass-fixtures
   @cat "target/python-benchmark/runtime-{{profile}}.txt"
 
 [private]
+_python-bench-startup repeats profile: _verify-dataclass-fixtures
+  @echo "[just] benchmarking cold generated-model startup against Pydantic v2 …"
+  @mkdir -p target/python-benchmark
+  {{python_bench_command}} pybindings/bench_dataclasses_startup.py --repeats {{repeats}} > "target/python-benchmark/startup-{{profile}}.txt"
+  @cat "target/python-benchmark/startup-{{profile}}.txt"
+
+[private]
 _python-bench-scale depth fanout iterations repeats profile: _verify-dataclass-fixtures
   @echo "[just] benchmarking a large recursive dataclass graph against Pydantic v2 …"
   @mkdir -p target/python-benchmark
@@ -85,20 +92,23 @@ _python-bench-fixtures-limited iterations repeats limit profile: _verify-datacla
 # Benchmark the representative small generated-model graph.
 python-bench iterations="10000" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-runtime iterations repeats "manual")
 
+# Benchmark fresh-interpreter import and first-use costs.
+python-bench-startup repeats="25": _build-python-release (_python-bench-provenance "startup") (_python-bench-startup repeats "startup")
+
 # Benchmark the recursive graph at a caller-selected size.
 python-bench-scale depth="5" fanout="4" iterations="100" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-scale depth fanout iterations repeats "manual")
 
 # Benchmark JSON -> generated dataclass -> JSON for every supported fixture and compare semantically equivalent Pydantic peers.
 python-bench-fixtures iterations="200" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-fixtures iterations repeats "manual")
 
-# Quickly smoke-test all three Python benchmark surfaces; fixture E2E timings and ratios cover the first 50 schemas.
-python-bench-quick: _build-python-release (_python-bench-provenance "quick") (_python-bench-runtime "2000" "3" "quick") (_python-bench-scale "4" "3" "25" "3" "quick") (_python-bench-fixtures-limited "25" "3" "50" "quick")
+# Quickly smoke-test all four Python benchmark surfaces; fixture E2E timings and ratios cover the first 50 schemas.
+python-bench-quick: _build-python-release (_python-bench-provenance "quick") (_python-bench-startup "10" "quick") (_python-bench-runtime "2000" "3" "quick") (_python-bench-scale "4" "3" "25" "3" "quick") (_python-bench-fixtures-limited "25" "3" "50" "quick")
 
 # Run the standard repeatable suite, including every fixture E2E round trip and semantically equivalent Pydantic comparison.
-python-bench-standard: _build-python-release (_python-bench-provenance "standard") (_python-bench-runtime "10000" "5" "standard") (_python-bench-scale "5" "4" "100" "5" "standard") (_python-bench-fixtures "200" "5" "standard")
+python-bench-standard: _build-python-release (_python-bench-provenance "standard") (_python-bench-startup "25" "standard") (_python-bench-runtime "10000" "5" "standard") (_python-bench-scale "5" "4" "100" "5" "standard") (_python-bench-fixtures "200" "5" "standard")
 
 # Run a high-sample suite over every fixture E2E round trip, with Pydantic comparisons, for release performance reports.
-python-bench-full: _build-python-release (_python-bench-provenance "full") (_python-bench-runtime "50000" "10" "full") (_python-bench-scale "6" "4" "100" "10" "full") (_python-bench-fixtures "1000" "10" "full")
+python-bench-full: _build-python-release (_python-bench-provenance "full") (_python-bench-startup "100" "full") (_python-bench-runtime "50000" "10" "full") (_python-bench-scale "6" "4" "100" "10" "full") (_python-bench-fixtures "1000" "10" "full")
 
 # Profile checked and trusted deserialization on the standard recursive graph.
 python-bench-profile depth="5" fanout="4" iterations="100" repeats="5": _build-python-release (_python-bench-provenance "profile") (_python-bench-scale-profile depth fanout iterations repeats "standard")

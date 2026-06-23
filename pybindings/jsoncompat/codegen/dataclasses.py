@@ -53,6 +53,11 @@ JSONCOMPAT_RUNTIME_FIELD = "__jsoncompat_runtime__"
 JSONCOMPAT_VALIDATED_FIELD = "_jsoncompat_validated"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
+JSONCOMPAT_FIELD_KIND_METADATA = "jsoncompat_field_kind"
+_JSONCOMPAT_PROPERTY_FIELD = "property"
+_JSONCOMPAT_EXTRA_FIELD = "extra"
+_JSONCOMPAT_ROOT_FIELD = "root"
+_JSONCOMPAT_UNSET = object()
 JSONCOMPAT_ADDITIONAL_T = TypeVar("JSONCOMPAT_ADDITIONAL_T")
 _DATACLASS_MODEL_T = TypeVar("_DATACLASS_MODEL_T", bound="DataclassModel")
 
@@ -164,6 +169,7 @@ class _DataclassModelMeta(type):
 
 def field(json_name: str, *, omittable: bool = False) -> Any:
     metadata = {
+        JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
         JSONCOMPAT_JSON_NAME_METADATA: json_name,
         JSONCOMPAT_MISSING_METADATA: omittable,
     }
@@ -173,7 +179,11 @@ def field(json_name: str, *, omittable: bool = False) -> Any:
 
 
 def extra_field() -> Any:
-    return dataclasses.field(default_factory=_empty_extra, repr=False)
+    return dataclasses.field(
+        default_factory=_empty_extra,
+        metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_EXTRA_FIELD},
+        repr=False,
+    )
 
 
 def _empty_extra() -> dict[str, Any]:
@@ -181,7 +191,9 @@ def _empty_extra() -> dict[str, Any]:
 
 
 def root_field() -> Any:
-    return dataclasses.field()
+    return dataclasses.field(
+        metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_ROOT_FIELD}
+    )
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -409,10 +421,37 @@ class _NativePlanUnsupported(Exception):
     pass
 
 
-def bind_generated_models(raw_specs: tuple[tuple[Any, ...], ...]) -> None:
-    """Compile and atomically bind every generated class in one module."""
+def _bind_generated_module(requested_type: type[DataclassModel]) -> None:
+    """Compile every generated dataclass in a module on first use."""
 
-    specs = _decode_generated_specs(raw_specs)
+    _validate_generated_model_class(requested_type)
+    generated_init = requested_type.__dict__.get("__init__")
+    namespace = getattr(generated_init, "__globals__", None)
+    if not isinstance(namespace, dict):
+        raise TypeError(
+            f"cannot initialize {requested_type.__name__}: its generated module "
+            "namespace is unavailable"
+        )
+    namespace = cast(dict[str, object], namespace)
+    model_types = tuple(
+        dict.fromkeys(
+            candidate
+            for candidate in namespace.values()
+            if isinstance(candidate, type)
+            and issubclass(candidate, DataclassModel)
+            and candidate.__module__ == requested_type.__module__
+        )
+    )
+    if requested_type not in model_types:
+        raise TypeError(
+            f"{requested_type.__name__} is not defined by its declared module "
+            f"{requested_type.__module__!r}"
+        )
+
+    specs = {
+        model_type: _inspect_generated_model(model_type, namespace)
+        for model_type in model_types
+    }
     builder = _NativePlanBuilder(specs)
     try:
         model_roots = [(model_type, builder.add(model_type)) for model_type in specs]
@@ -434,81 +473,108 @@ def bind_generated_models(raw_specs: tuple[tuple[Any, ...], ...]) -> None:
         setattr(model_type, JSONCOMPAT_RUNTIME_FIELD, runtime)
 
 
-def _decode_generated_specs(
-    raw_specs: tuple[tuple[Any, ...], ...],
-) -> dict[type[DataclassModel], _ModelSpec]:
-    specs: dict[type[DataclassModel], _ModelSpec] = {}
-    for raw_spec in raw_specs:
-        if len(raw_spec) < 3:
-            raise TypeError(f"invalid generated model spec: {raw_spec!r}")
-        model_type, kind, *payload = raw_spec
-        if not isinstance(model_type, type) or not issubclass(
-            model_type, DataclassModel
-        ):
-            raise TypeError(
-                "generated model specs must start with a DataclassModel type"
-            )
-        if model_type in specs:
-            raise TypeError(f"duplicate generated model spec for {model_type.__name__}")
-        _validate_generated_model_class(model_type)
-        _schema_for(model_type)
+def _inspect_generated_model(
+    model_type: type[DataclassModel],
+    namespace: dict[str, Any],
+) -> _ModelSpec:
+    _validate_generated_model_class(model_type)
+    _schema_for(model_type)
+    try:
+        annotations = inspect.get_annotations(
+            model_type,
+            globals=namespace,
+            locals=namespace,
+            eval_str=True,
+        )
+    except (NameError, TypeError) as error:
+        raise TypeError(
+            f"cannot resolve generated annotations for {model_type.__name__}: {error}"
+        ) from error
 
-        if kind == "object" and len(payload) == 3:
-            raw_fields, has_extra, extra_annotation = payload
-            if not isinstance(has_extra, bool):
-                raise TypeError("generated extra-properties marker must be bool")
-            if not has_extra and extra_annotation is not None:
-                raise TypeError(
-                    "closed generated objects cannot declare an extra-properties annotation"
-                )
-            fields: list[_FieldSpec] = []
-            json_names: set[str] = set()
-            py_names: set[str] = set()
-            for raw_field in raw_fields:
-                if len(raw_field) != 4:
-                    raise TypeError(
-                        f"invalid generated field spec for {model_type.__name__}: "
-                        f"{raw_field!r}"
-                    )
-                json_name, py_name, annotation, omittable = raw_field
-                if not isinstance(json_name, str) or not isinstance(py_name, str):
-                    raise TypeError("generated field names must be strings")
-                if not isinstance(omittable, bool):
-                    raise TypeError("generated field omittable marker must be bool")
-                if json_name in json_names or py_name in py_names:
-                    raise TypeError(
-                        f"duplicate field in generated model {model_type.__name__}"
-                    )
-                json_names.add(json_name)
-                py_names.add(py_name)
-                fields.append(_FieldSpec(json_name, py_name, annotation, omittable))
-            specs[model_type] = _ObjectSpec(
-                tuple(fields),
-                has_extra,
-                extra_annotation,
+    fields: list[_FieldSpec] = []
+    json_names: set[str] = set()
+    extra_annotation: Any = _JSONCOMPAT_UNSET
+    root_annotation: Any = _JSONCOMPAT_UNSET
+    for dataclass_field in dataclasses.fields(model_type):
+        if dataclass_field.name not in annotations:
+            raise TypeError(
+                f"generated field {model_type.__name__}.{dataclass_field.name} "
+                "has no resolvable annotation"
             )
-            expected_fields: set[str] = set(py_names)
-            if has_extra:
-                expected_fields.add(JSONCOMPAT_EXTRA_FIELD)
-            actual_fields = {field.name for field in dataclasses.fields(model_type)}
-            if actual_fields != expected_fields:
+        annotation = annotations[dataclass_field.name]
+        field_kind = dataclass_field.metadata.get(JSONCOMPAT_FIELD_KIND_METADATA)
+        if field_kind == _JSONCOMPAT_PROPERTY_FIELD:
+            json_name = dataclass_field.metadata.get(JSONCOMPAT_JSON_NAME_METADATA)
+            omittable = dataclass_field.metadata.get(JSONCOMPAT_MISSING_METADATA)
+            if not isinstance(json_name, str) or not isinstance(omittable, bool):
                 raise TypeError(
-                    f"generated model spec for {model_type.__name__} does not match "
-                    f"its dataclass fields"
+                    f"generated field {model_type.__name__}.{dataclass_field.name} "
+                    "has invalid JSON metadata"
                 )
-        elif kind == "root" and len(payload) == 1:
-            specs[model_type] = _RootSpec(payload[0])
-            if {field.name for field in dataclasses.fields(model_type)} != {"root"}:
+            if json_name in json_names:
                 raise TypeError(
-                    f"generated root spec for {model_type.__name__} does not match "
-                    f"its dataclass fields"
+                    f"duplicate JSON field {json_name!r} in {model_type.__name__}"
                 )
+            json_names.add(json_name)
+            if omittable:
+                annotation_origin = get_origin(annotation)
+                annotation_args = get_args(annotation)
+                if annotation_origin is not Omittable or len(annotation_args) != 1:
+                    raise TypeError(
+                        f"generated omittable field {model_type.__name__}."
+                        f"{dataclass_field.name} must use dc.Omittable"
+                    )
+                annotation = annotation_args[0]
+            fields.append(
+                _FieldSpec(
+                    json_name,
+                    dataclass_field.name,
+                    annotation,
+                    omittable,
+                )
+            )
+        elif field_kind == _JSONCOMPAT_EXTRA_FIELD:
+            if dataclass_field.name != JSONCOMPAT_EXTRA_FIELD:
+                raise TypeError(
+                    f"generated extra-properties field must be named "
+                    f"{JSONCOMPAT_EXTRA_FIELD}"
+                )
+            if extra_annotation is not _JSONCOMPAT_UNSET:
+                raise TypeError(
+                    f"duplicate generated extra-properties field in {model_type.__name__}"
+                )
+            origin = get_origin(annotation)
+            key_annotation, extra_annotation = _dict_annotations(annotation)
+            if origin not in {dict, Mapping} or key_annotation is not str:
+                raise TypeError(
+                    f"{model_type.__name__}.{JSONCOMPAT_EXTRA_FIELD} must be a "
+                    "mapping with string keys"
+                )
+        elif field_kind == _JSONCOMPAT_ROOT_FIELD:
+            if dataclass_field.name != "root":
+                raise TypeError("generated root field must be named root")
+            if root_annotation is not _JSONCOMPAT_UNSET:
+                raise TypeError(
+                    f"duplicate generated root field in {model_type.__name__}"
+                )
+            root_annotation = annotation
         else:
             raise TypeError(
-                f"invalid generated model kind or payload for {model_type.__name__}: "
-                f"{kind!r}"
+                f"{model_type.__name__}.{dataclass_field.name} is not a "
+                "jsoncompat-generated field"
             )
-    return specs
+
+    if root_annotation is not _JSONCOMPAT_UNSET:
+        if fields or extra_annotation is not _JSONCOMPAT_UNSET:
+            raise TypeError(
+                f"generated root model {model_type.__name__} cannot declare object fields"
+            )
+        return _RootSpec(root_annotation)
+    return _ObjectSpec(
+        tuple(fields),
+        extra_annotation is not _JSONCOMPAT_UNSET,
+        None if extra_annotation is _JSONCOMPAT_UNSET else extra_annotation,
+    )
 
 
 def _validate_generated_model_class(model_type: type[DataclassModel]) -> None:
@@ -706,8 +772,11 @@ def _schema_for(model_type: type[DataclassModel]) -> str:
 def _jsoncompat_runtime_for(model_type: type[DataclassModel]) -> ModelRuntime:
     runtime = model_type.__dict__.get(JSONCOMPAT_RUNTIME_FIELD)
     if runtime is None:
-        raise TypeError(
-            f"{model_type.__name__} is not a bound jsoncompat-generated dataclass"
+        _bind_generated_module(model_type)
+        runtime = model_type.__dict__.get(JSONCOMPAT_RUNTIME_FIELD)
+    if runtime is None:
+        raise RuntimeError(
+            f"failed to initialize generated model {model_type.__name__}"
         )
     return cast(ModelRuntime, runtime)
 

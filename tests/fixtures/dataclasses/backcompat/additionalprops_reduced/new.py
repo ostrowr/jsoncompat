@@ -15,14 +15,3 @@ class GeneratedSchema(dc.DataclassModel):
     pass
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchema,
-        "object",
-        (
-        ),
-        False,
-        None,
-    ),
-))

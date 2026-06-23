@@ -65,21 +65,6 @@ struct ClassSpec {
     kind: ClassKind,
 }
 
-#[derive(Debug, Clone)]
-struct NativeModelSpec {
-    name: String,
-    kind: ClassKind,
-}
-
-impl From<&ClassSpec> for NativeModelSpec {
-    fn from(class_spec: &ClassSpec) -> Self {
-        Self {
-            name: class_spec.name.clone(),
-            kind: class_spec.kind.clone(),
-        }
-    }
-}
-
 #[derive(Debug)]
 struct DataclassModuleBuilder<'a> {
     classes: Vec<ClassSpec>,
@@ -815,11 +800,6 @@ fn render_dataclass_module(
 
     let mut output = String::new();
 
-    let mut native_model_specs = builder
-        .classes
-        .iter()
-        .map(NativeModelSpec::from)
-        .collect::<Vec<_>>();
     for class_spec in &builder.classes {
         render_class_spec(&mut output, class_spec);
         output.push('\n');
@@ -828,25 +808,25 @@ fn render_dataclass_module(
     if let Some(metadata) = &root_metadata {
         match metadata {
             JsoncompatMetadata::Writer { .. } => {
-                native_model_specs.push(render_writer_class(
+                render_writer_class(
                     &mut output,
                     expect_schema_object(schema, "#")?,
                     expect_schema_object(validation_schema, "#")?,
-                )?);
+                )?;
                 output.push('\n');
             }
             JsoncompatMetadata::Reader { .. } => {
-                native_model_specs.extend(render_reader_variants(
+                render_reader_variants(
                     &mut output,
                     expect_schema_object(schema, "#")?,
                     expect_schema_object(validation_schema, "#")?,
-                )?);
+                )?;
                 output.push('\n');
-                native_model_specs.push(render_reader_root_class(
+                render_reader_root_class(
                     &mut output,
                     expect_schema_object(schema, "#")?,
                     expect_schema_object(validation_schema, "#")?,
-                )?);
+                )?;
                 output.push('\n');
             }
             JsoncompatMetadata::Declaration { .. } => {}
@@ -855,8 +835,6 @@ fn render_dataclass_module(
     }
 
     writeln!(&mut output, "JSONCOMPAT_MODEL = {root_name}").expect("writing to String cannot fail");
-    output.push('\n');
-    render_native_model_bindings(&mut output, &native_model_specs);
 
     let collections_import = if output.contains("collections.abc.") {
         "import collections.abc\n"
@@ -942,55 +920,11 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
     }
 }
 
-fn render_native_model_bindings(output: &mut String, model_specs: &[NativeModelSpec]) {
-    output.push_str("dc.bind_generated_models((\n");
-    for model_spec in model_specs {
-        match &model_spec.kind {
-            ClassKind::Object {
-                fields,
-                extra_annotation,
-            } => {
-                writeln!(output, "    (").expect("writing to String cannot fail");
-                writeln!(output, "        {},", model_spec.name)
-                    .expect("writing to String cannot fail");
-                output.push_str("        \"object\",\n");
-                output.push_str("        (\n");
-                for field in fields {
-                    writeln!(
-                        output,
-                        "            ({}, {}, {}, {}),",
-                        python_string_literal(&field.json_name),
-                        python_string_literal(&field.py_name),
-                        field.annotation,
-                        if field.required { "False" } else { "True" },
-                    )
-                    .expect("writing to String cannot fail");
-                }
-                output.push_str("        ),\n");
-                match extra_annotation {
-                    Some(annotation) => {
-                        output.push_str("        True,\n");
-                        writeln!(output, "        {annotation},")
-                            .expect("writing to String cannot fail");
-                    }
-                    None => output.push_str("        False,\n        None,\n"),
-                }
-                output.push_str("    ),\n");
-            }
-            ClassKind::Root { annotation } => {
-                writeln!(output, "    ({}, \"root\", {annotation}),", model_spec.name,)
-                    .expect("writing to String cannot fail");
-            }
-        }
-    }
-    output.push_str("))\n");
-}
-
 fn render_writer_class(
     output: &mut String,
     writer: &Map<String, Value>,
     validation_writer: &Map<String, Value>,
-) -> Result<NativeModelSpec, DataclassError> {
+) -> Result<(), DataclassError> {
     let metadata = parse_metadata(writer, "#")?;
     let JsoncompatMetadata::Writer {
         name,
@@ -1034,39 +968,19 @@ fn render_writer_class(
         DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
-    Ok(NativeModelSpec {
-        name,
-        kind: ClassKind::Object {
-            fields: vec![
-                FieldSpec {
-                    json_name: "version".to_owned(),
-                    py_name: "version".to_owned(),
-                    annotation: format!("{}[{version}]", typing_symbol("Literal")),
-                    required: true,
-                },
-                FieldSpec {
-                    json_name: "data".to_owned(),
-                    py_name: "data".to_owned(),
-                    annotation: payload_type,
-                    required: true,
-                },
-            ],
-            extra_annotation: None,
-        },
-    })
+    Ok(())
 }
 
 fn render_reader_variants(
     output: &mut String,
     reader: &Map<String, Value>,
     validation_reader: &Map<String, Value>,
-) -> Result<Vec<NativeModelSpec>, DataclassError> {
+) -> Result<(), DataclassError> {
     let branches = reader
         .get("oneOf")
         .and_then(Value::as_array)
         .ok_or_else(|| invalid_schema("#/oneOf".to_owned(), "oneOf must be an array"))?;
 
-    let mut native_model_specs = Vec::with_capacity(branches.len());
     for (index, branch) in branches.iter().enumerate() {
         let pointer = format!("#/oneOf/{index}");
         let branch = expect_schema_object(branch, &pointer)?;
@@ -1123,29 +1037,9 @@ fn render_reader_variants(
             DATACLASSES_RUNTIME_MODULE,
         )
         .expect("writing to String cannot fail");
-        native_model_specs.push(NativeModelSpec {
-            name,
-            kind: ClassKind::Object {
-                fields: vec![
-                    FieldSpec {
-                        json_name: "version".to_owned(),
-                        py_name: "version".to_owned(),
-                        annotation: format!("{}[{version}]", typing_symbol("Literal")),
-                        required: true,
-                    },
-                    FieldSpec {
-                        json_name: "data".to_owned(),
-                        py_name: "data".to_owned(),
-                        annotation: payload_type,
-                        required: true,
-                    },
-                ],
-                extra_annotation: None,
-            },
-        });
     }
 
-    Ok(native_model_specs)
+    Ok(())
 }
 
 fn reserve_reader_variant_class_names(
@@ -1209,7 +1103,7 @@ fn render_reader_root_class(
     output: &mut String,
     reader: &Map<String, Value>,
     validation_reader: &Map<String, Value>,
-) -> Result<NativeModelSpec, DataclassError> {
+) -> Result<(), DataclassError> {
     let metadata = parse_metadata(reader, "#")?;
     let JsoncompatMetadata::Reader { name, .. } = metadata else {
         return Err(invalid_schema(
@@ -1254,10 +1148,7 @@ fn render_reader_root_class(
         annotation, DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
-    Ok(NativeModelSpec {
-        name,
-        kind: ClassKind::Root { annotation },
-    })
+    Ok(())
 }
 
 fn emit_nested_defs(
@@ -2336,23 +2227,12 @@ mod tests {
         assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
         assert!(!source.contains("import collections.abc"));
-        assert!(source.contains(
-            r#"dc.bind_generated_models((
-    (
-        UserProfile,
-        "object",
-        (
-            ("name", "name", str, False),
-        ),
-        False,
-        None,
-    ),
-))"#
-        ));
+        assert!(!source.contains("bind_generated_models"));
+        assert!(source.ends_with("JSONCOMPAT_MODEL = UserProfile\n"));
     }
 
     #[test]
-    fn generated_binding_specs_include_runtime_optional_and_extra_types() {
+    fn generated_fields_encode_optional_and_extra_types_without_a_manifest() {
         let schema = json!({
             "title": "labels",
             "type": "object",
@@ -2364,17 +2244,16 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains(r#"("count", "count", int, True)"#));
+        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[str]):"));
+        assert!(source.contains("count: dc.Omittable[int] = dc.field(\"count\", omittable=True)"));
         assert!(source.contains(
-            r#"        True,
-        str,
-    ),
-))"#
+            "__jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field()"
         ));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]
-    fn generated_binding_specs_distinguish_null_extras_from_no_extras() {
+    fn generated_fields_distinguish_null_extras_from_no_extras() {
         let schema = json!({
             "title": "null extras",
             "type": "object",
@@ -2383,13 +2262,11 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
+        assert!(source.contains("class NullExtras(dc.DataclassAdditionalModel[None]):"));
         assert!(source.contains(
-            r#"        (
-        ),
-        True,
-        None,
-    ),"#
+            "__jsoncompat_extra__: collections.abc.Mapping[str, None] = dc.extra_field()"
         ));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]
@@ -2408,7 +2285,7 @@ mod tests {
 
         assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
         assert!(!source.contains("class GeneratedSchemaBranch"));
-        assert!(source.contains(r#"(GeneratedSchema, "root", dc.JsonValue)"#));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]
@@ -2429,7 +2306,7 @@ mod tests {
 
         assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
         assert!(!source.contains("class GeneratedSchemaBranch"));
-        assert!(source.contains(r#"(GeneratedSchema, "root", dc.JsonValue)"#));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]
@@ -2455,7 +2332,7 @@ mod tests {
 
         assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
         assert!(!source.contains("class GeneratedSchemaBranch"));
-        assert!(source.contains(r#"(GeneratedSchema, "root", dc.JsonValue)"#));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]
@@ -2602,35 +2479,22 @@ mod tests {
         assert!(source.contains("class UserProfileV1(dc.DataclassModel):"));
         assert!(source.contains("class UserProfileWriter(dc.WriterDataclassModel):"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfileWriter"));
-        assert!(source.contains(
-            r#"        UserProfileWriter,
-        "object",
-        (
-            ("version", "version", typing.Literal[1], False),
-            ("data", "data", UserProfileV1, False),
-        ),
-        False,
-        None,"#
-        ));
+        assert!(source.contains("version: typing.Literal[1] = dc.field(\"version\")"));
+        assert!(source.contains("data: UserProfileV1 = dc.field(\"data\")"));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]
-    fn generate_dataclass_models_emits_reader_binding_specs() {
+    fn generate_dataclass_models_emits_reader_classes_without_a_manifest() {
         let schema = reader_schema(&["UserProfileV1Reader"]);
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains(
-            r#"        UserProfileV1Reader,
-        "object",
-        (
-            ("version", "version", typing.Literal[1], False),
-            ("data", "data", UserProfileV1, False),
-        ),
-        False,
-        None,"#
-        ));
-        assert!(source.contains(r#"    (UserProfileReader, "root", UserProfileV1Reader),"#));
+        assert!(source.contains("class UserProfileV1Reader(dc.ReaderDataclassModel):"));
+        assert!(source.contains("data: UserProfileV1 = dc.field(\"data\")"));
+        assert!(source.contains("class UserProfileReader(dc.ReaderDataclassRootModel):"));
+        assert!(source.contains("root: UserProfileV1Reader = dc.root_field()"));
+        assert!(!source.contains("bind_generated_models"));
     }
 
     #[test]

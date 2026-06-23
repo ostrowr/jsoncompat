@@ -80,10 +80,3 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: GeneratedSchemaC = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (GeneratedSchemaA, "root", int),
-    (GeneratedSchemaB, "root", int),
-    (GeneratedSchemaC, "root", GeneratedSchemaB),
-    (GeneratedSchema, "root", GeneratedSchemaC),
-))

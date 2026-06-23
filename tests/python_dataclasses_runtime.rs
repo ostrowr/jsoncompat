@@ -244,7 +244,7 @@ for unbound in (
     try:
         unbound()
     except TypeError as error:
-        assert "not a bound jsoncompat-generated dataclass" in str(error)
+        assert "must be an unmodified generated frozen dataclass" in str(error)
     else:
         raise AssertionError("an unbound custom subclass used generated runtime state")
 "###,
@@ -266,7 +266,7 @@ for unbound in (
 }
 
 #[test]
-fn generated_module_compiles_one_shared_plan_for_every_recursive_model_root() {
+fn generated_module_lazily_compiles_one_shared_plan_for_every_recursive_model_root() {
     let source = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "#/$defs/a",
@@ -330,6 +330,12 @@ try:
     assert spec.loader is not None
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    assert compile_calls == []
+    del sys.modules[spec.name]
+    module.GeneratedSchema.from_value(
+        {"next": {"next": None}},
+        skip_validation=True,
+    )
 finally:
     dc.compile_model_runtimes = native_compile
 
@@ -365,6 +371,61 @@ for model_type, value in cases:
     assert!(
         output.status.success(),
         "shared recursive conversion plan test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn trusted_generated_model_use_does_not_compile_its_schema() {
+    let source = generate_dataclass_models(&json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://test.json-schema.org/lazy-schema/root",
+        "title": "LazySchema",
+        "type": "array",
+        "items": { "$dynamicRef": "#items" },
+        "$defs": {
+            "foo": {
+                "$dynamicAnchor": "items",
+                "type": "string"
+            }
+        }
+    }))
+    .expect("generate a schema unsupported by the runtime validator");
+    let module_path = write_temp_module("lazy_schema", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+
+spec = importlib.util.spec_from_file_location("lazy_schema_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model_type = module.JSONCOMPAT_MODEL
+assert "__jsoncompat_runtime__" not in model_type.__dict__
+trusted = model_type.from_value(["first", "second"], skip_validation=True)
+assert trusted.to_value(skip_validation=True) == ["first", "second"]
+
+try:
+    model_type.from_value(["first", "second"])
+except ValueError as error:
+    assert "unsupported reference" in str(error)
+else:
+    raise AssertionError("checked use did not compile the unsupported schema")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run lazy generated schema compilation test");
+    assert!(
+        output.status.success(),
+        "lazy generated schema compilation test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -422,6 +483,10 @@ def import_weakrefs(index):
     assert spec.loader is not None
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+    module.JSONCOMPAT_MODEL.from_value(
+        {"payload": {"name": "Ada"}, "history": []},
+        skip_validation=True,
+    )
     classes = tuple(dict.fromkeys(
         value
         for value in vars(module).values()

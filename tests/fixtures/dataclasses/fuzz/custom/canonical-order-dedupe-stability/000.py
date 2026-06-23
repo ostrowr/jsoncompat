@@ -21,7 +21,3 @@ class ColorEnum(dc.DataclassRootModel):
     root: (typing.Literal["blue"] | typing.Literal["red"]) = dc.root_field()
 
 JSONCOMPAT_MODEL = ColorEnum
-
-dc.bind_generated_models((
-    (ColorEnum, "root", (typing.Literal["blue"] | typing.Literal["red"])),
-))

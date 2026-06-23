@@ -66,25 +66,3 @@ class GeneratedSchema(dc.DataclassModel):
     servers: collections.abc.Sequence[GeneratedSchemaItem] = dc.field("servers")
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchemaItem,
-        "object",
-        (
-            ("host", "host", str, False),
-            ("port", "port", int, False),
-        ),
-        False,
-        None,
-    ),
-    (
-        GeneratedSchema,
-        "object",
-        (
-            ("servers", "servers", collections.abc.Sequence[GeneratedSchemaItem], False),
-        ),
-        False,
-        None,
-    ),
-))

@@ -35,16 +35,3 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: (GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (GeneratedSchemaItem, "root", typing.Any),
-    (
-        GeneratedSchemaBranch2,
-        "object",
-        (
-        ),
-        True,
-        typing.Any,
-    ),
-    (GeneratedSchema, "root", (GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | None)),
-))

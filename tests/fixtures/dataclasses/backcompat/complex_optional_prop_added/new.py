@@ -79,29 +79,3 @@ class GeneratedSchema(dc.DataclassModel):
     tags: dc.Omittable[collections.abc.Sequence[str]] = dc.field("tags", omittable=True)
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchemaNested,
-        "object",
-        (
-            ("count", "count", int, True),
-            ("flag", "flag", (typing.Literal[False] | typing.Literal[True]), False),
-        ),
-        False,
-        None,
-    ),
-    (
-        GeneratedSchema,
-        "object",
-        (
-            ("description", "description", str, True),
-            ("id", "id", str, False),
-            ("name", "name", str, False),
-            ("nested", "nested", GeneratedSchemaNested, True),
-            ("tags", "tags", collections.abc.Sequence[str], True),
-        ),
-        False,
-        None,
-    ),
-))

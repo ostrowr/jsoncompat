@@ -39,17 +39,3 @@ class GeneratedSchema(dc.DataclassModel):
     name: dc.Omittable[str] = dc.field("name", omittable=True)
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (
-        GeneratedSchema,
-        "object",
-        (
-            ("email", "email", str, False),
-            ("kind", "kind", typing.Literal["user"], False),
-            ("name", "name", str, True),
-        ),
-        False,
-        None,
-    ),
-))

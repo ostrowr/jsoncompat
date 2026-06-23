@@ -57,10 +57,13 @@ check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
 
 Only classes emitted by `jsoncompat codegen --target dataclasses` implement
-this runtime contract. Generated modules compile and bind their native model
-plans at import time; there is no custom-subclass or Python-constructor
-fallback. Custom construction hooks and Python defaults/default factories are
-therefore intentionally outside the model-definition surface.
+this runtime contract. Generated modules contain only dataclass declarations;
+the first constructor or conversion call derives and caches one shared native
+plan from their field metadata. Checked use then compiles the relevant JSON
+Schema validator once, while `skip_validation=True` leaves it uncompiled. There
+is no custom-subclass or Python-constructor fallback. Custom construction hooks
+and Python defaults/default factories are therefore intentionally outside the
+model-definition surface.
 
 Generated array and object fields accept ordinary lists and dictionaries at
 construction boundaries, then store them as deeply immutable values exposed as
@@ -93,6 +96,18 @@ The benchmark pins Pydantic v2 and compares the same valid nested payload using
 strict, frozen Pydantic models. Pydantic's dump methods do not revalidate the
 model, so their closest jsoncompat comparison is the `skip_validation=True`
 serialization path.
+
+To measure fresh-interpreter startup separately from steady-state conversion,
+including generated-module import, first trusted use, first checked use, and an
+equivalent Pydantic v2 graph:
+
+```bash
+just python-bench-startup
+```
+
+Each sample runs in a new Python process and reports both absolute time and the
+increment over an empty process. Results are written under
+`target/python-benchmark` alongside the other repeatable benchmark profiles.
 
 For a larger workload, benchmark a balanced recursive graph containing
 discriminated unions, lists, mappings, and omitted fields:

@@ -75,21 +75,23 @@ struct BranchSchema {
 }
 
 impl BranchSchema {
-    fn is_valid_instance(&self, instance: JsonInstanceRef<'_>) -> PyResult<bool> {
-        let schema = if let Some(schema) = self.compiled.get() {
-            schema
-        } else {
+    fn compiled(&self) -> PyResult<&SchemaDocument> {
+        if self.compiled.get().is_none() {
             let compiled = super::validated_schema(&self.raw).map_err(|error| {
-                PyErr::new::<PyValueError, _>(format!("generated model schema is invalid: {error}"))
+                PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
             })?;
             self.compiled.set(compiled).map_err(|_| {
                 PyErr::new::<PyValueError, _>("generated model schema initialized recursively")
             })?;
-            self.compiled
-                .get()
-                .expect("branch schema was initialized immediately above")
-        };
-        schema
+        }
+        Ok(self
+            .compiled
+            .get()
+            .expect("branch schema was initialized immediately above"))
+    }
+
+    fn is_valid_instance(&self, instance: JsonInstanceRef<'_>) -> PyResult<bool> {
+        self.compiled()?
             .is_valid_instance(instance)
             .map_err(super::validation_error)
     }
@@ -241,6 +243,19 @@ pub(crate) fn model_converter_for_validated_root(
 }
 
 impl ModelConverterPy {
+    pub(crate) fn schema(&self) -> PyResult<&SchemaDocument> {
+        match self.nodes.get(self.root) {
+            Some(ConversionNode::Model { branch_schema, .. })
+            | Some(ConversionNode::Root { branch_schema, .. }) => branch_schema.compiled(),
+            Some(_) => Err(PyErr::new::<PyTypeError, _>(
+                "model converter root must be a generated model",
+            )),
+            None => Err(PyErr::new::<PyIndexError, _>(
+                "model converter root node is out of bounds",
+            )),
+        }
+    }
+
     pub(crate) fn projection(&self) -> ModelProjection<'_> {
         ModelProjection {
             converter: self,

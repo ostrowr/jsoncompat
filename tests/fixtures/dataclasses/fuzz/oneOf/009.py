@@ -93,31 +93,3 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | collections.abc.Sequence[GeneratedSchemaItem2] | float | str | None)) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
-
-dc.bind_generated_models((
-    (GeneratedSchemaBranch2Bar, "root", typing.Any),
-    (GeneratedSchemaBranch2Baz, "root", typing.Any),
-    (
-        GeneratedSchemaBranch2,
-        "object",
-        (
-            ("bar", "bar", GeneratedSchemaBranch2Bar, False),
-            ("baz", "baz", GeneratedSchemaBranch2Baz, True),
-        ),
-        True,
-        typing.Any,
-    ),
-    (GeneratedSchemaItem, "root", typing.Any),
-    (GeneratedSchemaBranch22Foo, "root", typing.Any),
-    (
-        GeneratedSchemaBranch22,
-        "object",
-        (
-            ("foo", "foo", GeneratedSchemaBranch22Foo, False),
-        ),
-        True,
-        typing.Any,
-    ),
-    (GeneratedSchemaItem2, "root", typing.Any),
-    (GeneratedSchema, "root", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | collections.abc.Sequence[GeneratedSchemaItem2] | float | str | None))),
-))
