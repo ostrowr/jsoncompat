@@ -126,6 +126,7 @@ enum ConversionNode {
     },
     Model {
         model_type: Py<PyType>,
+        validated_slot_offset: Option<isize>,
         branch_schema: BranchSchema,
         prevalidated_schema: Option<serde_json::Value>,
         fields: Vec<FieldPlan>,
@@ -140,6 +141,7 @@ enum ConversionNode {
     },
     Root {
         model_type: Py<PyType>,
+        validated_slot_offset: Option<isize>,
         branch_schema: BranchSchema,
         prevalidated_schema: Option<serde_json::Value>,
         value: usize,
@@ -311,6 +313,7 @@ impl ModelConverterPy {
                 fields_by_py_name,
                 extra_value,
                 extra_py_name,
+                extra_slot_offset,
                 ..
             } => self
                 .convert_model_kwargs(
@@ -321,6 +324,7 @@ impl ModelConverterPy {
                     fields_by_py_name,
                     *extra_value,
                     extra_py_name.as_ref(),
+                    *extra_slot_offset,
                     kwargs,
                     &mut json_proven,
                 )
@@ -329,6 +333,7 @@ impl ModelConverterPy {
                 model_type,
                 value,
                 root_py_name,
+                root_slot_offset,
                 ..
             } => self
                 .convert_root_kwargs(
@@ -336,6 +341,7 @@ impl ModelConverterPy {
                     model_type,
                     *value,
                     root_py_name,
+                    *root_slot_offset,
                     kwargs,
                     &mut json_proven,
                 )
@@ -373,8 +379,37 @@ impl ModelConverterPy {
         instance: Py<PyAny>,
         validated: bool,
     ) -> PyResult<Py<PyAny>> {
+        let (model_type, validated_slot_offset) = match self.nodes.get(self.root) {
+            Some(ConversionNode::Model {
+                model_type,
+                validated_slot_offset,
+                ..
+            })
+            | Some(ConversionNode::Root {
+                model_type,
+                validated_slot_offset,
+                ..
+            }) => (model_type, *validated_slot_offset),
+            Some(_) => {
+                return Err(PyErr::new::<PyTypeError, _>(
+                    "model converter root must be a generated model",
+                ));
+            }
+            None => {
+                return Err(PyErr::new::<PyIndexError, _>(
+                    "model converter root node is out of bounds",
+                ));
+            }
+        };
         let validated = PyBool::new(py, validated).to_owned().into_any().unbind();
-        set_model_attribute(py, instance.bind(py), &self.validated_py_name, &validated)?;
+        set_model_attribute(
+            py,
+            instance.bind(py),
+            model_type,
+            &self.validated_py_name,
+            validated_slot_offset,
+            &validated,
+        )?;
         Ok(instance)
     }
 
@@ -457,6 +492,7 @@ impl ModelConverterPy {
                 fields_by_json_name,
                 extra_value,
                 extra_py_name,
+                extra_slot_offset,
                 ..
             } => self.convert_model(
                 py,
@@ -465,6 +501,7 @@ impl ModelConverterPy {
                 fields_by_json_name,
                 *extra_value,
                 extra_py_name.as_ref(),
+                *extra_slot_offset,
                 value,
                 state,
                 remaining_depth,
@@ -473,11 +510,19 @@ impl ModelConverterPy {
                 model_type,
                 value: value_node,
                 root_py_name,
+                root_slot_offset,
                 ..
             } => {
                 let converted = self.convert(py, *value_node, value, state, remaining_depth - 1)?;
                 let instance = allocate_model(py, model_type, &self.object_new)?;
-                set_model_attribute(py, &instance, root_py_name, &converted)?;
+                set_model_attribute(
+                    py,
+                    &instance,
+                    model_type,
+                    root_py_name,
+                    *root_slot_offset,
+                    &converted,
+                )?;
                 Ok(instance.unbind())
             }
         }
@@ -665,12 +710,12 @@ impl ModelConverterPy {
         // invoking Python-level `FrozenDict.__init__`.
         let frozen_items = PyTuple::new(py, items.iter())?.into_any().unbind();
         let instance = allocate_model(py, &self.frozen_dict_type, &self.object_new)?;
-        // GenericSetAttr delegates the write to the generated FrozenDict slot
-        // descriptor and preserves normal slot ownership/refcount behavior.
         set_model_attribute(
             py,
             &instance,
+            &self.frozen_dict_type,
             &self.frozen_dict_items_py_name,
+            self.frozen_dict_items_slot_offset,
             &frozen_items,
         )?;
         Ok(instance.unbind())
@@ -1203,6 +1248,7 @@ impl ModelConverterPy {
         fields_by_json_name: &HashMap<String, usize>,
         extra_value: Option<usize>,
         extra_py_name: Option<&Py<PyString>>,
+        extra_slot_offset: Option<isize>,
         value: &Bound<'_, PyAny>,
         state: &mut PythonConversionState,
         remaining_depth: u16,
@@ -1223,7 +1269,14 @@ impl ModelConverterPy {
                 let field = &fields[*field_index];
                 let converted =
                     self.convert(py, field.value_node, &item, state, remaining_depth - 1)?;
-                set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                set_model_attribute(
+                    py,
+                    &instance,
+                    model_type,
+                    &field.py_name,
+                    field.slot_offset,
+                    &converted,
+                )?;
                 present_fields += 1;
             } else if let (Some(extra_node), Some(output)) = (extra_value, extra_output.as_ref()) {
                 let converted = self.convert(py, extra_node, &item, state, remaining_depth - 1)?;
@@ -1245,7 +1298,14 @@ impl ModelConverterPy {
                     field.slot_offset,
                 )? {
                     let converted = self.convert_missing_field_value(py, field)?;
-                    set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                    set_model_attribute(
+                        py,
+                        &instance,
+                        model_type,
+                        &field.py_name,
+                        field.slot_offset,
+                        &converted,
+                    )?;
                 }
             }
         }
@@ -1256,17 +1316,19 @@ impl ModelConverterPy {
             .transpose()?;
 
         if let (Some(name), Some(extra)) = (extra_py_name, extra.as_ref()) {
-            set_model_attribute(py, &instance, name, extra)?;
+            set_model_attribute(py, &instance, model_type, name, extra_slot_offset, extra)?;
         }
         Ok(instance.unbind())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn convert_root_kwargs(
         &self,
         py: Python<'_>,
         model_type: &Py<PyType>,
         value_node: usize,
         root_py_name: &Py<PyString>,
+        root_slot_offset: Option<isize>,
         kwargs: &Bound<'_, PyDict>,
         json_proven: &mut bool,
     ) -> PyResult<Py<PyAny>> {
@@ -1293,7 +1355,14 @@ impl ModelConverterPy {
         let converted =
             self.convert_direct(py, value_node, &raw, MAX_MODEL_DEPTH - 1, json_proven)?;
         let instance = allocate_model(py, model_type, &self.object_new)?;
-        set_model_attribute(py, &instance, root_py_name, &converted)?;
+        set_model_attribute(
+            py,
+            &instance,
+            model_type,
+            root_py_name,
+            root_slot_offset,
+            &converted,
+        )?;
         Ok(instance.unbind())
     }
 
@@ -1307,6 +1376,7 @@ impl ModelConverterPy {
         fields_by_py_name: &HashMap<String, usize>,
         extra_value: Option<usize>,
         extra_py_name: Option<&Py<PyString>>,
+        extra_slot_offset: Option<isize>,
         kwargs: &Bound<'_, PyDict>,
         json_proven: &mut bool,
     ) -> PyResult<Py<PyAny>> {
@@ -1336,7 +1406,14 @@ impl ModelConverterPy {
                 MAX_MODEL_DEPTH - 1,
                 json_proven,
             )?;
-            set_model_attribute(py, &instance, &field.py_name, &converted)?;
+            set_model_attribute(
+                py,
+                &instance,
+                model_type,
+                &field.py_name,
+                field.slot_offset,
+                &converted,
+            )?;
             present_fields += 1;
         }
 
@@ -1350,7 +1427,14 @@ impl ModelConverterPy {
                     field.slot_offset,
                 )? {
                     let converted = self.convert_missing_field_value(py, field)?;
-                    set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                    set_model_attribute(
+                        py,
+                        &instance,
+                        model_type,
+                        &field.py_name,
+                        field.slot_offset,
+                        &converted,
+                    )?;
                 }
             }
         }
@@ -1384,7 +1468,14 @@ impl ModelConverterPy {
                 }
             }
             let extra = self.freeze_dict(py, &output)?;
-            set_model_attribute(py, &instance, extra_name, &extra)?;
+            set_model_attribute(
+                py,
+                &instance,
+                model_type,
+                extra_name,
+                extra_slot_offset,
+                &extra,
+            )?;
         }
 
         Ok(instance.unbind())
@@ -1460,6 +1551,7 @@ impl ModelConverterPy {
                 fields_by_json_name,
                 extra_value,
                 extra_py_name,
+                extra_slot_offset,
                 ..
             } => self.convert_jiter_model_value(
                 py,
@@ -1468,6 +1560,7 @@ impl ModelConverterPy {
                 fields_by_json_name,
                 *extra_value,
                 extra_py_name.as_ref(),
+                *extra_slot_offset,
                 value,
                 state,
             ),
@@ -1475,11 +1568,19 @@ impl ModelConverterPy {
                 model_type,
                 value: value_node,
                 root_py_name,
+                root_slot_offset,
                 ..
             } => {
                 let converted = self.convert_jiter(py, *value_node, value, state)?;
                 let instance = allocate_model(py, model_type, &self.object_new)?;
-                set_model_attribute(py, &instance, root_py_name, &converted)?;
+                set_model_attribute(
+                    py,
+                    &instance,
+                    model_type,
+                    root_py_name,
+                    *root_slot_offset,
+                    &converted,
+                )?;
                 Ok(instance.unbind())
             }
         }
@@ -1570,6 +1671,7 @@ impl ModelConverterPy {
         fields_by_json_name: &HashMap<String, usize>,
         extra_value: Option<usize>,
         extra_py_name: Option<&Py<PyString>>,
+        extra_slot_offset: Option<isize>,
         value: &JiterJsonValue<'_>,
         state: &mut JiterConversionState,
     ) -> PyResult<Py<PyAny>> {
@@ -1594,7 +1696,14 @@ impl ModelConverterPy {
                     return Err(duplicate_key(key));
                 }
                 let converted = self.convert_jiter(py, field.value_node, item, state)?;
-                set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                set_model_attribute(
+                    py,
+                    &instance,
+                    model_type,
+                    &field.py_name,
+                    field.slot_offset,
+                    &converted,
+                )?;
                 present_fields += 1;
             } else if let (Some(extra_node), Some(output)) = (extra_value, extra_output.as_ref()) {
                 if output.contains(key_string)? {
@@ -1622,12 +1731,19 @@ impl ModelConverterPy {
                     field.slot_offset,
                 )? {
                     let converted = self.convert_missing_field_value(py, field)?;
-                    set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                    set_model_attribute(
+                        py,
+                        &instance,
+                        model_type,
+                        &field.py_name,
+                        field.slot_offset,
+                        &converted,
+                    )?;
                 }
             }
         }
         if let (Some(name), Some(extra)) = (extra_py_name, extra.as_ref()) {
-            set_model_attribute(py, &instance, name, extra)?;
+            set_model_attribute(py, &instance, model_type, name, extra_slot_offset, extra)?;
         }
         Ok(instance.unbind())
     }
@@ -3286,18 +3402,53 @@ fn allocate_model<'py>(
     model_type: &Py<PyType>,
     object_new: &Py<PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
+    #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
+    {
+        let model_type = model_type.bind(py).as_ptr().cast::<ffi::PyTypeObject>();
+        // SAFETY: generated model types are validated heap types. Calling
+        // their allocator is the allocation step performed by
+        // `object.__new__(model_type)`, without its Python call overhead.
+        if let Some(allocate) = unsafe { (*model_type).tp_alloc } {
+            let instance = unsafe { allocate(model_type, 0) };
+            return unsafe { Bound::from_owned_ptr_or_err(py, instance) };
+        }
+    }
     object_new.bind(py).call1((model_type.bind(py),))
 }
 
 fn set_model_attribute(
     py: Python<'_>,
     instance: &Bound<'_, PyAny>,
+    model_type: &Py<PyType>,
     name: &Py<PyString>,
+    slot_offset: Option<isize>,
     value: &Py<PyAny>,
 ) -> PyResult<()> {
+    if let Some(slot_offset) = slot_offset {
+        let object = instance.as_ptr();
+        // SAFETY: the exact-type check ties this descriptor-derived offset to
+        // the allocated object layout. The new slot reference is retained
+        // before replacing and releasing any previous owned reference.
+        if unsafe { ffi::Py_TYPE(object) } == model_type.bind(py).as_ptr().cast() {
+            let slot = unsafe {
+                object
+                    .cast::<u8>()
+                    .offset(slot_offset)
+                    .cast::<*mut ffi::PyObject>()
+            };
+            let value = value.bind(py).as_ptr();
+            unsafe {
+                ffi::Py_INCREF(value);
+                let previous = std::ptr::replace(slot, value);
+                ffi::Py_XDECREF(previous);
+            }
+            return Ok(());
+        }
+    }
+
     // Frozen dataclasses intentionally reject `PyObject_SetAttr`; calling the
-    // generic implementation is equivalent to `object.__setattr__` and writes
-    // the generated slot descriptor during construction.
+    // generic implementation is the portable fallback for runtimes without
+    // descriptor-derived slot offsets.
     let result = unsafe {
         ffi::PyObject_GenericSetAttr(
             instance.as_ptr(),
@@ -3377,7 +3528,7 @@ pub(crate) fn model_converter_for_root(
     Ok(ModelConverterPy { plan, root })
 }
 
-#[cfg(all(Py_3_11, not(any(PyPy, GraalPy))))]
+#[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
 fn python_slot_offset(model_type: &Bound<'_, PyType>, name: &str) -> Option<isize> {
     let descriptor = model_type.getattr(name).ok()?;
     // SAFETY: exact member descriptors use the public CPython
@@ -3403,7 +3554,7 @@ fn python_slot_offset(model_type: &Bound<'_, PyType>, name: &str) -> Option<isiz
     }
 }
 
-#[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy)))))]
+#[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
 fn python_slot_offset(_model_type: &Bound<'_, PyType>, _name: &str) -> Option<isize> {
     None
 }
@@ -3455,11 +3606,14 @@ fn parse_node(py: Python<'_>, descriptor: &Bound<'_, PyAny>) -> PyResult<Convers
         "root" => {
             let model_type = descriptor.get_item(1)?.cast_into::<PyType>()?.unbind();
             let root_slot_offset = python_slot_offset(model_type.bind(py), "root");
+            let validated_slot_offset =
+                python_slot_offset(model_type.bind(py), "_jsoncompat_validated");
             let (prevalidated_schema, branch_schema) = schemas_for_model(model_type.bind(py))?;
             Ok(ConversionNode::Root {
                 branch_schema,
                 prevalidated_schema,
                 model_type,
+                validated_slot_offset,
                 value: descriptor.get_item(2)?.extract()?,
                 root_py_name: PyString::new(py, "root").unbind(),
                 root_slot_offset,
@@ -3593,8 +3747,10 @@ fn parse_model_node(py: Python<'_>, descriptor: &Bound<'_, PyTuple>) -> PyResult
     let extra_slot_offset = extra_py_name
         .as_ref()
         .and_then(|_| python_slot_offset(&model_type, "__jsoncompat_extra__"));
+    let validated_slot_offset = python_slot_offset(&model_type, "_jsoncompat_validated");
     Ok(ConversionNode::Model {
         model_type: model_type.unbind(),
+        validated_slot_offset,
         branch_schema,
         prevalidated_schema,
         fields,
