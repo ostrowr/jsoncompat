@@ -1176,50 +1176,50 @@ impl ModelConverterPy {
         let input = value
             .cast::<PyDict>()
             .map_err(|_| expected_type("JSON object", value).unwrap())?;
-        if extra_value.is_none() {
-            for key in input.keys() {
-                let key = key.extract::<String>().map_err(|_| {
-                    PyErr::new::<PyTypeError, _>("JSON object keys must be strings")
-                })?;
-                if !fields_by_json_name.contains_key(&key) {
-                    return Err(PyErr::new::<PyTypeError, _>(format!(
-                        "generated model cannot represent property {key:?}"
-                    )));
-                }
-            }
-        }
         let instance = allocate_model(py, model_type, &self.object_new)?;
-        for field in fields {
-            let converted = if let Some(field_value) = input.get_item(&field.json_name)? {
-                self.convert(
-                    py,
-                    field.value_node,
-                    &field_value,
-                    state,
-                    remaining_depth - 1,
-                )?
+        let extra_output = extra_value.map(|_| PyDict::new(py));
+        let mut present_fields = 0;
+
+        for (key, item) in input {
+            let key = key
+                .cast::<PyString>()
+                .map_err(|_| PyErr::new::<PyTypeError, _>("JSON object keys must be strings"))?;
+            let key_string = key.to_str()?;
+            if let Some(field_index) = fields_by_json_name.get(key_string) {
+                let field = &fields[*field_index];
+                let converted =
+                    self.convert(py, field.value_node, &item, state, remaining_depth - 1)?;
+                set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                present_fields += 1;
+            } else if let (Some(extra_node), Some(output)) = (extra_value, extra_output.as_ref()) {
+                let converted = self.convert(py, extra_node, &item, state, remaining_depth - 1)?;
+                output.set_item(key_string, converted)?;
             } else {
-                self.convert_missing_field_value(py, field)?
-            };
-            set_model_attribute(py, &instance, &field.py_name, &converted)?;
+                return Err(PyErr::new::<PyTypeError, _>(format!(
+                    "generated model cannot represent property {key_string:?}"
+                )));
+            }
         }
 
-        let extra = if let Some(extra_node) = extra_value {
-            let output = PyDict::new(py);
-            for (key, item) in input {
-                let key_string = key.extract::<String>().map_err(|_| {
-                    PyErr::new::<PyTypeError, _>("JSON object keys must be strings")
-                })?;
-                if !fields_by_json_name.contains_key(&key_string) {
-                    let converted =
-                        self.convert(py, extra_node, &item, state, remaining_depth - 1)?;
-                    output.set_item(key_string, converted)?;
+        if present_fields != fields.len() {
+            for field in fields {
+                if !model_attribute_is_set(
+                    py,
+                    &instance,
+                    model_type,
+                    &field.py_name,
+                    field.slot_offset,
+                )? {
+                    let converted = self.convert_missing_field_value(py, field)?;
+                    set_model_attribute(py, &instance, &field.py_name, &converted)?;
                 }
             }
-            Some(self.freeze_dict(py, &output)?)
-        } else {
-            None
-        };
+        }
+
+        let extra = extra_output
+            .as_ref()
+            .map(|output| self.freeze_dict(py, output))
+            .transpose()?;
 
         if let (Some(name), Some(extra)) = (extra_py_name, extra.as_ref()) {
             set_model_attribute(py, &instance, name, extra)?;
