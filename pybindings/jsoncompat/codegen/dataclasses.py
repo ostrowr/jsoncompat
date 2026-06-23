@@ -1872,6 +1872,14 @@ def _jsoncompat_finalize_native_model(
     validated: bool,
 ) -> DataclassModel:
     _jsoncompat_freeze_model_instance(model)
+    if validated:
+        _jsoncompat_validate_model_instance(model)
+        if _jsoncompat_schema_for(type(model)) is not None:
+            value = model.jsoncompat_to_value_unchecked()
+            if not _jsoncompat_validator_for(type(model))._is_valid_borrowed_value(value):
+                raise ValueError(
+                    f"{type(model).__name__} instance does not satisfy its JSON Schema"
+                )
     object.__setattr__(model, JSONCOMPAT_VALIDATED_FIELD, validated)
     return model
 

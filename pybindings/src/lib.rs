@@ -298,7 +298,7 @@ impl ValidatorPy {
         instance: &Bound<'_, PyAny>,
         converter: PyRef<'_, ModelConverterPy>,
     ) -> PyResult<Option<Py<PyAny>>> {
-        let converted = match converter.construct_python_unvalidated(py, instance) {
+        let (converted, json_proven) = match converter.construct_python_unvalidated(py, instance) {
             Ok(converted) => converted,
             Err(conversion_error) => {
                 if !self.validate_instance(JSONInstanceRef::from_python(instance))? {
@@ -309,7 +309,11 @@ impl ValidatorPy {
         };
         let projection = converter.projection();
         let projected = projection.instance(converted.bind(py));
-        let is_valid = self.validate_instance_assuming_json(projected)?;
+        let is_valid = if json_proven {
+            self.validate_instance_assuming_json(projected)
+        } else {
+            self.validate_instance(projected)
+        }?;
         if !is_valid {
             return Ok(None);
         }
@@ -524,7 +528,22 @@ fn construct_model_json_bytes(
     if !is_valid {
         return Ok(None);
     }
-    converter.construct_jiter(py, &parsed, true).map(Some)
+    let (converted, inserted_defaults, json_proven) =
+        converter.construct_jiter_unfinalized(py, &parsed, true)?;
+    if inserted_defaults {
+        let projection = converter.projection();
+        let projected = projection.instance(converted.bind(py));
+        let is_valid = if json_proven {
+            schema.is_valid_instance_assuming_json(projected)
+        } else {
+            schema.is_valid_instance(projected)
+        }
+        .map_err(validation_error)?;
+        if !is_valid {
+            return Ok(None);
+        }
+    }
+    converter.mark_validated(py, converted).map(Some)
 }
 
 fn validation_error(error: impl std::fmt::Display) -> PyErr {

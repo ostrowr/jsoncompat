@@ -14,6 +14,7 @@ fn packaged_dataclasses_runtime_helpers_construct_validate_and_guard_directional
     command.arg("-B").arg("-c").arg(
         r###"
 from dataclasses import dataclass
+import dataclasses
 import inspect
 import json
 import typing
@@ -25,6 +26,7 @@ from jsoncompat.codegen.dataclasses import (
     DataclassAdditionalModel,
     DataclassModel,
     DataclassRootModel,
+    FrozenList,
     JSONCOMPAT_MISSING,
     ReaderDataclassModel,
     ReaderDataclassRootModel,
@@ -154,6 +156,114 @@ except TypeError:
     pass
 else:
     raise AssertionError("byte strings were treated as generated array inputs")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InvalidScalarDefault(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"additionalProperties":false}'
+
+    count: int = -1
+
+
+for invalid_default_path, invalid_default_factory in (
+    ("direct", InvalidScalarDefault),
+    ("from_value", lambda: InvalidScalarDefault.from_value({})),
+    ("deserialize", lambda: InvalidScalarDefault.deserialize("{}")),
+):
+    try:
+        invalid_default_factory()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            f"checked {invalid_default_path} trusted a schema-invalid default"
+        )
+
+unchecked_invalid_default = InvalidScalarDefault(skip_validation=True)
+assert unchecked_invalid_default.count == -1
+assert unchecked_invalid_default.serialize(skip_validation=True) == '{"count":-1}'
+try:
+    unchecked_invalid_default.serialize()
+except ValueError:
+    pass
+else:
+    raise AssertionError("checked output trusted a schema-invalid unchecked default")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UnsupportedPlanInvalidDefault(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0},"payload":{"type":"object"}},"additionalProperties":false}'
+
+    count: int = -1
+    payload: dict[str, int] | dict[str, str] = dataclasses.field(default_factory=dict)
+
+
+for fallback_invalid_default_factory in (
+    UnsupportedPlanInvalidDefault,
+    lambda: UnsupportedPlanInvalidDefault.from_value({}),
+    lambda: UnsupportedPlanInvalidDefault.deserialize("{}"),
+):
+    try:
+        fallback_invalid_default_factory()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("fallback construction trusted a schema-invalid default")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SequenceDefaultFactory(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"values":{"type":"array","items":{"type":"integer"}}},"additionalProperties":false}'
+
+    values: typing.Sequence[int] = dataclasses.field(default_factory=lambda: [1, 2])
+
+
+default_sequence_models = (
+    SequenceDefaultFactory(),
+    SequenceDefaultFactory.from_value({}),
+    SequenceDefaultFactory.deserialize("{}"),
+    SequenceDefaultFactory(skip_validation=True),
+    SequenceDefaultFactory.from_value({}, skip_validation=True),
+    SequenceDefaultFactory.deserialize("{}", skip_validation=True),
+)
+for default_sequence in default_sequence_models:
+    assert isinstance(default_sequence.values, FrozenList)
+    assert default_sequence.values == [1, 2]
+    assert default_sequence.serialize() == '{"values":[1,2]}'
+
+
+@dataclass(frozen=True, slots=True, kw_only=True, init=False)
+class UncheckedDefaultInner(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"raw":{"type":"string"}},"required":["raw"],"additionalProperties":false}'
+
+    raw: typing.Any = field("raw")
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "raw", b"not-json")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UncheckedNestedDefault(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"inner":{"type":"object","properties":{"raw":{"type":"string"}},"required":["raw"],"additionalProperties":false}},"additionalProperties":false}'
+
+    inner: UncheckedDefaultInner = dataclasses.field(
+        default_factory=UncheckedDefaultInner
+    )
+
+
+for unchecked_nested_default_path, unchecked_nested_default_factory in (
+    ("direct", UncheckedNestedDefault),
+    ("from_value", lambda: UncheckedNestedDefault.from_value({})),
+    ("deserialize", lambda: UncheckedNestedDefault.deserialize("{}")),
+):
+    try:
+        unchecked_nested_default_factory()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            f"checked {unchecked_nested_default_path} trusted a non-JSON nested default"
+        )
 
 unchecked_profile = Profile(name="", skip_validation=True)
 assert unchecked_profile.to_value(skip_validation=True) == {"name": ""}
