@@ -298,24 +298,36 @@ impl ValidatorPy {
         instance: &Bound<'_, PyAny>,
         converter: PyRef<'_, ModelConverterPy>,
     ) -> PyResult<Option<Py<PyAny>>> {
-        let (converted, json_proven) = match converter.construct_python_unvalidated(py, instance) {
-            Ok(converted) => converted,
-            Err(conversion_error) => {
-                if !self.validate_instance(JSONInstanceRef::from_python(instance))? {
-                    return Ok(None);
-                }
-                return Err(conversion_error);
+        // Validate the wire value before conversion can invoke a default
+        // factory. The borrowed provider is the allocation-free hot path for
+        // ordinary JSON values. General Mapping implementations need the
+        // normalizer used by the public value API before schema evaluation.
+        let mut used_normalized_fallback = false;
+        if !self.validate_instance(JSONInstanceRef::from_python(instance))? {
+            let normalized = match py_to_json_value(instance) {
+                Ok(normalized) => normalized,
+                Err(_) => return Ok(None),
+            };
+            if !self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&normalized))? {
+                return Ok(None);
             }
-        };
-        let projection = converter.projection();
-        let projected = projection.instance(converted.bind(py));
-        let is_valid = if json_proven {
-            self.validate_instance_assuming_json(projected)
-        } else {
-            self.validate_instance(projected)
-        }?;
-        if !is_valid {
-            return Ok(None);
+            used_normalized_fallback = true;
+        }
+        let (converted, inserted_defaults, json_proven) =
+            converter.construct_python_unvalidated(py, instance)?;
+        // Defaults and stateful general mappings can make the converted value
+        // differ from the validated snapshot, so validate that projection too.
+        if inserted_defaults || used_normalized_fallback {
+            let projection = converter.projection();
+            let projected = projection.instance(converted.bind(py));
+            let is_valid = if json_proven {
+                self.validate_instance_assuming_json(projected)
+            } else {
+                self.validate_instance(projected)
+            }?;
+            if !is_valid {
+                return Ok(None);
+            }
         }
         converter.mark_validated(py, converted).map(Some)
     }

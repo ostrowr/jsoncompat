@@ -18,6 +18,8 @@ import dataclasses
 import inspect
 import json
 import typing
+from collections import UserDict
+from types import MappingProxyType
 from typing import ClassVar, Literal
 
 from jsoncompat.codegen import SerializationFormat
@@ -188,6 +190,108 @@ except ValueError:
     pass
 else:
     raise AssertionError("checked output trusted a schema-invalid unchecked default")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RequiredWireDefault(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"required":["count"],"additionalProperties":false}'
+
+    count: int = 0
+
+
+for required_default_path, required_default_factory in (
+    ("from_value", lambda: RequiredWireDefault.from_value({})),
+    ("deserialize", lambda: RequiredWireDefault.deserialize("{}")),
+):
+    try:
+        required_default_factory()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            f"checked {required_default_path} let a Python default satisfy a required wire property"
+        )
+assert RequiredWireDefault.from_value({"count": 0}).count == 0
+assert RequiredWireDefault.deserialize('{"count":0}').count == 0
+
+
+mutating_required_default_input: dict[str, object] = {}
+
+
+def mutating_required_default_factory() -> int:
+    mutating_required_default_input["factory_was_called"] = True
+    return 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MutatingRequiredWireDefault(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"required":["count"],"additionalProperties":false}'
+
+    count: int = dataclasses.field(default_factory=mutating_required_default_factory)
+
+
+try:
+    MutatingRequiredWireDefault.from_value(mutating_required_default_input)
+except ValueError:
+    pass
+else:
+    raise AssertionError("a required default factory satisfied an invalid wire value")
+assert mutating_required_default_input == {}
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NestedMappingPayload(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"payload":{"type":"object","additionalProperties":{"type":"integer","minimum":0}}},"required":["payload"],"additionalProperties":false}'
+
+    payload: dict[str, int] = field("payload")
+
+
+nested_mapping_input = {"payload": MappingProxyType({"count": 3})}
+nested_mapping_model = NestedMappingPayload.from_value(nested_mapping_input)
+assert nested_mapping_model.payload == {"count": 3}
+assert nested_mapping_model.to_value() == {"payload": {"count": 3}}
+
+
+class StatefulConstrainedMapping(UserDict[str, int]):
+    def __init__(self) -> None:
+        super().__init__({"count": 1})
+        self.items_calls = 0
+
+    def items(self) -> list[tuple[str, int]]:
+        self.items_calls += 1
+        value = 1 if self.items_calls == 1 else -1
+        return [("count", value)]
+
+
+stateful_mapping = StatefulConstrainedMapping()
+try:
+    NestedMappingPayload.from_value({"payload": stateful_mapping})
+except ValueError:
+    pass
+else:
+    raise AssertionError("a converted mapping bypassed projection validation")
+assert stateful_mapping.items_calls == 2
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DefaultExceedsMaxProperties(DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"maxProperties":0,"additionalProperties":false}'
+
+    count: int = 0
+
+
+for max_properties_default_path, max_properties_default_factory in (
+    ("from_value", lambda: DefaultExceedsMaxProperties.from_value({})),
+    ("deserialize", lambda: DefaultExceedsMaxProperties.deserialize("{}")),
+):
+    try:
+        max_properties_default_factory()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            f"checked {max_properties_default_path} skipped object-level validation after inserting a default"
+        )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

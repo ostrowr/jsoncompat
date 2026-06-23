@@ -60,6 +60,7 @@ struct FieldPlan {
 struct PythonConversionState {
     validated: bool,
     validate_union_branches: bool,
+    inserted_defaults: bool,
     json_proven: bool,
 }
 
@@ -169,6 +170,7 @@ impl ModelConverterPy {
         let mut state = PythonConversionState {
             validated,
             validate_union_branches: validated,
+            inserted_defaults: false,
             json_proven: true,
         };
         let instance = self.convert(py, self.root, value, &mut state, MAX_MODEL_DEPTH)?;
@@ -189,14 +191,15 @@ impl ModelConverterPy {
         &self,
         py: Python<'_>,
         value: &Bound<'_, PyAny>,
-    ) -> PyResult<(Py<PyAny>, bool)> {
+    ) -> PyResult<(Py<PyAny>, bool, bool)> {
         let mut state = PythonConversionState {
             validated: false,
             validate_union_branches: true,
+            inserted_defaults: false,
             json_proven: true,
         };
         let instance = self.convert(py, self.root, value, &mut state, MAX_MODEL_DEPTH)?;
-        Ok((instance, state.json_proven))
+        Ok((instance, state.inserted_defaults, state.json_proven))
     }
 
     pub(crate) fn construct_kwargs_unvalidated(
@@ -1132,12 +1135,16 @@ impl ModelConverterPy {
                     remaining_depth - 1,
                 )?
             } else {
-                self.convert_missing_field_value(
+                let converted = self.convert_missing_field_value(
                     py,
                     field,
                     remaining_depth - 1,
                     &mut state.json_proven,
-                )?
+                )?;
+                if field.missing_sentinel.is_none() {
+                    state.inserted_defaults = true;
+                }
+                converted
             };
             set_model_attribute(py, &instance, &field.py_name, &converted)?;
         }
