@@ -63,6 +63,13 @@ struct PythonConversionState {
     validated: bool,
     validate_union_branches: bool,
     json_proven: bool,
+    ambiguous_union: bool,
+}
+
+pub(crate) struct ConstructedModelCandidate {
+    pub(crate) instance: Py<PyAny>,
+    pub(crate) raw_json_proven: bool,
+    pub(crate) ambiguous_union: bool,
 }
 
 struct JiterConversionState {
@@ -229,9 +236,29 @@ impl ModelConverterPy {
             validated,
             validate_union_branches: validated,
             json_proven: true,
+            ambiguous_union: false,
         };
         let instance = self.convert(py, self.root, value, &mut state, MAX_MODEL_DEPTH)?;
         self.finalize(py, instance, validated && state.json_proven)
+    }
+
+    pub(crate) fn construct_candidate(
+        &self,
+        py: Python<'_>,
+        value: &Bound<'_, PyAny>,
+    ) -> PyResult<ConstructedModelCandidate> {
+        let mut state = PythonConversionState {
+            validated: false,
+            validate_union_branches: false,
+            json_proven: true,
+            ambiguous_union: false,
+        };
+        let instance = self.convert(py, self.root, value, &mut state, MAX_MODEL_DEPTH)?;
+        Ok(ConstructedModelCandidate {
+            instance,
+            raw_json_proven: state.json_proven,
+            ambiguous_union: state.ambiguous_union,
+        })
     }
 }
 
@@ -395,6 +422,9 @@ impl ModelConverterPy {
                 missing_sentinel,
             } => {
                 if matches!(kind, ScalarKind::Any) {
+                    if value.cast::<PyDict>().is_err() && value.cast::<PyMapping>().is_ok() {
+                        state.json_proven = false;
+                    }
                     self.freeze_python_json_value(py, value, remaining_depth)
                 } else {
                     convert_scalar(py, *kind, missing_sentinel.as_ref(), value, state.validated)
@@ -878,6 +908,7 @@ impl ModelConverterPy {
             let input = value
                 .cast::<PyMapping>()
                 .map_err(|_| expected_type("mapping", value).unwrap())?;
+            state.json_proven = false;
             for entry in input.items()? {
                 let (key, item) = mapping_pair(&entry)?;
                 let converted_key = self.convert(py, key_node, &key, state, remaining_depth - 1)?;
@@ -923,6 +954,9 @@ impl ModelConverterPy {
                 state,
                 remaining_depth - 1,
             );
+        }
+        if matching_count > 1 {
+            state.ambiguous_union = true;
         }
 
         let mut first_error = None;

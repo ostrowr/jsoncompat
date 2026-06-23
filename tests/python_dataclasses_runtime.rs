@@ -633,6 +633,8 @@ fn generated_dataclasses_reject_invalid_json_values_for_plain_schemas() {
             "sku": {"type": "string", "minLength": 1},
             "quantity": {"type": "integer", "minimum": 0},
             "tags": {"type": "array", "items": {"type": "string"}},
+            "metadata": {},
+            "uniqueValues": {"type": "array", "uniqueItems": true},
         },
         "required": ["sku", "quantity"],
         "additionalProperties": false,
@@ -645,6 +647,7 @@ fn generated_dataclasses_reject_invalid_json_values_for_plain_schemas() {
         r###"
 import importlib.util
 import sys
+from types import MappingProxyType
 
 from jsoncompat.codegen import dataclasses as dc
 
@@ -702,6 +705,7 @@ for payload in invalid_json_payloads:
         raise AssertionError(f"invalid JSON payload was accepted: {payload!r}")
 
 invalid_values = [
+    {"quantity": 3},
     {"sku": "", "quantity": 3},
     {"sku": "abc", "quantity": -1},
     {"sku": "abc", "quantity": 3, "tags": ["new", 1]},
@@ -716,6 +720,41 @@ for value in invalid_values:
         pass
     else:
         raise AssertionError(f"invalid payload was accepted: {value!r}")
+
+cyclic = []
+cyclic.append(cyclic)
+non_json_values = [
+    {"sku": "abc", "quantity": 3, "metadata": object()},
+    {"sku": "abc", "quantity": 3, "metadata": {1: "not-json"}},
+    {"sku": "abc", "quantity": 3, "metadata": float("inf")},
+    {"sku": "abc", "quantity": 3, "metadata": cyclic},
+    {"sku": "abc", "quantity": 3, "uniqueValues": cyclic},
+]
+
+for value in non_json_values:
+    for skip_validation in (False, True):
+        try:
+            model.from_value(value, skip_validation=skip_validation)
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError(f"non-JSON payload was accepted: {value!r}")
+
+mapping_value = {
+    "sku": "abc",
+    "quantity": 3,
+    "metadata": MappingProxyType({"source": "proxy"}),
+}
+try:
+    model.from_value(mapping_value)
+except ValueError:
+    pass
+else:
+    raise AssertionError("checked construction accepted a non-JSON Mapping")
+assert model.from_value(
+    mapping_value,
+    skip_validation=True,
+).to_value(skip_validation=True)["metadata"] == {"source": "proxy"}
 "###,
     );
     command.arg(module_path);

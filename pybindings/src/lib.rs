@@ -25,8 +25,8 @@ use jsonschema::InstanceRef as JSONInstanceRef;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
 use model_converter::{
-    ModelConverterPlan, ModelConverterPy, compile_model_converter_plan, model_converter_for_root,
-    model_converter_for_validated_root,
+    ConstructedModelCandidate, ModelConverterPlan, ModelConverterPy, compile_model_converter_plan,
+    model_converter_for_root, model_converter_for_validated_root,
 };
 
 fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
@@ -531,13 +531,48 @@ fn construct_model_value(
     let Some(schema) = schema else {
         return converter.construct(py, instance, false).map(Some);
     };
-    let is_valid = schema
-        .is_valid_instance(JSONInstanceRef::from_python(instance))
-        .map_err(validation_error)?;
+
+    // Conversion necessarily traverses the complete input graph to reject
+    // cycles and values outside the JSON data model. Once that succeeds for
+    // ordinary dict/list input, schema validation can borrow the original
+    // graph without repeating the shape-only traversal.
+    let candidate = match converter.construct_candidate(py, instance) {
+        Ok(candidate) => candidate,
+        Err(conversion_error) => {
+            let raw_is_valid = schema
+                .is_valid_instance(JSONInstanceRef::from_python(instance))
+                .map_err(validation_error)?;
+            if raw_is_valid {
+                return Err(conversion_error);
+            }
+            return Ok(None);
+        }
+    };
+    let ConstructedModelCandidate {
+        instance: converted,
+        raw_json_proven,
+        ambiguous_union,
+    } = candidate;
+    let borrowed = JSONInstanceRef::from_python(instance);
+    let is_valid = if raw_json_proven {
+        schema.is_valid_instance_assuming_json(borrowed)
+    } else {
+        schema.is_valid_instance(borrowed)
+    }
+    .map_err(validation_error)?;
     if !is_valid {
         return Ok(None);
     }
-    converter.construct(py, instance, true).map(Some)
+
+    // Ambiguous unions need schema-aware branch selection after the root
+    // schema has established that the raw value is valid. The common path can
+    // retain the candidate graph and only mark its root validated.
+    if ambiguous_union {
+        drop(converted);
+        converter.construct(py, instance, true).map(Some)
+    } else {
+        converter.mark_validated(py, converted).map(Some)
+    }
 }
 
 fn construct_model_kwargs(
