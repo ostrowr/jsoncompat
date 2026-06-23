@@ -15,8 +15,11 @@ fn packaged_dataclasses_runtime_helpers_construct_validate_and_guard_directional
         r###"
 from dataclasses import dataclass
 import dataclasses
+import gc
 import inspect
 import json
+import platform
+import sys
 import typing
 from collections import UserDict
 from types import MappingProxyType
@@ -28,6 +31,7 @@ from jsoncompat.codegen.dataclasses import (
     DataclassAdditionalModel,
     DataclassModel,
     DataclassRootModel,
+    FrozenDict,
     FrozenList,
     JSONCOMPAT_MISSING,
     ReaderDataclassModel,
@@ -437,12 +441,120 @@ except TypeError:
 else:
     raise AssertionError("nested JSON objects remained mutable")
 ordered_context = AuditContext(tags={"z-last": "z", "a-first": "a"})
+assert list(ordered_context.tags.items()) == [
+    ("z-last", "z"),
+    ("a-first", "a"),
+]
 assert ordered_context.serialize(skip_validation=True) == (
     '{"tags":{"a-first":"a","z-last":"z"}}'
 )
 assert AuditContext.from_value({"tags": {"team": "schema"}}).tags == {
     "team": "schema"
 }
+
+for empty_context in (
+    AuditContext(tags={}),
+    AuditContext.from_value({"tags": {}}),
+    AuditContext.deserialize('{"tags":{}}'),
+):
+    assert isinstance(empty_context.tags, FrozenDict)
+    assert list(empty_context.tags.items()) == []
+
+for ordered_context in (
+    AuditContext(tags={"third": "3", "first": "1", "second": "2"}),
+    AuditContext.from_value(
+        {"tags": {"third": "3", "first": "1", "second": "2"}}
+    ),
+    AuditContext.deserialize(
+        '{"tags":{"third":"3","first":"1","second":"2"}}'
+    ),
+):
+    assert list(ordered_context.tags.items()) == [
+        ("third", "3"),
+        ("first", "1"),
+        ("second", "2"),
+    ]
+
+# The native path must transfer ownership of each pair into the FrozenDict's
+# tuple slot: the values gain exactly one owner while the model is alive and
+# return to their original refcounts after it is collected.
+if hasattr(sys, "getrefcount"):
+    lifetime_key = "".join(("jsoncompat", "-native-key"))
+    lifetime_value = "".join(("jsoncompat", "-native-value"))
+    lifetime_input = {lifetime_key: lifetime_value}
+    key_refs = sys.getrefcount(lifetime_key)
+    value_refs = sys.getrefcount(lifetime_value)
+    lifetime_context = AuditContext.from_value(
+        {"tags": lifetime_input},
+        skip_validation=True,
+    )
+    assert sys.getrefcount(lifetime_key) == key_refs + 1
+    assert sys.getrefcount(lifetime_value) == value_refs + 1
+    del lifetime_context
+    gc.collect()
+    assert sys.getrefcount(lifetime_key) == key_refs
+    assert sys.getrefcount(lifetime_value) == value_refs
+
+# On supported CPython layouts, compiled converters bypass the Python
+# constructor. Other runtimes must retain the constructor fallback.
+frozen_dict_init = FrozenDict.__init__
+frozen_dict_init_calls = 0
+
+
+def tracking_frozen_dict_init(self, values=()):
+    global frozen_dict_init_calls
+    frozen_dict_init_calls += 1
+    frozen_dict_init(self, values)
+
+
+FrozenDict.__init__ = tracking_frozen_dict_init
+try:
+    patched_context = AuditContext.from_value({"tags": {"team": "runtime"}})
+    assert patched_context.tags == {"team": "runtime"}
+finally:
+    FrozenDict.__init__ = frozen_dict_init
+
+if platform.python_implementation() == "CPython" and sys.version_info >= (3, 11):
+    assert frozen_dict_init_calls == 0
+else:
+    assert frozen_dict_init_calls == 1
+
+# A caller-supplied mapping type can inherit the same `_items` descriptor but
+# still define meaningful construction behavior. It must stay on the public
+# constructor path instead of inheriting the canonical FrozenDict fast path.
+custom_frozen_dict_init_calls = 0
+
+
+class CustomFrozenDict(FrozenDict):
+    __slots__ = ()
+    __module__ = "jsoncompat.codegen.dataclasses"
+    __qualname__ = "FrozenDict"
+
+    def __init__(self, values=()):
+        global custom_frozen_dict_init_calls
+        custom_frozen_dict_init_calls += 1
+        super().__init__(values)
+
+
+canonical_frozen_dict = dc.FrozenDict
+dc.FrozenDict = CustomFrozenDict
+try:
+
+    @dataclass(frozen=True, slots=True, kw_only=True)
+    class CustomFrozenDictContext(DataclassModel):
+        __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tags":{"type":"object","additionalProperties":{"type":"string"}}},"required":["tags"],"additionalProperties":false}'
+
+        tags: dict[str, str] = field("tags")
+
+    custom_frozen_context = CustomFrozenDictContext.from_value(
+        {"tags": {"team": "runtime"}}
+    )
+finally:
+    dc.FrozenDict = canonical_frozen_dict
+
+assert type(custom_frozen_context.tags) is CustomFrozenDict
+assert custom_frozen_context.tags == {"team": "runtime"}
+assert custom_frozen_dict_init_calls == 1, custom_frozen_dict_init_calls
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

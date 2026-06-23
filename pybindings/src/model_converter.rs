@@ -150,6 +150,7 @@ pub(crate) struct ModelConverterPy {
     frozen_dict_type: Py<PyType>,
     frozen_dict_items_py_name: Py<PyString>,
     frozen_dict_items_slot_offset: Option<isize>,
+    construct_frozen_dict_natively: bool,
     validated_py_name: Py<PyString>,
 }
 
@@ -579,7 +580,36 @@ impl ModelConverterPy {
     }
 
     fn freeze_dict(&self, py: Python<'_>, items: &Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
+        if self.construct_frozen_dict_natively {
+            return self.freeze_dict_natively(py, items);
+        }
         Ok(self.frozen_dict_type.bind(py).call1((items,))?.unbind())
+    }
+
+    fn freeze_dict_natively(
+        &self,
+        py: Python<'_>,
+        items: &Bound<'_, PyDict>,
+    ) -> PyResult<Py<PyAny>> {
+        // A dict iterator preserves insertion order, and converting each Rust
+        // pair into a Python tuple produces the same storage shape as
+        // `tuple(dict.items())` without constructing a duplicate dict or
+        // invoking Python-level `FrozenDict.__init__`.
+        let frozen_items = PyTuple::new(py, items.iter())?.into_any().unbind();
+        let instance = allocate_model(py, &self.frozen_dict_type, &self.object_new)?;
+        // The native plan is enabled only when `python_slot_offset` has
+        // verified that `_items` is an object-valued member descriptor for the
+        // supplied type. GenericSetAttr then delegates the write to that
+        // descriptor and preserves normal slot ownership/refcount behavior.
+        // Any error here is a real runtime failure and must not be retried by
+        // invoking the constructor after partially attempting construction.
+        set_model_attribute(
+            py,
+            &instance,
+            &self.frozen_dict_items_py_name,
+            &frozen_items,
+        )?;
+        Ok(instance.unbind())
     }
 
     fn frozen_dict_items<'py>(&self, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
@@ -3271,6 +3301,8 @@ pub(crate) fn compile_model_converter(
     });
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
     let frozen_dict_items_slot_offset = python_slot_offset(frozen_dict_type, "_items");
+    let construct_frozen_dict_natively = frozen_dict_items_slot_offset.is_some()
+        && is_canonical_frozen_dict_type(py, frozen_dict_type);
     Ok(ModelConverterPy {
         nodes,
         root,
@@ -3280,8 +3312,29 @@ pub(crate) fn compile_model_converter(
         frozen_dict_type: frozen_dict_type.clone().unbind(),
         frozen_dict_items_py_name: PyString::new(py, "_items").unbind(),
         frozen_dict_items_slot_offset,
+        construct_frozen_dict_natively,
         validated_py_name: PyString::new(py, "_jsoncompat_validated").unbind(),
     })
+}
+
+fn is_canonical_frozen_dict_type(py: Python<'_>, frozen_dict_type: &Bound<'_, PyType>) -> bool {
+    // Consult the already-loaded module table instead of importing the module
+    // as a side effect. The private reference remains stable even if a caller
+    // replaces the public `FrozenDict` name with a lookalike class.
+    let Some(modules) =
+        (unsafe { Bound::from_borrowed_ptr_or_opt(py, ffi::PyImport_GetModuleDict()) })
+    else {
+        return false;
+    };
+    let Ok(modules) = modules.cast_into::<PyDict>() else {
+        return false;
+    };
+    let Ok(Some(dataclasses)) = modules.get_item("jsoncompat.codegen.dataclasses") else {
+        return false;
+    };
+    dataclasses
+        .getattr("_JSONCOMPAT_CANONICAL_FROZEN_DICT")
+        .is_ok_and(|canonical| canonical.is(frozen_dict_type))
 }
 
 #[cfg(all(Py_3_11, not(any(PyPy, GraalPy))))]

@@ -242,6 +242,9 @@ class FrozenDict[K, V](Mapping[K, V]):
     __hash__ = None  # type: ignore[assignment]
 
 
+_JSONCOMPAT_CANONICAL_FROZEN_DICT = FrozenDict
+
+
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class DataclassModel(metaclass=_DataclassModelMeta):
     __slots__ = (JSONCOMPAT_VALIDATED_FIELD,)
