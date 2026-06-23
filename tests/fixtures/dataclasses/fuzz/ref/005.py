@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -21,7 +22,7 @@ class GeneratedSchemaReffed(dc.DataclassRootModel):
   },
   "type": "array"
 }"""
-    root: typing.Sequence[GeneratedSchemaReffedItem] = dc.root_field()
+    root: collections.abc.Sequence[GeneratedSchemaReffedItem] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -42,3 +43,9 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: typing.Any = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaReffedItem, "root", typing.Any),
+    (GeneratedSchemaReffed, "root", collections.abc.Sequence[GeneratedSchemaReffedItem]),
+    (GeneratedSchema, "root", typing.Any),
+))

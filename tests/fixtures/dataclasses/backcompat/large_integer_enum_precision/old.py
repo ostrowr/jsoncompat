@@ -19,3 +19,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: (typing.Literal[9007199254740993] | typing.Literal[9007199254740995]) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchema, "root", (typing.Literal[9007199254740993] | typing.Literal[9007199254740995])),
+))

@@ -29,3 +29,15 @@ class GeneratedSchema(dc.DataclassModel):
     value: str = dc.field("value")
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("value", "value", str, False),
+        ),
+        False,
+        None,
+    ),
+))

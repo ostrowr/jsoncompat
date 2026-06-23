@@ -15,3 +15,7 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: float = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchema, "root", float),
+))

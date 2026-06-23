@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import dataclasses
-import functools
 import inspect
-import math
 import types
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import (
     Any,
-    Callable,
     ClassVar,
     Literal,
     NoReturn,
@@ -17,23 +14,16 @@ from typing import (
     cast,
     get_args,
     get_origin,
-    get_type_hints,
     overload,
 )
 
 from jsoncompat import (
     JsonValue,
-    ModelConverter,
-    bind_model_runtime,
-    compile_model_converter,
-    validator_for,
+    ModelRuntime,
+    compile_model_runtimes,
 )
 
-from .serialization import (
-    SerializationFormat,
-    deserialize_value,
-    serialize_value,
-)
+from .serialization import SerializationFormat, deserialize_value, serialize_value
 
 
 __all__ = [
@@ -59,10 +49,10 @@ __all__ = [
 
 JSONCOMPAT_EXTRA_FIELD = "__jsoncompat_extra__"
 JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
+JSONCOMPAT_RUNTIME_FIELD = "__jsoncompat_runtime__"
 JSONCOMPAT_VALIDATED_FIELD = "_jsoncompat_validated"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
-_JSONCOMPAT_MISSING_TYPE_HINT = object()
 JSONCOMPAT_ADDITIONAL_T = TypeVar("JSONCOMPAT_ADDITIONAL_T")
 _DATACLASS_MODEL_T = TypeVar("_DATACLASS_MODEL_T", bound="DataclassModel")
 
@@ -77,94 +67,6 @@ class JsoncompatMissingType:
 JSONCOMPAT_MISSING = JsoncompatMissingType()
 
 type Omittable[T] = T | JsoncompatMissingType
-type _JsoncompatConstructor = Callable[[Any, bool], Any]
-type _JsoncompatSerializer = Callable[[Any], Any]
-type _JsoncompatPythonValidator = Callable[[Any], None]
-type _JsoncompatModelConstructor = Callable[[Any, bool], DataclassModel]
-type _JsoncompatModelSerializer = Callable[[DataclassModel], Any]
-
-
-class _DataclassModelMeta(type):
-    @property
-    def __signature__(cls) -> inspect.Signature:
-        signature = inspect.signature(cls.__init__)
-        return signature.replace(parameters=tuple(signature.parameters.values())[1:])
-
-    def __call__(
-        cls: type[_DATACLASS_MODEL_T],  # pyright: ignore[reportGeneralTypeIssues]
-        *args: Any,
-        **kwargs: Any,
-    ) -> _DATACLASS_MODEL_T:
-        # Generated dataclasses are keyword-only. Positional calls and custom
-        # post-init hooks retain the ordinary dataclass behavior and errors.
-        if args:
-            return cast(_DATACLASS_MODEL_T, super().__call__(*args, **kwargs))
-
-        runtime = _jsoncompat_direct_runtime_for(cls)
-        if runtime is None:
-            return cast(_DATACLASS_MODEL_T, super().__call__(**kwargs))
-
-        skip_validation = kwargs.pop("skip_validation", False)
-        validator, native_converter = runtime
-        converted = validator.construct_kwargs(
-            kwargs,
-            native_converter,
-            not skip_validation,
-        )
-        if converted is None:
-            raise ValueError(f"{cls.__name__} instance does not satisfy its JSON Schema")
-        return cast(_DATACLASS_MODEL_T, converted)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _JsoncompatFieldSpec:
-    py_name: str
-    json_name: str
-    annotation: Any
-    omittable: bool
-    constructor: _JsoncompatConstructor
-    validated_constructor: _JsoncompatConstructor
-    serializer: _JsoncompatSerializer
-    python_validator: _JsoncompatPythonValidator
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _JsoncompatObjectSpec:
-    fields: tuple[_JsoncompatFieldSpec, ...]
-    known_json_names: frozenset[str]
-    extra_annotation: Any | None
-    extra_constructor: _JsoncompatConstructor | None
-    extra_validated_constructor: _JsoncompatConstructor | None
-    extra_serializer: _JsoncompatSerializer | None
-    extra_python_validator: _JsoncompatPythonValidator | None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _JsoncompatDiscriminatorPlan:
-    json_name: str
-    branches_by_literal: Mapping[tuple[str, Any], type[DataclassModel]]
-
-
-def field(
-    json_name: str,
-    *,
-    omittable: bool = False,
-) -> Any:
-    metadata = {
-        JSONCOMPAT_JSON_NAME_METADATA: json_name,
-        JSONCOMPAT_MISSING_METADATA: omittable,
-    }
-    if omittable:
-        return dataclasses.field(default=JSONCOMPAT_MISSING, metadata=metadata)
-    return dataclasses.field(metadata=metadata)
-
-
-def extra_field() -> Any:
-    return dataclasses.field(default_factory=_jsoncompat_empty_extra, repr=False)
-
-
-def root_field() -> Any:
-    return dataclasses.field()
 
 
 class FrozenList[T](tuple[T, ...]):
@@ -173,12 +75,8 @@ class FrozenList[T](tuple[T, ...]):
     __slots__ = ()
 
     def __eq__(self, other: object) -> bool:
-        if (
-            isinstance(other, Sequence)
-            and not isinstance(other, (str, bytes, Mapping))
-        ):
-            other_items = cast(Sequence[Any], other)
-            return tuple(self) == tuple(other_items)
+        if isinstance(other, Sequence) and not isinstance(other, (str, bytes, Mapping)):
+            return tuple(self) == tuple(cast(Sequence[Any], other))
         return NotImplemented
 
     def __ne__(self, other: object) -> bool:
@@ -235,54 +133,72 @@ class FrozenDict[K, V](Mapping[K, V]):
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Mapping):
-            other_mapping = cast(Mapping[Any, Any], other)
-            return dict(self._items) == dict(other_mapping.items())
+            return dict(self._items) == dict(cast(Mapping[Any, Any], other).items())
         return NotImplemented
 
     __hash__ = None  # type: ignore[assignment]
 
 
-_JSONCOMPAT_CANONICAL_FROZEN_DICT = FrozenDict
+class _DataclassModelMeta(type):
+    @property
+    def __signature__(cls) -> inspect.Signature:
+        signature = inspect.signature(cls.__init__)
+        return signature.replace(parameters=tuple(signature.parameters.values())[1:])
+
+    def __call__(
+        cls: type[_DATACLASS_MODEL_T],  # pyright: ignore[reportGeneralTypeIssues]
+        *args: Any,
+        **kwargs: Any,
+    ) -> _DATACLASS_MODEL_T:
+        if args:
+            raise TypeError(f"{cls.__name__} is keyword-only")
+        skip_validation = kwargs.pop("skip_validation", False)
+        return cast(
+            _DATACLASS_MODEL_T,
+            _jsoncompat_runtime_for(cls).construct_kwargs(
+                kwargs,
+                skip_validation=skip_validation,
+            ),
+        )
+
+
+def field(json_name: str, *, omittable: bool = False) -> Any:
+    metadata = {
+        JSONCOMPAT_JSON_NAME_METADATA: json_name,
+        JSONCOMPAT_MISSING_METADATA: omittable,
+    }
+    if omittable:
+        return dataclasses.field(default=JSONCOMPAT_MISSING, metadata=metadata)
+    return dataclasses.field(metadata=metadata)
+
+
+def extra_field() -> Any:
+    return dataclasses.field(default_factory=_empty_extra, repr=False)
+
+
+def _empty_extra() -> dict[str, Any]:
+    return {}
+
+
+def root_field() -> Any:
+    return dataclasses.field()
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class DataclassModel(metaclass=_DataclassModelMeta):
+    """Native runtime interface shared by generated frozen dataclasses."""
+
     __slots__ = (JSONCOMPAT_VALIDATED_FIELD,)
 
     skip_validation: dataclasses.InitVar[bool] = False
-
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-        # A generated parent may have installed a bound native deserializer.
-        # Restore the appropriate inherited dispatcher so each subclass can
-        # enforce its direction guard and bind a runtime for its exact schema.
-        if "deserialize" not in cls.__dict__:
-            inherited: object | None = None
-            for base in cls.__mro__[1:]:
-                descriptor: object | None = base.__dict__.get("deserialize")
-                if isinstance(descriptor, classmethod):
-                    inherited = cast(object, descriptor)
-                    break
-            if inherited is not None:
-                setattr(cls, "deserialize", inherited)
-
     __jsoncompat_schema__: ClassVar[str]
+    __jsoncompat_runtime__: ClassVar[ModelRuntime]
 
-    def __post_init__(self, skip_validation: bool) -> None:
-        object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, False)
-        _jsoncompat_freeze_model_instance(self)
-        schema_json = _jsoncompat_schema_for(type(self))
-        if schema_json is None:
-            return
-        _jsoncompat_validate_model_instance(self)
-        if skip_validation:
-            return
-        value = self.jsoncompat_to_value_unchecked()
-        if not _jsoncompat_validator_for(type(self))._is_valid_borrowed_value(value):
-            raise ValueError(
-                f"{type(self).__name__} instance does not satisfy its JSON Schema"
-            )
-        object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
+    def __post_init__(self, skip_validation: bool) -> NoReturn:
+        _ = skip_validation
+        raise RuntimeError(
+            "generated dataclasses must be constructed through their native runtime"
+        )
 
     @classmethod
     def from_value[JSONCOMPAT_MODEL_T: DataclassModel](
@@ -291,22 +207,12 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         *,
         skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
-        if not skip_validation:
-            runtime = _jsoncompat_native_runtime_for(cls)
-            if runtime is not None:
-                validator, native_converter = runtime
-                converted = validator.construct_value(value, native_converter)
-                if converted is None:
-                    raise ValueError(f"value does not satisfy {cls.__name__} schema")
-                return cast(JSONCOMPAT_MODEL_T, converted)
-            validator = _jsoncompat_validator_for(cls)
-            if not validator.is_valid_value(value):
-                raise ValueError(f"value does not satisfy {cls.__name__} schema")
-        elif _jsoncompat_schema_for(cls) is None:
-            raise TypeError(f"{cls.__name__} is missing __jsoncompat_schema__")
-        return cls.jsoncompat_from_validated(
-            value,
-            _validate_union_branches=not skip_validation,
+        return cast(
+            JSONCOMPAT_MODEL_T,
+            _jsoncompat_runtime_for(cls).from_value(
+                value,
+                skip_validation=skip_validation,
+            ),
         )
 
     @classmethod
@@ -317,30 +223,14 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
-        selected_format = (
-            SerializationFormat.JSON
-            if format is SerializationFormat.JSON
-            else SerializationFormat(format)
-        )
+        selected_format = SerializationFormat(format)
         if selected_format is SerializationFormat.JSON:
-            runtime = _jsoncompat_native_runtime_for(cls)
-            if runtime is not None:
-                validator, native_converter = runtime
-                converted = validator.construct_json(
+            return cast(
+                JSONCOMPAT_MODEL_T,
+                _jsoncompat_runtime_for(cls).deserialize(
                     payload,
-                    native_converter,
-                    not skip_validation,
-                )
-                if converted is None:
-                    raise ValueError(f"value does not satisfy {cls.__name__} schema")
-                return cast(JSONCOMPAT_MODEL_T, converted)
-        if selected_format is SerializationFormat.JSON and not skip_validation:
-            is_valid, value = _jsoncompat_validator_for(cls).parse_json(payload)
-            if not is_valid:
-                raise ValueError(f"value does not satisfy {cls.__name__} schema")
-            return cls.jsoncompat_from_validated(
-                value,
-                _validate_union_branches=True,
+                    skip_validation=skip_validation,
+                ),
             )
         return cls.from_value(
             deserialize_value(payload, format=selected_format),
@@ -348,36 +238,10 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         )
 
     def to_value(self, *, skip_validation: bool = False) -> JsonValue:
-        needs_validation = not skip_validation and not getattr(
-            self, JSONCOMPAT_VALIDATED_FIELD, False
+        return _jsoncompat_runtime_for(type(self)).to_value(
+            self,
+            skip_validation=skip_validation,
         )
-        runtime = _jsoncompat_native_runtime_for(type(self))
-        if runtime is not None:
-            validator, native_converter = runtime
-            is_valid, value = validator.model_to_value(
-                self,
-                native_converter,
-                needs_validation,
-            )
-            if not is_valid:
-                raise ValueError(
-                    f"{type(self).__name__} instance does not satisfy its JSON Schema"
-                )
-            if needs_validation:
-                object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
-            return cast(JsonValue, value)
-
-        schema_json = _jsoncompat_schema_for(type(self))
-        if schema_json is None:
-            raise TypeError(f"{type(self).__name__} is missing __jsoncompat_schema__")
-        value = self.jsoncompat_to_value_unchecked()
-        if needs_validation:
-            if not _jsoncompat_validator_for(type(self))._is_valid_borrowed_value(value):
-                raise ValueError(
-                    f"{type(self).__name__} instance does not satisfy its JSON Schema"
-                )
-            object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
-        return cast(JsonValue, value)
 
     @overload
     def serialize(
@@ -417,109 +281,28 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> str | bytes:
-        selected_format = (
-            SerializationFormat.JSON
-            if format is SerializationFormat.JSON
-            else SerializationFormat(format)
-        )
+        selected_format = SerializationFormat(format)
         if selected_format is SerializationFormat.JSON:
-            runtime = _jsoncompat_native_runtime_for(type(self))
-            if runtime is not None:
-                validator, native_converter = runtime
-                needs_validation = not skip_validation and not getattr(
-                    self, JSONCOMPAT_VALIDATED_FIELD, False
-                )
-                try:
-                    encoded = validator.serialize_model(
-                        self,
-                        native_converter,
-                        needs_validation,
-                    )
-                except OverflowError:
-                    pass
-                else:
-                    if encoded is None:
-                        raise ValueError(
-                            f"{type(self).__name__} instance does not satisfy its JSON Schema"
-                        )
-                    if needs_validation:
-                        object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
-                    return encoded
-
-            schema_json = _jsoncompat_schema_for(type(self))
-            value = self.jsoncompat_to_value_unchecked()
-            if skip_validation:
-                return serialize_value(cast(JsonValue, value))
-            if schema_json is None:
-                raise TypeError(
-                    f"{type(self).__name__} is missing __jsoncompat_schema__"
-                )
-            validator = _jsoncompat_validator_for(type(self))
-            if getattr(self, JSONCOMPAT_VALIDATED_FIELD, False):
-                return serialize_value(cast(JsonValue, value))
-            try:
-                encoded = validator.serialize_json(cast(JsonValue, value))
-            except OverflowError:
-                if not validator._is_valid_borrowed_value(cast(JsonValue, value)):
-                    raise ValueError(
-                        f"{type(self).__name__} instance does not satisfy its JSON Schema"
-                    ) from None
-                object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
-                return serialize_value(cast(JsonValue, value))
-            if encoded is None:
-                raise ValueError(
-                    f"{type(self).__name__} instance does not satisfy its JSON Schema"
-                )
-            object.__setattr__(self, JSONCOMPAT_VALIDATED_FIELD, True)
-            return encoded
+            return _jsoncompat_runtime_for(type(self)).serialize(
+                self,
+                skip_validation=skip_validation,
+            )
         return serialize_value(
             self.to_value(skip_validation=skip_validation),
             format=selected_format,
         )
-
-    @classmethod
-    def jsoncompat_from_validated[JSONCOMPAT_MODEL_T: DataclassModel](
-        cls: type[JSONCOMPAT_MODEL_T],
-        value: Any,
-        *,
-        _validate_union_branches: bool = True,
-    ) -> JSONCOMPAT_MODEL_T:
-        native_converter = _jsoncompat_native_converter_for(cls)
-        if native_converter is not None:
-            return cast(
-                JSONCOMPAT_MODEL_T,
-                native_converter.construct(value, _validate_union_branches),
-            )
-        constructor = _jsoncompat_object_constructor_for(cls)
-        return cast(
-            JSONCOMPAT_MODEL_T,
-            _jsoncompat_finalize_native_model(
-                constructor(value, _validate_union_branches),
-                _validate_union_branches,
-            ),
-        )
-
-    def jsoncompat_to_value_unchecked(self) -> Any:
-        return _jsoncompat_object_serializer_for(type(self))(self)
-
-
-def _jsoncompat_deserialize_fallback(  # pyright: ignore[reportUnusedFunction]
-    model_type: type[DataclassModel],
-    payload: str | bytes,
-    *,
-    format: SerializationFormat,
-    skip_validation: bool,
-) -> DataclassModel:
-    return model_type.from_value(
-        deserialize_value(payload, format=SerializationFormat(format)),
-        skip_validation=skip_validation,
-    )
 
 
 class DataclassAdditionalModel[JSONCOMPAT_ADDITIONAL_T](DataclassModel):
     __slots__ = ()
 
     __jsoncompat_extra__: Mapping[str, JSONCOMPAT_ADDITIONAL_T]
+
+    def __class_getitem__(cls, item: Any) -> types.GenericAlias:
+        # `typing`'s cached generic aliases retain generated type arguments
+        # globally. A fresh PEP 585 alias keeps the same runtime base behavior
+        # while allowing a discarded generated module to be collected.
+        return types.GenericAlias(cls, item)
 
     def get_additional_property(
         self,
@@ -532,41 +315,6 @@ class DataclassRootModel(DataclassModel):
     __slots__ = ()
 
     root: Any
-
-    @classmethod
-    def jsoncompat_from_validated[JSONCOMPAT_ROOT_MODEL_T: DataclassRootModel](
-        cls: type[JSONCOMPAT_ROOT_MODEL_T],
-        value: Any,
-        *,
-        _validate_union_branches: bool = True,
-    ) -> JSONCOMPAT_ROOT_MODEL_T:
-        native_converter = _jsoncompat_native_converter_for(cls)
-        if native_converter is not None:
-            return cast(
-                JSONCOMPAT_ROOT_MODEL_T,
-                native_converter.construct(value, _validate_union_branches),
-            )
-        return cast(
-            JSONCOMPAT_ROOT_MODEL_T,
-            _jsoncompat_finalize_native_model(
-                _jsoncompat_new_unchecked(
-                    cls,
-                    {
-                        "root": _jsoncompat_construct_value(
-                            _jsoncompat_root_annotation_for(cls),
-                            value,
-                            validate_union_branches=_validate_union_branches,
-                        )
-                    },
-                ),
-                _validate_union_branches,
-            ),
-        )
-
-    def jsoncompat_to_value_unchecked(self) -> Any:
-        return _jsoncompat_serializer_for(_jsoncompat_root_annotation_for(type(self)))(
-            self.root
-        )
 
 
 class ReaderDataclassModel(DataclassModel):
@@ -628,128 +376,159 @@ class WriterDataclassModel(DataclassModel):
         raise TypeError("Writer dataclasses do not support deserialization")
 
 
-def _jsoncompat_schema_for(model_type: type[DataclassModel]) -> str | None:
-    schema = getattr(model_type, JSONCOMPAT_SCHEMA_FIELD, None)
-    if schema is None:
-        return None
-    if not isinstance(schema, str):
-        raise TypeError(
-            f"{model_type.__name__}.{JSONCOMPAT_SCHEMA_FIELD} must be a JSON string"
-        )
-    return schema
+@dataclasses.dataclass(frozen=True, slots=True)
+class _FieldSpec:
+    json_name: str
+    py_name: str
+    annotation: Any
+    omittable: bool
 
 
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_validator_for(model_type: type[DataclassModel]) -> Any:
-    schema_json = _jsoncompat_schema_for(model_type)
-    if schema_json is None:
-        raise TypeError(f"{model_type.__name__} is missing __jsoncompat_schema__")
-    return validator_for(schema_json)
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ObjectSpec:
+    fields: tuple[_FieldSpec, ...]
+    has_extra: bool
+    extra_annotation: Any | None
 
 
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_type_hints_for(model_type: type[Any]) -> dict[str, Any]:
-    return get_type_hints(model_type)
+@dataclasses.dataclass(frozen=True, slots=True)
+class _RootSpec:
+    annotation: Any
 
 
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_object_spec_for(
-    model_type: type[DataclassModel],
-) -> _JsoncompatObjectSpec:
-    fields: list[_JsoncompatFieldSpec] = []
-    known_json_names: set[str] = set()
-    extra_annotation: Any | None = None
-    type_hints = _jsoncompat_type_hints_for(model_type)
-
-    for field in _jsoncompat_dataclass_fields(model_type):
-        if field.name == JSONCOMPAT_EXTRA_FIELD:
-            extra_annotation = _jsoncompat_type_hint_for(model_type, type_hints, field.name)
-            continue
-        json_name = field.metadata.get(JSONCOMPAT_JSON_NAME_METADATA, field.name)
-        omittable = field.metadata.get(JSONCOMPAT_MISSING_METADATA, False)
-        annotation = _jsoncompat_type_hint_for(model_type, type_hints, field.name)
-        if omittable:
-            annotation = _jsoncompat_runtime_annotation(annotation)
-        fields.append(
-            _JsoncompatFieldSpec(
-                py_name=field.name,
-                json_name=json_name,
-                annotation=annotation,
-                omittable=omittable,
-                constructor=_jsoncompat_constructor_for(annotation),
-                validated_constructor=_jsoncompat_validated_constructor_for(annotation),
-                serializer=_jsoncompat_serializer_for(annotation),
-                python_validator=_jsoncompat_python_validator_for(annotation),
-            )
-        )
-        known_json_names.add(json_name)
-
-    extra_value_annotation = (
-        _jsoncompat_extra_value_annotation(extra_annotation)
-        if extra_annotation is not None
-        else None
-    )
-    return _JsoncompatObjectSpec(
-        fields=tuple(fields),
-        known_json_names=frozenset(known_json_names),
-        extra_annotation=extra_annotation,
-        extra_constructor=(
-            _jsoncompat_constructor_for(extra_value_annotation)
-            if extra_annotation is not None
-            else None
-        ),
-        extra_validated_constructor=(
-            _jsoncompat_validated_constructor_for(extra_value_annotation)
-            if extra_annotation is not None
-            else None
-        ),
-        extra_serializer=(
-            _jsoncompat_serializer_for(extra_value_annotation)
-            if extra_annotation is not None
-            else None
-        ),
-        extra_python_validator=(
-            _jsoncompat_python_validator_for(extra_value_annotation)
-            if extra_annotation is not None
-            else None
-        ),
-    )
+type _ModelSpec = _ObjectSpec | _RootSpec
 
 
-def _jsoncompat_type_hint_for(
-    model_type: type[Any],
-    type_hints: dict[str, Any],
-    field_name: str,
-) -> Any:
-    annotation = type_hints.get(field_name, _JSONCOMPAT_MISSING_TYPE_HINT)
-    if annotation is _JSONCOMPAT_MISSING_TYPE_HINT:
-        raise TypeError(f"{model_type.__name__}.{field_name} is missing a type annotation")
-    return annotation
+@dataclasses.dataclass(frozen=True, slots=True)
+class _DiscriminatorPlan:
+    json_name: str
+    branches_by_literal: Mapping[tuple[str, Any], type[DataclassModel]]
 
 
-def _jsoncompat_runtime_annotation(annotation: Any) -> Any:
-    if get_origin(annotation) is Omittable:
-        args = get_args(annotation)
-        if len(args) != 1:
-            raise TypeError("Omittable annotations must have exactly one argument")
-        return args[0] | JsoncompatMissingType
-    return annotation
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_root_annotation_for(model_type: type[DataclassRootModel]) -> Any:
-    type_hints = _jsoncompat_type_hints_for(model_type)
-    return _jsoncompat_runtime_annotation(
-        _jsoncompat_type_hint_for(model_type, type_hints, "root")
-    )
-
-
-class _JsoncompatNativePlanUnsupported(Exception):
+class _NativePlanUnsupported(Exception):
     pass
 
 
-class _JsoncompatNativePlanBuilder:
-    def __init__(self) -> None:
+def bind_generated_models(raw_specs: tuple[tuple[Any, ...], ...]) -> None:
+    """Compile and atomically bind every generated class in one module."""
+
+    specs = _decode_generated_specs(raw_specs)
+    builder = _NativePlanBuilder(specs)
+    try:
+        model_roots = [(model_type, builder.add(model_type)) for model_type in specs]
+        descriptors = builder.finish()
+    except _NativePlanUnsupported as error:
+        raise TypeError(f"cannot compile generated models: {error}") from None
+    runtimes = compile_model_runtimes(
+        model_roots,
+        descriptors,
+        FrozenList,
+        FrozenDict,
+    )
+    if len(runtimes) != len(model_roots):
+        raise RuntimeError(
+            "native model runtime compiler returned the wrong number of roots"
+        )
+
+    for (model_type, _), runtime in zip(model_roots, runtimes, strict=True):
+        setattr(model_type, JSONCOMPAT_RUNTIME_FIELD, runtime)
+
+
+def _decode_generated_specs(
+    raw_specs: tuple[tuple[Any, ...], ...],
+) -> dict[type[DataclassModel], _ModelSpec]:
+    specs: dict[type[DataclassModel], _ModelSpec] = {}
+    for raw_spec in raw_specs:
+        if len(raw_spec) < 3:
+            raise TypeError(f"invalid generated model spec: {raw_spec!r}")
+        model_type, kind, *payload = raw_spec
+        if not isinstance(model_type, type) or not issubclass(
+            model_type, DataclassModel
+        ):
+            raise TypeError(
+                "generated model specs must start with a DataclassModel type"
+            )
+        if model_type in specs:
+            raise TypeError(f"duplicate generated model spec for {model_type.__name__}")
+        _validate_generated_model_class(model_type)
+        _schema_for(model_type)
+
+        if kind == "object" and len(payload) == 3:
+            raw_fields, has_extra, extra_annotation = payload
+            if not isinstance(has_extra, bool):
+                raise TypeError("generated extra-properties marker must be bool")
+            if not has_extra and extra_annotation is not None:
+                raise TypeError(
+                    "closed generated objects cannot declare an extra-properties annotation"
+                )
+            fields: list[_FieldSpec] = []
+            json_names: set[str] = set()
+            py_names: set[str] = set()
+            for raw_field in raw_fields:
+                if len(raw_field) != 4:
+                    raise TypeError(
+                        f"invalid generated field spec for {model_type.__name__}: "
+                        f"{raw_field!r}"
+                    )
+                json_name, py_name, annotation, omittable = raw_field
+                if not isinstance(json_name, str) or not isinstance(py_name, str):
+                    raise TypeError("generated field names must be strings")
+                if not isinstance(omittable, bool):
+                    raise TypeError("generated field omittable marker must be bool")
+                if json_name in json_names or py_name in py_names:
+                    raise TypeError(
+                        f"duplicate field in generated model {model_type.__name__}"
+                    )
+                json_names.add(json_name)
+                py_names.add(py_name)
+                fields.append(_FieldSpec(json_name, py_name, annotation, omittable))
+            specs[model_type] = _ObjectSpec(
+                tuple(fields),
+                has_extra,
+                extra_annotation,
+            )
+            expected_fields: set[str] = set(py_names)
+            if has_extra:
+                expected_fields.add(JSONCOMPAT_EXTRA_FIELD)
+            actual_fields = {field.name for field in dataclasses.fields(model_type)}
+            if actual_fields != expected_fields:
+                raise TypeError(
+                    f"generated model spec for {model_type.__name__} does not match "
+                    f"its dataclass fields"
+                )
+        elif kind == "root" and len(payload) == 1:
+            specs[model_type] = _RootSpec(payload[0])
+            if {field.name for field in dataclasses.fields(model_type)} != {"root"}:
+                raise TypeError(
+                    f"generated root spec for {model_type.__name__} does not match "
+                    f"its dataclass fields"
+                )
+        else:
+            raise TypeError(
+                f"invalid generated model kind or payload for {model_type.__name__}: "
+                f"{kind!r}"
+            )
+    return specs
+
+
+def _validate_generated_model_class(model_type: type[DataclassModel]) -> None:
+    init = model_type.__dict__.get("__init__")
+    if (
+        not isinstance(init, types.FunctionType)
+        or init.__code__.co_filename != "<string>"
+        or init.__code__.co_qualname != "__create_fn__.<locals>.__init__"
+        or getattr(model_type, "__new__", None) is not object.__new__
+        or getattr(model_type, "__post_init__", None)
+        is not DataclassModel.__post_init__
+    ):
+        raise TypeError(
+            f"{model_type.__name__} must be an unmodified generated frozen dataclass"
+        )
+
+
+class _NativePlanBuilder:
+    def __init__(self, specs: Mapping[type[DataclassModel], _ModelSpec]) -> None:
+        self.specs = specs
         self.nodes: list[tuple[Any, ...] | None] = []
         self.node_ids: dict[Any, int] = {}
 
@@ -763,10 +542,10 @@ class _JsoncompatNativePlanBuilder:
         self.nodes[node_id] = self._descriptor(annotation)
         return node_id
 
-    def finish(self, root: int) -> tuple[list[tuple[Any, ...]], int]:
+    def finish(self) -> list[tuple[Any, ...]]:
         if any(node is None for node in self.nodes):
             raise RuntimeError("native model conversion plan has unresolved nodes")
-        return cast(list[tuple[Any, ...]], self.nodes), root
+        return cast(list[tuple[Any, ...]], self.nodes)
 
     def _descriptor(self, annotation: Any) -> tuple[Any, ...]:
         if annotation is Any or annotation is JsonValue:
@@ -789,60 +568,43 @@ class _JsoncompatNativePlanBuilder:
         origin = get_origin(annotation)
         if origin in {list, Sequence}:
             args = get_args(annotation)
-            item_annotation = args[0] if args else Any
-            return ("list", self.add(item_annotation))
+            return ("list", self.add(args[0] if args else Any))
         if origin in {dict, Mapping}:
-            key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-            return (
-                "dict",
-                self.add(key_annotation),
-                self.add(value_annotation),
-            )
+            key, value = _dict_annotations(annotation)
+            return ("dict", self.add(key), self.add(value))
         if origin is Literal:
             return ("literal", get_args(annotation))
         if origin in {types.UnionType, Union}:
             return self._union_descriptor(get_args(annotation))
-        raise _JsoncompatNativePlanUnsupported
+        raise _NativePlanUnsupported(f"unsupported annotation {annotation!r}")
 
     def _model_descriptor(
         self,
         model_type: type[DataclassModel],
     ) -> tuple[Any, ...]:
-        if issubclass(model_type, DataclassRootModel):
-            return (
-                "root",
-                model_type,
-                self.add(_jsoncompat_root_annotation_for(model_type)),
+        spec = self.specs.get(model_type)
+        if spec is None:
+            raise _NativePlanUnsupported(
+                f"{model_type.__name__} is not bound in this generated module"
             )
+        if isinstance(spec, _RootSpec):
+            return ("root", model_type, self.add(spec.annotation))
 
-        object_spec = _jsoncompat_object_spec_for(model_type)
-        fields_by_name = {
-            field.name: field for field in _jsoncompat_dataclass_fields(model_type)
-        }
         fields = tuple(
             (
                 field_spec.json_name,
                 field_spec.py_name,
                 self.add(field_spec.annotation),
-                _jsoncompat_missing_value_factory(
-                    model_type,
-                    fields_by_name[field_spec.py_name],
-                    field_spec.omittable,
-                ),
                 JSONCOMPAT_MISSING if field_spec.omittable else None,
             )
-            for field_spec in object_spec.fields
+            for field_spec in spec.fields
         )
-        extra_value = (
-            self.add(_jsoncompat_extra_value_annotation(object_spec.extra_annotation))
-            if object_spec.extra_annotation is not None
-            else None
-        )
+        extra_value = self.add(spec.extra_annotation) if spec.has_extra else None
         return ("model", model_type, fields, extra_value)
 
     def _union_descriptor(self, branches: tuple[Any, ...]) -> tuple[Any, ...]:
         branch_ids = tuple(self.add(branch) for branch in branches)
-        plans = _jsoncompat_discriminator_plans_for(branches)
+        plans = _discriminator_plans_for(self.specs, branches)
         if plans:
             plan = plans[0]
             branches_by_value: list[tuple[Any, int]] = []
@@ -865,838 +627,56 @@ class _JsoncompatNativePlanBuilder:
                     tuple(branches_by_value),
                 )
 
-        object_like_branches = tuple(
-            branch
-            for branch in branches
-            if _jsoncompat_native_branch_is_object_like(branch)
+        object_like = tuple(
+            branch for branch in branches if _branch_is_object_like(branch)
         )
-        if len(object_like_branches) > 1 and not all(
+        if len(object_like) > 1 and not all(
             isinstance(branch, type) and issubclass(branch, DataclassModel)
-            for branch in object_like_branches
+            for branch in object_like
         ):
-            # Plain dict annotations do not retain enough branch-specific
-            # schema information for constraint-aware native selection.
-            raise _JsoncompatNativePlanUnsupported
+            raise _NativePlanUnsupported(
+                "ambiguous unions of plain mapping annotations are not generated"
+            )
         return ("union", branch_ids, None, None)
 
 
-def _jsoncompat_native_branch_is_object_like(annotation: Any) -> bool:
-    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        return True
-    return get_origin(annotation) in {dict, Mapping}
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_native_converter_for(
-    model_type: type[DataclassModel],
-) -> ModelConverter | None:
-    builder = _JsoncompatNativePlanBuilder()
-    try:
-        root = builder.add(model_type)
-    except _JsoncompatNativePlanUnsupported:
-        return None
-    descriptors, root = builder.finish(root)
-    return compile_model_converter(
-        descriptors,
-        root,
-        FrozenList,
-        FrozenDict,
-    )
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_native_runtime_for(
-    model_type: type[DataclassModel],
-) -> tuple[Any, ModelConverter] | None:
-    schema_json = _jsoncompat_schema_for(model_type)
-    if schema_json is None:
-        raise TypeError(f"{model_type.__name__} is missing __jsoncompat_schema__")
-    converter = _jsoncompat_native_converter_for(model_type)
-    if converter is None:
-        return None
-    validator = _jsoncompat_validator_for(model_type)
-    _jsoncompat_bind_native_deserializer(model_type, validator, converter)
-    return validator, converter
-
-
-_JSONCOMPAT_BOUND_DESERIALIZERS: dict[
-    type[DataclassModel], tuple[object | None, object]
-] = {}
-
-
-def _jsoncompat_bind_native_deserializer(
-    model_type: type[DataclassModel],
-    validator: Any,
-    converter: ModelConverter,
-) -> None:
-    generic = DataclassModel.__dict__["deserialize"]
-    resolved = next(
-        base.__dict__["deserialize"]
-        for base in model_type.__mro__
-        if "deserialize" in base.__dict__
-    )
-    if resolved is not generic:
-        return
-    previous = model_type.__dict__.get("deserialize")
-    runtime = bind_model_runtime(model_type, validator, converter)
-    bound = runtime.deserialize
-    _JSONCOMPAT_BOUND_DESERIALIZERS[model_type] = (previous, bound)
-    setattr(model_type, "deserialize", bound)
-
-
-def _jsoncompat_reset_bound_deserializers() -> None:  # pyright: ignore[reportUnusedFunction]
-    for model_type, (previous, bound) in _JSONCOMPAT_BOUND_DESERIALIZERS.items():
-        if model_type.__dict__.get("deserialize") is not bound:
-            continue
-        if previous is None:
-            delattr(model_type, "deserialize")
-        else:
-            setattr(model_type, "deserialize", previous)
-    _JSONCOMPAT_BOUND_DESERIALIZERS.clear()
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_direct_runtime_for(
-    model_type: type[DataclassModel],
-) -> tuple[Any, ModelConverter] | None:
-    init = model_type.__dict__.get("__init__")
-    if (
-        not isinstance(init, types.FunctionType)
-        or init.__code__.co_filename != "<string>"
-        or init.__code__.co_qualname != "__create_fn__.<locals>.__init__"
-        or getattr(model_type, "__new__", None) is not object.__new__
-    ):
-        # Native allocation intentionally bypasses Python construction hooks;
-        # only dataclasses' generated initializer has equivalent semantics.
-        return None
-    if getattr(model_type, "__post_init__", None) is not DataclassModel.__post_init__:
-        return None
-    if _jsoncompat_schema_for(model_type) is None:
-        return None
-    return _jsoncompat_native_runtime_for(model_type)
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_object_constructor_for(
-    model_type: type[DataclassModel],
-) -> _JsoncompatModelConstructor:
-    object_spec = _jsoncompat_object_spec_for(model_type)
-    fields_by_name = {
-        field.name: field for field in _jsoncompat_dataclass_fields(model_type)
-    }
-    missing_factories = tuple(
-        _jsoncompat_missing_value_factory(
-            model_type,
-            fields_by_name[field_spec.py_name],
-            field_spec.omittable,
-        )
-        for field_spec in object_spec.fields
-    )
-    specialized_namespace: dict[str, Any] = {}
-
-    lines = [
-        "def construct(value, validate_union_branches):",
-        "    if not isinstance(value, dict):",
-        "        raise TypeError(_object_error)",
-        "    if _reject_unknown:",
-        "        for key in value:",
-        "            if key not in _known_json_names:",
-        "                raise TypeError(f'generated model cannot represent property {key!r}')",
-        "    instance = _new(_model_type)",
-        "    if validate_union_branches:",
-    ]
-    for index, field_spec in enumerate(object_spec.fields):
-        json_name = repr(field_spec.json_name)
-        py_name = repr(field_spec.py_name)
-        raw_name = f"raw_{index}"
-        discriminated_list = _jsoncompat_validated_discriminated_list_plan(
-            field_spec.annotation
-        )
-        if discriminated_list is not None:
-            discriminator_name, branches_by_value = discriminated_list
-            models_name = f"_union_models_{index}"
-            constructors_name = f"_union_constructors_{index}"
-            converted_name = f"converted_{index}"
-            item_name = f"item_{index}"
-            tag_name = f"tag_{index}"
-            constructor_name = f"constructor_{index}"
-            branch_name = f"branch_{index}"
-            specialized_namespace[models_name] = branches_by_value
-            specialized_namespace[constructors_name] = {}
-            lines.extend(
-                [
-                    f"        if {json_name} in value:",
-                    f"            {raw_name} = value[{json_name}]",
-                    f"            {converted_name} = []",
-                    f"            for {item_name} in {raw_name}:",
-                    f"                {tag_name} = {item_name}[{discriminator_name!r}]",
-                    f"                {constructor_name} = {constructors_name}.get({tag_name})",
-                    f"                if {constructor_name} is None:",
-                    f"                    {branch_name} = {models_name}[{tag_name}]",
-                    f"                    {constructor_name} = (",
-                    f"                        construct if {branch_name} is _model_type",
-                    f"                        else _object_constructor_for({branch_name})",
-                    "                    )",
-                    f"                    {constructors_name}[{tag_name}] = {constructor_name}",
-                    f"                {converted_name}.append({constructor_name}({item_name}, True))",
-                    f"            _setattr(instance, {py_name}, {converted_name})",
-                    "        else:",
-                    "            _setattr("
-                    f"instance, {py_name}, _missing_factories[{index}]()"
-                    ")",
-                ]
-            )
-            continue
-        converted = _jsoncompat_validated_inline_expression(
-            field_spec.annotation,
-            raw_name,
-            index,
-        )
-        lines.extend(
-            [
-                f"        if {json_name} in value:",
-                f"            {raw_name} = value[{json_name}]",
-                f"            _setattr(instance, {py_name}, {converted})",
-                "        else:",
-                "            _setattr("
-                f"instance, {py_name}, _missing_factories[{index}]()"
-                ")",
-            ]
-        )
-    if object_spec.extra_constructor is not None:
-        lines.extend(
-            [
-                "        extra = {}",
-                "        for key, item in value.items():",
-                "            if key not in _known_json_names:",
-                "                extra[key] = _extra_validated_constructor(item, True)",
-                f"        _setattr(instance, {JSONCOMPAT_EXTRA_FIELD!r}, extra)",
-            ]
-        )
-    lines.extend(
-        [
-            "        return instance",
-        ]
-    )
-    for index, field_spec in enumerate(object_spec.fields):
-        json_name = repr(field_spec.json_name)
-        py_name = repr(field_spec.py_name)
-        lines.extend(
-            [
-                f"    if {json_name} in value:",
-                "        _setattr("
-                f"instance, {py_name}, "
-                f"_constructors[{index}](value[{json_name}], False)"
-                ")",
-                "    else:",
-                f"        _setattr(instance, {py_name}, _missing_factories[{index}]())",
-            ]
-        )
-    if object_spec.extra_constructor is not None:
-        lines.extend(
-            [
-                "    extra = {}",
-                "    for key, item in value.items():",
-                "        if key not in _known_json_names:",
-                "            extra[key] = _extra_constructor(item, False)",
-                f"    _setattr(instance, {JSONCOMPAT_EXTRA_FIELD!r}, extra)",
-            ]
-        )
-    lines.append("    return instance")
-
-    namespace: dict[str, Any] = {
-        "_constructors": tuple(
-            field_spec.constructor for field_spec in object_spec.fields
-        ),
-        "_validated_constructors": tuple(
-            field_spec.validated_constructor for field_spec in object_spec.fields
-        ),
-        "_extra_constructor": object_spec.extra_constructor,
-        "_extra_validated_constructor": object_spec.extra_validated_constructor,
-        "_known_json_names": object_spec.known_json_names,
-        "_missing_factories": missing_factories,
-        "_model_type": model_type,
-        "_new": object.__new__,
-        "_object_error": f"{model_type.__name__} expects a JSON object",
-        "_reject_unknown": object_spec.extra_constructor is None,
-        "_setattr": object.__setattr__,
-        "_object_constructor_for": _jsoncompat_object_constructor_for,
-    }
-    namespace.update(specialized_namespace)
-    source = "\n".join(lines)
-    exec(compile(source, f"<{model_type.__name__} jsoncompat constructor>", "exec"), namespace)
-    return cast(_JsoncompatModelConstructor, namespace["construct"])
-
-
-def _jsoncompat_validated_inline_expression(
-    annotation: Any,
-    value_expression: str,
-    constructor_index: int,
-) -> str:
-    if _jsoncompat_validated_conversion_is_identity(annotation):
-        return value_expression
-    if annotation is int:
-        return (
-            f"int({value_expression}) if isinstance({value_expression}, float) "
-            f"else {value_expression}"
-        )
-
-    origin = get_origin(annotation)
-    if origin in {list, Sequence}:
-        args = get_args(annotation)
-        item_annotation = args[0] if args else Any
-        if _jsoncompat_validated_conversion_is_identity(item_annotation):
-            return f"list({value_expression})"
-    if origin in {dict, Mapping}:
-        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-        if _jsoncompat_validated_conversion_is_identity(
-            key_annotation
-        ) and _jsoncompat_validated_conversion_is_identity(value_annotation):
-            return f"dict({value_expression})"
-
-    return f"_validated_constructors[{constructor_index}]({value_expression}, True)"
-
-
-def _jsoncompat_validated_discriminated_list_plan(
-    annotation: Any,
-) -> tuple[str, Mapping[str, type[DataclassModel]]] | None:
-    if get_origin(annotation) not in {list, Sequence}:
-        return None
-    args = get_args(annotation)
-    if len(args) != 1:
-        return None
-    item_annotation = args[0]
-    if get_origin(item_annotation) not in {types.UnionType, Union}:
-        return None
-    plans = _jsoncompat_discriminator_plans_for(get_args(item_annotation))
-    if not plans:
-        return None
-    plan = plans[0]
-    branches_by_value: dict[str, type[DataclassModel]] = {}
-    for literal_key, branch in plan.branches_by_literal.items():
-        if literal_key[0] != "str" or not isinstance(literal_key[1], str):
-            return None
-        branches_by_value[literal_key[1]] = branch
-    return plan.json_name, types.MappingProxyType(branches_by_value)
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_validated_conversion_is_identity(annotation: Any) -> bool:
-    if annotation in {
-        Any,
-        str,
-        float,
-        bool,
-        None,
-        type(None),
-        JsoncompatMissingType,
-    }:
-        return True
-    origin = get_origin(annotation)
-    if origin is Literal:
-        return True
-    if origin in {types.UnionType, Union}:
-        return all(
-            _jsoncompat_validated_conversion_is_identity(branch)
-            for branch in get_args(annotation)
-        )
-    return False
-
-
-def _jsoncompat_missing_value_factory(
-    model_type: type[DataclassModel],
-    field: dataclasses.Field[Any],
-    omittable: bool,
-) -> Callable[[], Any]:
-    if omittable:
-        return lambda: JSONCOMPAT_MISSING
-    if field.default is not dataclasses.MISSING:
-        return lambda: field.default
-    if field.default_factory is not dataclasses.MISSING:
-        return field.default_factory
-
-    def missing_required_field() -> NoReturn:
-        raise TypeError(f"{model_type.__name__} is missing required field {field.name}")
-
-    return missing_required_field
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_object_serializer_for(
-    model_type: type[DataclassModel],
-) -> _JsoncompatModelSerializer:
-    object_spec = _jsoncompat_object_spec_for(model_type)
-    lines = [
-        "def serialize(model):",
-        "    output = {}",
-    ]
-    for index, field_spec in enumerate(object_spec.fields):
-        py_name = field_spec.py_name
-        lines.extend(
-            [
-                f"    value = model.{py_name}",
-                "    if value is not _missing:",
-                f"        output[{field_spec.json_name!r}] = _serializers[{index}](value)",
-            ]
-        )
-    if object_spec.extra_serializer is not None:
-        lines.extend(
-            [
-                f"    for key, item in model.{JSONCOMPAT_EXTRA_FIELD}.items():",
-                "        output[key] = _extra_serializer(item)",
-            ]
-        )
-    lines.append("    return output")
-
-    namespace: dict[str, Any] = {
-        "_extra_serializer": object_spec.extra_serializer,
-        "_missing": JSONCOMPAT_MISSING,
-        "_serializers": tuple(
-            field_spec.serializer for field_spec in object_spec.fields
-        ),
-    }
-    source = "\n".join(lines)
-    exec(compile(source, f"<{model_type.__name__} jsoncompat serializer>", "exec"), namespace)
-    return cast(_JsoncompatModelSerializer, namespace["serialize"])
-
-
-def _jsoncompat_construct_value(
-    annotation: Any,
-    value: Any,
-    *,
-    validate_union_branches: bool,
-) -> Any:
-    constructor = (
-        _jsoncompat_validated_constructor_for(annotation)
-        if validate_union_branches
-        else _jsoncompat_constructor_for(annotation)
-    )
-    return constructor(value, validate_union_branches)
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_constructor_for(annotation: Any) -> _JsoncompatConstructor:
-    if annotation is Any or annotation is JsonValue:
-        return lambda value, validate_union_branches: value
-    if annotation is JsoncompatMissingType:
-        def construct_missing(value: Any, validate_union_branches: bool) -> Any:
-            _ = validate_union_branches
-            if value is JSONCOMPAT_MISSING:
-                return value
-            raise TypeError("expected JSONCOMPAT_MISSING sentinel")
-
-        return construct_missing
-    if annotation is str:
-        def construct_str(value: Any, validate_union_branches: bool) -> str:
-            _ = validate_union_branches
-            if isinstance(value, str):
-                return str.__str__(value)
-            raise TypeError(f"expected str, got {type(value).__name__}")
-
-        return construct_str
-    if annotation is int:
-        def construct_int(value: Any, validate_union_branches: bool) -> int:
-            _ = validate_union_branches
-            if isinstance(value, int) and not isinstance(value, bool):
-                return int.__int__(value)
-            if isinstance(value, float) and float.is_integer(value):
-                return float.__int__(value)
-            raise TypeError(f"expected int, got {type(value).__name__}")
-
-        return construct_int
-    if annotation is float:
-        def construct_float(value: Any, validate_union_branches: bool) -> int | float:
-            _ = validate_union_branches
-            if isinstance(value, int) and not isinstance(value, bool):
-                return int.__int__(value)
-            if isinstance(value, float):
-                return float.__float__(value)
-            raise TypeError(f"expected number, got {type(value).__name__}")
-
-        return construct_float
-    if annotation is bool:
-        def construct_bool(value: Any, validate_union_branches: bool) -> bool:
-            _ = validate_union_branches
-            if isinstance(value, bool):
-                return value
-            raise TypeError(f"expected bool, got {type(value).__name__}")
-
-        return construct_bool
-    if annotation is None or annotation is type(None):
-        def construct_none(value: Any, validate_union_branches: bool) -> None:
-            _ = validate_union_branches
-            if value is None:
-                return None
-            raise TypeError(f"expected null, got {type(value).__name__}")
-
-        return construct_none
-    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        model_type = annotation
-
-        def construct_model(value: Any, validate_union_branches: bool) -> Any:
-            return model_type.jsoncompat_from_validated(
-                value,
-                _validate_union_branches=validate_union_branches,
-            )
-
-        return construct_model
-
-    origin = get_origin(annotation)
-    if origin in {list, Sequence}:
-        args = get_args(annotation)
-        item_annotation = args[0] if args else Any
-        item_constructor = _jsoncompat_constructor_for(item_annotation)
-
-        def construct_list(value: Any, validate_union_branches: bool) -> list[Any]:
-            if not isinstance(value, Sequence) or isinstance(
-                value, (str, bytes, Mapping)
-            ):
-                raise TypeError(f"expected sequence, got {type(value).__name__}")
-            value_items = cast(Sequence[Any], value)
-            return [
-                item_constructor(item, validate_union_branches)
-                for item in value_items
-            ]
-
-        return construct_list
-    if origin in {dict, Mapping}:
-        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-        key_constructor = _jsoncompat_constructor_for(key_annotation)
-        value_constructor = _jsoncompat_constructor_for(value_annotation)
-
-        def construct_dict(value: Any, validate_union_branches: bool) -> dict[Any, Any]:
-            if not isinstance(value, Mapping):
-                raise TypeError(f"expected mapping, got {type(value).__name__}")
-            value_object = cast(Mapping[Any, Any], value)
-            return {
-                key_constructor(key, validate_union_branches): value_constructor(
-                    item,
-                    validate_union_branches,
-                )
-                for key, item in value_object.items()
-            }
-
-        return construct_dict
-    if origin in {types.UnionType, Union}:
-        branches = get_args(annotation)
-        compiled_constructor: _JsoncompatConstructor | None = None
-
-        def construct_union(value: Any, validate_union_branches: bool) -> Any:
-            nonlocal compiled_constructor
-            if compiled_constructor is None:
-                compiled_constructor = _jsoncompat_compiled_union_constructor_for(
-                    branches
-                )
-            return compiled_constructor(value, validate_union_branches)
-
-        return construct_union
-    if origin is Literal:
-        literals = get_args(annotation)
-        literals_by_key = _jsoncompat_literals_by_key(literals)
-
-        def construct_literal(value: Any, validate_union_branches: bool) -> Any:
-            _ = validate_union_branches
-            literal_key = _jsoncompat_literal_key(value)
-            literal = (
-                literals_by_key.get(literal_key, _JSONCOMPAT_MISSING_TYPE_HINT)
-                if literal_key is not None
-                else _JSONCOMPAT_MISSING_TYPE_HINT
-            )
-            if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
-                return literal
-            raise TypeError(f"expected one of {literals!r}, got {value!r}")
-
-        return construct_literal
-
-    def construct_unsupported(value: Any, validate_union_branches: bool) -> NoReturn:
-        _ = (value, validate_union_branches)
-        raise TypeError(f"unsupported runtime annotation {annotation!r}")
-
-    return construct_unsupported
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_validated_constructor_for(
-    annotation: Any,
-) -> _JsoncompatConstructor:
-    if annotation in {Any, JsonValue, bool, None, type(None)}:
-        return lambda value, validate_union_branches: value
-    if annotation is str:
-        return lambda value, validate_union_branches: str.__str__(value)
-    if annotation is JsoncompatMissingType:
-        return _jsoncompat_constructor_for(annotation)
-    if annotation is int:
-        return lambda value, validate_union_branches: (
-            float.__int__(value)
-            if isinstance(value, float)
-            else int.__int__(value)
-        )
-    if annotation is float:
-        return lambda value, validate_union_branches: (
-            float.__float__(value)
-            if isinstance(value, float)
-            else int.__int__(value)
-        )
-    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        model_type = annotation
-
-        def construct_model(value: Any, validate_union_branches: bool) -> Any:
-            return model_type.jsoncompat_from_validated(
-                value,
-                _validate_union_branches=validate_union_branches,
-            )
-
-        return construct_model
-
-    origin = get_origin(annotation)
-    if origin in {list, Sequence}:
-        args = get_args(annotation)
-        item_annotation = args[0] if args else Any
-        item_constructor = _jsoncompat_validated_constructor_for(item_annotation)
-
-        def construct_list(value: Any, validate_union_branches: bool) -> list[Any]:
-            value_items = cast(Sequence[Any], value)
-            return [
-                item_constructor(item, validate_union_branches)
-                for item in value_items
-            ]
-
-        return construct_list
-    if origin in {dict, Mapping}:
-        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-        key_constructor = _jsoncompat_validated_constructor_for(key_annotation)
-        value_constructor = _jsoncompat_validated_constructor_for(value_annotation)
-
-        def construct_dict(value: Any, validate_union_branches: bool) -> dict[Any, Any]:
-            value_object = cast(Mapping[Any, Any], value)
-            return {
-                key_constructor(key, validate_union_branches): value_constructor(
-                    item,
-                    validate_union_branches,
-                )
-                for key, item in value_object.items()
-            }
-
-        return construct_dict
-    if origin in {types.UnionType, Union}:
-        branches = get_args(annotation)
-        compiled_constructor: _JsoncompatConstructor | None = None
-
-        def construct_union(value: Any, validate_union_branches: bool) -> Any:
-            nonlocal compiled_constructor
-            if compiled_constructor is None:
-                compiled_constructor = _jsoncompat_compiled_union_constructor_for(
-                    branches
-                )
-            return compiled_constructor(value, validate_union_branches)
-
-        return construct_union
-    if origin is Literal:
-        literals = get_args(annotation)
-        literals_by_key = _jsoncompat_literals_by_key(literals)
-
-        def construct_literal(value: Any, validate_union_branches: bool) -> Any:
-            _ = validate_union_branches
-            literal_key = _jsoncompat_literal_key(value)
-            literal = (
-                literals_by_key.get(literal_key, _JSONCOMPAT_MISSING_TYPE_HINT)
-                if literal_key is not None
-                else _JSONCOMPAT_MISSING_TYPE_HINT
-            )
-            if literal is not _JSONCOMPAT_MISSING_TYPE_HINT:
-                return literal
-            raise TypeError(f"expected one of {literals!r}, got {value!r}")
-
-        return construct_literal
-    return _jsoncompat_constructor_for(cast(Any, annotation))
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_compiled_union_constructor_for(
+def _discriminator_plans_for(
+    specs: Mapping[type[DataclassModel], _ModelSpec],
     branches: tuple[Any, ...],
-) -> _JsoncompatConstructor:
-    plans = _jsoncompat_discriminator_plans_for(branches)
-    if not plans:
-        return lambda value, validate_union_branches: _jsoncompat_construct_union(
-            branches,
-            value,
-            validate_union_branches=validate_union_branches,
-        )
-
-    plan = plans[0]
-    string_branches = {
-        literal_key[1]: branch
-        for literal_key, branch in plan.branches_by_literal.items()
-        if literal_key[0] == "str"
-    }
-    only_string_literals = len(string_branches) == len(plan.branches_by_literal)
-    branch_constructors: dict[
-        type[DataclassModel],
-        _JsoncompatModelConstructor,
-    ] = {}
-
-    def construct_discriminated_union(
-        value: Any,
-        validate_union_branches: bool,
-    ) -> Any:
-        branch: type[DataclassModel] | None = None
-        if isinstance(value, dict) and plan.json_name in value:
-            value_object = cast(dict[Any, Any], value)
-            discriminator: Any = value_object[plan.json_name]
-            if only_string_literals:
-                if isinstance(discriminator, str):
-                    branch = string_branches.get(discriminator)
-            else:
-                literal_key = _jsoncompat_literal_key(discriminator)
-                if literal_key is not None:
-                    branch = plan.branches_by_literal.get(literal_key)
-        if branch is None:
-            return _jsoncompat_construct_union(
-                branches,
-                value,
-                validate_union_branches=validate_union_branches,
-            )
-
-        constructor = branch_constructors.get(branch)
-        if constructor is None:
-            constructor = _jsoncompat_object_constructor_for(branch)
-            branch_constructors[branch] = constructor
-        return constructor(value, validate_union_branches)
-
-    return construct_discriminated_union
-
-
-def _jsoncompat_construct_union(
-    branches: tuple[Any, ...],
-    value: Any,
-    *,
-    validate_union_branches: bool,
-) -> Any:
-    discriminated_branch = _jsoncompat_discriminated_branch(branches, value)
-    if discriminated_branch is not None:
-        return discriminated_branch.jsoncompat_from_validated(
-            value,
-            _validate_union_branches=validate_union_branches,
-        )
-
-    matching_branches = tuple(
-        branch
-        for branch in branches
-        if _jsoncompat_branch_matches_value_kind(branch, value)
-    )
-    if len(matching_branches) == 1:
-        return _jsoncompat_construct_value(
-            matching_branches[0],
-            value,
-            validate_union_branches=validate_union_branches,
-        )
-
-    candidate_branches = matching_branches or branches
-
-    rejected_dataclass_branches: list[type[DataclassModel]] = []
-    for branch in candidate_branches:
-        if branch is JsoncompatMissingType and value is JSONCOMPAT_MISSING:
-            return JSONCOMPAT_MISSING
-        if isinstance(branch, type) and issubclass(branch, DataclassModel):
-            if validate_union_branches:
-                schema_json = _jsoncompat_schema_for(branch)
-                if schema_json is None:
-                    continue
-                if not _jsoncompat_validator_for(branch)._is_valid_borrowed_value(value):
-                    rejected_dataclass_branches.append(branch)
-                    continue
-            try:
-                return branch.jsoncompat_from_validated(
-                    value,
-                    _validate_union_branches=validate_union_branches,
-                )
-            except (TypeError, ValueError):
-                if validate_union_branches:
-                    raise
-                continue
-        try:
-            return _jsoncompat_construct_value(
-                branch,
-                value,
-                validate_union_branches=validate_union_branches,
-            )
-        except (TypeError, ValueError):
-            continue
-
-    # Canonicalized helper branches can be narrower than the already-validated
-    # containing schema, so keep a structural fallback before rejecting.
-    for branch in rejected_dataclass_branches:
-        try:
-            return branch.jsoncompat_from_validated(
-                value,
-                _validate_union_branches=validate_union_branches,
-            )
-        except (TypeError, ValueError):
-            continue
-
-    raise TypeError(f"value {value!r} does not match any union branch")
-
-
-def _jsoncompat_discriminated_branch(
-    branches: tuple[Any, ...],
-    value: Any,
-) -> type[DataclassModel] | None:
-    if not isinstance(value, dict):
-        return None
-    value_object = cast(dict[Any, Any], value)
-
-    for plan in _jsoncompat_discriminator_plans_for(branches):
-        if plan.json_name not in value_object:
-            continue
-        literal_key = _jsoncompat_literal_key(value_object[plan.json_name])
-        if literal_key is None:
-            continue
-        branch = plan.branches_by_literal.get(literal_key)
-        if branch is not None:
-            return branch
-
-    return None
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_discriminator_plans_for(
-    branches: tuple[Any, ...],
-) -> tuple[_JsoncompatDiscriminatorPlan, ...]:
-    model_branches: list[type[DataclassModel]] = []
+) -> tuple[_DiscriminatorPlan, ...]:
+    model_branches: list[tuple[type[DataclassModel], _ObjectSpec]] = []
     for branch in branches:
         if isinstance(branch, type) and issubclass(branch, DataclassModel):
-            model_branches.append(branch)
+            spec = specs.get(branch)
+            if not isinstance(spec, _ObjectSpec):
+                return ()
+            model_branches.append((branch, spec))
         elif branch not in {JsoncompatMissingType, None, type(None)}:
             return ()
     if len(model_branches) < 2:
         return ()
 
-    branch_specs = [
-        (branch, _jsoncompat_object_spec_for(branch)) for branch in model_branches
-    ]
-    plans: list[_JsoncompatDiscriminatorPlan] = []
-    for candidate_field in branch_specs[0][1].fields:
-        if candidate_field.omittable:
+    plans: list[_DiscriminatorPlan] = []
+    for candidate in model_branches[0][1].fields:
+        if candidate.omittable:
             continue
-
-        branches_by_literal: dict[
-            tuple[str, Any],
-            type[DataclassModel] | None,
-        ] = {}
-        for branch, object_spec in branch_specs:
+        branches_by_literal: dict[tuple[str, Any], type[DataclassModel] | None] = {}
+        for branch, spec in model_branches:
             branch_field = next(
                 (
-                    field_spec
-                    for field_spec in object_spec.fields
-                    if field_spec.json_name == candidate_field.json_name
-                    and not field_spec.omittable
+                    field
+                    for field in spec.fields
+                    if field.json_name == candidate.json_name and not field.omittable
                 ),
                 None,
             )
-            if branch_field is None or get_origin(branch_field.annotation) is not Literal:
+            if (
+                branch_field is None
+                or get_origin(branch_field.annotation) is not Literal
+            ):
                 break
             for literal in get_args(branch_field.annotation):
-                literal_key = _jsoncompat_literal_key(literal)
+                literal_key = _literal_key(literal)
                 if literal_key is None:
                     continue
                 if literal_key in branches_by_literal:
@@ -1704,22 +684,46 @@ def _jsoncompat_discriminator_plans_for(
                 else:
                     branches_by_literal[literal_key] = branch
         else:
-            unique_branches = {
+            unique = {
                 literal_key: branch
                 for literal_key, branch in branches_by_literal.items()
                 if branch is not None
             }
-            if unique_branches:
-                plans.append(
-                    _JsoncompatDiscriminatorPlan(
-                        json_name=candidate_field.json_name,
-                        branches_by_literal=types.MappingProxyType(unique_branches),
-                    )
-                )
+            if unique:
+                plans.append(_DiscriminatorPlan(candidate.json_name, unique))
     return tuple(plans)
 
 
-def _jsoncompat_literal_key(value: Any) -> tuple[str, Any] | None:
+def _schema_for(model_type: type[DataclassModel]) -> str:
+    schema = getattr(model_type, JSONCOMPAT_SCHEMA_FIELD, None)
+    if not isinstance(schema, str):
+        raise TypeError(
+            f"{model_type.__name__}.{JSONCOMPAT_SCHEMA_FIELD} must be a JSON string"
+        )
+    return schema
+
+
+def _jsoncompat_runtime_for(model_type: type[DataclassModel]) -> ModelRuntime:
+    runtime = model_type.__dict__.get(JSONCOMPAT_RUNTIME_FIELD)
+    if runtime is None:
+        raise TypeError(
+            f"{model_type.__name__} is not a bound jsoncompat-generated dataclass"
+        )
+    return cast(ModelRuntime, runtime)
+
+
+def _dict_annotations(annotation: Any) -> tuple[Any, Any]:
+    args = get_args(annotation)
+    return (args[0], args[1]) if len(args) == 2 else (Any, Any)
+
+
+def _branch_is_object_like(annotation: Any) -> bool:
+    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
+        return True
+    return get_origin(annotation) in {dict, Mapping}
+
+
+def _literal_key(value: Any) -> tuple[str, Any] | None:
     if isinstance(value, bool):
         return ("bool", value)
     if isinstance(value, (int, float)):
@@ -1731,439 +735,3 @@ def _jsoncompat_literal_key(value: Any) -> tuple[str, Any] | None:
     except TypeError:
         return None
     return (type(value).__qualname__, value)
-
-
-def _jsoncompat_literals_by_key(
-    literals: tuple[Any, ...],
-) -> Mapping[tuple[str, Any], Any]:
-    values: dict[tuple[str, Any], Any] = {}
-    for literal in literals:
-        literal_key = _jsoncompat_literal_key(literal)
-        if literal_key is not None and literal_key not in values:
-            values[literal_key] = literal
-    return types.MappingProxyType(values)
-
-
-def _jsoncompat_branch_matches_value_kind(branch: Any, value: Any) -> bool:
-    if branch is Any:
-        return True
-    if branch is JsoncompatMissingType:
-        return value is JSONCOMPAT_MISSING
-    if branch is str:
-        return isinstance(value, str)
-    if branch is int:
-        return (
-            (isinstance(value, int) and not isinstance(value, bool))
-            or (isinstance(value, float) and float.is_integer(value))
-        )
-    if branch is float:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if branch is bool:
-        return isinstance(value, bool)
-    if branch is None or branch is type(None):
-        return value is None
-    if isinstance(branch, type) and issubclass(branch, DataclassModel):
-        return isinstance(value, dict)
-
-    origin = get_origin(branch)
-    if origin in {list, Sequence}:
-        return isinstance(value, Sequence) and not isinstance(
-            value, (str, bytes, Mapping)
-        )
-    if origin in {dict, Mapping}:
-        return isinstance(value, Mapping)
-    if origin in {types.UnionType, Union}:
-        return any(
-            _jsoncompat_branch_matches_value_kind(nested_branch, value)
-            for nested_branch in get_args(branch)
-        )
-    if origin is Literal:
-        return (
-            _jsoncompat_literal_value(get_args(branch), value)
-            is not _JSONCOMPAT_MISSING_TYPE_HINT
-        )
-    return True
-
-
-def _jsoncompat_literal_value(literals: tuple[Any, ...], value: Any) -> Any:
-    for literal in literals:
-        if isinstance(literal, bool) or isinstance(value, bool):
-            if type(literal) is type(value) and literal == value:
-                return literal
-        elif isinstance(literal, (int, float)) and isinstance(value, (int, float)):
-            if literal == value:
-                return literal
-        elif type(literal) is type(value) and literal == value:
-            return literal
-    return _JSONCOMPAT_MISSING_TYPE_HINT
-
-
-def _jsoncompat_deep_freeze(value: Any, active: set[int]) -> Any:
-    if isinstance(value, DataclassModel):
-        _jsoncompat_freeze_model_instance(value, active)
-        return value
-    if isinstance(value, Mapping):
-        value_object = cast(Mapping[Any, Any], value)
-        identity = id(value_object)
-        if identity in active:
-            raise ValueError("cyclic containers are not JSON values")
-        active.add(identity)
-        try:
-            return FrozenDict[Any, Any](
-                (
-                    _jsoncompat_deep_freeze(key, active),
-                    _jsoncompat_deep_freeze(item, active),
-                )
-                for key, item in value_object.items()
-            )
-        finally:
-            active.remove(identity)
-    if isinstance(value, Sequence) and not isinstance(
-        value, (str, bytes, Mapping)
-    ):
-        value_items = cast(Sequence[Any], value)
-        identity = id(value_items)
-        if identity in active:
-            raise ValueError("cyclic containers are not JSON values")
-        active.add(identity)
-        try:
-            return FrozenList(
-                _jsoncompat_deep_freeze(item, active) for item in value_items
-            )
-        finally:
-            active.remove(identity)
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, int):
-        return int.__int__(value)
-    if isinstance(value, float):
-        number = float.__float__(value)
-        if not math.isfinite(number):
-            raise ValueError("JSON numbers must be finite")
-        return number
-    if isinstance(value, str):
-        return str.__str__(value)
-    return value
-
-
-def _jsoncompat_freeze_model_instance(
-    model: DataclassModel,
-    active: set[int] | None = None,
-) -> None:
-    if getattr(model, JSONCOMPAT_VALIDATED_FIELD, False):
-        return
-    if active is None:
-        active = set()
-    identity = id(model)
-    if identity in active:
-        raise ValueError("cyclic generated model graphs are not JSON values")
-    active.add(identity)
-    try:
-        for field in _jsoncompat_dataclass_fields(model):
-            value = getattr(model, field.name)
-            frozen = _jsoncompat_deep_freeze(value, active)
-            if frozen is not value:
-                object.__setattr__(model, field.name, frozen)
-        if not hasattr(model, JSONCOMPAT_VALIDATED_FIELD):
-            object.__setattr__(model, JSONCOMPAT_VALIDATED_FIELD, False)
-    finally:
-        active.remove(identity)
-
-
-def _jsoncompat_finalize_native_model(
-    model: DataclassModel,
-    validated: bool,
-) -> DataclassModel:
-    _jsoncompat_freeze_model_instance(model)
-    if validated:
-        _jsoncompat_validate_model_instance(model)
-        if _jsoncompat_schema_for(type(model)) is not None:
-            value = model.jsoncompat_to_value_unchecked()
-            if not _jsoncompat_validator_for(type(model))._is_valid_borrowed_value(value):
-                raise ValueError(
-                    f"{type(model).__name__} instance does not satisfy its JSON Schema"
-                )
-    object.__setattr__(model, JSONCOMPAT_VALIDATED_FIELD, validated)
-    return model
-
-
-def _jsoncompat_validate_model_instance(model: DataclassModel) -> None:
-    if isinstance(model, DataclassRootModel):
-        _jsoncompat_python_validator_for(
-            _jsoncompat_root_annotation_for(type(model))
-        )(model.root)
-        return
-
-    object_spec = _jsoncompat_object_spec_for(type(model))
-    for field_spec in object_spec.fields:
-        field_value = getattr(model, field_spec.py_name)
-        if field_value is JSONCOMPAT_MISSING:
-            if field_spec.omittable:
-                continue
-            raise TypeError(
-                f"{type(model).__name__}.{field_spec.py_name} cannot be JSONCOMPAT_MISSING"
-            )
-        try:
-            field_spec.python_validator(field_value)
-        except TypeError as error:
-            raise TypeError(
-                f"{type(model).__name__}.{field_spec.py_name}: {error}"
-            ) from None
-
-    if object_spec.extra_python_validator is None:
-        return
-
-    extra = getattr(model, JSONCOMPAT_EXTRA_FIELD)
-    if not isinstance(extra, Mapping):
-        raise TypeError(
-            f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} expected mapping, "
-            f"got {type(extra).__name__}"
-        )
-
-    extra_values = cast(Mapping[Any, Any], extra)
-    for json_name, item in extra_values.items():
-        if not isinstance(json_name, str):
-            raise TypeError(
-                f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD} keys must be str"
-            )
-        try:
-            object_spec.extra_python_validator(item)
-        except TypeError as error:
-            raise TypeError(
-                f"{type(model).__name__}.{JSONCOMPAT_EXTRA_FIELD}[{json_name!r}]: {error}"
-            ) from None
-
-
-def _jsoncompat_extra_value_annotation(annotation: Any) -> Any:
-    origin = get_origin(annotation)
-    if origin in {dict, Mapping}:
-        args = get_args(annotation)
-        return args[1] if len(args) == 2 else Any
-    return Any
-
-
-def _jsoncompat_dict_annotations(annotation: Any) -> tuple[Any, Any]:
-    args = get_args(annotation)
-    if len(args) == 2:
-        return args[0], args[1]
-    return Any, Any
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_python_validator_for(
-    annotation: Any,
-) -> _JsoncompatPythonValidator:
-    if annotation is Any or annotation is JsonValue:
-        return lambda value: None
-    if annotation is JsoncompatMissingType:
-        def validate_missing(value: Any) -> None:
-            if value is not JSONCOMPAT_MISSING:
-                raise TypeError("expected JSONCOMPAT_MISSING sentinel")
-
-        return validate_missing
-    if annotation is str:
-        def validate_str(value: Any) -> None:
-            if not isinstance(value, str):
-                raise TypeError(f"expected str, got {type(value).__name__}")
-
-        return validate_str
-    if annotation is int:
-        def validate_int(value: Any) -> None:
-            if not (isinstance(value, int) and not isinstance(value, bool)):
-                raise TypeError(f"expected int, got {type(value).__name__}")
-
-        return validate_int
-    if annotation is float:
-        def validate_float(value: Any) -> None:
-            if not (
-                isinstance(value, (int, float)) and not isinstance(value, bool)
-            ):
-                raise TypeError(f"expected number, got {type(value).__name__}")
-
-        return validate_float
-    if annotation is bool:
-        def validate_bool(value: Any) -> None:
-            if not isinstance(value, bool):
-                raise TypeError(f"expected bool, got {type(value).__name__}")
-
-        return validate_bool
-    if annotation is None or annotation is type(None):
-        def validate_none(value: Any) -> None:
-            if value is not None:
-                raise TypeError(f"expected null, got {type(value).__name__}")
-
-        return validate_none
-    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        model_type = annotation
-
-        def validate_model(value: Any) -> None:
-            if not isinstance(value, model_type):
-                raise TypeError(
-                    f"expected {model_type.__name__}, got {type(value).__name__}"
-                )
-
-        return validate_model
-
-    origin = get_origin(annotation)
-    if origin in {list, Sequence}:
-        args = get_args(annotation)
-        item_annotation = args[0] if args else Any
-        item_validator = _jsoncompat_python_validator_for(item_annotation)
-
-        def validate_list(value: Any) -> None:
-            if not isinstance(value, Sequence) or isinstance(
-                value, (str, bytes, Mapping)
-            ):
-                raise TypeError(f"expected sequence, got {type(value).__name__}")
-            value_items = cast(Sequence[Any], value)
-            for item in value_items:
-                item_validator(item)
-
-        return validate_list
-    if origin in {dict, Mapping}:
-        key_annotation, value_annotation = _jsoncompat_dict_annotations(annotation)
-        key_validator = _jsoncompat_python_validator_for(key_annotation)
-        value_validator = _jsoncompat_python_validator_for(value_annotation)
-
-        def validate_dict(value: Any) -> None:
-            if not isinstance(value, Mapping):
-                raise TypeError(f"expected mapping, got {type(value).__name__}")
-            value_object = cast(Mapping[Any, Any], value)
-            for key, item in value_object.items():
-                key_validator(key)
-                value_validator(item)
-
-        return validate_dict
-    if origin in {types.UnionType, Union}:
-        branch_validators = tuple(
-            _jsoncompat_python_validator_for(branch) for branch in get_args(annotation)
-        )
-
-        def validate_union(value: Any) -> None:
-            for branch_validator in branch_validators:
-                try:
-                    branch_validator(value)
-                except TypeError:
-                    continue
-                return
-            raise TypeError(f"value {value!r} does not match any union branch")
-
-        return validate_union
-    if origin is Literal:
-        literals = get_args(annotation)
-        literals_by_key = _jsoncompat_literals_by_key(literals)
-
-        def validate_literal(value: Any) -> None:
-            literal_key = _jsoncompat_literal_key(value)
-            if literal_key is None or literal_key not in literals_by_key:
-                raise TypeError(f"expected one of {literals!r}, got {value!r}")
-
-        return validate_literal
-
-    def validate_unsupported(value: Any) -> NoReturn:
-        _ = value
-        raise TypeError(f"unsupported runtime annotation {annotation!r}")
-
-    return validate_unsupported
-
-
-def _jsoncompat_new_unchecked[JSONCOMPAT_MODEL_T: DataclassModel](
-    model_type: type[JSONCOMPAT_MODEL_T],
-    values: dict[str, Any],
-) -> JSONCOMPAT_MODEL_T:
-    instance = object.__new__(model_type)
-    for field in _jsoncompat_dataclass_fields(model_type):
-        if field.name in values:
-            value = values[field.name]
-        elif field.default is not dataclasses.MISSING:
-            value = field.default
-        elif field.default_factory is not dataclasses.MISSING:
-            value = field.default_factory()
-        else:
-            raise TypeError(
-                f"{model_type.__name__} is missing required field {field.name}"
-            )
-        object.__setattr__(instance, field.name, value)
-    return instance
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_serializer_for(annotation: Any) -> _JsoncompatSerializer:
-    if annotation in {
-        str,
-        int,
-        float,
-        bool,
-        None,
-        type(None),
-        JsoncompatMissingType,
-    } or get_origin(annotation) is Literal:
-        return lambda value: value
-    if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
-        return lambda value: value.jsoncompat_to_value_unchecked()
-
-    origin = get_origin(annotation)
-    if origin in {list, Sequence}:
-        args = get_args(annotation)
-        item_annotation = args[0] if args else Any
-        item_serializer = _jsoncompat_serializer_for(item_annotation)
-
-        def serialize_list(value: Any) -> list[Any]:
-            value_items = cast(Sequence[Any], value)
-            return [item_serializer(item) for item in value_items]
-
-        return serialize_list
-    if origin in {dict, Mapping}:
-        _, value_annotation = _jsoncompat_dict_annotations(annotation)
-        value_serializer = _jsoncompat_serializer_for(value_annotation)
-
-        def serialize_dict(value: Any) -> dict[str, Any]:
-            value_object = cast(Mapping[str, Any], value)
-            return {
-                key: value_serializer(item)
-                for key, item in value_object.items()
-            }
-
-        return serialize_dict
-    return _jsoncompat_serialize_value
-
-
-def _jsoncompat_serialize_value(value: Any) -> Any:
-    if value is JSONCOMPAT_MISSING:
-        return JSONCOMPAT_MISSING
-    if isinstance(value, DataclassModel):
-        return value.jsoncompat_to_value_unchecked()
-    if isinstance(value, Mapping):
-        value_object = cast(Mapping[str, Any], value)
-        return {
-            key: _jsoncompat_serialize_value(item)
-            for key, item in value_object.items()
-        }
-    if isinstance(value, Sequence) and not isinstance(
-        value, (str, bytes, Mapping)
-    ):
-        value_items = cast(Sequence[Any], value)
-        return [_jsoncompat_serialize_value(item) for item in value_items]
-    return value
-
-
-def _jsoncompat_empty_extra() -> dict[str, Any]:
-    return {}
-
-
-def _jsoncompat_dataclass_fields(
-    model_or_instance: object,
-) -> tuple[dataclasses.Field[Any], ...]:
-    model_type = (
-        model_or_instance
-        if isinstance(model_or_instance, type)
-        else type(model_or_instance)
-    )
-    return _jsoncompat_dataclass_fields_for_type(model_type)
-
-
-@functools.lru_cache(maxsize=None)
-def _jsoncompat_dataclass_fields_for_type(
-    model_type: type[Any],
-) -> tuple[dataclasses.Field[Any], ...]:
-    return dataclasses.fields(model_type)

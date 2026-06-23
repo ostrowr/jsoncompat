@@ -56,6 +56,12 @@ already guarantees schema validity. It skips only the attached JSON Schema
 check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
 
+Only classes emitted by `jsoncompat codegen --target dataclasses` implement
+this runtime contract. Generated modules compile and bind their native model
+plans at import time; there is no custom-subclass or Python-constructor
+fallback. Custom construction hooks and Python defaults/default factories are
+therefore intentionally outside the model-definition surface.
+
 Generated array and object fields accept ordinary lists and dictionaries at
 construction boundaries, then store them as deeply immutable values exposed as
 `Sequence[...]` and `Mapping[...]`. Use `to_value()` when a mutable JSON-value
@@ -100,16 +106,18 @@ with the iteration and repeat counts, as positional recipe arguments. The
 underlying script also accepts `--profile` to print cumulative Python profiles
 for checked and trusted JSON deserialization.
 
-To cover the complete checked-in JSON Schema fixture corpus, generate a
-candidate Pydantic v2 peer with the pinned `datamodel-code-generator` version
-and benchmark every pair that passes the equivalence screen:
+To benchmark JSON -> generated dataclass -> JSON across the complete checked-in
+JSON Schema fixture corpus, and compare Pydantic v2 wherever its generated peer
+passes the semantic-equivalence screen:
 
 ```bash
 just python-bench-fixtures
 ```
 
 This includes every embedded fuzz schema and both sides of every backcompat
-fixture. Generated Pydantic modules and the detailed JSON report are written to
+fixture. Jsoncompat timings cover every fixture with a representable schema and
+valid sample independently of Pydantic coverage. Generated Pydantic modules
+and the detailed JSON report are written to
 `target/python-fixture-benchmark`. The report retains explicit entries for
 jsoncompat or Pydantic generation failures, semantic mismatches, and schemas
 without a shared valid value; those cases are never silently removed from the

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -18,7 +19,7 @@ class GeneratedSchemaFoo(dc.DataclassAdditionalModel[typing.Any]):
   "unevaluatedProperties": false
 }"""
     bar: dc.Omittable[str] = dc.field("bar", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -51,6 +52,27 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     foo: dc.Omittable[GeneratedSchemaFoo] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaFoo,
+        "object",
+        (
+            ("bar", "bar", str, True),
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("foo", "foo", GeneratedSchemaFoo, True),
+        ),
+        True,
+        typing.Any,
+    ),
+))

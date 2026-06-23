@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -38,10 +39,10 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   ],
   "type": "object"
 }"""
-    __proto__: GeneratedSchemaBranch2Proto = dc.field("__proto__")
+    field___proto__: GeneratedSchemaBranch2Proto = dc.field("__proto__")
     constructor: GeneratedSchemaBranch2Constructor = dc.field("constructor")
     toString: GeneratedSchemaBranch2ToString = dc.field("toString")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -58,6 +59,25 @@ class GeneratedSchema(dc.DataclassRootModel):
     "constructor"
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaBranch2Proto, "root", typing.Any),
+    (GeneratedSchemaBranch2Constructor, "root", typing.Any),
+    (GeneratedSchemaBranch2ToString, "root", typing.Any),
+    (
+        GeneratedSchemaBranch2,
+        "object",
+        (
+            ("__proto__", "field___proto__", GeneratedSchemaBranch2Proto, False),
+            ("constructor", "constructor", GeneratedSchemaBranch2Constructor, False),
+            ("toString", "toString", GeneratedSchemaBranch2ToString, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaItem, "root", typing.Any),
+    (GeneratedSchema, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None)),
+))

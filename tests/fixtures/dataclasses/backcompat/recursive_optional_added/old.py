@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -27,7 +28,20 @@ class GeneratedSchema(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    children: dc.Omittable[typing.Sequence[GeneratedSchema]] = dc.field("children", omittable=True)
+    children: dc.Omittable[collections.abc.Sequence[GeneratedSchema]] = dc.field("children", omittable=True)
     value: int = dc.field("value")
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("children", "children", collections.abc.Sequence[GeneratedSchema], True),
+            ("value", "value", int, False),
+        ),
+        False,
+        None,
+    ),
+))

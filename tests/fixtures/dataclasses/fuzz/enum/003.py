@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -29,6 +30,19 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
 }"""
     bar: typing.Literal["bar"] = dc.field("bar")
     foo: dc.Omittable[typing.Literal["foo"]] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("bar", "bar", typing.Literal["bar"], False),
+            ("foo", "foo", typing.Literal["foo"], True),
+        ),
+        True,
+        typing.Any,
+    ),
+))

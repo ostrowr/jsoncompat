@@ -2,7 +2,8 @@
 
 These snapshots are generated from every checked-in sample schema under
 `tests/fixtures/backcompat`, `tests/fixtures/fuzz`, and
-`examples/stamp/schema-v1.json` + `examples/stamp/schema-v2.json`.
+`examples/stamp/schema-v1.json` + `examples/stamp/schema-v2.json`, plus the
+benchmark schemas under `pybindings/benchmark_schemas`.
 
 Successful generations are stored as `.py` files. Generator failures are stored
 as `.error.txt` snapshots with the exact diagnostic.

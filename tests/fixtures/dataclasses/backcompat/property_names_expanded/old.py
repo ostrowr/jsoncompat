@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -19,7 +20,7 @@ class GeneratedSchemaFlags(dc.DataclassAdditionalModel[(typing.Literal[False] | 
   },
   "type": "object"
 }"""
-    __jsoncompat_extra__: typing.Mapping[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -44,6 +45,26 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     flags: GeneratedSchemaFlags = dc.field("flags")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaFlags,
+        "object",
+        (
+        ),
+        True,
+        (typing.Literal[False] | typing.Literal[True]),
+    ),
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("flags", "flags", GeneratedSchemaFlags, False),
+        ),
+        True,
+        typing.Any,
+    ),
+))

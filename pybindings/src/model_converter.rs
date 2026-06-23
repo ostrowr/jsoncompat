@@ -6,6 +6,8 @@
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
+use std::rc::Rc;
 
 use ::jsoncompat::SchemaDocument;
 use jiter::JsonValue as JiterJsonValue;
@@ -17,6 +19,7 @@ use pyo3::Borrowed;
 use pyo3::exceptions::{PyIndexError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
+use pyo3::pyclass::{PyTraverseError, PyVisit};
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PySequence, PyString,
     PyTuple, PyType,
@@ -53,21 +56,17 @@ struct FieldPlan {
     py_name: Py<PyString>,
     slot_offset: Option<isize>,
     value_node: usize,
-    missing_factory: Py<PyAny>,
     missing_sentinel: Option<Py<PyAny>>,
 }
 
 struct PythonConversionState {
     validated: bool,
     validate_union_branches: bool,
-    inserted_defaults: bool,
     json_proven: bool,
 }
 
 struct JiterConversionState {
     validate_union_branches: bool,
-    inserted_defaults: bool,
-    json_proven: bool,
 }
 
 struct BranchSchema {
@@ -140,18 +139,75 @@ enum ConversionNode {
     },
 }
 
-#[pyclass(name = "ModelConverter", module = "jsoncompat._native", unsendable)]
-pub(crate) struct ModelConverterPy {
+pub(crate) struct ModelConverterPlan {
     nodes: Vec<ConversionNode>,
-    root: usize,
     has_prevalidated_schemas: bool,
     object_new: Py<PyAny>,
     frozen_list_type: Py<PyType>,
     frozen_dict_type: Py<PyType>,
     frozen_dict_items_py_name: Py<PyString>,
     frozen_dict_items_slot_offset: Option<isize>,
-    construct_frozen_dict_natively: bool,
     validated_py_name: Py<PyString>,
+}
+
+pub(crate) struct ModelConverterPy {
+    plan: Rc<ModelConverterPlan>,
+    root: usize,
+}
+
+impl Deref for ModelConverterPy {
+    type Target = ModelConverterPlan;
+
+    fn deref(&self) -> &Self::Target {
+        &self.plan
+    }
+}
+
+impl ModelConverterPlan {
+    pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.object_new)?;
+        visit.call(&self.frozen_list_type)?;
+        visit.call(&self.frozen_dict_type)?;
+        visit.call(&self.frozen_dict_items_py_name)?;
+        visit.call(&self.validated_py_name)?;
+        for node in &self.nodes {
+            match node {
+                ConversionNode::Scalar {
+                    missing_sentinel, ..
+                } => visit.call(missing_sentinel)?,
+                ConversionNode::Literal { values, .. } => {
+                    for value in values {
+                        visit.call(value)?;
+                    }
+                }
+                ConversionNode::Model {
+                    model_type,
+                    fields,
+                    extra_py_name,
+                    ..
+                } => {
+                    visit.call(model_type)?;
+                    for field in fields {
+                        visit.call(&field.py_name)?;
+                        visit.call(&field.missing_sentinel)?;
+                    }
+                    visit.call(extra_py_name)?;
+                }
+                ConversionNode::Root {
+                    model_type,
+                    root_py_name,
+                    ..
+                } => {
+                    visit.call(model_type)?;
+                    visit.call(root_py_name)?;
+                }
+                ConversionNode::List { .. }
+                | ConversionNode::Dict { .. }
+                | ConversionNode::Union { .. } => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 pub(crate) struct ModelProjection<'a> {
@@ -160,9 +216,8 @@ pub(crate) struct ModelProjection<'a> {
     union_branches: RefCell<HashMap<(usize, usize), usize>>,
 }
 
-#[pymethods]
 impl ModelConverterPy {
-    fn construct(
+    pub(crate) fn construct(
         &self,
         py: Python<'_>,
         value: &Bound<'_, PyAny>,
@@ -171,12 +226,18 @@ impl ModelConverterPy {
         let mut state = PythonConversionState {
             validated,
             validate_union_branches: validated,
-            inserted_defaults: false,
             json_proven: true,
         };
         let instance = self.convert(py, self.root, value, &mut state, MAX_MODEL_DEPTH)?;
         self.finalize(py, instance, validated && state.json_proven)
     }
+}
+
+pub(crate) fn model_converter_for_validated_root(
+    plan: Rc<ModelConverterPlan>,
+    root: usize,
+) -> ModelConverterPy {
+    ModelConverterPy { plan, root }
 }
 
 impl ModelConverterPy {
@@ -186,21 +247,6 @@ impl ModelConverterPy {
             retained: RefCell::new(Vec::new()),
             union_branches: RefCell::new(HashMap::new()),
         }
-    }
-
-    pub(crate) fn construct_python_unvalidated(
-        &self,
-        py: Python<'_>,
-        value: &Bound<'_, PyAny>,
-    ) -> PyResult<(Py<PyAny>, bool, bool)> {
-        let mut state = PythonConversionState {
-            validated: false,
-            validate_union_branches: true,
-            inserted_defaults: false,
-            json_proven: true,
-        };
-        let instance = self.convert(py, self.root, value, &mut state, MAX_MODEL_DEPTH)?;
-        Ok((instance, state.inserted_defaults, state.json_proven))
     }
 
     pub(crate) fn construct_kwargs_unvalidated(
@@ -272,23 +318,11 @@ impl ModelConverterPy {
         value: &JiterJsonValue<'_>,
         validated: bool,
     ) -> PyResult<Py<PyAny>> {
-        let (instance, _, _) = self.construct_jiter_unfinalized(py, value, validated)?;
-        self.finalize(py, instance, validated)
-    }
-
-    pub(crate) fn construct_jiter_unfinalized(
-        &self,
-        py: Python<'_>,
-        value: &JiterJsonValue<'_>,
-        validate_union_branches: bool,
-    ) -> PyResult<(Py<PyAny>, bool, bool)> {
         let mut state = JiterConversionState {
-            validate_union_branches,
-            inserted_defaults: false,
-            json_proven: true,
+            validate_union_branches: validated,
         };
         let instance = self.convert_jiter(py, self.root, value, &mut state)?;
-        Ok((instance, state.inserted_defaults, state.json_proven))
+        self.finalize(py, instance, validated)
     }
 
     pub(crate) fn finalize(
@@ -565,14 +599,14 @@ impl ModelConverterPy {
         &self,
         py: Python<'_>,
         field: &FieldPlan,
-        remaining_depth: u16,
-        json_proven: &mut bool,
     ) -> PyResult<Py<PyAny>> {
         if let Some(sentinel) = &field.missing_sentinel {
             return Ok(sentinel.clone_ref(py));
         }
-        let value = field.missing_factory.bind(py).call0()?;
-        self.convert_direct(py, field.value_node, &value, remaining_depth, json_proven)
+        Err(PyErr::new::<PyTypeError, _>(format!(
+            "missing required field {}",
+            field.py_name.bind(py).to_str()?,
+        )))
     }
 
     fn freeze_list(&self, py: Python<'_>, items: &Bound<'_, PyList>) -> PyResult<Py<PyAny>> {
@@ -580,29 +614,14 @@ impl ModelConverterPy {
     }
 
     fn freeze_dict(&self, py: Python<'_>, items: &Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
-        if self.construct_frozen_dict_natively {
-            return self.freeze_dict_natively(py, items);
-        }
-        Ok(self.frozen_dict_type.bind(py).call1((items,))?.unbind())
-    }
-
-    fn freeze_dict_natively(
-        &self,
-        py: Python<'_>,
-        items: &Bound<'_, PyDict>,
-    ) -> PyResult<Py<PyAny>> {
         // A dict iterator preserves insertion order, and converting each Rust
         // pair into a Python tuple produces the same storage shape as
         // `tuple(dict.items())` without constructing a duplicate dict or
         // invoking Python-level `FrozenDict.__init__`.
         let frozen_items = PyTuple::new(py, items.iter())?.into_any().unbind();
         let instance = allocate_model(py, &self.frozen_dict_type, &self.object_new)?;
-        // The native plan is enabled only when `python_slot_offset` has
-        // verified that `_items` is an object-valued member descriptor for the
-        // supplied type. GenericSetAttr then delegates the write to that
+        // GenericSetAttr delegates the write to the generated FrozenDict slot
         // descriptor and preserves normal slot ownership/refcount behavior.
-        // Any error here is a real runtime failure and must not be retried by
-        // invoking the constructor after partially attempting construction.
         set_model_attribute(
             py,
             &instance,
@@ -1165,16 +1184,7 @@ impl ModelConverterPy {
                     remaining_depth - 1,
                 )?
             } else {
-                let converted = self.convert_missing_field_value(
-                    py,
-                    field,
-                    remaining_depth - 1,
-                    &mut state.json_proven,
-                )?;
-                if field.missing_sentinel.is_none() {
-                    state.inserted_defaults = true;
-                }
-                converted
+                self.convert_missing_field_value(py, field)?
             };
             set_model_attribute(py, &instance, &field.py_name, &converted)?;
         }
@@ -1290,12 +1300,7 @@ impl ModelConverterPy {
                     &field.py_name,
                     field.slot_offset,
                 )? {
-                    let converted = self.convert_missing_field_value(
-                        py,
-                        field,
-                        MAX_MODEL_DEPTH - 1,
-                        json_proven,
-                    )?;
+                    let converted = self.convert_missing_field_value(py, field)?;
                     set_model_attribute(py, &instance, &field.py_name, &converted)?;
                 }
             }
@@ -1567,15 +1572,7 @@ impl ModelConverterPy {
                     &field.py_name,
                     field.slot_offset,
                 )? {
-                    let converted = self.convert_missing_field_value(
-                        py,
-                        field,
-                        MAX_MODEL_DEPTH - 1,
-                        &mut state.json_proven,
-                    )?;
-                    if field.missing_sentinel.is_none() {
-                        state.inserted_defaults = true;
-                    }
+                    let converted = self.convert_missing_field_value(py, field)?;
                     set_model_attribute(py, &instance, &field.py_name, &converted)?;
                 }
             }
@@ -2969,11 +2966,6 @@ fn copy_python_json_value(
         }
         return Ok(output.into_any().unbind());
     }
-    if value.hasattr("jsoncompat_to_value_unchecked")? {
-        return Ok(value
-            .call_method0("jsoncompat_to_value_unchecked")?
-            .unbind());
-    }
     Ok(value.clone().unbind())
 }
 
@@ -3271,21 +3263,15 @@ fn set_model_attribute(
     }
 }
 
-pub(crate) fn compile_model_converter(
+pub(crate) fn compile_model_converter_plan(
     py: Python<'_>,
     descriptors: &Bound<'_, PyList>,
-    root: usize,
     frozen_list_type: &Bound<'_, PyType>,
     frozen_dict_type: &Bound<'_, PyType>,
-) -> PyResult<ModelConverterPy> {
+) -> PyResult<Rc<ModelConverterPlan>> {
     let mut nodes = Vec::with_capacity(descriptors.len());
     for descriptor in descriptors {
         nodes.push(parse_node(py, &descriptor)?);
-    }
-    if root >= nodes.len() {
-        return Err(PyErr::new::<PyIndexError, _>(
-            "model converter root node is out of bounds",
-        ));
     }
     validate_references(&nodes)?;
     let has_prevalidated_schemas = nodes.iter().any(|node| match node {
@@ -3301,40 +3287,45 @@ pub(crate) fn compile_model_converter(
     });
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
     let frozen_dict_items_slot_offset = python_slot_offset(frozen_dict_type, "_items");
-    let construct_frozen_dict_natively = frozen_dict_items_slot_offset.is_some()
-        && is_canonical_frozen_dict_type(py, frozen_dict_type);
-    Ok(ModelConverterPy {
+    Ok(Rc::new(ModelConverterPlan {
         nodes,
-        root,
         has_prevalidated_schemas,
         object_new,
         frozen_list_type: frozen_list_type.clone().unbind(),
         frozen_dict_type: frozen_dict_type.clone().unbind(),
         frozen_dict_items_py_name: PyString::new(py, "_items").unbind(),
         frozen_dict_items_slot_offset,
-        construct_frozen_dict_natively,
         validated_py_name: PyString::new(py, "_jsoncompat_validated").unbind(),
-    })
+    }))
 }
 
-fn is_canonical_frozen_dict_type(py: Python<'_>, frozen_dict_type: &Bound<'_, PyType>) -> bool {
-    // Consult the already-loaded module table instead of importing the module
-    // as a side effect. The private reference remains stable even if a caller
-    // replaces the public `FrozenDict` name with a lookalike class.
-    let Some(modules) =
-        (unsafe { Bound::from_borrowed_ptr_or_opt(py, ffi::PyImport_GetModuleDict()) })
-    else {
-        return false;
+pub(crate) fn model_converter_for_root(
+    py: Python<'_>,
+    plan: Rc<ModelConverterPlan>,
+    model_type: &Bound<'_, PyType>,
+    root: usize,
+) -> PyResult<ModelConverterPy> {
+    let root_model_type = match plan.nodes.get(root) {
+        Some(ConversionNode::Model { model_type, .. })
+        | Some(ConversionNode::Root { model_type, .. }) => model_type,
+        Some(_) => {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "model converter root must be a generated model",
+            ));
+        }
+        None => {
+            return Err(PyErr::new::<PyIndexError, _>(
+                "model converter root node is out of bounds",
+            ));
+        }
     };
-    let Ok(modules) = modules.cast_into::<PyDict>() else {
-        return false;
-    };
-    let Ok(Some(dataclasses)) = modules.get_item("jsoncompat.codegen.dataclasses") else {
-        return false;
-    };
-    dataclasses
-        .getattr("_JSONCOMPAT_CANONICAL_FROZEN_DICT")
-        .is_ok_and(|canonical| canonical.is(frozen_dict_type))
+    if !root_model_type.bind(py).is(model_type) {
+        return Err(PyErr::new::<PyTypeError, _>(format!(
+            "model converter root does not describe {}",
+            model_type.name()?,
+        )));
+    }
+    Ok(ModelConverterPy { plan, root })
 }
 
 #[cfg(all(Py_3_11, not(any(PyPy, GraalPy))))]
@@ -3524,9 +3515,8 @@ fn parse_model_node(py: Python<'_>, descriptor: &Bound<'_, PyTuple>) -> PyResult
             slot_offset: python_slot_offset(&model_type, &py_name),
             py_name: PyString::new(py, &py_name).unbind(),
             value_node: field.get_item(2)?.extract()?,
-            missing_factory: field.get_item(3)?.unbind(),
             missing_sentinel: {
-                let sentinel = field.get_item(4)?;
+                let sentinel = field.get_item(3)?;
                 if sentinel.is_none() {
                     None
                 } else {

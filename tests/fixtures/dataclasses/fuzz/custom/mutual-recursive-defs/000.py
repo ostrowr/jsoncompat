@@ -293,3 +293,27 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: GeneratedSchemaA = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaABranch1,
+        "object",
+        (
+            ("next", "next", GeneratedSchemaB, False),
+        ),
+        False,
+        None,
+    ),
+    (GeneratedSchemaA, "root", (GeneratedSchemaABranch1 | None)),
+    (
+        GeneratedSchemaBBranch1,
+        "object",
+        (
+            ("next", "next", GeneratedSchemaA, False),
+        ),
+        False,
+        None,
+    ),
+    (GeneratedSchemaB, "root", (GeneratedSchemaBBranch1 | None)),
+    (GeneratedSchema, "root", GeneratedSchemaA),
+))

@@ -25,3 +25,8 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: (GeneratedSchemaBranch1 | float) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaBranch1, "root", typing.Any),
+    (GeneratedSchema, "root", (GeneratedSchemaBranch1 | float)),
+))

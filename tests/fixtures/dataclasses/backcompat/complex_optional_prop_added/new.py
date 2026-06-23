@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -75,6 +76,32 @@ class GeneratedSchema(dc.DataclassModel):
     id: str = dc.field("id")
     name: str = dc.field("name")
     nested: dc.Omittable[GeneratedSchemaNested] = dc.field("nested", omittable=True)
-    tags: dc.Omittable[typing.Sequence[str]] = dc.field("tags", omittable=True)
+    tags: dc.Omittable[collections.abc.Sequence[str]] = dc.field("tags", omittable=True)
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaNested,
+        "object",
+        (
+            ("count", "count", int, True),
+            ("flag", "flag", (typing.Literal[False] | typing.Literal[True]), False),
+        ),
+        False,
+        None,
+    ),
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("description", "description", str, True),
+            ("id", "id", str, False),
+            ("name", "name", str, False),
+            ("nested", "nested", GeneratedSchemaNested, True),
+            ("tags", "tags", collections.abc.Sequence[str], True),
+        ),
+        False,
+        None,
+    ),
+))

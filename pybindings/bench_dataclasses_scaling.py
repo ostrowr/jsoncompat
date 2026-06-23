@@ -1,8 +1,10 @@
-"""Benchmark a large recursive generated-dataclass-style object graph.
+"""Benchmark a large recursive codegen-emitted dataclass object graph.
 
 The workload is a balanced directory tree whose leaves contain lists, mappings,
 optional fields, and discriminated recursive unions. An equivalent strict,
-frozen Pydantic v2 graph provides a useful point of comparison.
+frozen Pydantic v2 graph provides a useful point of comparison. The jsoncompat
+model is generated from ``benchmark_schemas/scaling.json`` and its checked-in
+module is guarded by the dataclass snapshot test.
 """
 
 from __future__ import annotations
@@ -15,102 +17,20 @@ import platform
 import pstats
 import statistics
 import time
-from dataclasses import dataclass
-from typing import Annotated, Any, Callable, ClassVar, Literal
+from typing import Annotated, Any, Callable, Literal
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from jsoncompat import validator_for
-from jsoncompat.codegen import dataclasses as dc
+
+from benchmark_generated_models import generated_dataclass, load_generated_module
 
 
 type JsonObject = dict[str, Any]
 
-
-NODE_DEFINITIONS: JsonObject = {
-    "node": {
-        "oneOf": [
-            {"$ref": "#/$defs/file"},
-            {"$ref": "#/$defs/directory"},
-        ]
-    },
-    "file": {
-        "type": "object",
-        "required": ["kind", "name", "size", "labels", "metadata"],
-        "properties": {
-            "kind": {"const": "file"},
-            "name": {"type": "string", "minLength": 1},
-            "size": {"type": "integer", "minimum": 0},
-            "checksum": {"type": ["string", "null"]},
-            "labels": {"type": "array", "items": {"type": "string"}},
-            "metadata": {
-                "type": "object",
-                "additionalProperties": {"type": "string"},
-            },
-        },
-        "additionalProperties": False,
-    },
-    "directory": {
-        "type": "object",
-        "required": ["kind", "name", "owner", "children", "metadata"],
-        "properties": {
-            "kind": {"const": "directory"},
-            "name": {"type": "string", "minLength": 1},
-            "owner": {"type": ["string", "null"]},
-            "children": {
-                "type": "array",
-                "items": {"$ref": "#/$defs/node"},
-            },
-            "metadata": {
-                "type": "object",
-                "additionalProperties": {"type": "string"},
-            },
-        },
-        "additionalProperties": False,
-    },
-}
-
-
-def schema_for(definition: str) -> str:
-    return json.dumps(
-        {
-            "$defs": NODE_DEFINITIONS,
-            "$ref": f"#/$defs/{definition}",
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ScaleFile(dc.DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = schema_for("file")
-
-    checksum: dc.Omittable[str | None] = dc.field("checksum", omittable=True)
-    kind: Literal["file"] = dc.field("kind")
-    labels: list[str] = dc.field("labels")
-    metadata: dict[str, str] = dc.field("metadata")
-    name: str = dc.field("name")
-    size: int = dc.field("size")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ScaleDirectory(dc.DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = schema_for("directory")
-
-    children: list[ScaleFile | ScaleDirectory] = dc.field("children")
-    kind: Literal["directory"] = dc.field("kind")
-    metadata: dict[str, str] = dc.field("metadata")
-    name: str = dc.field("name")
-    owner: str | None = dc.field("owner")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ScaleTree(dc.DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = schema_for("node")
-
-    root: ScaleFile | ScaleDirectory = dc.root_field()
+_GENERATED_MODELS = load_generated_module("scaling")
+ScaleTree = generated_dataclass(_GENERATED_MODELS, "JSONCOMPAT_MODEL")
 
 
 class PydanticFile(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -39,7 +40,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
     foo_bar4: dc.Omittable[float] = dc.field("foo\rbar", omittable=True)
     foo_bar5: dc.Omittable[float] = dc.field("foo\"bar", omittable=True)
     foo_bar6: dc.Omittable[float] = dc.field("foo\\bar", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -71,6 +72,25 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaBranch2,
+        "object",
+        (
+            ("foo\tbar", "foo_bar", float, True),
+            ("foo\nbar", "foo_bar2", float, True),
+            ("foo\fbar", "foo_bar3", float, True),
+            ("foo\rbar", "foo_bar4", float, True),
+            ("foo\"bar", "foo_bar5", float, True),
+            ("foo\\bar", "foo_bar6", float, True),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaItem, "root", typing.Any),
+    (GeneratedSchema, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None)),
+))

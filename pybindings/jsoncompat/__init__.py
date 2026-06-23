@@ -28,18 +28,14 @@ GeneratorForFn = Callable[[str], "Generator"]
 ValidatorForFn = Callable[[str], "Validator"]
 DeserializeJsonFn = Callable[[str | bytes], "JsonValue"]
 SerializeJsonFn = Callable[["JsonValue"], str]
-CompileModelConverterFn = Callable[
+CompileModelRuntimesFn = Callable[
     [
+        list[tuple[type[Any], int]],
         list[tuple[Any, ...]],
-        int,
         type[tuple[Any, ...]],
         type[Mapping[Any, Any]],
     ],
-    "ModelConverter",
-]
-BindModelRuntimeFn = Callable[
-    [type[Any], "Validator", "ModelConverter"],
-    "ModelRuntime",
+    list["ModelRuntime"],
 ]
 
 
@@ -51,51 +47,45 @@ class Validator(Protocol):
     def is_valid_json(self, instance_json: str) -> bool: ...
     def is_valid_value(self, instance: JsonValue) -> bool: ...
     def _is_valid_borrowed_value(self, instance: JsonValue) -> bool: ...
-    def construct_value(
-        self,
-        instance: JsonValue,
-        converter: ModelConverter,
-    ) -> Any | None: ...
-    def construct_kwargs(
-        self,
-        kwargs: dict[str, Any],
-        converter: ModelConverter,
-        validate: bool = True,
-    ) -> Any | None: ...
-    def construct_json(
-        self,
-        payload: str | bytes,
-        converter: ModelConverter,
-        validate: bool = True,
-    ) -> Any | None: ...
-    def model_to_value(
-        self,
-        instance: Any,
-        converter: ModelConverter,
-        validate: bool = True,
-    ) -> tuple[bool, JsonValue]: ...
-    def serialize_model(
-        self,
-        instance: Any,
-        converter: ModelConverter,
-        validate: bool = True,
-    ) -> str | None: ...
     def parse_json(self, payload: str | bytes) -> tuple[bool, JsonValue]: ...
     def serialize_json(self, instance: JsonValue) -> str | None: ...
 
 
-class ModelConverter(Protocol):
-    def construct(self, value: Any, validated: bool) -> Any: ...
-
-
 class ModelRuntime(Protocol):
+    def construct_kwargs(
+        self,
+        kwargs: dict[str, Any],
+        *,
+        skip_validation: bool = False,
+    ) -> Any: ...
+
+    def from_value(
+        self,
+        value: JsonValue,
+        *,
+        skip_validation: bool = False,
+    ) -> Any: ...
+
     def deserialize(
         self,
         payload: str | bytes,
         *,
-        format: Any = "json",
         skip_validation: bool = False,
     ) -> Any: ...
+
+    def to_value(
+        self,
+        instance: Any,
+        *,
+        skip_validation: bool = False,
+    ) -> JsonValue: ...
+
+    def serialize(
+        self,
+        instance: Any,
+        *,
+        skip_validation: bool = False,
+    ) -> str: ...
 
 
 class NativeModule(Protocol):
@@ -116,20 +106,13 @@ class NativeModule(Protocol):
 
     def serialize_json(self, value: JsonValue) -> str: ...
 
-    def compile_model_converter(
+    def compile_model_runtimes(
         self,
+        model_roots: list[tuple[type[Any], int]],
         descriptors: list[tuple[Any, ...]],
-        root: int,
         frozen_list_type: type[tuple[Any, ...]],
         frozen_dict_type: type[Mapping[Any, Any]],
-    ) -> ModelConverter: ...
-
-    def bind_model_runtime(
-        self,
-        model_type: type[Any],
-        validator: Validator,
-        converter: ModelConverter,
-    ) -> ModelRuntime: ...
+    ) -> list[ModelRuntime]: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
 
@@ -200,25 +183,13 @@ def _missing_serialize_json(value: JsonValue) -> NoReturn:
     )
 
 
-def _missing_compile_model_converter(
+def _missing_compile_model_runtimes(
+    model_roots: list[tuple[type[Any], int]],
     descriptors: list[tuple[Any, ...]],
-    root: int,
     frozen_list_type: type[tuple[Any, ...]],
     frozen_dict_type: type[Mapping[Any, Any]],
 ) -> NoReturn:
-    _ = (descriptors, root, frozen_list_type, frozen_dict_type)
-    raise ModuleNotFoundError(
-        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
-        "before constructing generated models."
-    )
-
-
-def _missing_bind_model_runtime(
-    model_type: type[Any],
-    validator: Validator,
-    converter: ModelConverter,
-) -> NoReturn:
-    _ = (model_type, validator, converter)
+    _ = (model_roots, descriptors, frozen_list_type, frozen_dict_type)
     raise ModuleNotFoundError(
         "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
         "before constructing generated models."
@@ -242,7 +213,11 @@ def _load_repo_native() -> NativeModule:
 
     for target_root in target_roots:
         for build_dir in build_dirs:
-            for filename in ("libjsoncompat.dylib", "libjsoncompat.so", "jsoncompat.dll"):
+            for filename in (
+                "libjsoncompat.dylib",
+                "libjsoncompat.so",
+                "jsoncompat.dll",
+            ):
                 native_path = target_root / build_dir / "deps" / filename
                 if not native_path.exists():
                     continue
@@ -269,23 +244,23 @@ def _load_repo_native() -> NativeModule:
 
 def _has_reusable_schema_api(module: object) -> bool:
     validator = getattr(module, "Validator", None)
+    model_runtime = getattr(module, "ModelRuntime", None)
     return (
         hasattr(module, "generator_for")
         and hasattr(module, "validator_for")
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
-        and hasattr(module, "compile_model_converter")
-        and hasattr(module, "bind_model_runtime")
+        and hasattr(module, "compile_model_runtimes")
         and hasattr(validator, "is_valid_json")
         and hasattr(validator, "is_valid_value")
         and hasattr(validator, "_is_valid_borrowed_value")
-        and hasattr(validator, "construct_value")
-        and hasattr(validator, "construct_kwargs")
-        and hasattr(validator, "construct_json")
-        and hasattr(validator, "model_to_value")
-        and hasattr(validator, "serialize_model")
         and hasattr(validator, "parse_json")
         and hasattr(validator, "serialize_json")
+        and hasattr(model_runtime, "construct_kwargs")
+        and hasattr(model_runtime, "from_value")
+        and hasattr(model_runtime, "deserialize")
+        and hasattr(model_runtime, "to_value")
+        and hasattr(model_runtime, "serialize")
     )
 
 
@@ -313,10 +288,9 @@ except ModuleNotFoundError as error:
         _validator_for_native: ValidatorForFn = _missing_validator_for
         _deserialize_json_native: DeserializeJsonFn = _missing_deserialize_json
         _serialize_json_native: SerializeJsonFn = _missing_serialize_json
-        _compile_model_converter_native: CompileModelConverterFn = (
-            _missing_compile_model_converter
+        _compile_model_runtimes_native: CompileModelRuntimesFn = (
+            _missing_compile_model_runtimes
         )
-        _bind_model_runtime_native: BindModelRuntimeFn = _missing_bind_model_runtime
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _check_compat_native = _repo_native.check_compat
@@ -325,8 +299,7 @@ except ModuleNotFoundError as error:
         _validator_for_native = _repo_native.validator_for
         _deserialize_json_native = _repo_native.deserialize_json
         _serialize_json_native = _repo_native.serialize_json
-        _compile_model_converter_native = _repo_native.compile_model_converter
-        _bind_model_runtime_native = _repo_native.bind_model_runtime
+        _compile_model_runtimes_native = _repo_native.compile_model_runtimes
         _is_valid_native = _repo_native.is_valid
 else:
     if not _force_repo_native and not _has_reusable_schema_api(_native_module):
@@ -337,8 +310,7 @@ else:
     _validator_for_native = _native_module.validator_for
     _deserialize_json_native = _native_module.deserialize_json
     _serialize_json_native = _native_module.serialize_json
-    _compile_model_converter_native = _native_module.compile_model_converter
-    _bind_model_runtime_native = _native_module.bind_model_runtime
+    _compile_model_runtimes_native = _native_module.compile_model_runtimes
     _is_valid_native = _native_module.is_valid
 
 
@@ -382,23 +354,19 @@ def serialize_json_value(value: JsonValue) -> str:
     return serialize_json_native(value)
 
 
-def compile_model_converter(
+def compile_model_runtimes(
+    model_roots: list[tuple[type[Any], int]],
     descriptors: list[tuple[Any, ...]],
-    root: int,
     frozen_list_type: type[tuple[Any, ...]],
     frozen_dict_type: type[Mapping[Any, Any]],
-) -> ModelConverter:
-    compile_native = _compile_model_converter_native
-    return compile_native(descriptors, root, frozen_list_type, frozen_dict_type)
-
-
-def bind_model_runtime(
-    model_type: type[Any],
-    validator: Validator,
-    converter: ModelConverter,
-) -> ModelRuntime:
-    bind_native = _bind_model_runtime_native
-    return bind_native(model_type, validator, converter)
+) -> list[ModelRuntime]:
+    compile_native = _compile_model_runtimes_native
+    return compile_native(
+        model_roots,
+        descriptors,
+        frozen_list_type,
+        frozen_dict_type,
+    )
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:

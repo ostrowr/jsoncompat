@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -88,7 +89,7 @@ class UserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
 }"""
     age: int = dc.field("age")
     name: str = dc.field("name")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
@@ -177,7 +178,7 @@ class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2Reader(dc.ReaderDataclassModel):
@@ -460,3 +461,48 @@ class UserProfileReader(dc.ReaderDataclassRootModel):
     root: (UserProfileV1Reader | UserProfileV2Reader) = dc.root_field()
 
 JSONCOMPAT_MODEL = UserProfileReader
+
+dc.bind_generated_models((
+    (
+        UserProfileV1,
+        "object",
+        (
+            ("age", "age", int, False),
+            ("name", "name", str, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        UserProfileV2,
+        "object",
+        (
+            ("age", "age", int, False),
+            ("interests", "interests", int, False),
+            ("name", "name", str, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        UserProfileV2Reader,
+        "object",
+        (
+            ("version", "version", typing.Literal[2], False),
+            ("data", "data", UserProfileV2, False),
+        ),
+        False,
+        None,
+    ),
+    (
+        UserProfileV1Reader,
+        "object",
+        (
+            ("version", "version", typing.Literal[1], False),
+            ("data", "data", UserProfileV1, False),
+        ),
+        False,
+        None,
+    ),
+    (UserProfileReader, "root", (UserProfileV1Reader | UserProfileV2Reader)),
+))

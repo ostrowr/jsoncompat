@@ -11,8 +11,10 @@ jsoncompat codegen failures, Pydantic codegen/import failures, and schemas for
 which the generated validators disagree or no shared valid value could be
 found. Pydantic acceptance is screened against the jsoncompat validator using
 fixture tests and deterministic mutations before timing. This prevents a
-faster-looking result from silently narrowing the fixture corpus or dropping
-validation work.
+faster-looking result from silently narrowing the Pydantic comparison corpus
+or dropping validation work. Independently of Pydantic compatibility, every
+fixture with a generated jsoncompat model and a reproducible valid sample is
+timed end to end from JSON through the generated dataclass and back to JSON.
 """
 
 from __future__ import annotations
@@ -33,17 +35,16 @@ from dataclasses import dataclass
 from importlib.metadata import version as package_version
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Literal, TypeAlias, cast, get_args
+from typing import Any, Literal, TypeAlias, TypedDict, cast, get_args
 
 import pydantic
 from datamodel_code_generator import (
-    DataModelType,
     InputFileType,
     LiteralType,
     generate,
 )
+from datamodel_code_generator.enums import DataModelType, StrictTypes
 from datamodel_code_generator.format import Formatter, PythonVersion
-from datamodel_code_generator.types import StrictTypes
 from pydantic import TypeAdapter
 
 import jsoncompat
@@ -58,6 +59,8 @@ BACKCOMPAT_ROOT = FIXTURE_ROOT / "backcompat"
 JSONCOMPAT_MODEL_ROOT = FIXTURE_ROOT / "dataclasses"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "target" / "python-fixture-benchmark"
 CHECKED_SAMPLE_CACHE = REPO_ROOT / "pybindings" / "bench_fixture_samples.json"
+RUNTIME_UNSUPPORTED_MANIFEST = JSONCOMPAT_MODEL_ROOT / "runtime_unsupported.json"
+UNSATISFIABLE_MANIFEST = JSONCOMPAT_MODEL_ROOT / "unsatisfiable.json"
 
 PYDANTIC_BASE_CLASS = "fixture_benchmark_support.StrictBaseModel"
 PYDANTIC_ROOT_NAME = "GeneratedSchema"
@@ -70,6 +73,7 @@ Status = Literal[
     "pydantic_import_error",
     "jsoncompat_import_error",
     "jsoncompat_validation_unsupported",
+    "unsatisfiable",
     "pydantic_semantic_mismatch",
     "no_shared_value",
 ]
@@ -105,6 +109,18 @@ class PreparedValue:
     wire: str
     source: str
     pydantic_python_compatible: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CachedCandidate:
+    """A present cached sample, including JSON null."""
+
+    value: JsonValue
+
+
+class UnsatisfiableFixture(TypedDict):
+    reason: str
+    schema_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +176,21 @@ COMPARISONS = (
         "jsoncompat.deserialize.trusted",
         "pydantic.validate_json",
     ),
+    Comparison(
+        "JSON -> model -> JSON (checked)",
+        "jsoncompat.roundtrip.checked",
+        "pydantic.roundtrip",
+    ),
+    Comparison(
+        "JSON -> model -> JSON (trusted)",
+        "jsoncompat.roundtrip.trusted",
+        "pydantic.roundtrip",
+    ),
+)
+
+JSONCOMPAT_END_TO_END_OPERATIONS = (
+    ("JSON -> dataclass -> JSON (checked)", "jsoncompat.roundtrip.checked"),
+    ("JSON -> dataclass -> JSON (trusted)", "jsoncompat.roundtrip.trusted"),
 )
 
 GENERIC_SEMANTIC_PROBES: tuple[JsonValue, ...] = (
@@ -316,7 +347,7 @@ def pydantic_source(case: FixtureCase) -> str:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         generated = generate(
-            case.schema,
+            cast(Any, case.schema),
             input_filename=f"{case.case_id}.json",
             input_file_type=InputFileType.JsonSchema,
             output_model_type=DataModelType.PydanticV2BaseModel,
@@ -355,8 +386,7 @@ def generate_pydantic_models(
         error_path = artifact_path(models_root, case.case_id, ".error.txt")
         generation_digest = hashlib.sha256(
             (
-                f"{generator_version}\0{GENERATOR_CONFIGURATION}\0"
-                f"{case.schema_json}"
+                f"{generator_version}\0{GENERATOR_CONFIGURATION}\0{case.schema_json}"
             ).encode()
         ).hexdigest()
 
@@ -472,11 +502,12 @@ def mutation_probes(value: JsonValue) -> Iterator[JsonValue]:
 
     if isinstance(value, dict):
         keys = sorted(value)[:8]
+        replacements: tuple[JsonValue, ...] = (None, False, 0, "", [], {})
         for key in keys:
             removed = dict(value)
             removed.pop(key)
             yield removed
-            for replacement in (None, False, 0, "", [], {}):
+            for replacement in replacements:
                 replaced = dict(value)
                 replaced[key] = replacement
                 yield replaced
@@ -562,17 +593,19 @@ def semantic_mismatches(
 
 def cached_candidate(
     sample_cache: Mapping[str, Any], case: FixtureCase
-) -> JsonValue | None:
-    raw = sample_cache.get(case.case_id)
-    if not isinstance(raw, dict) or raw.get("schema_digest") != case.schema_digest:
+) -> CachedCandidate | None:
+    raw_value = sample_cache.get(case.case_id)
+    if not isinstance(raw_value, dict):
         return None
-    return cast(JsonValue, raw.get("value"))
+    raw = cast(Mapping[str, object], raw_value)
+    if raw.get("schema_digest") != case.schema_digest or "value" not in raw:
+        return None
+    return CachedCandidate(cast(JsonValue, raw["value"]))
 
 
 def candidate_stream(
     case: FixtureCase,
     sample_cache: Mapping[str, Any],
-    fallback_attempts: int,
 ) -> Iterator[tuple[str, JsonValue]]:
     seen: set[str] = set()
 
@@ -587,19 +620,63 @@ def candidate_stream(
 
     cached = cached_candidate(sample_cache, case)
     if cached is not None:
-        yield from emit("cache", cached)
+        yield from emit("cache", cached.value)
     for candidate in case.fixture_candidates:
         yield from emit("fixture", candidate)
-    try:
-        generator = jsoncompat.generator_for(case.schema_json)
-    except ValueError:
-        return
-    for _ in range(fallback_attempts):
+
+
+def prepare_jsoncompat_value(
+    case: FixtureCase,
+    jsoncompat_model: Any,
+    sample_cache: Mapping[str, Any],
+) -> tuple[PreparedValue | None, str | None]:
+    """Find a stable JSON value for jsoncompat-only end-to-end timing."""
+
+    last_error: str | None = None
+    cached = cached_candidate(sample_cache, case)
+    if cached is None:
+        return None, "checked-in sample is missing or has a stale schema digest"
+    for source, candidate in (("cache", cached.value),):
         try:
-            generated = cast(JsonValue, json.loads(generator.generate_value(6)))
-        except (TypeError, ValueError):
-            continue
-        yield from emit("generated", generated)
+            candidate_wire = canonical_json(candidate)
+            instance = jsoncompat_model.deserialize(candidate_wire)
+            normalized_value = cast(
+                JsonValue,
+                instance.to_value(skip_validation=True),
+            )
+            normalized_wire = canonical_json(normalized_value)
+            serialized = instance.serialize(skip_validation=True)
+            if (
+                canonical_json(cast(JsonValue, json.loads(serialized)))
+                != normalized_wire
+            ):
+                last_error = "generated model emitted different value and JSON forms"
+                continue
+
+            # Defaults may normalize the original candidate. Use the stable output as
+            # the timed input so every measured iteration exercises the same complete
+            # JSON -> dataclass -> JSON path.
+            roundtripped = jsoncompat_model.deserialize(normalized_wire)
+            stable_wire = roundtripped.serialize(skip_validation=True)
+            if (
+                canonical_json(cast(JsonValue, json.loads(stable_wire)))
+                != normalized_wire
+            ):
+                last_error = "generated model JSON round trip was not idempotent"
+                continue
+
+            return (
+                PreparedValue(
+                    value=normalized_value,
+                    wire=normalized_wire,
+                    source=source,
+                    pydantic_python_compatible=False,
+                ),
+                None,
+            )
+        except (TypeError, ValueError) as error:
+            last_error = f"{type(error).__name__}: {error}"
+    return None, last_error
 
 
 def prepare_value(
@@ -607,10 +684,9 @@ def prepare_value(
     jsoncompat_model: Any,
     pydantic_adapter: TypeAdapter[Any],
     sample_cache: Mapping[str, Any],
-    fallback_attempts: int,
 ) -> tuple[PreparedValue | None, str | None]:
     last_error: str | None = None
-    for source, candidate in candidate_stream(case, sample_cache, fallback_attempts):
+    for source, candidate in candidate_stream(case, sample_cache):
         try:
             wire = canonical_json(candidate)
             jsoncompat_instance = jsoncompat_model.deserialize(wire)
@@ -680,6 +756,40 @@ def benchmark_operation(
     return statistics.median(samples)
 
 
+def benchmark_jsoncompat_end_to_end(
+    jsoncompat_model: Any,
+    prepared: PreparedValue,
+    *,
+    iterations: int,
+    repeats: int,
+) -> dict[str, float]:
+    """Time the complete generated-dataclass JSON round trip."""
+
+    wire = prepared.wire
+    callbacks: dict[str, Callable[[], str]] = {
+        "jsoncompat.roundtrip.checked": lambda: jsoncompat_model.deserialize(
+            wire
+        ).serialize(),
+        "jsoncompat.roundtrip.trusted": lambda: jsoncompat_model.deserialize(
+            wire,
+            skip_validation=True,
+        ).serialize(skip_validation=True),
+    }
+    for name, callback in callbacks.items():
+        output = cast(JsonValue, json.loads(callback()))
+        if canonical_json(output) != wire:
+            raise RuntimeError(f"{name} changed the normalized fixture value")
+
+    return {
+        name: benchmark_operation(
+            callback,
+            iterations=iterations,
+            repeats=repeats,
+        )
+        for name, callback in callbacks.items()
+    }
+
+
 def benchmark_case(
     jsoncompat_model: Any,
     pydantic_adapter: TypeAdapter[Any],
@@ -718,6 +828,18 @@ def benchmark_case(
             exclude_unset=True,
         ).decode(),
         "pydantic.validate_json": lambda: pydantic_adapter.validate_json(wire),
+        "jsoncompat.roundtrip.checked": lambda: jsoncompat_model.deserialize(
+            wire
+        ).serialize(),
+        "jsoncompat.roundtrip.trusted": lambda: jsoncompat_model.deserialize(
+            wire,
+            skip_validation=True,
+        ).serialize(skip_validation=True),
+        "pydantic.roundtrip": lambda: pydantic_adapter.dump_json(
+            pydantic_adapter.validate_json(wire),
+            by_alias=True,
+            exclude_unset=True,
+        ).decode(),
     }
     if prepared.pydantic_python_compatible:
         callbacks.update(
@@ -774,8 +896,9 @@ def comparison_rows(
         timings = record.get("timings_ns")
         if not isinstance(timings, dict):
             continue
-        jsoncompat_ns = timings.get(comparison.jsoncompat_key)
-        pydantic_ns = timings.get(comparison.pydantic_key)
+        typed_timings = cast(Mapping[str, object], timings)
+        jsoncompat_ns = typed_timings.get(comparison.jsoncompat_key)
+        pydantic_ns = typed_timings.get(comparison.pydantic_key)
         if not isinstance(jsoncompat_ns, (int, float)) or not isinstance(
             pydantic_ns, (int, float)
         ):
@@ -812,9 +935,35 @@ def summarize_comparison(
     }
 
 
+def summarize_jsoncompat_operation(
+    records: Sequence[Mapping[str, Any]],
+    name: str,
+    timing_key: str,
+) -> dict[str, Any]:
+    timings: list[float] = []
+    for record in records:
+        record_timings = record.get("jsoncompat_end_to_end_timings_ns")
+        if not isinstance(record_timings, dict):
+            continue
+        timing = cast(Mapping[str, object], record_timings).get(timing_key)
+        if isinstance(timing, (int, float)):
+            timings.append(float(timing))
+    if not timings:
+        return {"name": name, "timing_key": timing_key, "cases": 0}
+    return {
+        "name": name,
+        "timing_key": timing_key,
+        "cases": len(timings),
+        "median_ns": statistics.median(timings),
+        "p90_ns": percentile(timings, 0.90),
+        "maximum_ns": max(timings),
+    }
+
+
 def print_summary(
     records: Sequence[Mapping[str, Any]],
     summaries: Sequence[Mapping[str, Any]],
+    jsoncompat_end_to_end_summaries: Sequence[Mapping[str, Any]],
 ) -> None:
     statuses: dict[str, int] = {}
     for record in records:
@@ -839,18 +988,49 @@ def print_summary(
     print(f"jsoncompat models generated   {jsoncompat_generated:5}/{len(records)}")
     print(f"Pydantic models generated     {pydantic_generated:5}/{len(records)}")
     print(f"Pydantic models imported      {pydantic_imported:5}/{len(records)}")
+    jsoncompat_end_to_end = sum(
+        record.get("jsoncompat_end_to_end_status") == "benchmarked"
+        for record in records
+    )
+    print(
+        f"jsoncompat JSON round trips   {jsoncompat_end_to_end:5}/"
+        f"{jsoncompat_generated} generated"
+    )
+    end_to_end_statuses: dict[str, int] = {}
+    for record in records:
+        status = str(record.get("jsoncompat_end_to_end_status", "not_attempted"))
+        end_to_end_statuses[status] = end_to_end_statuses.get(status, 0) + 1
+    for status, count in sorted(end_to_end_statuses.items()):
+        print(f"  E2E {status:22} {count:5}")
     for status, count in sorted(statuses.items()):
         print(f"{status:28} {count:5}")
 
     buckets: dict[str, int] = {}
     for record in records:
-        bucket = record.get("size_bucket")
+        bucket = record.get("jsoncompat_end_to_end_size_bucket")
         if isinstance(bucket, str):
             buckets[bucket] = buckets.get(bucket, 0) + 1
     if buckets:
         print("value sizes")
         for bucket, count in sorted(buckets.items()):
             print(f"  {bucket:26} {count:5}")
+
+    print("\njsoncompat end-to-end JSON -> dataclass -> JSON")
+    print("------------------------------------------------")
+    print(
+        f"{'operation':39} {'cases':>6} {'median us':>10} {'p90 us':>10} {'max us':>10}"
+    )
+    for summary in jsoncompat_end_to_end_summaries:
+        cases = int(summary["cases"])
+        if cases == 0:
+            print(f"{str(summary['name']):39} {cases:6}")
+            continue
+        print(
+            f"{str(summary['name']):39} {cases:6} "
+            f"{float(summary['median_ns']) / 1_000:10.2f} "
+            f"{float(summary['p90_ns']) / 1_000:10.2f} "
+            f"{float(summary['maximum_ns']) / 1_000:10.2f}"
+        )
 
     print("\nRuntime ratios (jsoncompat / Pydantic; lower is better)")
     print("------------------------------------------------------")
@@ -900,6 +1080,129 @@ def load_sample_cache(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], raw)
 
 
+def load_string_manifest(path: Path) -> dict[str, str]:
+    raw: object = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"expected non-empty string reasons in {path}")
+    result: dict[str, str] = {}
+    for case_id, reason in cast(dict[object, object], raw).items():
+        if (
+            not isinstance(case_id, str)
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            raise RuntimeError(f"expected non-empty string reasons in {path}")
+        result[case_id] = reason
+    return result
+
+
+def load_unsatisfiable_manifest(path: Path) -> dict[str, UnsatisfiableFixture]:
+    raw: object = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"expected object in {path}")
+    result: dict[str, UnsatisfiableFixture] = {}
+    for case_id, value in cast(dict[object, object], raw).items():
+        if not isinstance(case_id, str) or not isinstance(value, dict):
+            raise RuntimeError(f"invalid unsatisfiable classification in {path}")
+        classification = cast(dict[object, object], value)
+        reason = classification.get("reason")
+        schema_digest = classification.get("schema_digest")
+        if (
+            set(classification) != {"reason", "schema_digest"}
+            or not isinstance(reason, str)
+            or not reason.strip()
+            or not isinstance(schema_digest, str)
+        ):
+            raise RuntimeError(f"invalid unsatisfiable classification in {path}")
+        result[case_id] = {
+            "reason": reason,
+            "schema_digest": schema_digest,
+        }
+    return result
+
+
+def validate_fixture_classifications(
+    cases: Sequence[FixtureCase],
+    sample_cache: Mapping[str, Any],
+    runtime_unsupported: Mapping[str, str],
+    unsatisfiable: Mapping[str, UnsatisfiableFixture],
+) -> None:
+    """Require one deterministic sample or one exact classification per model."""
+
+    by_id = {case.case_id: case for case in cases}
+    known_ids = set(by_id)
+    for name, case_ids in (
+        ("sample cache", set(sample_cache)),
+        ("runtime-unsupported manifest", set(runtime_unsupported)),
+        ("unsatisfiable manifest", set(unsatisfiable)),
+    ):
+        unknown = sorted(case_ids - known_ids)
+        if unknown:
+            raise RuntimeError(f"{name} contains unknown fixture cases: {unknown}")
+
+    overlap = sorted(set(runtime_unsupported) & set(unsatisfiable))
+    if overlap:
+        raise RuntimeError(
+            f"fixtures cannot be both runtime-unsupported and unsatisfiable: {overlap}"
+        )
+
+    expected_samples: set[str] = set()
+    for case in cases:
+        classified = (
+            case.case_id in runtime_unsupported or case.case_id in unsatisfiable
+        )
+        if case.jsoncompat_model_path is None:
+            if classified or case.case_id in sample_cache:
+                raise RuntimeError(
+                    f"codegen-unsupported fixture {case.case_id} has a runtime "
+                    "classification or sample"
+                )
+            continue
+        if classified:
+            if case.case_id in sample_cache:
+                raise RuntimeError(
+                    f"classified fixture {case.case_id} still has a runtime sample"
+                )
+            if case.case_id in unsatisfiable and case.fixture_candidates:
+                raise RuntimeError(
+                    f"unsatisfiable fixture {case.case_id} declares valid candidates"
+                )
+            if (
+                case.case_id in unsatisfiable
+                and unsatisfiable[case.case_id]["schema_digest"] != case.schema_digest
+            ):
+                raise RuntimeError(
+                    f"unsatisfiable classification for {case.case_id} has a stale "
+                    "schema digest"
+                )
+            continue
+
+        expected_samples.add(case.case_id)
+        raw_sample_value = sample_cache.get(case.case_id)
+        if not isinstance(raw_sample_value, dict):
+            raise RuntimeError(
+                f"runtime-supported satisfiable fixture {case.case_id} has no "
+                f"checked-in sample in {CHECKED_SAMPLE_CACHE}"
+            )
+        raw_sample = cast(Mapping[str, object], raw_sample_value)
+        if "value" not in raw_sample:
+            raise RuntimeError(
+                f"runtime-supported satisfiable fixture {case.case_id} has no "
+                f"checked-in sample in {CHECKED_SAMPLE_CACHE}"
+            )
+        if raw_sample.get("schema_digest") != case.schema_digest:
+            raise RuntimeError(
+                f"checked-in sample for {case.case_id} has a stale schema digest"
+            )
+
+    extra_samples = sorted(set(sample_cache) - expected_samples)
+    if extra_samples:
+        raise RuntimeError(
+            "checked-in samples do not identify runtime-supported satisfiable "
+            f"fixtures: {extra_samples}"
+        )
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, allow_nan=False, indent=2, sort_keys=True) + "\n")
@@ -912,18 +1215,15 @@ def positive_int(raw: str) -> int:
     return value
 
 
-def nonnegative_int(raw: str) -> int:
-    value = int(raw)
-    if value < 0:
-        raise argparse.ArgumentTypeError("value must be nonnegative")
-    return value
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--iterations", type=positive_int, default=200)
     parser.add_argument("--repeats", type=positive_int, default=5)
-    parser.add_argument("--fallback-attempts", type=nonnegative_int, default=16)
+    parser.add_argument(
+        "--profile",
+        default="manual",
+        help="repeatable benchmark profile name recorded in the result manifest",
+    )
     parser.add_argument("--limit", type=positive_int)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument(
@@ -931,7 +1231,7 @@ def main() -> None:
         type=Path,
         help=(
             "write the result manifest to this path while retaining generated "
-            "model and sample caches under --output"
+            "Pydantic models under --output"
         ),
     )
     parser.add_argument(
@@ -948,9 +1248,17 @@ def main() -> None:
 
     all_cases = fixture_cases()
     cases = all_cases[: args.limit] if args.limit is not None else all_cases
+    sample_cache = load_sample_cache(CHECKED_SAMPLE_CACHE)
+    runtime_unsupported = load_string_manifest(RUNTIME_UNSUPPORTED_MANIFEST)
+    unsatisfiable = load_unsatisfiable_manifest(UNSATISFIABLE_MANIFEST)
+    validate_fixture_classifications(
+        all_cases,
+        sample_cache,
+        runtime_unsupported,
+        unsatisfiable,
+    )
     output_root = args.output.resolve()
     models_root = output_root / "models" / "pydantic"
-    sample_cache_path = output_root / "samples.json"
     results_path = (
         args.results.resolve()
         if args.results is not None
@@ -1010,17 +1318,16 @@ def main() -> None:
                 "fixture_cases_total": len(all_cases),
                 "fixture_cases_selected": len(cases),
                 "generation_seconds": generation_seconds,
+                "configuration": {
+                    "profile": args.profile,
+                    "generator_configuration": GENERATOR_CONFIGURATION,
+                },
                 "records": records,
             },
         )
         print(f"generation manifest: {results_path}")
         return
 
-    sample_cache = load_sample_cache(sample_cache_path)
-    # Checked-in samples make generated-value fallbacks reproducible on fresh
-    # clones. A matching checked-in entry takes precedence over a local cache.
-    sample_cache.update(load_sample_cache(CHECKED_SAMPLE_CACHE))
-    updated_sample_cache = dict(sample_cache)
     records: list[dict[str, Any]] = []
 
     for position, case in enumerate(cases, start=1):
@@ -1043,6 +1350,99 @@ def main() -> None:
             ),
             "pydantic_generation": generation_outcome,
         }
+
+        # The jsoncompat end-to-end corpus is independent of whether Pydantic can
+        # generate, import, or exactly represent this schema. Pydantic ratios are
+        # added later only after the semantic-equivalence screen succeeds.
+        if case.jsoncompat_model_path is None:
+            record["jsoncompat_end_to_end_status"] = "codegen_unsupported"
+        else:
+            jsoncompat_e2e_module_name: str | None = None
+            expected_runtime_error = runtime_unsupported.get(case.case_id)
+            unsatisfiable_fixture = unsatisfiable.get(case.case_id)
+            try:
+                jsoncompat_e2e_module_name, jsoncompat_e2e_module = import_module(
+                    case.jsoncompat_model_path,
+                    case.case_id,
+                    "jsoncompat_e2e",
+                )
+                if expected_runtime_error is not None:
+                    raise AssertionError(
+                        "runtime-unsupported manifest is stale: model imported successfully"
+                    )
+                jsoncompat_e2e_model = model_from_module(
+                    jsoncompat_e2e_module,
+                    "JSONCOMPAT_MODEL",
+                )
+                if unsatisfiable_fixture is not None:
+                    record["jsoncompat_end_to_end_status"] = "unsatisfiable"
+                    record["jsoncompat_end_to_end_error"] = unsatisfiable_fixture[
+                        "reason"
+                    ]
+                else:
+                    jsoncompat_prepared, jsoncompat_preparation_error = (
+                        prepare_jsoncompat_value(
+                            case,
+                            jsoncompat_e2e_model,
+                            sample_cache,
+                        )
+                    )
+                    if jsoncompat_prepared is None:
+                        raise RuntimeError(
+                            f"checked-in sample did not produce a stable round trip: "
+                            f"{jsoncompat_preparation_error}"
+                        )
+                    value_bytes = len(jsoncompat_prepared.wire.encode())
+                    record.update(
+                        {
+                            "jsoncompat_end_to_end_status": "benchmarked",
+                            "jsoncompat_end_to_end_sample_source": jsoncompat_prepared.source,
+                            "jsoncompat_end_to_end_value": jsoncompat_prepared.value,
+                            "jsoncompat_end_to_end_value_bytes": value_bytes,
+                            "jsoncompat_end_to_end_size_bucket": size_bucket(
+                                value_bytes
+                            ),
+                            "jsoncompat_end_to_end_timings_ns": benchmark_jsoncompat_end_to_end(
+                                jsoncompat_e2e_model,
+                                jsoncompat_prepared,
+                                iterations=args.iterations,
+                                repeats=args.repeats,
+                            ),
+                        }
+                    )
+            except Exception as error:  # noqa: BLE001 - exact failures are classified
+                actual_error = f"{type(error).__name__}: {error}"
+                if expected_runtime_error is None:
+                    raise RuntimeError(
+                        f"unexpected jsoncompat end-to-end failure for {case.case_id}: "
+                        f"{actual_error}"
+                    ) from error
+                if actual_error == expected_runtime_error:
+                    record["jsoncompat_end_to_end_status"] = "runtime_unsupported"
+                else:
+                    raise RuntimeError(
+                        f"runtime-unsupported manifest drift for {case.case_id}: "
+                        f"expected {expected_runtime_error!r}, got {actual_error!r}"
+                    ) from error
+                record["jsoncompat_end_to_end_error"] = actual_error
+            finally:
+                if jsoncompat_e2e_module_name is not None:
+                    sys.modules.pop(jsoncompat_e2e_module_name, None)
+
+        if expected_error := runtime_unsupported.get(case.case_id):
+            record["pydantic_import"] = {"status": "not_attempted"}
+            record["status"] = cast(Status, "jsoncompat_validation_unsupported")
+            record["error"] = expected_error
+            records.append(record)
+            continue
+
+        if unsatisfiable_fixture := unsatisfiable.get(case.case_id):
+            record["pydantic_import"] = {"status": "not_attempted"}
+            record["status"] = cast(Status, "unsatisfiable")
+            record["error"] = unsatisfiable_fixture["reason"]
+            records.append(record)
+            continue
+
         if generation_outcome["status"] != "generated":
             record["pydantic_import"] = {"status": "not_generated"}
             record["status"] = cast(
@@ -1068,9 +1468,7 @@ def main() -> None:
                 pydantic_adapter: TypeAdapter[Any] = TypeAdapter(pydantic_type)
                 unsafe_recursive_root = unproductive_recursive_root(pydantic_module)
                 record["pydantic_import"] = {"status": "imported"}
-            except (
-                Exception
-            ) as error:  # noqa: BLE001 - record generated import failures
+            except Exception as error:  # noqa: BLE001 - record generated import failures
                 message = f"{type(error).__name__}: {error}"
                 record["pydantic_import"] = {
                     "status": "error",
@@ -1100,9 +1498,7 @@ def main() -> None:
                 jsoncompat_model = model_from_module(
                     jsoncompat_module, "JSONCOMPAT_MODEL"
                 )
-            except (
-                Exception
-            ) as error:  # noqa: BLE001 - record generated import failures
+            except Exception as error:  # noqa: BLE001 - record generated import failures
                 record["status"] = cast(Status, "jsoncompat_import_error")
                 record["error"] = f"{type(error).__name__}: {error}"
                 records.append(record)
@@ -1148,7 +1544,6 @@ def main() -> None:
                 jsoncompat_model,
                 pydantic_adapter,
                 sample_cache,
-                args.fallback_attempts,
             )
             if prepared is None:
                 record["status"] = cast(Status, "no_shared_value")
@@ -1156,10 +1551,6 @@ def main() -> None:
                 records.append(record)
                 continue
 
-            updated_sample_cache[case.case_id] = {
-                "schema_digest": case.schema_digest,
-                "value": prepared.value,
-            }
             value_bytes = len(prepared.wire.encode())
             record.update(
                 {
@@ -1193,9 +1584,27 @@ def main() -> None:
                 flush=True,
             )
 
-    write_json(sample_cache_path, updated_sample_cache)
+    expected_end_to_end = sum(
+        case.jsoncompat_model_path is not None
+        and case.case_id not in runtime_unsupported
+        and case.case_id not in unsatisfiable
+        for case in cases
+    )
+    actual_end_to_end = sum(
+        record.get("jsoncompat_end_to_end_status") == "benchmarked"
+        for record in records
+    )
+    if actual_end_to_end != expected_end_to_end:
+        raise RuntimeError(
+            "jsoncompat end-to-end benchmark coverage is incomplete: "
+            f"expected {expected_end_to_end}, got {actual_end_to_end}"
+        )
     summaries = [
         summarize_comparison(records, comparison) for comparison in COMPARISONS
+    ]
+    jsoncompat_end_to_end_summaries = [
+        summarize_jsoncompat_operation(records, name, timing_key)
+        for name, timing_key in JSONCOMPAT_END_TO_END_OPERATIONS
     ]
     result = {
         "environment": {
@@ -1206,19 +1615,20 @@ def main() -> None:
             "datamodel_code_generator": package_version("datamodel-code-generator"),
         },
         "configuration": {
+            "profile": args.profile,
             "iterations": args.iterations,
             "repeats": args.repeats,
-            "fallback_attempts": args.fallback_attempts,
             "generator_configuration": GENERATOR_CONFIGURATION,
         },
         "fixture_cases_total": len(all_cases),
         "fixture_cases_selected": len(cases),
         "generation_seconds": generation_seconds,
+        "jsoncompat_end_to_end_summaries": jsoncompat_end_to_end_summaries,
         "summaries": summaries,
         "records": records,
     }
     write_json(results_path, result)
-    print_summary(records, summaries)
+    print_summary(records, summaries, jsoncompat_end_to_end_summaries)
     print(f"\nDetailed results: {results_path}")
     print(f"Generated Pydantic models: {models_root}")
 

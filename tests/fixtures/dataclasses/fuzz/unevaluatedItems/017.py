@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -23,7 +24,7 @@ class GeneratedSchemaBarBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "properties": {},
   "type": "object"
 }"""
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBar(dc.DataclassRootModel):
@@ -45,7 +46,7 @@ class GeneratedSchemaBar(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | str | typing.Sequence[typing.Any] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | collections.abc.Sequence[typing.Any] | float | str | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -72,3 +73,16 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: GeneratedSchemaBar = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaBarBranch2,
+        "object",
+        (
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaBar, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | collections.abc.Sequence[typing.Any] | float | str | None)),
+    (GeneratedSchema, "root", GeneratedSchemaBar),
+))

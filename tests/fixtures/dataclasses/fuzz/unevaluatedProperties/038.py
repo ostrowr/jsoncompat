@@ -7,22 +7,6 @@ from jsoncompat.codegen import dataclasses as dc
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
-    __jsoncompat_schema__: typing.ClassVar[str] = """{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "minProperties": 0,
-  "properties": {},
-  "type": "object",
-  "unevaluatedProperties": false
-}"""
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class GeneratedSchemaItem(dc.DataclassRootModel):
-    __jsoncompat_schema__: typing.ClassVar[str] = """true"""
-    root: typing.Any = dc.root_field()
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -35,6 +19,10 @@ class GeneratedSchema(dc.DataclassRootModel):
   },
   "unevaluatedProperties": false
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
+    root: dc.JsonValue = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchema, "root", dc.JsonValue),
+))

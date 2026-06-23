@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -83,6 +84,21 @@ class GeneratedSchema(dc.DataclassRootModel):
     "foo2": {}
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaBranch2Foo2, "root", typing.Any),
+    (
+        GeneratedSchemaBranch2,
+        "object",
+        (
+            ("foo2", "foo2", GeneratedSchemaBranch2Foo2, True),
+        ),
+        False,
+        None,
+    ),
+    (GeneratedSchemaItem, "root", typing.Any),
+    (GeneratedSchema, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None)),
+))

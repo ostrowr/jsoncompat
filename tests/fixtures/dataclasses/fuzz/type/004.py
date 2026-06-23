@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -17,6 +18,11 @@ class GeneratedSchema(dc.DataclassRootModel):
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "array"
 }"""
-    root: typing.Sequence[GeneratedSchemaItem] = dc.root_field()
+    root: collections.abc.Sequence[GeneratedSchemaItem] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaItem, "root", typing.Any),
+    (GeneratedSchema, "root", collections.abc.Sequence[GeneratedSchemaItem]),
+))

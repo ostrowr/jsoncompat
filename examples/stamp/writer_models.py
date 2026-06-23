@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -69,7 +70,7 @@ class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileWriter(dc.WriterDataclassModel):
@@ -132,3 +133,27 @@ class UserProfileWriter(dc.WriterDataclassModel):
     data: UserProfileV2 = dc.field("data")
 
 JSONCOMPAT_MODEL = UserProfileWriter
+
+dc.bind_generated_models((
+    (
+        UserProfileV2,
+        "object",
+        (
+            ("age", "age", int, False),
+            ("interests", "interests", int, False),
+            ("name", "name", str, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        UserProfileWriter,
+        "object",
+        (
+            ("version", "version", typing.Literal[2], False),
+            ("data", "data", UserProfileV2, False),
+        ),
+        False,
+        None,
+    ),
+))

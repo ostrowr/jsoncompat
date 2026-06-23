@@ -8,11 +8,12 @@
 mod model_converter;
 
 use std::collections::HashSet;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use jiter::{JsonValue as JiterJsonValue, PythonParse, StringCacheMode, map_json_error};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::pyclass::{PyTraverseError, PyVisit};
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyString, PyTuple, PyType,
 };
@@ -23,7 +24,10 @@ use jsonschema::InstanceRef as JSONInstanceRef;
 
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
-use model_converter::{ModelConverterPy, compile_model_converter};
+use model_converter::{
+    ModelConverterPlan, ModelConverterPy, compile_model_converter_plan, model_converter_for_root,
+    model_converter_for_validated_root,
+};
 
 fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
     let schema = SchemaDocument::from_json(raw).map_err(|error| error.to_string())?;
@@ -250,11 +254,18 @@ struct ValidatorPy {
     schema: Rc<SchemaDocument>,
 }
 
+#[pyclass(name = "_ModelPlan", module = "jsoncompat._native", unsendable)]
+struct ModelPlanPy {
+    plan: Option<Rc<ModelConverterPlan>>,
+}
+
 #[pyclass(name = "ModelRuntime", module = "jsoncompat._native", unsendable)]
 struct ModelRuntimePy {
     schema: Rc<SchemaDocument>,
-    converter: Py<ModelConverterPy>,
-    model_type: Py<PyType>,
+    plan_owner: Option<Py<ModelPlanPy>>,
+    plan: Weak<ModelConverterPlan>,
+    root: usize,
+    model_type: Option<Py<PyType>>,
 }
 
 #[pyclass(name = "Generator", module = "jsoncompat._native", unsendable)]
@@ -291,93 +302,6 @@ impl ValidatorPy {
         self.validate_instance(JSONInstanceRef::from_python(instance))
     }
 
-    /// Convert and validate a Python value while constructing a generated model.
-    fn construct_value(
-        &self,
-        py: Python<'_>,
-        instance: &Bound<'_, PyAny>,
-        converter: PyRef<'_, ModelConverterPy>,
-    ) -> PyResult<Option<Py<PyAny>>> {
-        // Validate the wire value before conversion can invoke a default
-        // factory. The borrowed provider is the allocation-free hot path for
-        // ordinary JSON values. General Mapping implementations need the
-        // normalizer used by the public value API before schema evaluation.
-        let mut used_normalized_fallback = false;
-        if !self.validate_instance(JSONInstanceRef::from_python(instance))? {
-            let normalized = match py_to_json_value(instance) {
-                Ok(normalized) => normalized,
-                Err(_) => return Ok(None),
-            };
-            if !self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&normalized))? {
-                return Ok(None);
-            }
-            used_normalized_fallback = true;
-        }
-        let (converted, inserted_defaults, json_proven) =
-            converter.construct_python_unvalidated(py, instance)?;
-        // Defaults and stateful general mappings can make the converted value
-        // differ from the validated snapshot, so validate that projection too.
-        if inserted_defaults || used_normalized_fallback {
-            let projection = converter.projection();
-            let projected = projection.instance(converted.bind(py));
-            let is_valid = if json_proven {
-                self.validate_instance_assuming_json(projected)
-            } else {
-                self.validate_instance(projected)
-            }?;
-            if !is_valid {
-                return Ok(None);
-            }
-        }
-        converter.mark_validated(py, converted).map(Some)
-    }
-
-    /// Construct a generated model directly from its Python constructor keywords.
-    #[pyo3(signature = (kwargs, converter, validate=true))]
-    fn construct_kwargs(
-        &self,
-        py: Python<'_>,
-        kwargs: &Bound<'_, PyDict>,
-        converter: PyRef<'_, ModelConverterPy>,
-        validate: bool,
-    ) -> PyResult<Option<Py<PyAny>>> {
-        let (converted, json_proven) = converter.construct_kwargs_unvalidated(py, kwargs)?;
-        if !validate {
-            return converter.finalize(py, converted, false).map(Some);
-        }
-        let projection = converter.projection();
-        let projected = projection.instance(converted.bind(py));
-        let is_valid = if json_proven {
-            self.validate_instance_assuming_json(projected)
-        } else {
-            self.validate_instance(projected)
-        }?;
-        if !is_valid {
-            return Ok(None);
-        }
-        converter.mark_validated(py, converted).map(Some)
-    }
-
-    /// Parse JSON and construct a generated model without materializing an intermediate dict.
-    #[pyo3(signature = (payload, converter, validate=true))]
-    fn construct_json(
-        &self,
-        py: Python<'_>,
-        payload: &Bound<'_, PyAny>,
-        converter: PyRef<'_, ModelConverterPy>,
-        validate: bool,
-    ) -> PyResult<Option<Py<PyAny>>> {
-        if let Ok(text) = payload.cast::<PyString>() {
-            return self.construct_json_bytes(py, text.to_str()?.as_bytes(), &converter, validate);
-        }
-        if let Ok(bytes) = payload.cast::<PyBytes>() {
-            return self.construct_json_bytes(py, bytes.as_bytes(), &converter, validate);
-        }
-        Err(PyErr::new::<PyTypeError, _>(
-            "JSON payloads must be str or bytes",
-        ))
-    }
-
     /// Parse JSON once, validate it, and return the parsed Python value.
     fn parse_json(
         &self,
@@ -385,49 +309,6 @@ impl ValidatorPy {
         payload: &Bound<'_, PyAny>,
     ) -> PyResult<(bool, Py<PyAny>)> {
         parse_and_validate_json_to_python(&self.schema, py, payload)
-    }
-
-    /// Materialize a generated model's logical JSON value from its slots.
-    #[pyo3(signature = (instance, converter, validate=true))]
-    fn model_to_value(
-        &self,
-        py: Python<'_>,
-        instance: &Bound<'_, PyAny>,
-        converter: PyRef<'_, ModelConverterPy>,
-        validate: bool,
-    ) -> PyResult<(bool, Py<PyAny>)> {
-        let value = converter.to_python_value(py, instance)?;
-        if !validate {
-            return Ok((true, value));
-        }
-        let projection = converter.projection();
-        let projected = projection.instance(instance);
-        let is_valid = self.validate_instance_assuming_json(projected)?;
-        Ok((is_valid, value))
-    }
-
-    /// Serialize a generated model directly from its slots.
-    #[pyo3(signature = (instance, converter, validate=true))]
-    fn serialize_model(
-        &self,
-        py: Python<'_>,
-        instance: &Bound<'_, PyAny>,
-        converter: PyRef<'_, ModelConverterPy>,
-        validate: bool,
-    ) -> PyResult<Option<String>> {
-        if !validate {
-            return converter.serialize_to_json_string(py, instance).map(Some);
-        }
-        // Direct serialization proves the projected graph is a finite JSON
-        // value and preserves serialization errors before schema errors.
-        let serialized = converter.serialize_to_json_string(py, instance)?;
-        let projection = converter.projection();
-        let projected = projection.instance(instance);
-        let is_valid = self.validate_instance_assuming_json(projected)?;
-        if !is_valid {
-            return Ok(None);
-        }
-        Ok(Some(serialized))
     }
 
     /// Validate and serialize a Python JSON-compatible value in one traversal.
@@ -451,41 +332,62 @@ impl ValidatorPy {
         let result = self.schema.is_valid_instance_assuming_json(instance);
         result.map_err(validation_error)
     }
+}
 
-    fn construct_json_bytes(
-        &self,
-        py: Python<'_>,
-        payload: &[u8],
-        converter: &ModelConverterPy,
-        validate: bool,
-    ) -> PyResult<Option<Py<PyAny>>> {
-        construct_model_json_bytes(&self.schema, py, payload, converter, validate)
+#[pymethods]
+impl ModelPlanPy {
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        if let Some(plan) = &self.plan {
+            plan.traverse(&visit)?;
+        }
+        Ok(())
+    }
+
+    fn __clear__(&mut self) {
+        self.plan = None;
     }
 }
 
 #[pymethods]
 impl ModelRuntimePy {
-    #[pyo3(signature = (payload, *, format="json".to_owned(), skip_validation=false))]
+    /// Construct a generated model from its keyword-only dataclass interface.
+    #[pyo3(signature = (kwargs, *, skip_validation=false))]
+    fn construct_kwargs(
+        &self,
+        py: Python<'_>,
+        kwargs: &Bound<'_, PyDict>,
+        skip_validation: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let converter = self.converter()?;
+        let converted =
+            construct_model_kwargs(&self.schema, py, kwargs, &converter, !skip_validation)?;
+        self.require_valid(py, converted)
+    }
+
+    /// Construct a generated model from an already-decoded JSON value.
+    #[allow(clippy::wrong_self_convention)]
+    #[pyo3(signature = (value, *, skip_validation=false))]
+    fn from_value(
+        &self,
+        py: Python<'_>,
+        value: &Bound<'_, PyAny>,
+        skip_validation: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let converter = self.converter()?;
+        let converted =
+            construct_model_value(&self.schema, py, value, &converter, !skip_validation)?;
+        self.require_valid(py, converted)
+    }
+
+    /// Parse JSON and construct a generated model in one native pass.
+    #[pyo3(signature = (payload, *, skip_validation=false))]
     fn deserialize(
         &self,
         py: Python<'_>,
         payload: &Bound<'_, PyAny>,
-        format: String,
         skip_validation: bool,
     ) -> PyResult<Py<PyAny>> {
-        let is_json = format == "json";
-        if !is_json {
-            let dataclasses = py.import("jsoncompat.codegen.dataclasses")?;
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("format", &format)?;
-            kwargs.set_item("skip_validation", skip_validation)?;
-            return Ok(dataclasses
-                .getattr("_jsoncompat_deserialize_fallback")?
-                .call((self.model_type.bind(py), payload), Some(&kwargs))?
-                .unbind());
-        }
-
-        let converter = self.converter.bind(py).borrow();
+        let converter = self.converter()?;
         let converted = if let Ok(text) = payload.cast::<PyString>() {
             construct_model_json_bytes(
                 &self.schema,
@@ -507,16 +409,191 @@ impl ModelRuntimePy {
                 "JSON payloads must be str or bytes",
             ));
         };
-        converted.ok_or_else(|| {
+        self.require_valid(py, converted)
+    }
+
+    /// Materialize a generated model as a mutable Python JSON value.
+    #[pyo3(signature = (instance, *, skip_validation=false))]
+    fn to_value(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+        skip_validation: bool,
+    ) -> PyResult<Py<PyAny>> {
+        self.ensure_model_instance(py, instance)?;
+        let converter = self.converter()?;
+        let validate = !skip_validation && !model_is_validated(instance);
+        let (is_valid, value) = model_to_value(&self.schema, py, instance, &converter, validate)?;
+        if !is_valid {
+            return self.require_valid(py, None);
+        }
+        if validate {
+            converter.mark_validated(py, instance.clone().unbind())?;
+        }
+        Ok(value)
+    }
+
+    /// Serialize a generated model directly from its immutable slots.
+    #[pyo3(signature = (instance, *, skip_validation=false))]
+    fn serialize(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+        skip_validation: bool,
+    ) -> PyResult<String> {
+        self.ensure_model_instance(py, instance)?;
+        let converter = self.converter()?;
+        let validate = !skip_validation && !model_is_validated(instance);
+        let serialized = serialize_model(&self.schema, py, instance, &converter, validate)?;
+        let Some(serialized) = serialized else {
+            return self.require_valid(py, None);
+        };
+        if validate {
+            converter.mark_validated(py, instance.clone().unbind())?;
+        }
+        Ok(serialized)
+    }
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.model_type)?;
+        visit.call(&self.plan_owner)
+    }
+
+    fn __clear__(&mut self) {
+        self.plan_owner = None;
+        self.plan = Weak::new();
+        self.model_type = None;
+    }
+}
+
+impl ModelRuntimePy {
+    fn converter(&self) -> PyResult<ModelConverterPy> {
+        let plan = self.plan.upgrade().ok_or_else(|| {
+            PyErr::new::<PyRuntimeError, _>("generated model runtime has been cleared")
+        })?;
+        Ok(model_converter_for_validated_root(plan, self.root))
+    }
+
+    fn model_type(&self) -> PyResult<&Py<PyType>> {
+        self.model_type.as_ref().ok_or_else(|| {
+            PyErr::new::<PyRuntimeError, _>("generated model runtime has been cleared")
+        })
+    }
+
+    fn ensure_model_instance(&self, py: Python<'_>, instance: &Bound<'_, PyAny>) -> PyResult<()> {
+        let model_type = self.model_type()?;
+        if instance.is_instance(model_type.bind(py))? {
+            Ok(())
+        } else {
+            Err(PyErr::new::<PyTypeError, _>(format!(
+                "expected {}, got {}",
+                model_type.bind(py).name()?,
+                instance.get_type().name()?,
+            )))
+        }
+    }
+
+    fn require_valid<T>(&self, py: Python<'_>, value: Option<T>) -> PyResult<T> {
+        value.ok_or_else(|| {
             let model_name = self
-                .model_type
-                .bind(py)
-                .name()
+                .model_type()
+                .and_then(|model_type| model_type.bind(py).name())
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| "generated model".to_owned());
             PyErr::new::<PyValueError, _>(format!("value does not satisfy {model_name} schema"))
         })
     }
+}
+
+fn model_is_validated(instance: &Bound<'_, PyAny>) -> bool {
+    instance
+        .getattr("_jsoncompat_validated")
+        .and_then(|validated| validated.extract::<bool>())
+        .unwrap_or(false)
+}
+
+fn construct_model_value(
+    schema: &SchemaDocument,
+    py: Python<'_>,
+    instance: &Bound<'_, PyAny>,
+    converter: &ModelConverterPy,
+    validate: bool,
+) -> PyResult<Option<Py<PyAny>>> {
+    if !validate {
+        return converter.construct(py, instance, false).map(Some);
+    }
+    let is_valid = schema
+        .is_valid_instance(JSONInstanceRef::from_python(instance))
+        .map_err(validation_error)?;
+    if !is_valid {
+        return Ok(None);
+    }
+    converter.construct(py, instance, true).map(Some)
+}
+
+fn construct_model_kwargs(
+    schema: &SchemaDocument,
+    py: Python<'_>,
+    kwargs: &Bound<'_, PyDict>,
+    converter: &ModelConverterPy,
+    validate: bool,
+) -> PyResult<Option<Py<PyAny>>> {
+    let (converted, json_proven) = converter.construct_kwargs_unvalidated(py, kwargs)?;
+    if !validate {
+        return converter.finalize(py, converted, false).map(Some);
+    }
+    let projection = converter.projection();
+    let projected = projection.instance(converted.bind(py));
+    let is_valid = if json_proven {
+        schema.is_valid_instance_assuming_json(projected)
+    } else {
+        schema.is_valid_instance(projected)
+    }
+    .map_err(validation_error)?;
+    if !is_valid {
+        return Ok(None);
+    }
+    converter.mark_validated(py, converted).map(Some)
+}
+
+fn model_to_value(
+    schema: &SchemaDocument,
+    py: Python<'_>,
+    instance: &Bound<'_, PyAny>,
+    converter: &ModelConverterPy,
+    validate: bool,
+) -> PyResult<(bool, Py<PyAny>)> {
+    let value = converter.to_python_value(py, instance)?;
+    if !validate {
+        return Ok((true, value));
+    }
+    let projection = converter.projection();
+    let projected = projection.instance(instance);
+    let is_valid = schema
+        .is_valid_instance_assuming_json(projected)
+        .map_err(validation_error)?;
+    Ok((is_valid, value))
+}
+
+fn serialize_model(
+    schema: &SchemaDocument,
+    py: Python<'_>,
+    instance: &Bound<'_, PyAny>,
+    converter: &ModelConverterPy,
+    validate: bool,
+) -> PyResult<Option<String>> {
+    // Serialize first so structural JSON errors take precedence over schema
+    // errors and the checked and trusted paths share one native writer.
+    let serialized = converter.serialize_to_json_string(py, instance)?;
+    if !validate {
+        return Ok(Some(serialized));
+    }
+    let projection = converter.projection();
+    let projected = projection.instance(instance);
+    let is_valid = schema
+        .is_valid_instance_assuming_json(projected)
+        .map_err(validation_error)?;
+    Ok(is_valid.then_some(serialized))
 }
 
 fn construct_model_json_bytes(
@@ -540,22 +617,7 @@ fn construct_model_json_bytes(
     if !is_valid {
         return Ok(None);
     }
-    let (converted, inserted_defaults, json_proven) =
-        converter.construct_jiter_unfinalized(py, &parsed, true)?;
-    if inserted_defaults {
-        let projection = converter.projection();
-        let projected = projection.instance(converted.bind(py));
-        let is_valid = if json_proven {
-            schema.is_valid_instance_assuming_json(projected)
-        } else {
-            schema.is_valid_instance(projected)
-        }
-        .map_err(validation_error)?;
-        if !is_valid {
-            return Ok(None);
-        }
-    }
-    converter.mark_validated(py, converted).map(Some)
+    converter.construct_jiter(py, &parsed, true).map(Some)
 }
 
 fn validation_error(error: impl std::fmt::Display) -> PyErr {
@@ -812,32 +874,56 @@ fn validator_for_py(schema_json: &str) -> PyResult<ValidatorPy> {
     validator_for_schema(schema_json)
 }
 
-/// Compile a generated-model conversion plan for repeated native construction.
+/// Compile one shared conversion plan and a rooted runtime for every generated dataclass.
 #[pyfunction]
-#[pyo3(signature = (descriptors, root, frozen_list_type, frozen_dict_type), name = "compile_model_converter")]
-fn compile_model_converter_py(
+#[pyo3(
+    signature = (model_roots, descriptors, frozen_list_type, frozen_dict_type),
+    name = "compile_model_runtimes"
+)]
+fn compile_model_runtimes_py(
     py: Python<'_>,
+    model_roots: &Bound<'_, PyList>,
     descriptors: &Bound<'_, PyList>,
-    root: usize,
     frozen_list_type: &Bound<'_, PyType>,
     frozen_dict_type: &Bound<'_, PyType>,
-) -> PyResult<ModelConverterPy> {
-    compile_model_converter(py, descriptors, root, frozen_list_type, frozen_dict_type)
-}
-
-/// Bind a compiled schema and model converter into a zero-wrapper hot path.
-#[pyfunction]
-#[pyo3(signature = (model_type, validator, converter), name = "bind_model_runtime")]
-fn bind_model_runtime_py(
-    model_type: &Bound<'_, PyType>,
-    validator: PyRef<'_, ValidatorPy>,
-    converter: Py<ModelConverterPy>,
-) -> ModelRuntimePy {
-    ModelRuntimePy {
-        schema: Rc::clone(&validator.schema),
-        converter,
-        model_type: model_type.clone().unbind(),
+) -> PyResult<Vec<Py<ModelRuntimePy>>> {
+    let plan = compile_model_converter_plan(py, descriptors, frozen_list_type, frozen_dict_type)?;
+    let plan_owner = Py::new(
+        py,
+        ModelPlanPy {
+            plan: Some(Rc::clone(&plan)),
+        },
+    )?;
+    let plan_weak = Rc::downgrade(&plan);
+    let mut runtimes = Vec::with_capacity(model_roots.len());
+    for model_root in model_roots {
+        let model_root = model_root.cast_into::<PyTuple>().map_err(|_| {
+            PyErr::new::<PyTypeError, _>("model roots must be (model type, root node) pairs")
+        })?;
+        if model_root.len() != 2 {
+            return Err(PyErr::new::<PyTypeError, _>(
+                "model roots must be (model type, root node) pairs",
+            ));
+        }
+        let model_type = model_root.get_item(0)?.cast_into::<PyType>()?;
+        let root = model_root.get_item(1)?.extract::<usize>()?;
+        let schema_json = model_type
+            .getattr("__jsoncompat_schema__")?
+            .extract::<String>()?;
+        let schema = Rc::new(parse_schema(&schema_json)?);
+        model_converter_for_root(py, Rc::clone(&plan), &model_type, root)?;
+        runtimes.push(Py::new(
+            py,
+            ModelRuntimePy {
+                schema,
+                plan_owner: Some(plan_owner.clone_ref(py)),
+                plan: plan_weak.clone(),
+                root,
+                model_type: Some(model_type.unbind()),
+            },
+        )?);
     }
+    Ok(runtimes)
 }
 
 /// Parse a JSON string or byte sequence directly into Python JSON values.
@@ -883,13 +969,11 @@ fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
     m.add_function(wrap_pyfunction!(generator_for_py, m)?)?;
     m.add_function(wrap_pyfunction!(validator_for_py, m)?)?;
-    m.add_function(wrap_pyfunction!(compile_model_converter_py, m)?)?;
-    m.add_function(wrap_pyfunction!(bind_model_runtime_py, m)?)?;
+    m.add_function(wrap_pyfunction!(compile_model_runtimes_py, m)?)?;
     m.add_function(wrap_pyfunction!(deserialize_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(serialize_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_valid_py, m)?)?;
     m.add_class::<GeneratorPy>()?;
-    m.add_class::<ModelConverterPy>()?;
     m.add_class::<ModelRuntimePy>()?;
     m.add_class::<ValidatorPy>()?;
 

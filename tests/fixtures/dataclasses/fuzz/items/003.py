@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -40,7 +41,7 @@ class GeneratedSchemaItem(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: typing.Sequence[GeneratedSchemaSubItem] = dc.root_field()
+    root: collections.abc.Sequence[GeneratedSchemaSubItem] = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaSubItemFoo(dc.DataclassRootModel):
@@ -76,7 +77,7 @@ class GeneratedSchemaSubItem(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     foo: GeneratedSchemaSubItemFoo = dc.field("foo")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -116,6 +117,21 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "type": "array"
 }"""
-    root: typing.Sequence[GeneratedSchemaItem] = dc.root_field()
+    root: collections.abc.Sequence[GeneratedSchemaItem] = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaItem, "root", collections.abc.Sequence[GeneratedSchemaSubItem]),
+    (GeneratedSchemaSubItemFoo, "root", typing.Any),
+    (
+        GeneratedSchemaSubItem,
+        "object",
+        (
+            ("foo", "foo", GeneratedSchemaSubItemFoo, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchema, "root", collections.abc.Sequence[GeneratedSchemaItem]),
+))

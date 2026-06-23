@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -36,7 +37,7 @@ class GeneratedSchemaOneBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     a: dc.Omittable[GeneratedSchemaOneBranch2A] = dc.field("a", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneItem(dc.DataclassRootModel):
@@ -65,7 +66,7 @@ class GeneratedSchemaOne(dc.DataclassRootModel):
     "a": true
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | float | str | typing.Sequence[GeneratedSchemaOneItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | collections.abc.Sequence[GeneratedSchemaOneItem] | float | str | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoBranch2X(dc.DataclassRootModel):
@@ -100,7 +101,7 @@ class GeneratedSchemaTwoBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     x: GeneratedSchemaTwoBranch2X = dc.field("x")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoItem(dc.DataclassRootModel):
@@ -132,7 +133,7 @@ class GeneratedSchemaTwo(dc.DataclassRootModel):
     "x"
   ]
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | float | str | typing.Sequence[GeneratedSchemaTwoItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | collections.abc.Sequence[GeneratedSchemaTwoItem] | float | str | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -183,3 +184,31 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: typing.Any = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaOneBranch2A, "root", typing.Any),
+    (
+        GeneratedSchemaOneBranch2,
+        "object",
+        (
+            ("a", "a", GeneratedSchemaOneBranch2A, True),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaOneItem, "root", typing.Any),
+    (GeneratedSchemaOne, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | collections.abc.Sequence[GeneratedSchemaOneItem] | float | str | None)),
+    (GeneratedSchemaTwoBranch2X, "root", typing.Any),
+    (
+        GeneratedSchemaTwoBranch2,
+        "object",
+        (
+            ("x", "x", GeneratedSchemaTwoBranch2X, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaTwoItem, "root", typing.Any),
+    (GeneratedSchemaTwo, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | collections.abc.Sequence[GeneratedSchemaTwoItem] | float | str | None)),
+    (GeneratedSchema, "root", typing.Any),
+))

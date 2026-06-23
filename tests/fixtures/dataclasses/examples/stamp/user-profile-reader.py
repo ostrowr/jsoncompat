@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -88,7 +89,7 @@ class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
 }"""
     age: int = dc.field("age")
     name: str = dc.field("name")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
@@ -177,7 +178,7 @@ class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV2Reader(dc.ReaderDataclassModel):
@@ -460,3 +461,48 @@ class ExamplesStampUserProfileReader(dc.ReaderDataclassRootModel):
     root: (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader) = dc.root_field()
 
 JSONCOMPAT_MODEL = ExamplesStampUserProfileReader
+
+dc.bind_generated_models((
+    (
+        ExamplesStampUserProfileV1,
+        "object",
+        (
+            ("age", "age", int, False),
+            ("name", "name", str, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        ExamplesStampUserProfileV2,
+        "object",
+        (
+            ("age", "age", int, False),
+            ("interests", "interests", int, False),
+            ("name", "name", str, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        ExamplesStampUserProfileV2Reader,
+        "object",
+        (
+            ("version", "version", typing.Literal[2], False),
+            ("data", "data", ExamplesStampUserProfileV2, False),
+        ),
+        False,
+        None,
+    ),
+    (
+        ExamplesStampUserProfileV1Reader,
+        "object",
+        (
+            ("version", "version", typing.Literal[1], False),
+            ("data", "data", ExamplesStampUserProfileV1, False),
+        ),
+        False,
+        None,
+    ),
+    (ExamplesStampUserProfileReader, "root", (ExamplesStampUserProfileV1Reader | ExamplesStampUserProfileV2Reader)),
+))

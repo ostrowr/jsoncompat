@@ -107,10 +107,11 @@ jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 
 `jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
 canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
-frozen, slotted Python dataclasses that import shared construction and
-serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
-carry the original input schema in `__jsoncompat_schema__`, cache a
-`jsoncompat.validator_for(...)` validator for runtime checks, and expose:
+frozen, slotted Python dataclasses backed by one native construction and
+serialization runtime. Each generated module binds every class when the module
+is imported; an unrepresentable conversion plan is therefore a generation or
+import error, never a silent Python fallback. Generated classes carry the
+original input schema in `__jsoncompat_schema__` and expose:
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json > models.py
@@ -142,6 +143,12 @@ serialization methods.
 `skip_validation=True` skips only the attached JSON Schema check. Wire-format
 parsing and JSON-value normalization, runtime type conversion, and reader/writer
 direction guards still apply.
+
+The runtime contract applies only to dataclasses emitted by this command.
+Hand-written subclasses, custom `__init__` / `__new__` / `__post_init__`
+hooks, inheritance between generated models, and Python default factories are
+not supported model-definition APIs. JSON Schema `default` remains an
+annotation and does not manufacture a Python value for a missing property.
 
 Install optional codecs with `jsoncompat[yaml]` and `jsoncompat[msgpack]`.
 Every decoded format is restricted to JSON-compatible values before model

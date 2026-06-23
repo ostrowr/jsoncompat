@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -17,6 +18,18 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     forbidden: dc.Omittable[str] = dc.field("forbidden", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("forbidden", "forbidden", str, True),
+        ),
+        True,
+        typing.Any,
+    ),
+))

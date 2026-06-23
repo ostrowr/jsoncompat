@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -19,7 +20,7 @@ class GeneratedSchemaBranch2Branch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     length: dc.Omittable[str] = dc.field("length", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2Item(dc.DataclassRootModel):
@@ -78,10 +79,10 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   },
   "type": "object"
 }"""
-    __proto__: dc.Omittable[float] = dc.field("__proto__", omittable=True)
+    field___proto__: dc.Omittable[float] = dc.field("__proto__", omittable=True)
     constructor: dc.Omittable[float] = dc.field("constructor", omittable=True)
-    toString: dc.Omittable[(typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | float | str | typing.Sequence[GeneratedSchemaBranch2Item] | None] = dc.field("toString", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    toString: dc.Omittable[(typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | collections.abc.Sequence[GeneratedSchemaBranch2Item] | float | str | None] = dc.field("toString", omittable=True)
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -108,6 +109,32 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaBranch2Branch2,
+        "object",
+        (
+            ("length", "length", str, True),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaBranch2Item, "root", typing.Any),
+    (
+        GeneratedSchemaBranch2,
+        "object",
+        (
+            ("__proto__", "field___proto__", float, True),
+            ("constructor", "constructor", float, True),
+            ("toString", "toString", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2Branch2 | collections.abc.Sequence[GeneratedSchemaBranch2Item] | float | str | None), True),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaItem, "root", typing.Any),
+    (GeneratedSchema, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None)),
+))

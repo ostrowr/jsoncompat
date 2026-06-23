@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -23,7 +24,7 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     bar: int = dc.field("bar")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
@@ -47,7 +48,7 @@ class GeneratedSchemaBranch22(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     foo: str = dc.field("foo")
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem2(dc.DataclassRootModel):
@@ -81,6 +82,30 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | str | typing.Sequence[GeneratedSchemaItem] | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | float | str | typing.Sequence[GeneratedSchemaItem2] | None)) = dc.root_field()
+    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | collections.abc.Sequence[GeneratedSchemaItem2] | float | str | None)) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaBranch2,
+        "object",
+        (
+            ("bar", "bar", int, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaItem, "root", typing.Any),
+    (
+        GeneratedSchemaBranch22,
+        "object",
+        (
+            ("foo", "foo", str, False),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaItem2, "root", typing.Any),
+    (GeneratedSchema, "root", (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch22 | collections.abc.Sequence[GeneratedSchemaItem2] | float | str | None))),
+))

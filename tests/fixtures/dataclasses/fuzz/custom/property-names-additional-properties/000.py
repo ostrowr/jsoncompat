@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -27,6 +28,18 @@ class GeneratedSchema(dc.DataclassAdditionalModel[int]):
   "type": "object"
 }"""
     id: int = dc.field("id")
-    __jsoncompat_extra__: typing.Mapping[str, int] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, int] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("id", "id", int, False),
+        ),
+        True,
+        int,
+    ),
+))

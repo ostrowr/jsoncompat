@@ -9,1061 +9,470 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod python_env;
 
 #[test]
-fn packaged_dataclasses_runtime_helpers_construct_validate_and_guard_directional_models() {
+fn generated_dataclasses_expose_one_native_runtime_contract() {
+    let source = generate_dataclass_models(&json!({
+        "title": "Profile",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "attributes": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "array",
+                    "items": {"type": "integer"}
+                }
+            }
+        },
+        "required": ["name", "tags", "attributes"],
+        "additionalProperties": {"type": "string"}
+    }))
+    .expect("generate object dataclass");
+    let root_source = generate_dataclass_models(&json!({
+        "title": "HugeInteger",
+        "type": "integer"
+    }))
+    .expect("generate root dataclass");
+    let ownership_source = generate_dataclass_models(&json!({
+        "title": "AuditContext",
+        "type": "object",
+        "additionalProperties": {"type": "string"}
+    }))
+    .expect("generate ownership dataclass");
+    let stamped = stamp_schema(
+        &StampManifest::empty(),
+        "profile",
+        json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1}
+            },
+            "required": ["name"],
+            "additionalProperties": false
+        }),
+    )
+    .expect("stamp directional schemas");
+    let writer_source =
+        generate_dataclass_models(&stamped.bundle.writer).expect("generate writer dataclasses");
+    let reader_source =
+        generate_dataclass_models(&stamped.bundle.reader).expect("generate reader dataclasses");
+
+    let module_path = write_temp_module("native_contract", &source);
+    let root_module_path = write_temp_module("native_contract_root", &root_source);
+    let ownership_module_path = write_temp_module("native_contract_ownership", &ownership_source);
+    let writer_module_path = write_temp_module("native_contract_writer", &writer_source);
+    let reader_module_path = write_temp_module("native_contract_reader", &reader_source);
+
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
-from dataclasses import dataclass
-import dataclasses
+from dataclasses import FrozenInstanceError, is_dataclass
 import gc
-import inspect
-import json
-import platform
+import importlib.util
 import sys
-import typing
-from collections import UserDict
-from types import MappingProxyType
-from typing import ClassVar, Literal
 
 from jsoncompat.codegen import SerializationFormat
 from jsoncompat.codegen import dataclasses as dc
-from jsoncompat.codegen.dataclasses import (
-    DataclassAdditionalModel,
-    DataclassModel,
-    DataclassRootModel,
-    FrozenDict,
-    FrozenList,
-    JSONCOMPAT_MISSING,
-    ReaderDataclassModel,
-    ReaderDataclassRootModel,
-    WriterDataclassModel,
-    extra_field,
-    field,
-    root_field,
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+models = load("native_contract_models", sys.argv[1])
+roots = load("native_contract_roots", sys.argv[2])
+ownerships = load("native_contract_ownership", sys.argv[3])
+writers = load("native_contract_writers", sys.argv[4])
+readers = load("native_contract_readers", sys.argv[5])
+
+Profile = models.Profile
+ProfileAttributes = models.ProfileAttributes
+value = {
+    "name": "Ada",
+    "tags": ["schema", "runtime"],
+    "attributes": {"scores": [1, 2]},
+    "nickname": "ace",
+}
+attributes = ProfileAttributes.from_value({"scores": [1, 2]})
+profile = Profile(
+    name="Ada",
+    tags=["schema", "runtime"],
+    attributes=attributes,
+    __jsoncompat_extra__={"nickname": "ace"},
 )
+assert is_dataclass(profile)
+assert profile.to_value() == value
 
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class Profile(DataclassAdditionalModel[str]):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"name":{"type":"string","minLength":1},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}'
-
-    name: str = field("name")
-    age: int | None = field("age", omittable=True)
-    __jsoncompat_extra__: dict[str, str] = extra_field()
-
-
-profile_signature = inspect.signature(Profile)
-assert tuple(profile_signature.parameters) == (
-    "skip_validation",
-    "name",
-    "age",
-    "__jsoncompat_extra__",
-)
-assert all(
-    parameter.kind is inspect.Parameter.KEYWORD_ONLY
-    for parameter in profile_signature.parameters.values()
-)
-
-profile_hints = typing.get_type_hints(Profile)
-assert profile_hints["__jsoncompat_extra__"] == dict[str, str]
-assert not hasattr(Profile, "from_json")
-assert not hasattr(Profile, "from_json_string")
-assert not hasattr(Profile, "to_json")
-assert not hasattr(Profile, "to_json_string")
-
-try:
-    Profile.deserialize('{"name":"Ada"}', format=None)
-except (TypeError, ValueError):
-    pass
-else:
-    raise AssertionError("explicit format=None was treated as an omitted format")
-
-profile = Profile.from_value({"name": "Ada", "nickname": "ace"})
-assert profile.name == "Ada"
-assert profile.age is JSONCOMPAT_MISSING
-assert profile.__jsoncompat_extra__ == {"nickname": "ace"}
-assert profile.get_additional_property("nickname") == "ace"
-assert profile.get_additional_property("missing") is JSONCOMPAT_MISSING
-assert profile.to_value() == {"name": "Ada", "nickname": "ace"}
-assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
-assert profile.serialize(skip_validation=True) == profile.serialize()
-assert Profile.deserialize('{"name":"Ada","nickname":"ace"}') == profile
-try:
-    Profile.deserialize('{"name":"Ada"}', format=None)
-except (TypeError, ValueError):
-    pass
-else:
-    raise AssertionError("bound deserializer accepted explicit format=None")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class DerivedProfile(Profile):
-    pass
-
-
-derived_profile = DerivedProfile.deserialize('{"name":"Ada"}')
-assert type(derived_profile) is DerivedProfile
-assert derived_profile.name == "Ada"
-
-# Generated model graphs are deeply immutable, including additional properties.
-try:
-    profile.__jsoncompat_extra__["name"] = "Grace"
-except TypeError:
-    pass
-else:
-    raise AssertionError("additional properties remained mutable")
-try:
-    profile.__jsoncompat_extra__.__init__({"name": "Grace"})
-except TypeError:
-    pass
-else:
-    raise AssertionError("additional properties accepted a second initialization")
-assert profile.__jsoncompat_extra__ == {"nickname": "ace"}
-assert profile.serialize() == '{"name":"Ada","nickname":"ace"}'
-
-for invalid_json in (
-    '{"name":""}',
-    '{"name":"Ada","nickname":1}',
-    '{"name":"Ada","name":"Grace"}',
-):
-    try:
-        Profile.deserialize(invalid_json)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError(f"checked JSON accepted {invalid_json}")
+for skip_validation in (False, True):
+    parsed_value = Profile.from_value(value, skip_validation=skip_validation)
+    parsed_json = Profile.deserialize(
+        '{"name":"Ada","tags":["schema","runtime"],'
+        '"attributes":{"scores":[1,2]},"nickname":"ace"}',
+        skip_validation=skip_validation,
+    )
+    assert parsed_value.to_value(skip_validation=True) == value
+    assert parsed_json.to_value(skip_validation=True) == value
+    assert Profile.deserialize(
+        profile.serialize(skip_validation=skip_validation),
+        skip_validation=skip_validation,
+    ).to_value(skip_validation=True) == value
 
 for format in SerializationFormat:
     encoded = profile.serialize(format=format)
-    decoded = Profile.deserialize(encoded, format=format)
-    assert decoded.to_value() == {"name": "Ada", "nickname": "ace"}
+    assert Profile.deserialize(encoded, format=format).to_value() == value
 
-profile_with_age = Profile(name="Ada", age=37, __jsoncompat_extra__={"nickname": "ace"})
-assert profile_with_age.to_value() == {
-    "name": "Ada",
-    "age": 37,
-    "nickname": "ace",
-}
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class IntegerSequence(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"values":{"type":"array","items":{"type":"integer"}}},"required":["values"],"additionalProperties":false}'
-
-    values: typing.Sequence[int] = field("values")
-
-
-sequence_from_range = IntegerSequence(values=range(3))
-assert sequence_from_range.values == [0, 1, 2]
-assert sequence_from_range.to_value() == {"values": [0, 1, 2]}
-try:
-    IntegerSequence(values=b"\x00\x01")
-except TypeError:
-    pass
-else:
-    raise AssertionError("byte strings were treated as generated array inputs")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class InvalidScalarDefault(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"additionalProperties":false}'
-
-    count: int = -1
-
-
-for invalid_default_path, invalid_default_factory in (
-    ("direct", InvalidScalarDefault),
-    ("from_value", lambda: InvalidScalarDefault.from_value({})),
-    ("deserialize", lambda: InvalidScalarDefault.deserialize("{}")),
-):
-    try:
-        invalid_default_factory()
-    except ValueError:
-        pass
-    else:
-        raise AssertionError(
-            f"checked {invalid_default_path} trusted a schema-invalid default"
-        )
-
-unchecked_invalid_default = InvalidScalarDefault(skip_validation=True)
-assert unchecked_invalid_default.count == -1
-assert unchecked_invalid_default.serialize(skip_validation=True) == '{"count":-1}'
-try:
-    unchecked_invalid_default.serialize()
-except ValueError:
-    pass
-else:
-    raise AssertionError("checked output trusted a schema-invalid unchecked default")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class RequiredWireDefault(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"required":["count"],"additionalProperties":false}'
-
-    count: int = 0
-
-
-for required_default_path, required_default_factory in (
-    ("from_value", lambda: RequiredWireDefault.from_value({})),
-    ("deserialize", lambda: RequiredWireDefault.deserialize("{}")),
-):
-    try:
-        required_default_factory()
-    except ValueError:
-        pass
-    else:
-        raise AssertionError(
-            f"checked {required_default_path} let a Python default satisfy a required wire property"
-        )
-assert RequiredWireDefault.from_value({"count": 0}).count == 0
-assert RequiredWireDefault.deserialize('{"count":0}').count == 0
-
-
-mutating_required_default_input: dict[str, object] = {}
-
-
-def mutating_required_default_factory() -> int:
-    mutating_required_default_input["factory_was_called"] = True
-    return 0
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class MutatingRequiredWireDefault(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"required":["count"],"additionalProperties":false}'
-
-    count: int = dataclasses.field(default_factory=mutating_required_default_factory)
-
-
-try:
-    MutatingRequiredWireDefault.from_value(mutating_required_default_input)
-except ValueError:
-    pass
-else:
-    raise AssertionError("a required default factory satisfied an invalid wire value")
-assert mutating_required_default_input == {}
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class NestedMappingPayload(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"payload":{"type":"object","additionalProperties":{"type":"integer","minimum":0}}},"required":["payload"],"additionalProperties":false}'
-
-    payload: dict[str, int] = field("payload")
-
-
-nested_mapping_input = {"payload": MappingProxyType({"count": 3})}
-nested_mapping_model = NestedMappingPayload.from_value(nested_mapping_input)
-assert nested_mapping_model.payload == {"count": 3}
-assert nested_mapping_model.to_value() == {"payload": {"count": 3}}
-
-
-class StatefulConstrainedMapping(UserDict[str, int]):
-    def __init__(self) -> None:
-        super().__init__({"count": 1})
-        self.items_calls = 0
-
-    def items(self) -> list[tuple[str, int]]:
-        self.items_calls += 1
-        value = 1 if self.items_calls == 1 else -1
-        return [("count", value)]
-
-
-stateful_mapping = StatefulConstrainedMapping()
-try:
-    NestedMappingPayload.from_value({"payload": stateful_mapping})
-except ValueError:
-    pass
-else:
-    raise AssertionError("a converted mapping bypassed projection validation")
-assert stateful_mapping.items_calls == 2
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class DefaultExceedsMaxProperties(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0}},"maxProperties":0,"additionalProperties":false}'
-
-    count: int = 0
-
-
-for max_properties_default_path, max_properties_default_factory in (
-    ("from_value", lambda: DefaultExceedsMaxProperties.from_value({})),
-    ("deserialize", lambda: DefaultExceedsMaxProperties.deserialize("{}")),
-):
-    try:
-        max_properties_default_factory()
-    except ValueError:
-        pass
-    else:
-        raise AssertionError(
-            f"checked {max_properties_default_path} skipped object-level validation after inserting a default"
-        )
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class UnsupportedPlanInvalidDefault(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"count":{"type":"integer","minimum":0},"payload":{"type":"object"}},"additionalProperties":false}'
-
-    count: int = -1
-    payload: dict[str, int] | dict[str, str] = dataclasses.field(default_factory=dict)
-
-
-for fallback_invalid_default_factory in (
-    UnsupportedPlanInvalidDefault,
-    lambda: UnsupportedPlanInvalidDefault.from_value({}),
-    lambda: UnsupportedPlanInvalidDefault.deserialize("{}"),
-):
-    try:
-        fallback_invalid_default_factory()
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("fallback construction trusted a schema-invalid default")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SequenceDefaultFactory(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"values":{"type":"array","items":{"type":"integer"}}},"additionalProperties":false}'
-
-    values: typing.Sequence[int] = dataclasses.field(default_factory=lambda: [1, 2])
-
-
-default_sequence_models = (
-    SequenceDefaultFactory(),
-    SequenceDefaultFactory.from_value({}),
-    SequenceDefaultFactory.deserialize("{}"),
-    SequenceDefaultFactory(skip_validation=True),
-    SequenceDefaultFactory.from_value({}, skip_validation=True),
-    SequenceDefaultFactory.deserialize("{}", skip_validation=True),
+assert isinstance(profile.tags, dc.FrozenList)
+assert is_dataclass(profile.attributes)
+assert isinstance(profile.attributes.__jsoncompat_extra__, dc.FrozenDict)
+assert isinstance(
+    profile.attributes.__jsoncompat_extra__["scores"],
+    dc.FrozenList,
 )
-for default_sequence in default_sequence_models:
-    assert isinstance(default_sequence.values, FrozenList)
-    assert default_sequence.values == [1, 2]
-    assert default_sequence.serialize() == '{"values":[1,2]}'
-
-
-@dataclass(frozen=True, slots=True, kw_only=True, init=False)
-class UncheckedDefaultInner(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"raw":{"type":"string"}},"required":["raw"],"additionalProperties":false}'
-
-    raw: typing.Any = field("raw")
-
-    def __init__(self) -> None:
-        object.__setattr__(self, "raw", b"not-json")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class UncheckedNestedDefault(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"inner":{"type":"object","properties":{"raw":{"type":"string"}},"required":["raw"],"additionalProperties":false}},"additionalProperties":false}'
-
-    inner: UncheckedDefaultInner = dataclasses.field(
-        default_factory=UncheckedDefaultInner
-    )
-
-
-for unchecked_nested_default_path, unchecked_nested_default_factory in (
-    ("direct", UncheckedNestedDefault),
-    ("from_value", lambda: UncheckedNestedDefault.from_value({})),
-    ("deserialize", lambda: UncheckedNestedDefault.deserialize("{}")),
+assert isinstance(profile.__jsoncompat_extra__, dc.FrozenDict)
+for mutation in (
+    lambda: setattr(profile, "name", "Grace"),
+    lambda: profile.tags.append("mutable"),
+    lambda: profile.attributes.__jsoncompat_extra__.__setitem__("scores", []),
+    lambda: profile.attributes.__jsoncompat_extra__["scores"].append(3),
+    lambda: profile.__jsoncompat_extra__.__setitem__("nickname", "changed"),
 ):
     try:
-        unchecked_nested_default_factory()
-    except ValueError:
+        mutation()
+    except (AttributeError, FrozenInstanceError, TypeError):
         pass
     else:
-        raise AssertionError(
-            f"checked {unchecked_nested_default_path} trusted a non-JSON nested default"
-        )
+        raise AssertionError("generated object graph remained mutable")
 
-unchecked_profile = Profile(name="", skip_validation=True)
-assert unchecked_profile.to_value(skip_validation=True) == {"name": ""}
-try:
-    unchecked_profile.serialize()
-except ValueError:
-    pass
-else:
-    raise AssertionError("checked output trusted an unchecked direct constructor")
-
-try:
-    Profile(name="Ada", __jsoncompat_extra__={"name": "Grace"})
-except ValueError:
-    pass
-else:
-    raise AssertionError("additional properties collided with a declared field")
-
-for factory in (
-    lambda: Profile(name=1),
-    lambda: Profile.from_value({"name": 1}),
-    lambda: Profile.from_value({"name": "Ada", "age": "37"}),
-    lambda: Profile(name="Ada", __jsoncompat_extra__={"nickname": 1}),
-):
-    try:
-        factory()
-    except (TypeError, ValueError):
-        pass
-    else:
-        raise AssertionError("invalid dataclass payload was accepted")
-
-
-custom_init_calls = 0
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class CustomInitialized(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"value":{"type":"integer","minimum":1}},"required":["value"],"additionalProperties":false}'
-
-    value: int = field("value")
-
-    def __init__(self, *, value: int, skip_validation: bool = False) -> None:
-        global custom_init_calls
-        custom_init_calls += 1
-        object.__setattr__(self, "value", value + 1)
-        self.__post_init__(skip_validation)
-
-
-custom_initialized = CustomInitialized(value=0)
-assert custom_init_calls == 1
-assert custom_initialized.value == 1
-assert dc._jsoncompat_direct_runtime_for(CustomInitialized) is None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AuditContext(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tags":{"type":"object","additionalProperties":{"type":"string"}}},"required":["tags"],"additionalProperties":false}'
-
-    tags: dict[str, str] = field("tags")
-
-
-context = AuditContext(tags={"team": "schema"})
-assert context.to_value() == {"tags": {"team": "schema"}}
-try:
-    context.tags["team"] = "runtime"
-except TypeError:
-    pass
-else:
-    raise AssertionError("nested JSON objects remained mutable")
-ordered_context = AuditContext(tags={"z-last": "z", "a-first": "a"})
-assert list(ordered_context.tags.items()) == [
-    ("z-last", "z"),
-    ("a-first", "a"),
-]
-assert ordered_context.serialize(skip_validation=True) == (
-    '{"tags":{"a-first":"a","z-last":"z"}}'
-)
-assert AuditContext.from_value({"tags": {"team": "schema"}}).tags == {
-    "team": "schema"
-}
-
-for empty_context in (
-    AuditContext(tags={}),
-    AuditContext.from_value({"tags": {}}),
-    AuditContext.deserialize('{"tags":{}}'),
-):
-    assert isinstance(empty_context.tags, FrozenDict)
-    assert list(empty_context.tags.items()) == []
-
-for ordered_context in (
-    AuditContext(tags={"third": "3", "first": "1", "second": "2"}),
-    AuditContext.from_value(
-        {"tags": {"third": "3", "first": "1", "second": "2"}}
-    ),
-    AuditContext.deserialize(
-        '{"tags":{"third":"3","first":"1","second":"2"}}'
-    ),
-):
-    assert list(ordered_context.tags.items()) == [
-        ("third", "3"),
-        ("first", "1"),
-        ("second", "2"),
-    ]
-
-# The native path must transfer ownership of each pair into the FrozenDict's
-# tuple slot: the values gain exactly one owner while the model is alive and
-# return to their original refcounts after it is collected.
+# Native tuple construction and frozen-slot writes must transfer exactly one
+# reference for each FrozenDict entry and release it with the model graph.
 if hasattr(sys, "getrefcount"):
     lifetime_key = "".join(("jsoncompat", "-native-key"))
     lifetime_value = "".join(("jsoncompat", "-native-value"))
     lifetime_input = {lifetime_key: lifetime_value}
-    key_refs = sys.getrefcount(lifetime_key)
-    value_refs = sys.getrefcount(lifetime_value)
-    lifetime_context = AuditContext.from_value(
-        {"tags": lifetime_input},
+    lifetime_context = ownerships.AuditContext.from_value(
+        lifetime_input,
         skip_validation=True,
     )
-    assert sys.getrefcount(lifetime_key) == key_refs + 1
-    assert sys.getrefcount(lifetime_value) == value_refs + 1
+    stored_key = next(iter(lifetime_context.__jsoncompat_extra__))
+    stored_value = lifetime_context.__jsoncompat_extra__[stored_key]
+    key_refs = sys.getrefcount(stored_key)
+    value_refs = sys.getrefcount(stored_value)
     del lifetime_context
     gc.collect()
-    assert sys.getrefcount(lifetime_key) == key_refs
-    assert sys.getrefcount(lifetime_value) == value_refs
-
-# On supported CPython layouts, compiled converters bypass the Python
-# constructor. Other runtimes must retain the constructor fallback.
-frozen_dict_init = FrozenDict.__init__
-frozen_dict_init_calls = 0
-
-
-def tracking_frozen_dict_init(self, values=()):
-    global frozen_dict_init_calls
-    frozen_dict_init_calls += 1
-    frozen_dict_init(self, values)
-
-
-FrozenDict.__init__ = tracking_frozen_dict_init
-try:
-    patched_context = AuditContext.from_value({"tags": {"team": "runtime"}})
-    assert patched_context.tags == {"team": "runtime"}
-finally:
-    FrozenDict.__init__ = frozen_dict_init
-
-if platform.python_implementation() == "CPython" and sys.version_info >= (3, 11):
-    assert frozen_dict_init_calls == 0
-else:
-    assert frozen_dict_init_calls == 1
-
-# A caller-supplied mapping type can inherit the same `_items` descriptor but
-# still define meaningful construction behavior. It must stay on the public
-# constructor path instead of inheriting the canonical FrozenDict fast path.
-custom_frozen_dict_init_calls = 0
-
-
-class CustomFrozenDict(FrozenDict):
-    __slots__ = ()
-    __module__ = "jsoncompat.codegen.dataclasses"
-    __qualname__ = "FrozenDict"
-
-    def __init__(self, values=()):
-        global custom_frozen_dict_init_calls
-        custom_frozen_dict_init_calls += 1
-        super().__init__(values)
-
-
-canonical_frozen_dict = dc.FrozenDict
-dc.FrozenDict = CustomFrozenDict
-try:
-
-    @dataclass(frozen=True, slots=True, kw_only=True)
-    class CustomFrozenDictContext(DataclassModel):
-        __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tags":{"type":"object","additionalProperties":{"type":"string"}}},"required":["tags"],"additionalProperties":false}'
-
-        tags: dict[str, str] = field("tags")
-
-    custom_frozen_context = CustomFrozenDictContext.from_value(
-        {"tags": {"team": "runtime"}}
+    assert sys.getrefcount(stored_key) == key_refs - 1, (
+        key_refs,
+        sys.getrefcount(stored_key),
     )
-finally:
-    dc.FrozenDict = canonical_frozen_dict
-
-assert type(custom_frozen_context.tags) is CustomFrozenDict
-assert custom_frozen_context.tags == {"team": "runtime"}
-assert custom_frozen_dict_init_calls == 1, custom_frozen_dict_init_calls
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class TagListRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"array","items":{"type":"string"}}'
-
-    root: list[str] = root_field()
-
-
-tag_list = TagListRoot(root=["schema"])
-assert tag_list.root == ["schema"]
-assert not tag_list.root != ["schema"]
-assert tag_list.root != ["runtime"]
-tag_list.root.__init__(["runtime"])
-assert tag_list.root == ["schema"]
-try:
-    list.append(tag_list.root, "runtime")
-except TypeError:
-    pass
-else:
-    raise AssertionError("nested JSON arrays were mutable through a base API")
-assert tag_list.to_value() == ["schema"]
-
-for skip_validation in (False, True):
-    tuple_tag_list = TagListRoot.from_value(
-        ("schema",),
-        skip_validation=skip_validation,
+    assert sys.getrefcount(stored_value) == value_refs - 1, (
+        value_refs,
+        sys.getrefcount(stored_value),
     )
-    assert tuple_tag_list.root == ["schema"]
-    assert tuple_tag_list.to_value(skip_validation=True) == ["schema"]
-
-for factory in (
-    lambda: AuditContext(tags="oops"),
-    lambda: AuditContext(tags={1: "schema"}),
-    lambda: AuditContext(tags={"team": 1}),
-):
-    try:
-        factory()
-    except (TypeError, ValueError):
-        pass
-    else:
-        raise AssertionError("mapping annotations accepted an invalid value")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class UnsupportedRuntimeAnnotation(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}}},"required":["tags"],"additionalProperties":false}'
-
-    tags: tuple[str, ...] = field("tags")
-
 
 try:
-    UnsupportedRuntimeAnnotation(tags=("schema",))
-except TypeError as error:
-    assert "unsupported runtime annotation" in str(error)
-else:
-    raise AssertionError("unsupported runtime annotations must fail loudly")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"string","minLength":1}'
-
-    root: str = root_field()
-
-
-assert ProfileRoot.from_value("ok").root == "ok"
-assert ProfileRoot(root="ok").to_value() == "ok"
-
-trusted_root = ProfileRoot(root="", skip_validation=True)
-assert trusted_root.to_value(skip_validation=True) == ""
-assert ProfileRoot.from_value("", skip_validation=True).root == ""
-assert ProfileRoot.deserialize('""', skip_validation=True).root == ""
-
-try:
-    trusted_root.to_value()
+    Profile(
+        name="",
+        tags=[],
+        attributes=ProfileAttributes.from_value({}),
+        __jsoncompat_extra__={},
+    )
 except ValueError:
     pass
 else:
-    raise AssertionError("checked serialization accepted a trusted invalid model")
+    raise AssertionError("checked construction accepted invalid data")
 
-try:
-    ProfileRoot(root="")
-except ValueError:
-    pass
-else:
-    raise AssertionError("invalid root dataclass was accepted")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class PatternRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"string","pattern":"^A"}'
-
-    root: str = root_field()
-
-
-assert PatternRoot.deserialize('"Ada"').root == "Ada"
-try:
-    PatternRoot.deserialize('"Grace"')
-except ValueError:
-    pass
-else:
-    raise AssertionError("generic-validator fallback ignored a string pattern")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BigIntegerRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"integer"}'
-
-    root: int = root_field()
-
-
-big_integer = 10**80
-assert BigIntegerRoot.from_value(big_integer).root == big_integer
-assert BigIntegerRoot.deserialize(str(big_integer)).root == big_integer
-assert BigIntegerRoot(root=big_integer).serialize(skip_validation=True) == str(big_integer)
-
-
-class HostileIntegralFloat(float):
-    def __int__(self) -> int:
-        return -1
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class NonnegativeIntegerRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"integer","minimum":0}'
-
-    root: int = root_field()
-
-
-converted_integer = NonnegativeIntegerRoot.from_value(HostileIntegralFloat(1.0))
-assert converted_integer.root == 1
-assert type(converted_integer.root) is int
-assert converted_integer.serialize() == "1"
-
-
-class HostileRenderedFloat(float):
-    def __str__(self) -> str:
-        return "99"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BoundedNumberRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"number","maximum":10}'
-
-    root: float = root_field()
-
-
-bounded_number = BoundedNumberRoot(root=1.5)
-object.__setattr__(bounded_number, "root", HostileRenderedFloat(1.5))
-assert bounded_number.serialize() == "1.5"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class LargeFractionBoundary(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"exclusiveMaximum":9.727837981879871e+26}'
-
-    root: float = root_field()
-
-
-below_boundary = json.loads("9.72783798187987e+26")
-assert LargeFractionBoundary.from_value(below_boundary).root == below_boundary
-
-boundary_source = "972783798187987123879878123.188781371"
-boundary_value = json.loads(boundary_source)
-for factory in (
-    lambda: LargeFractionBoundary.from_value(boundary_value),
-    lambda: LargeFractionBoundary.deserialize(boundary_source),
-):
-    try:
-        factory()
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("borrowed numeric validation lost decimal precision")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AnyOrProfileRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = "true"
-
-    root: typing.Any | Profile = root_field()
-
-
-assert AnyOrProfileRoot(root=profile).serialize() == (
-    '{"name":"Ada","nickname":"ace"}'
-)
-
-generic_json_value = {
-    "z-last": -0.0,
-    "a-first": ["line\nbreak", True, None, 1.25e100],
-}
-generic_root = AnyOrProfileRoot(root=generic_json_value)
-assert generic_root.serialize(skip_validation=True) == generic_root.serialize()
-assert json.loads(generic_root.serialize(skip_validation=True)) == generic_json_value
-parsed_generic_root = AnyOrProfileRoot.deserialize(
-    '{"items":[1,2]}',
+trusted = Profile(
+    name="",
+    tags=[],
+    attributes=ProfileAttributes.from_value({}),
+    __jsoncompat_extra__={},
     skip_validation=True,
 )
+assert trusted.to_value(skip_validation=True)["name"] == ""
 try:
-    parsed_generic_root.root["items"].append(3)
-except (AttributeError, TypeError):
-    pass
-else:
-    raise AssertionError("parsed Any containers remained mutable")
-
-for skip_validation in (False, True):
-    try:
-        AnyOrProfileRoot.deserialize(
-            '{"duplicate":1,"duplicate":2}',
-            skip_validation=skip_validation,
-        )
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("Any conversion erased a duplicate JSON key")
-
-try:
-    AnyOrProfileRoot(root=float("nan"))
+    trusted.serialize()
 except ValueError:
     pass
 else:
-    raise AssertionError("direct construction accepted a non-finite JSON number")
+    raise AssertionError("checked serialization trusted unchecked data")
 
-cyclic_json_value = []
-cyclic_json_value.append(cyclic_json_value)
-for non_json_value in (
-    object(),
-    {1: "non-string key"},
-    float("nan"),
-    float("inf"),
-    cyclic_json_value,
-):
-    try:
-        AnyOrProfileRoot.from_value(non_json_value)
-    except (TypeError, ValueError):
-        pass
-    else:
-        raise AssertionError(f"checked construction accepted {non_json_value!r}")
+HugeInteger = roots.JSONCOMPAT_MODEL
+huge = 10**80
+root = HugeInteger(root=huge)
+assert is_dataclass(root)
+assert root.to_value() == huge
+assert HugeInteger.from_value(huge).root == huge
+assert HugeInteger.deserialize(str(huge)).root == huge
+assert HugeInteger.deserialize(root.serialize()).root == huge
 
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileWriter(WriterDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":false}},"required":["version","data"],"additionalProperties":false}'
-
-    version: Literal[1] = field("version")
-    data: Profile = field("data")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileRefWriter(WriterDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"profile":{"type":"object","properties":{"name":{"type":"string","minLength":1},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}},"type":"object","properties":{"data":{"$ref":"#/$defs/profile"}},"required":["data"],"additionalProperties":false}'
-
-    data: Profile = field("data")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileConstrainedRefWriter(WriterDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"profile":{"type":"object","properties":{"name":{"type":"string","minLength":1},"age":{"type":"integer"}},"required":["name"],"additionalProperties":{"type":"string"}}},"type":"object","properties":{"data":{"$ref":"#/$defs/profile","maxProperties":0}},"required":["data"],"additionalProperties":false}'
-
-    data: Profile = field("data")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileReaderV1(ReaderDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}'
-
-    version: Literal[1] = field("version")
-    data: Profile = field("data")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileReaderV2(ReaderDataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"version":{"const":2},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}'
-
-    version: Literal[2] = field("version")
-    data: Profile = field("data")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProfileReader(ReaderDataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"oneOf":[{"type":"object","properties":{"version":{"const":1},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false},{"type":"object","properties":{"version":{"const":2},"data":{"type":"object","properties":{"name":{"type":"string","minLength":1}},"required":["name"],"additionalProperties":{"type":"string"}}},"required":["version","data"],"additionalProperties":false}]}'
-
-    root: ProfileReaderV1 | ProfileReaderV2 = root_field()
-
-
-writer = ProfileWriter(version=1, data=Profile(name="Ada"))
-assert writer.to_value() == {"version": 1, "data": {"name": "Ada"}}
-referenced_writer = ProfileRefWriter(data=Profile(name="Ada"))
-assert referenced_writer.to_value() == {"data": {"name": "Ada"}}
-try:
-    ProfileConstrainedRefWriter(data=Profile(name="Ada"))
-except ValueError:
-    pass
-else:
-    raise AssertionError("prevalidated $ref target skipped an adjacent constraint")
-
-reader = ProfileReader.from_value({"version": 1, "data": {"name": "Ada"}})
+payload = writers.ProfileV1(name="Ada")
+writer = writers.ProfileWriter(version=1, data=payload)
+wire = writer.serialize()
+reader = readers.ProfileReader.deserialize(wire)
 assert reader.root.version == 1
 assert reader.root.data.name == "Ada"
-json_reader = ProfileReader.deserialize('{"version":1,"data":{"name":"Ada"}}')
-assert isinstance(json_reader.root, ProfileReaderV1)
-assert json_reader.root.data.name == "Ada"
 
-try:
-    ProfileWriter(
-        version=True,
-        data=Profile(name="Ada"),
-        skip_validation=True,
-    )
-except TypeError:
-    pass
-else:
-    raise AssertionError("trusted construction conflated boolean and integer literals")
-
-trusted_reader = ProfileReader.from_value(
-    {"version": 1, "data": {"name": ""}},
-    skip_validation=True,
-)
-assert isinstance(trusted_reader.root, ProfileReaderV1)
-assert trusted_reader.root.data.name == ""
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class NarrowObject(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"a":{"type":"integer"}},"required":["a"],"additionalProperties":false}'
-
-    a: int = field("a")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class WideObject(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}'
-
-    a: int = field("a")
-    b: int = field("b")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AmbiguousObjectRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"anyOf":[{"type":"object","properties":{"a":{"type":"integer"}},"required":["a"],"additionalProperties":false},{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}]}'
-
-    root: NarrowObject | WideObject = root_field()
-
-
-assert dc._jsoncompat_native_converter_for(AmbiguousObjectRoot) is not None
-narrow = AmbiguousObjectRoot.from_value({"a": 1})
-assert isinstance(narrow.root, NarrowObject)
-assert narrow.to_value() == {"a": 1}
-wide = AmbiguousObjectRoot.from_value({"a": 1, "b": 2})
-assert isinstance(wide.root, WideObject)
-assert wide.to_value() == {"a": 1, "b": 2}
-wide_json = AmbiguousObjectRoot.deserialize('{"a":1,"b":2}')
-assert isinstance(wide_json.root, WideObject)
-assert wide_json.to_value() == {"a": 1, "b": 2}
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class NonnegativeObject(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"x":{"type":"integer","minimum":0}},"required":["x"],"additionalProperties":false}'
-
-    x: int = field("x")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class NegativeObject(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"x":{"type":"integer","maximum":-1}},"required":["x"],"additionalProperties":false}'
-
-    x: int = field("x")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ConstraintDisambiguatedRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"anyOf":[{"type":"object","properties":{"x":{"type":"integer","minimum":0}},"required":["x"],"additionalProperties":false},{"type":"object","properties":{"x":{"type":"integer","maximum":-1}},"required":["x"],"additionalProperties":false}]}'
-
-    root: NonnegativeObject | NegativeObject = root_field()
-
-
-assert dc._jsoncompat_native_converter_for(ConstraintDisambiguatedRoot) is not None
-negative = ConstraintDisambiguatedRoot.from_value({"x": -2})
-assert isinstance(negative.root, NegativeObject)
-negative_json = ConstraintDisambiguatedRoot.deserialize('{"x":-2}')
-assert isinstance(negative_json.root, NegativeObject)
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BooleanTaggedObject(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tag":{"const":true}},"required":["tag"],"additionalProperties":false}'
-
-    tag: Literal[True] = field("tag")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class IntegerTaggedObject(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"type":"object","properties":{"tag":{"const":1}},"required":["tag"],"additionalProperties":false}'
-
-    tag: Literal[1] = field("tag")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ScalarTaggedRoot(DataclassRootModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"anyOf":[{"type":"object","properties":{"tag":{"const":true}},"required":["tag"],"additionalProperties":false},{"type":"object","properties":{"tag":{"const":1}},"required":["tag"],"additionalProperties":false}]}'
-
-    root: BooleanTaggedObject | IntegerTaggedObject = root_field()
-
-
-assert isinstance(ScalarTaggedRoot.from_value({"tag": True}).root, BooleanTaggedObject)
-assert isinstance(ScalarTaggedRoot.from_value({"tag": 1}).root, IntegerTaggedObject)
-assert isinstance(ScalarTaggedRoot.deserialize('{"tag":true}').root, BooleanTaggedObject)
-assert isinstance(ScalarTaggedRoot.deserialize('{"tag":1}').root, IntegerTaggedObject)
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class RecursiveNode(DataclassModel):
-    __jsoncompat_schema__: ClassVar[str] = '{"$defs":{"node":{"type":"object","properties":{"value":{"type":"integer"},"next":{"anyOf":[{"$ref":"#/$defs/node"},{"type":"null"}]}},"required":["value","next"],"additionalProperties":false}},"$ref":"#/$defs/node"}'
-
-    value: int = field("value")
-    next: "RecursiveNode | None" = field("next")
-
-
-recursive_value = None
-for index in range(50):
-    recursive_value = {"value": index, "next": recursive_value}
-
-validator_calls = []
-original_validator_for = dc._jsoncompat_validator_for
-
-
-def tracking_validator_for(model_type):
-    validator_calls.append(model_type)
-    return original_validator_for(model_type)
-
-
-dc._jsoncompat_validator_for = tracking_validator_for
-try:
-    checked_recursive = RecursiveNode.from_value(recursive_value)
-    assert validator_calls == [RecursiveNode]
-
-    validator_calls.clear()
-    trusted_recursive = RecursiveNode.from_value(
-        recursive_value,
-        skip_validation=True,
-    )
-    assert validator_calls == []
-finally:
-    dc._jsoncompat_validator_for = original_validator_for
-
-assert checked_recursive.to_value() == recursive_value
-assert trusted_recursive.to_value(skip_validation=True) == recursive_value
-
-try:
-    RecursiveNode.from_value(
-        {"value": 0, "next": "not-a-node"},
-        skip_validation=True,
-    )
-except TypeError:
-    pass
-else:
-    raise AssertionError("trusted union construction accepted an invalid shape")
-
-cyclic_node = {"value": 0}
-cyclic_node["next"] = cyclic_node
-try:
-    RecursiveNode.from_value(cyclic_node, skip_validation=True)
-except ValueError as error:
-    assert "maximum nesting depth" in str(error)
-else:
-    raise AssertionError("cyclic trusted input was not bounded")
-
-try:
-    ProfileReader.from_value({"version": 1, "data": {"name": ""}})
-except ValueError:
-    pass
-else:
-    raise AssertionError("checked discriminated reader accepted invalid data")
-
-try:
-    ProfileWriter(version=1, data={"name": "Ada"})
-except TypeError:
-    pass
-else:
-    raise AssertionError("constructor accepted raw nested JSON instead of a Profile")
-
-try:
-    ProfileWriter(version=1, data=Profile(name="", skip_validation=True))
-except ValueError:
-    pass
-else:
-    raise AssertionError("checked parent trusted an unchecked nested model")
-
-for operation, forbidden in (
-    ("writer from_value", lambda: ProfileWriter.from_value({"version": 1, "data": {"name": "Ada"}})),
-    ("writer deserialize", lambda: ProfileWriter.deserialize('{"version":1,"data":{"name":"Ada"}}')),
-    ("reader constructor to_value", lambda: ProfileReaderV1(version=1, data=Profile(name="Ada")).to_value()),
-    ("reader from_value to_value", lambda: reader.to_value()),
-    ("reader serialize", lambda: reader.serialize()),
+for forbidden in (
+    lambda: writers.ProfileWriter.deserialize(wire),
+    lambda: reader.serialize(),
 ):
     try:
         forbidden()
     except TypeError:
         pass
     else:
-        raise AssertionError(f"directional dataclass guard did not fire: {operation}")
+        raise AssertionError("reader/writer direction guard did not fire")
+
+class CustomProfile(Profile):
+    pass
+
+for unbound in (
+    lambda: CustomProfile(
+        name="Ada",
+        tags=[],
+        attributes=ProfileAttributes.from_value({}),
+        __jsoncompat_extra__={},
+    ),
+    lambda: CustomProfile.deserialize(
+        '{"name":"Ada","tags":[],"attributes":{}}'
+    ),
+):
+    try:
+        unbound()
+    except TypeError as error:
+        assert "not a bound jsoncompat-generated dataclass" in str(error)
+    else:
+        raise AssertionError("an unbound custom subclass used generated runtime state")
 "###,
     );
-    let output = command.output().expect("run dataclass helper module test");
+    command
+        .arg(module_path)
+        .arg(root_module_path)
+        .arg(ownership_module_path)
+        .arg(writer_module_path)
+        .arg(reader_module_path);
+    let output = command
+        .output()
+        .expect("run generated native runtime contract");
     assert!(
         output.status.success(),
-        "dataclass helper module test failed: {}",
+        "generated native runtime contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_module_compiles_one_shared_plan_for_every_recursive_model_root() {
+    let source = generate_dataclass_models(&json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/a",
+        "$defs": {
+            "a": {
+                "anyOf": [
+                    {"type": "null"},
+                    {
+                        "type": "object",
+                        "properties": {"next": {"$ref": "#/$defs/b"}},
+                        "required": ["next"],
+                        "additionalProperties": false
+                    }
+                ]
+            },
+            "b": {
+                "anyOf": [
+                    {"type": "null"},
+                    {
+                        "type": "object",
+                        "properties": {"next": {"$ref": "#/$defs/a"}},
+                        "required": ["next"],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        }
+    }))
+    .expect("generate mutually recursive dataclasses");
+    let module_path = write_temp_module("shared_recursive_plan", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+from jsoncompat.codegen import dataclasses as dc
+
+
+compile_calls = []
+native_compile = dc.compile_model_runtimes
+
+
+def record_compile(model_roots, descriptors, frozen_list_type, frozen_dict_type):
+    compile_calls.append(
+        (tuple(model_type.__name__ for model_type, _ in model_roots), len(descriptors))
+    )
+    return native_compile(
+        model_roots,
+        descriptors,
+        frozen_list_type,
+        frozen_dict_type,
+    )
+
+
+dc.compile_model_runtimes = record_compile
+try:
+    spec = importlib.util.spec_from_file_location("shared_recursive_models", sys.argv[1])
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+finally:
+    dc.compile_model_runtimes = native_compile
+
+assert len(compile_calls) == 1
+root_names, descriptor_count = compile_calls[0]
+assert set(root_names) == {
+    "GeneratedSchemaABranch1",
+    "GeneratedSchemaA",
+    "GeneratedSchemaBBranch1",
+    "GeneratedSchemaB",
+    "GeneratedSchema",
+}
+assert len(root_names) == 5
+assert descriptor_count >= len(root_names)
+
+cases = (
+    (module.GeneratedSchemaABranch1, {"next": None}),
+    (module.GeneratedSchemaA, None),
+    (module.GeneratedSchemaBBranch1, {"next": None}),
+    (module.GeneratedSchemaB, None),
+    (module.GeneratedSchema, {"next": {"next": None}}),
+)
+for model_type, value in cases:
+    instance = model_type.from_value(value)
+    assert instance.to_value() == value
+    assert model_type.deserialize(instance.serialize()).to_value() == value
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run shared recursive conversion plan test");
+    assert!(
+        output.status.success(),
+        "shared recursive conversion plan test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_module_runtime_cycles_are_collectable() {
+    let source = generate_dataclass_models(&json!({
+        "title": "Envelope",
+        "type": "object",
+        "$defs": {
+            "payload": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"}
+                },
+                "required": ["name"],
+                "additionalProperties": false
+            }
+        },
+        "properties": {
+            "payload": {"$ref": "#/$defs/payload"},
+            "history": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/payload"}
+            }
+        },
+        "required": ["payload", "history"],
+        "additionalProperties": {
+            "anyOf": [
+                {"$ref": "#/$defs/payload"},
+                {"type": "null"}
+            ]
+        }
+    }))
+    .expect("generate multi-class dataclasses for GC regression");
+    assert!(source.contains("collections.abc.Sequence["));
+    assert!(!source.contains("typing.Sequence["));
+    let module_path = write_temp_module("collectable_runtime_cycle", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import gc
+import importlib.util
+import sys
+import weakref
+
+from jsoncompat.codegen import dataclasses as dc
+
+
+def import_weakrefs(index):
+    module_name = f"collectable_runtime_cycle_{index}"
+    spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    classes = tuple(dict.fromkeys(
+        value
+        for value in vars(module).values()
+        if isinstance(value, type)
+        and issubclass(value, dc.DataclassModel)
+        and value.__module__ == module_name
+    ))
+    assert len(classes) >= 2
+    for model_type in classes:
+        runtime = model_type.__dict__["__jsoncompat_runtime__"]
+        assert gc.is_tracked(runtime)
+        runtime_referents = gc.get_referents(runtime)
+        assert set(classes).intersection(runtime_referents) == {model_type}
+        plan_referents = tuple(
+            referent
+            for referent in runtime_referents
+            if type(referent).__module__ == "jsoncompat._native"
+            and type(referent).__name__ == "_ModelPlan"
+        )
+        assert len(plan_referents) == 1
+        assert set(classes).issubset(gc.get_referents(plan_referents[0]))
+    module_ref = weakref.ref(module)
+    class_refs = tuple(weakref.ref(model_type) for model_type in classes)
+    del sys.modules[module_name]
+    return module_ref, class_refs
+
+
+for index in range(25):
+    module_ref, class_refs = import_weakrefs(index)
+    gc.collect()
+    assert module_ref() is None
+    alive = tuple(class_ref() for class_ref in class_refs if class_ref() is not None)
+    assert not alive, tuple(
+        (
+            model_type,
+            tuple(
+                (type(referrer).__name__, repr(referrer)[:300])
+                for referrer in gc.get_referrers(model_type)
+            ),
+        )
+        for model_type in alive
+    )
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated runtime GC regression");
+    assert!(
+        output.status.success(),
+        "generated runtime GC regression failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -1172,6 +581,8 @@ fn generated_dataclasses_reject_invalid_json_values_for_plain_schemas() {
 import importlib.util
 import sys
 
+from jsoncompat.codegen import dataclasses as dc
+
 module_path = sys.argv[1]
 spec = importlib.util.spec_from_file_location("generated_models", module_path)
 module = importlib.util.module_from_spec(spec)
@@ -1182,6 +593,25 @@ spec.loader.exec_module(module)
 model = module.InventoryItem
 valid = model.from_value({"sku": "abc", "quantity": 3, "tags": ["new"]})
 assert valid.to_value() == {"sku": "abc", "quantity": 3, "tags": ["new"]}
+omitted = model(sku="abc", quantity=3)
+assert omitted.to_value() == {"sku": "abc", "quantity": 3}
+
+for skip_validation in (False, True):
+    try:
+        model.from_value(
+            {
+                "sku": "abc",
+                "quantity": 3,
+                "tags": dc.JSONCOMPAT_MISSING,
+            },
+            skip_validation=skip_validation,
+        )
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError(
+            "a present JSONCOMPAT_MISSING sentinel was treated as an absent field"
+        )
 
 large_integer = 10**80
 from_json = model.deserialize(
@@ -1333,6 +763,79 @@ else:
 }
 
 #[test]
+fn generated_fields_cannot_shadow_dataclass_runtime_internals() {
+    let source = generate_dataclass_models(&json!({
+        "title": "RuntimeNames",
+        "type": "object",
+        "properties": {
+            "__annotations__": {"type": "string"},
+            "__init__": {"type": "integer"},
+            "__jsoncompat_schema__": {"type": "string"},
+            "__new__": {"type": "string"},
+            "__post_init__": {"type": "string"},
+            "__slots__": {"type": "string"},
+            "get_additional_property": {"type": "string"},
+        },
+        "required": [
+            "__annotations__",
+            "__init__",
+            "__jsoncompat_schema__",
+            "__new__",
+            "__post_init__",
+            "__slots__",
+            "get_additional_property",
+        ],
+        "additionalProperties": {"type": "string"},
+    }))
+    .expect("generate dataclass with runtime-colliding wire names");
+    let module_path = write_temp_module("runtime_name_collisions", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("runtime_name_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+value = {
+    "__annotations__": "annotations",
+    "__init__": 7,
+    "__jsoncompat_schema__": "schema",
+    "__new__": "new",
+    "__post_init__": "post",
+    "__slots__": "slots",
+    "get_additional_property": "field",
+    "extra": "value",
+}
+model = module.RuntimeNames.deserialize(json.dumps(value))
+assert model.to_value() == value
+assert json.loads(model.serialize()) == value
+assert model.field___post_init__ == "post"
+assert model.field___jsoncompat_schema__ == "schema"
+assert model.field___init__ == 7
+assert model.get_additional_property_ == "field"
+assert model.get_additional_property("extra") == "value"
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass runtime-name collision test");
+    assert!(
+        output.status.success(),
+        "generated runtime-name collision test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_keep_conditionally_evaluated_object_properties_constructible() {
     let source = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1377,6 +880,72 @@ else:
     assert!(
         output.status.success(),
         "generated dataclass conditional unevaluatedProperties test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_combine_successful_any_of_property_annotations() {
+    let source = generate_dataclass_models(&json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+            {
+                "properties": {
+                    "foo": {"type": "string"},
+                },
+            },
+            {
+                "properties": {
+                    "bar": {"type": "integer"},
+                },
+            },
+        ],
+        "unevaluatedProperties": false,
+    }))
+    .expect("generate dataclasses from anyOf unevaluatedProperties schema");
+    let module_path = write_temp_module("any_of_unevaluated_properties", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("any_of_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+expected = {"foo": "x", "bar": 1}
+from_value = module.GeneratedSchema.from_value(expected)
+from_json = module.GeneratedSchema.deserialize('{"foo":"x","bar":1}')
+assert from_value.to_value() == expected
+assert from_json.to_value() == expected
+assert json.loads(from_value.serialize()) == expected
+assert json.loads(from_json.serialize()) == expected
+
+for invalid in (
+    lambda: module.GeneratedSchema.from_value({"baz": True}),
+    lambda: module.GeneratedSchema.deserialize('{"baz":true}'),
+):
+    try:
+        invalid()
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("unevaluatedProperties accepted an unannotated key")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass anyOf unevaluatedProperties test");
+    assert!(
+        output.status.success(),
+        "generated dataclass anyOf unevaluatedProperties test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -1693,6 +1262,7 @@ fn generated_dataclasses_for_checkout_demo_are_python_usable() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
+import collections.abc
 import importlib.util
 import sys
 import typing
@@ -1710,7 +1280,7 @@ model_hints = typing.get_type_hints(module.GeneratedSchema)
 customer_hints = typing.get_type_hints(module.GeneratedSchemaCustomer)
 item_hints = typing.get_type_hints(module.GeneratedSchemaItem)
 assert model_hints["customer"] is module.GeneratedSchemaCustomer
-assert model_hints["items"] == typing.Sequence[module.GeneratedSchemaItem]
+assert model_hints["items"] == collections.abc.Sequence[module.GeneratedSchemaItem]
 assert customer_hints["id"] is str
 assert item_hints["quantity"] is int
 

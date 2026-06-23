@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -11,7 +12,7 @@ class GeneratedSchemaBranch0(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
   "type": "object"
 }"""
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch02(dc.DataclassAdditionalModel[typing.Any]):
@@ -19,7 +20,7 @@ class GeneratedSchemaBranch02(dc.DataclassAdditionalModel[typing.Any]):
   "minProperties": 1,
   "type": "object"
 }"""
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -44,3 +45,23 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: ((GeneratedSchemaBranch02 | str) | GeneratedSchemaBranch0) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaBranch0,
+        "object",
+        (
+        ),
+        True,
+        typing.Any,
+    ),
+    (
+        GeneratedSchemaBranch02,
+        "object",
+        (
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchema, "root", ((GeneratedSchemaBranch02 | str) | GeneratedSchemaBranch0)),
+))

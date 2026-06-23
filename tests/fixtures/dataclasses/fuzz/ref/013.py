@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -19,7 +20,7 @@ class GeneratedSchemaABranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object",
   "unevaluatedProperties": false
 }"""
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaAItem(dc.DataclassRootModel):
@@ -36,7 +37,7 @@ class GeneratedSchemaA(dc.DataclassRootModel):
   },
   "unevaluatedProperties": false
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | float | str | typing.Sequence[GeneratedSchemaAItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | collections.abc.Sequence[GeneratedSchemaAItem] | float | str | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
@@ -57,3 +58,17 @@ class GeneratedSchema(dc.DataclassRootModel):
     root: GeneratedSchemaA = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaABranch2,
+        "object",
+        (
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaAItem, "root", typing.Any),
+    (GeneratedSchemaA, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaABranch2 | collections.abc.Sequence[GeneratedSchemaAItem] | float | str | None)),
+    (GeneratedSchema, "root", GeneratedSchemaA),
+))

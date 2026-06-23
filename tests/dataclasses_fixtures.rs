@@ -33,10 +33,32 @@ fn dataclass_snapshots_are_up_to_date_for_all_sample_schemas() {
 
     snapshot_backcompat_fixtures(repo_root, update, &mut expected_paths);
     snapshot_fuzz_fixtures(repo_root, update, &mut expected_paths);
+    snapshot_python_benchmark_models(repo_root, update, &mut expected_paths);
     snapshot_stamp_example(repo_root, update, &mut expected_paths);
 
     prune_or_validate_stale_snapshots(repo_root, update, &expected_paths);
     assert_python_syntax(&expected_paths);
+}
+
+fn snapshot_python_benchmark_models(
+    repo_root: &Path,
+    update: bool,
+    expected_paths: &mut BTreeSet<PathBuf>,
+) {
+    let schema_root = repo_root.join("pybindings/benchmark_schemas");
+    for schema_file in sorted_json_files(&schema_root) {
+        let relative = schema_file
+            .strip_prefix(&schema_root)
+            .expect("benchmark schema path is under its root")
+            .with_extension("");
+        assert_snapshot(
+            repo_root,
+            Path::new("benchmarks").join(relative),
+            render_schema_snapshot(&read_json(schema_file)),
+            update,
+            expected_paths,
+        );
+    }
 }
 
 fn snapshot_backcompat_fixtures(

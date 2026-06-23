@@ -24,3 +24,16 @@ class GeneratedSchema(dc.DataclassModel):
     x: dc.Omittable[GeneratedSchemaX] = dc.field("x", omittable=True)
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (GeneratedSchemaX, "root", typing.Any),
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("x", "x", GeneratedSchemaX, True),
+        ),
+        False,
+        None,
+    ),
+))

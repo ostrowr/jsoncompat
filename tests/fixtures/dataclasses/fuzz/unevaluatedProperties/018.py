@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
@@ -28,7 +29,7 @@ class GeneratedSchemaBarBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     bar: dc.Omittable[str] = dc.field("bar", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBarItem(dc.DataclassRootModel):
@@ -53,7 +54,7 @@ class GeneratedSchemaBar(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | float | str | typing.Sequence[GeneratedSchemaBarItem] | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | collections.abc.Sequence[GeneratedSchemaBarItem] | float | str | None) = dc.root_field()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
@@ -78,6 +79,29 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "unevaluatedProperties": false
 }"""
     foo: dc.Omittable[str] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: typing.Mapping[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema
+
+dc.bind_generated_models((
+    (
+        GeneratedSchemaBarBranch2,
+        "object",
+        (
+            ("bar", "bar", str, True),
+        ),
+        True,
+        typing.Any,
+    ),
+    (GeneratedSchemaBarItem, "root", typing.Any),
+    (GeneratedSchemaBar, "root", ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBarBranch2 | collections.abc.Sequence[GeneratedSchemaBarItem] | float | str | None)),
+    (
+        GeneratedSchema,
+        "object",
+        (
+            ("foo", "foo", str, True),
+        ),
+        True,
+        typing.Any,
+    ),
+))

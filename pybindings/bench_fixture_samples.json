@@ -19,6 +19,14 @@
     "schema_digest": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96",
     "value": ""
   },
+  "backcompat/allof_relaxed/old": {
+    "schema_digest": "ed6acb949bf1a2793c68e83e12f117314bfef9005dfe5f056702a1376592ef92",
+    "value": 0
+  },
+  "backcompat/allof_single_conjunct_subset/new": {
+    "schema_digest": "de95534646cedb4354fe8a2e1f2c3ce5c87e08844579fc9030948809b20d771d",
+    "value": 1.835278847962476
+  },
   "backcompat/allof_single_conjunct_subset/old": {
     "schema_digest": "33527092b4d7b347b5d568868d198441ac482767578c40660b0cda9ea16f5b3a",
     "value": 164648.0367059535
@@ -26,6 +34,10 @@
   "backcompat/allof_tighten/new": {
     "schema_digest": "18e43a31e6af71d4bc6269c76752d51792b43048e2988205a27d714453305095",
     "value": 0
+  },
+  "backcompat/allof_tighten/old": {
+    "schema_digest": "3122f188377d4bc6b91e2bd00c560f35f1bb71758491b57042a5720df25c2df3",
+    "value": 10
   },
   "backcompat/anyof_broaden/new": {
     "schema_digest": "10d27daf041f84df6789ee680bb888e758c8264d380a6aef43ecd0a70c91a6e8",
@@ -193,6 +205,14 @@
     "schema_digest": "ed0c56695b7e110e72c99602f89e5732dcdadc74dd0c8f30bfff6a372fc085e3",
     "value": {}
   },
+  "backcompat/dependent_required_recursive_property_names/new": {
+    "schema_digest": "37af85cfa91a0e95ca4c464bda8bc2b944e5d36d9948ad67c23dc0b7b53d35e9",
+    "value": {}
+  },
+  "backcompat/dependent_required_recursive_property_names/old": {
+    "schema_digest": "ff85fdd0bb73ad2b23c9426b5ebe42277f735d73d2e009d269e32f0b54ae75d1",
+    "value": {}
+  },
   "backcompat/dependent_required_unsupported_pattern_properties/new": {
     "schema_digest": "a323c979f4c6e9dfb7b0cff06442a5fc948fb621b63387693071db36418b649b",
     "value": {}
@@ -261,6 +281,10 @@
     "schema_digest": "f0765dbf409c74f001806c446f2cf171d8c46b5b15779d54423dde921a4b0670",
     "value": 0
   },
+  "backcompat/integer_fractional_multiple_of/old": {
+    "schema_digest": "06eb9722022d6c908d55699c43514a8c4889d9408cba4c5caaa7707c0094d2e1",
+    "value": 0
+  },
   "backcompat/integer_to_number/new": {
     "schema_digest": "cddf8275afa15408533079581ad27f95be579f4eeafbb1fba9fb6f32a4a64387",
     "value": 1.5
@@ -315,6 +339,12 @@
       ]
     }
   },
+  "backcompat/nested_unsupported_pattern_enum_not_empty/new": {
+    "schema_digest": "930fcb6014b524b892510d91159ca5854aa12ed3283b2c1a0c74aa0d237e8638",
+    "value": {
+      "value": "\u0003"
+    }
+  },
   "backcompat/nested_unsupported_pattern_enum_not_empty/old": {
     "schema_digest": "cc6d2156c280bb3efad77622be3c070cf9a18fbf7ddaf4db6a7c6988a417048a",
     "value": {
@@ -345,6 +375,10 @@
     "schema_digest": "ed5288b7c0e538593024f079073b563ec04b9bf0b199df46f1acc0219d27d9c2",
     "value": 4
   },
+  "backcompat/number_singleton_is_integer/new": {
+    "schema_digest": "dad62d26770ebc5ab9ded33ddb5e1cd35d4644345957f90c9ff2e80735ef928c",
+    "value": 4
+  },
   "backcompat/number_singleton_is_integer/old": {
     "schema_digest": "b309bf8afce5161355aeffbe50ace80b2217bb32a5a0e7b9e7924cfe72e74d02",
     "value": 4
@@ -367,6 +401,10 @@
   },
   "backcompat/oneof_narrowed_against_allof_anyof/new": {
     "schema_digest": "e5a32965643d64b32bde15856b7330455ae309998697b439d3063d4032fd1fc7",
+    "value": "text"
+  },
+  "backcompat/oneof_narrowed_against_allof_anyof/old": {
+    "schema_digest": "eeee023b1598b977daed487c8478b35ce5d89ef7d467e1449ff02fb179d7c887",
     "value": "text"
   },
   "backcompat/oneof_narrowed_against_anyof/new": {
@@ -493,6 +531,12 @@
       }
     }
   },
+  "backcompat/recursive_allof_enum_not_empty/new": {
+    "schema_digest": "9fc43c371779f0c836a112a39f1ec6b1e01989e2311154521de9afdd2dccf0db",
+    "value": {
+      "value": "leaf"
+    }
+  },
   "backcompat/recursive_allof_enum_not_empty/old": {
     "schema_digest": "cc6d2156c280bb3efad77622be3c070cf9a18fbf7ddaf4db6a7c6988a417048a",
     "value": {
@@ -525,6 +569,10 @@
       "id": 1
     }
   },
+  "backcompat/same_value_recursive_applicator_narrowed/new": {
+    "schema_digest": "1e1cf1f227426b6ee48d402433c159a269e11cad855754774e7e7b3c200141ab",
+    "value": {}
+  },
   "backcompat/same_value_recursive_applicator_narrowed/old": {
     "schema_digest": "b233bbf48fb243a904eb2f62137dbd1ca05ce43fd6bf1141893b978c796a2c8e",
     "value": {}
@@ -551,9 +599,17 @@
       2
     ]
   },
+  "backcompat/unsupported_pattern_enum_not_empty/new": {
+    "schema_digest": "a00716595607232daf10e178fd2b7c2e3e6f9c93784e9e27a3b169bc3cdbb4f3",
+    "value": "\u0003"
+  },
   "backcompat/unsupported_pattern_enum_not_empty/old": {
     "schema_digest": "f0765dbf409c74f001806c446f2cf171d8c46b5b15779d54423dde921a4b0670",
     "value": 0
+  },
+  "backcompat/unsupported_subset_pattern_properties_additional_fallback/new": {
+    "schema_digest": "8ad72fedc1ac5adcb9df62e14c368bdd805ed3392558e9c78cb631fc0367d669",
+    "value": {}
   },
   "backcompat/unsupported_subset_pattern_properties_additional_fallback/old": {
     "schema_digest": "743ff54f0f762a3ff4e9a9a86e5dcdbb17aeb02dd3004576daf5a2ba0102ca5f",
@@ -566,6 +622,10 @@
     "value": {
       "\u0003": "not an integer"
     }
+  },
+  "backcompat/unsupported_superset_pattern_enum_membership/old": {
+    "schema_digest": "ff9aa29b81fa9a5b6d3588e089117e54edf5d5fe9477d95f8ce3123343f3b46a",
+    "value": {}
   },
   "fuzz/additionalProperties/000": {
     "schema_digest": "8573c247f3ab64a3820d17958862b9bae6248d9fae0dfebce573af41929ae70e",
@@ -648,6 +708,22 @@
     "schema_digest": "7883c32f08eedf8e9f1ec8d478189891d8817512b1942dd7bce7a479bd20bf7b",
     "value": {}
   },
+  "fuzz/allOf/008": {
+    "schema_digest": "00be2d10b64eab201ffd92ca10717017135a868dd265244f4e55a3f7edebd664",
+    "value": 1
+  },
+  "fuzz/allOf/009": {
+    "schema_digest": "ad57360c073d5a290198ac881d5d9107cfc4b324df6f4272ce4be87bf0fa2264",
+    "value": 1
+  },
+  "fuzz/allOf/010": {
+    "schema_digest": "44ad827bda223de4f967fc66408cfaba8e6a9539ee1b8edb73a2f9d7d2e4c745",
+    "value": null
+  },
+  "fuzz/allOf/011": {
+    "schema_digest": "fa459e6a4074c38b759f538eba5652369c7eb48a02274f04755d0c26b49ef730",
+    "value": 30
+  },
   "fuzz/anyOf/000": {
     "schema_digest": "8a9924409b0f700bec59ecf117d86e35f31172eec19eaa58199b62a55012e9c1",
     "value": 1
@@ -677,6 +753,10 @@
   "fuzz/anyOf/007": {
     "schema_digest": "d506fe2af857751e4821626c0b08af8412ecef817185fb3ed91430f8a7ade2a4",
     "value": null
+  },
+  "fuzz/boolean_schema/000": {
+    "schema_digest": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+    "value": 1
   },
   "fuzz/const/000": {
     "schema_digest": "f57a75218408feb45f1d57769b006a60f2d9705966f0daad4037ba8424ec74f7",
@@ -814,6 +894,10 @@
     "schema_digest": "53c0afbbe849d9086ef8a869fbf57c6e102cbac7835de9cb069dad33d2175585",
     "value": "eyJmb28iOiAiYmFyIn0K"
   },
+  "fuzz/custom/boolean-applicators/000": {
+    "schema_digest": "1702231c2a82c6543dc7ed6147d53e4a27cfccdac809bae9f0e19312fe669aff",
+    "value": 1
+  },
   "fuzz/custom/boolean-applicators/001": {
     "schema_digest": "6bc07af2ad1e22e91df1a4966b115f8d0877b9a90dcbf06736ad77de8c8295b5",
     "value": "ok"
@@ -830,13 +914,49 @@
     "schema_digest": "92adc43975a8972385a8e8568a41ce4236614e5a35f9102484cbd833470c5ee5",
     "value": "red"
   },
+  "fuzz/custom/canonical-order-dedupe-stability/001": {
+    "schema_digest": "82b0a23b810f48e2e15e0d15a1744b213209ffb510874e6ff0eeae550b05e7cb",
+    "value": "abc"
+  },
+  "fuzz/custom/canonicalization-refs/000": {
+    "schema_digest": "03ab87524c407ed13330254434daf9ef2fcfd3c8285cbba9984259933caf6d96",
+    "value": "ok"
+  },
   "fuzz/custom/canonicalization-refs/001": {
     "schema_digest": "34e818a332e04daa5dc9e6bf30a1552b457e809c5dc5e06e91f1d027afca626c",
     "value": "ok"
   },
+  "fuzz/custom/canonicalization-refs/002": {
+    "schema_digest": "cf260235a76bf8dd7424589857216e7e0eb04ca9ea9999a14c1e31d9b157f526",
+    "value": "value"
+  },
+  "fuzz/custom/canonicalization-refs/003": {
+    "schema_digest": "18d5dcf0fa88016d2e4e85901470a99e6eab3282155c6421a7675c2e191c81a6",
+    "value": "value"
+  },
+  "fuzz/custom/canonicalization-refs/004": {
+    "schema_digest": "03df1da819616e08d0720aa8ab94465363e2663cd11e23f616ecdabb9cb8a371",
+    "value": "ok"
+  },
+  "fuzz/custom/canonicalization-refs/005": {
+    "schema_digest": "55b63836a0f18c94e5299a64409ec2763de2989a7faeb0e5fbf55e625ef6b771",
+    "value": "ok"
+  },
+  "fuzz/custom/canonicalization-refs/006": {
+    "schema_digest": "5dc8fdb21515b05510b857f957f0763e57806d06ce8a4b36d72e9cbf79de23f7",
+    "value": 1
+  },
   "fuzz/custom/canonicalization-refs/007": {
     "schema_digest": "4520dde5364310c0a20ed4e39ac8d3d68760009b71ddbbe8748da5e900702f47",
     "value": 1
+  },
+  "fuzz/custom/canonicalization-refs/008": {
+    "schema_digest": "dff63e5882aa6da299e2c590242eb91ff02361bd3f81ee71bb6133015bd3384b",
+    "value": 1
+  },
+  "fuzz/custom/conditional-edge-cases/000": {
+    "schema_digest": "c752b21d64b14acb8caac30db0394a767243d3c769b2ef5cf6374ed9deda40ba",
+    "value": "ready"
   },
   "fuzz/custom/conditional-edge-cases/001": {
     "schema_digest": "4d034a5c8a5e07f06a03e592f5a106fce9a4b8576760ab1b377618ac745db161",
@@ -867,9 +987,25 @@
       {}
     ]
   },
+  "fuzz/custom/enum-const-keyword-mismatch/000": {
+    "schema_digest": "d2d9d6b41eb1cb0acbdef7447b3f4235c26f979975ea562ce956255eebf97ef5",
+    "value": 1
+  },
+  "fuzz/custom/enum-const-keyword-mismatch/001": {
+    "schema_digest": "5a59656d54756ecf30dba5ebc64bf1aa40515675352cf238d5142720482bc73f",
+    "value": 7
+  },
   "fuzz/custom/enum-const-keyword-mismatch/002": {
     "schema_digest": "51af54bd5668531be4f3da18bc22f24518020b62f6d122dd5318942f53388725",
     "value": "scalar"
+  },
+  "fuzz/custom/indexed-applicator-refs/000": {
+    "schema_digest": "0285f18573021bbf147ff108e3d13cb7746936a3d8f097e7dda9faedc0acd044",
+    "value": "tail"
+  },
+  "fuzz/custom/integer-boundaries/000": {
+    "schema_digest": "11970211d5337b9dd607e7a1d497920b4aa565bcfbabbc307e63eb0e8e90986d",
+    "value": 9223372036854775806
   },
   "fuzz/custom/integer-boundaries/001": {
     "schema_digest": "9ad16654c10c6758f594f16b5eef38b07ad6e1ff7d10fcb34514fa403c94eca4",
@@ -892,6 +1028,10 @@
       "marker",
       "marker"
     ]
+  },
+  "fuzz/custom/metadata-collapse/000": {
+    "schema_digest": "85c84d486d763ff6bbdd3a5504cd20a39e08d4a57e1c0507c90f02f0d8dcd1e9",
+    "value": "ok"
   },
   "fuzz/custom/metadata-collapse/001": {
     "schema_digest": "2e69840a7bca1bbe9d0cfc4fe0a25a2c803af49c3fe0fc891dcf59d9f64e7f42",
@@ -932,6 +1072,14 @@
   "fuzz/custom/recursive-applicator-refs/000": {
     "schema_digest": "08dea1e0ab9d37ab88dbed5e5846e5f81884e0cf00cf207a362dd56beec5579f",
     "value": null
+  },
+  "fuzz/custom/unknown-keyword-refs/000": {
+    "schema_digest": "d9c079666a7456322f26dc78f5ae577df6baa96e83e4dd128da9ac530662adc4",
+    "value": "ok"
+  },
+  "fuzz/custom/unknown-keyword-refs/001": {
+    "schema_digest": "3235dc2b30a83ac19918bb157ed0d9e492654253f5536bc3aad23d554c31b3a6",
+    "value": "selected"
   },
   "fuzz/default/000": {
     "schema_digest": "c9a860866807d0a26681e7131f685fc130e1455580891d12cfcbcf836097b306",
@@ -1447,6 +1595,14 @@
     "schema_digest": "43959fe1dc126f555b23c58cfc50776b4723a8acd1fe5e90848f844768ac1f03",
     "value": false
   },
+  "fuzz/multipleOf/003": {
+    "schema_digest": "8611deebec9849bc6159cfd92618cec2fba6fcb8ee75865253eba04a828e5481",
+    "value": 0
+  },
+  "fuzz/multipleOf/004": {
+    "schema_digest": "f1ae08970b15a0f349cc57371971d0d55d178b09200bd3508863fc38a5c487df",
+    "value": 12391239123
+  },
   "fuzz/not/000": {
     "schema_digest": "319e823b3d01a358e27ed8e101635b711458d38c9a18baa1e8c924827f5de9d4",
     "value": "foo"
@@ -1596,6 +1752,14 @@
     "schema_digest": "eb508551461bb2222eae15e31331933fbc0bf8af66427814199bd392e5efb38e",
     "value": "\t"
   },
+  "fuzz/optional/ecmascript-regex/002": {
+    "schema_digest": "af575fc37c05a57602d0205380098309aa154c259220308418f28193b20442ed",
+    "value": "\u0003"
+  },
+  "fuzz/optional/ecmascript-regex/003": {
+    "schema_digest": "a9b47ed69bbb62a1d9904e84c2b30ca33217a9d3033dac78747ff4117e2c4b42",
+    "value": "\u0003"
+  },
   "fuzz/optional/ecmascript-regex/004": {
     "schema_digest": "1f9b181acc0d28cd61abfc0f9deb5ec2436ef0111d964a09a21dfe714f423a02",
     "value": "0"
@@ -1669,6 +1833,10 @@
     "value": {
       "42": "life, the universe, and everything"
     }
+  },
+  "fuzz/optional/float-overflow/000": {
+    "schema_digest": "6eeb0f15bb2005982accfe4b13303ed7bda67281af287be4707382f27fbd4337",
+    "value": 100000000000000001097906362944045541740492309677311846336810682903157585404911491537163328978494688899061249669721172515611590283743140088328307009198146046031271664502933027185697489699588559043338384466165001178426897626212945177628091195786707458122783970171784415105291802893207873272974885715430223118336
   },
   "fuzz/optional/format/date-time/000": {
     "schema_digest": "a0a373c6a91d1093b4229fa0aaac407f8dbdd5487c91a2568cf20c26af10a884",
@@ -1995,6 +2163,10 @@
       "$ref": "#/$defs/a_string"
     }
   },
+  "fuzz/ref/034": {
+    "schema_digest": "8cd22c67ab9944f130ae0776d399f033cc6d30e93462eefe30720ef21abe9b71",
+    "value": 1
+  },
   "fuzz/required/000": {
     "schema_digest": "28f58067184f2a31230768c0e3331142b1bed5d770124737751ec22ea7d6bd4a",
     "value": {
@@ -2126,9 +2298,28 @@
       false
     ]
   },
+  "fuzz/unevaluatedItems/009": {
+    "schema_digest": "a9f83f03d29ff07e81f3bf4566f6bb797dcbdbb790173f13b6fc1361133ea1a2",
+    "value": [
+      "foo"
+    ]
+  },
+  "fuzz/unevaluatedItems/010": {
+    "schema_digest": "e1c62b24d7fba0c04e2a51e0afee9a7af49b1fc1a15e33e69b3ad85e1a4e2cf3",
+    "value": [
+      "foo"
+    ]
+  },
   "fuzz/unevaluatedItems/011": {
     "schema_digest": "86939d7489f1f5211e9d899c02993d1c502bb99403333370d46ef85ca2c0ca86",
     "value": []
+  },
+  "fuzz/unevaluatedItems/012": {
+    "schema_digest": "95d7b45e6c73af3356f46e5be0b16d1c72d861539a8064ac3a57d2756c1c3527",
+    "value": [
+      "foo",
+      "bar"
+    ]
   },
   "fuzz/unevaluatedItems/013": {
     "schema_digest": "9323526ebc25ed8d8c469b6d19bf723b940e56fdc684cdd0cf09516e9458c2fd",
@@ -2267,6 +2458,26 @@
     "value": {
       "bar": "bar",
       "foo": "foo"
+    }
+  },
+  "fuzz/unevaluatedProperties/013": {
+    "schema_digest": "b7c1ea58b6a5a2621b8e56b78721202f45c4e3c9b9ab3a66597208f306f12906",
+    "value": {
+      "bar": "bar",
+      "foo": "then"
+    }
+  },
+  "fuzz/unevaluatedProperties/014": {
+    "schema_digest": "d504ef70b45dda3749bed9fa32ebb7f01295fe6b542c3a98da3ea78dc144952c",
+    "value": {
+      "baz": "baz"
+    }
+  },
+  "fuzz/unevaluatedProperties/015": {
+    "schema_digest": "5e416f674dd471e9125e58233e76b5aa18ea44ecde96ac60f8affb2aeeb3d642",
+    "value": {
+      "bar": "bar",
+      "foo": "then"
     }
   },
   "fuzz/unevaluatedProperties/016": {
