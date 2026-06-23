@@ -29,6 +29,8 @@ bench-check:
   @echo "[just] smoke-checking Rust benchmarks …"
   cargo bench --workspace --exclude jsoncompat_py --all-features --bench '*' --locked -- --test
 
+python_bench_command := "env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL PYTHONHASHSEED=0 JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python"
+
 _build-python-release:
   @echo "[just] building release Python extension for representative timings …"
   if [ "$(uname)" = "Darwin" ]; then \
@@ -37,17 +39,64 @@ _build-python-release:
     cargo build --release -p jsoncompat_py; \
   fi
 
-python-bench iterations="10000" repeats="5": _build-python-release
+[private]
+_python-bench-provenance profile:
+  @mkdir -p target/python-benchmark
+  @git status -sb > "target/python-benchmark/provenance-{{profile}}.txt"
+  @git rev-parse HEAD >> "target/python-benchmark/provenance-{{profile}}.txt"
+  @cat "target/python-benchmark/provenance-{{profile}}.txt"
+
+[private]
+_python-bench-runtime iterations repeats profile:
   @echo "[just] benchmarking generated Python dataclasses against Pydantic v2 …"
-  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_dataclasses_runtime.py --iterations {{iterations}} --repeats {{repeats}}
+  @mkdir -p target/python-benchmark
+  {{python_bench_command}} pybindings/bench_dataclasses_runtime.py --iterations {{iterations}} --repeats {{repeats}} > "target/python-benchmark/runtime-{{profile}}.txt"
+  @cat "target/python-benchmark/runtime-{{profile}}.txt"
 
-python-bench-scale depth="5" fanout="4" iterations="100" repeats="5": _build-python-release
+[private]
+_python-bench-scale depth fanout iterations repeats profile:
   @echo "[just] benchmarking a large recursive dataclass graph against Pydantic v2 …"
-  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_dataclasses_scaling.py --depth {{depth}} --fanout {{fanout}} --iterations {{iterations}} --repeats {{repeats}}
+  @mkdir -p target/python-benchmark
+  {{python_bench_command}} pybindings/bench_dataclasses_scaling.py --depth {{depth}} --fanout {{fanout}} --iterations {{iterations}} --repeats {{repeats}} > "target/python-benchmark/scaling-{{profile}}.txt"
+  @cat "target/python-benchmark/scaling-{{profile}}.txt"
 
-python-bench-fixtures iterations="200" repeats="5": _build-python-release
+[private]
+_python-bench-scale-profile depth fanout iterations repeats profile:
+  @echo "[just] profiling checked and trusted recursive JSON deserialization …"
+  @mkdir -p target/python-benchmark
+  {{python_bench_command}} pybindings/bench_dataclasses_scaling.py --depth {{depth}} --fanout {{fanout}} --iterations {{iterations}} --repeats {{repeats}} --profile > "target/python-benchmark/profile-{{profile}}.txt"
+  @cat "target/python-benchmark/profile-{{profile}}.txt"
+
+[private]
+_python-bench-fixtures iterations repeats profile:
   @echo "[just] benchmarking every generated fixture model against Pydantic v2 …"
-  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_fixture_models.py --iterations {{iterations}} --repeats {{repeats}} --reuse-models
+  {{python_bench_command}} pybindings/bench_fixture_models.py --iterations {{iterations}} --repeats {{repeats}} --reuse-models --results "target/python-fixture-benchmark/results-{{profile}}.json"
+
+[private]
+_python-bench-fixtures-limited iterations repeats limit profile:
+  @echo "[just] smoke-benchmarking the first {{limit}} generated fixture models against Pydantic v2 …"
+  {{python_bench_command}} pybindings/bench_fixture_models.py --iterations {{iterations}} --repeats {{repeats}} --limit {{limit}} --reuse-models --results "target/python-fixture-benchmark/results-{{profile}}.json"
+
+# Benchmark the representative small generated-model graph.
+python-bench iterations="10000" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-runtime iterations repeats "manual")
+
+# Benchmark the recursive graph at a caller-selected size.
+python-bench-scale depth="5" fanout="4" iterations="100" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-scale depth fanout iterations repeats "manual")
+
+# Benchmark all semantically equivalent generated fixture-model pairs.
+python-bench-fixtures iterations="200" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-fixtures iterations repeats "manual")
+
+# Quickly smoke-test all three Python benchmark surfaces; fixture ratios cover only the first 50 schemas.
+python-bench-quick: _build-python-release (_python-bench-provenance "quick") (_python-bench-runtime "2000" "3" "quick") (_python-bench-scale "4" "3" "25" "3" "quick") (_python-bench-fixtures-limited "25" "3" "50" "quick")
+
+# Run the standard repeatable Pydantic comparison across small, large, and full fixture workloads.
+python-bench-standard: _build-python-release (_python-bench-provenance "standard") (_python-bench-runtime "10000" "5" "standard") (_python-bench-scale "5" "4" "100" "5" "standard") (_python-bench-fixtures "200" "5" "standard")
+
+# Run a high-sample Pydantic comparison intended for release performance reports.
+python-bench-full: _build-python-release (_python-bench-provenance "full") (_python-bench-runtime "50000" "10" "full") (_python-bench-scale "6" "4" "100" "10" "full") (_python-bench-fixtures "1000" "10" "full")
+
+# Profile checked and trusted deserialization on the standard recursive graph.
+python-bench-profile depth="5" fanout="4" iterations="100" repeats="5": _build-python-release (_python-bench-provenance "profile") (_python-bench-scale-profile depth fanout iterations repeats "standard")
 
 # ---- Basic python smoke test ----
 

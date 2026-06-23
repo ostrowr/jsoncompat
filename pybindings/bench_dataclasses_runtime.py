@@ -14,7 +14,8 @@ import platform
 import statistics
 import sys
 import time
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal
 
@@ -126,6 +127,23 @@ class BenchEvent(dc.DataclassAdditionalModel[str]):
     __jsoncompat_extra__: dict[str, str] = dc.extra_field()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BenchDefaults(dc.DataclassModel):
+    __jsoncompat_schema__: ClassVar[str] = """
+{
+  "type": "object",
+  "properties": {
+    "count": { "type": "integer", "minimum": 0 },
+    "values": { "type": "array", "items": { "type": "integer" } }
+  },
+  "additionalProperties": false
+}
+"""
+
+    count: int = 0
+    values: Sequence[int] = dataclass_field(default_factory=lambda: [1, 2])
+
+
 class PydanticCustomer(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -152,6 +170,18 @@ class PydanticEvent(BaseModel):
     customer: PydanticCustomer
     event: Literal["checkout.completed", "checkout.failed"]
     items: list[PydanticItem]
+
+
+class PydanticDefaults(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        validate_default=True,
+    )
+
+    count: int = 0
+    values: list[int] = Field(default_factory=lambda: [1, 2])
 
 
 PAYLOAD = {
@@ -336,6 +366,42 @@ def pydantic_to_json(instance: PydanticEvent) -> str:
     return instance.model_dump_json(exclude_unset=True)
 
 
+def defaults_from_value() -> BenchDefaults:
+    return BenchDefaults.from_value({})
+
+
+def defaults_from_value_trusted() -> BenchDefaults:
+    return BenchDefaults.from_value({}, skip_validation=True)
+
+
+def defaults_deserialize() -> BenchDefaults:
+    return BenchDefaults.deserialize("{}")
+
+
+def defaults_deserialize_trusted() -> BenchDefaults:
+    return BenchDefaults.deserialize("{}", skip_validation=True)
+
+
+def defaults_direct() -> BenchDefaults:
+    return BenchDefaults()
+
+
+def defaults_direct_trusted() -> BenchDefaults:
+    return BenchDefaults(skip_validation=True)
+
+
+def pydantic_defaults_from_value() -> PydanticDefaults:
+    return PydanticDefaults.model_validate({})
+
+
+def pydantic_defaults_deserialize() -> PydanticDefaults:
+    return PydanticDefaults.model_validate_json("{}")
+
+
+def pydantic_defaults_direct() -> PydanticDefaults:
+    return PydanticDefaults()
+
+
 def stdlib_json_loads() -> Any:
     return json.loads(PAYLOAD_JSON)
 
@@ -416,6 +482,8 @@ def main() -> None:
     infer_all_specs()
     instance = from_value()
     pydantic_instance = pydantic_from_value()
+    defaults_instance = defaults_from_value()
+    pydantic_defaults_instance = pydantic_defaults_from_value()
     json_wire = instance.serialize()
     yaml_wire = instance.serialize(format=SerializationFormat.YAML)
     msgpack_wire = instance.serialize(format=SerializationFormat.MSGPACK)
@@ -425,6 +493,14 @@ def main() -> None:
     assert validator.is_valid_value(PAYLOAD)
     assert pydantic_to_value(pydantic_instance) == PAYLOAD
     assert json.loads(pydantic_to_json(pydantic_instance)) == PAYLOAD
+    assert defaults_instance.to_value() == {"count": 0, "values": [1, 2]}
+    assert pydantic_defaults_instance.model_dump(mode="json") == {
+        "count": 0,
+        "values": [1, 2],
+    }
+    assert json.loads(defaults_instance.serialize()) == json.loads(
+        pydantic_defaults_instance.model_dump_json()
+    )
 
     print(f"Python {platform.python_version()}, Pydantic {pydantic.__version__}")
 
@@ -458,6 +534,12 @@ def main() -> None:
     run("direct nested Model(...)", direct_model)
     run("direct nested trusted", direct_model_trusted)
     run("pydantic direct nested", pydantic_direct_model)
+    run("defaults from_value checked", defaults_from_value)
+    run("defaults from_value trusted", defaults_from_value_trusted)
+    run("pydantic defaults validate", pydantic_defaults_from_value)
+    run("defaults direct checked", defaults_direct)
+    run("defaults direct trusted", defaults_direct_trusted)
+    run("pydantic defaults direct", pydantic_defaults_direct)
     run("to_value checked", lambda: to_value(instance))
     run(
         "pydantic model_dump",
@@ -473,6 +555,15 @@ def main() -> None:
         "pydantic model_dump_json",
         lambda: pydantic_to_json(pydantic_instance),
     )
+    run("defaults serialize checked", defaults_instance.serialize)
+    run(
+        "defaults serialize trusted",
+        lambda: defaults_instance.serialize(skip_validation=True),
+    )
+    run(
+        "pydantic defaults dump JSON",
+        pydantic_defaults_instance.model_dump_json,
+    )
     run(
         "deserialize JSON checked",
         lambda: BenchEvent.deserialize(json_wire),
@@ -482,6 +573,9 @@ def main() -> None:
         lambda: BenchEvent.deserialize(json_wire, skip_validation=True),
     )
     run("pydantic model_validate_json", pydantic_from_json)
+    run("defaults JSON checked", defaults_deserialize)
+    run("defaults JSON trusted", defaults_deserialize_trusted)
+    run("pydantic defaults JSON", pydantic_defaults_deserialize)
     run(
         "serialize YAML checked",
         lambda: instance.serialize(format=SerializationFormat.YAML),

@@ -927,6 +927,14 @@ def main() -> None:
     parser.add_argument("--limit", type=positive_int)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument(
+        "--results",
+        type=Path,
+        help=(
+            "write the result manifest to this path while retaining generated "
+            "model and sample caches under --output"
+        ),
+    )
+    parser.add_argument(
         "--reuse-models",
         action="store_true",
         help="reuse Pydantic modules whose schema and generator digest match",
@@ -943,7 +951,11 @@ def main() -> None:
     output_root = args.output.resolve()
     models_root = output_root / "models" / "pydantic"
     sample_cache_path = output_root / "samples.json"
-    results_path = output_root / "results.json"
+    results_path = (
+        args.results.resolve()
+        if args.results is not None
+        else output_root / "results.json"
+    )
     jsoncompat_version = package_version("jsoncompat")
 
     print(
