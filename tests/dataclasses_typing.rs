@@ -110,6 +110,11 @@ assert_type(
 # pyright: strict
 
 from generated_models import InventoryItem, InventoryItemMetadata
+from jsoncompat.codegen.dataclasses import JsoncompatMissingType
+
+
+class ForgedMissing(JsoncompatMissingType):
+    pass
 
 
 InventoryItem(
@@ -145,6 +150,8 @@ InventoryItem(
     sku="sku-456",
     metadata=InventoryItemMetadata(warehouse="east"),
 ).serialize(format="json")
+
+JsoncompatMissingType()
 "#,
     )?;
 
@@ -169,6 +176,16 @@ InventoryItem(
     assert!(
         invalid_stdout.contains("warehouse") && invalid_stdout.contains("str"),
         "pyright failure did not report the nested warehouse type mismatch:\n{invalid_stdout}",
+    );
+    assert!(
+        invalid_stdout.contains("Expected 1 more positional argument"),
+        "pyright failure did not reject construction of the missing singleton type:\n{invalid_stdout}",
+    );
+    assert!(
+        invalid_stdout.contains("JsoncompatMissingType")
+            && invalid_stdout.contains("marked final")
+            && invalid_stdout.contains("cannot be subclassed"),
+        "pyright failure did not reject subclassing the final missing singleton type:\n{invalid_stdout}",
     );
 
     Ok(())

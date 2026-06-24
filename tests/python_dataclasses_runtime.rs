@@ -317,6 +317,7 @@ class ForeignSlots:
 
 # Install a valid member descriptor whose offset belongs to a much larger,
 # unrelated allocation before the generated runtime compiles its slot plan.
+original_value_descriptor = module.SlotSafety.value
 module.SlotSafety.value = ForeignSlots.slot_99
 for _ in range(2):
     try:
@@ -325,6 +326,22 @@ for _ in range(2):
         pass
     else:
         raise AssertionError("foreign slot descriptor was used for native construction")
+
+module.SlotSafety.value = original_value_descriptor
+module.SlotSafety.from_value({"value": "safe"})
+
+class SlotSafetySubclass(module.SlotSafety):
+    __slots__ = ()
+
+
+runtime = module.SlotSafety.__dict__["__jsoncompat_runtime__"]
+subclass_instance = object.__new__(SlotSafetySubclass)
+try:
+    runtime.to_value(subclass_instance, skip_validation=True)
+except TypeError as error:
+    assert "expected SlotSafety" in str(error), str(error)
+else:
+    raise AssertionError("generic attribute path accepted a foreign owner type")
 "###,
     );
     command.arg(module_path);
@@ -334,6 +351,842 @@ for _ in range(2):
     assert!(
         output.status.success(),
         "generated dataclass foreign-slot test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclass_native_slots_reject_property_replacement() {
+    let source = generate_dataclass_models(&json!({
+        "title": "PropertyReplacement",
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": false,
+    }))
+    .expect("generate property-replacement dataclass");
+    let module_path = write_temp_module("property_slot_replacement", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("property_slot_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+setter_calls = []
+
+def get_value(instance):
+    return "property"
+
+def set_value(instance, value):
+    setter_calls.append((instance, value))
+
+module.PropertyReplacement.value = property(get_value, set_value)
+try:
+    module.PropertyReplacement.from_value({"value": "unsafe"})
+except TypeError as error:
+    assert "must be an exact member descriptor" in str(error), str(error)
+else:
+    raise AssertionError("a replacement property was accepted as generated storage")
+
+assert setter_calls == []
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass property-replacement test");
+    assert!(
+        output.status.success(),
+        "generated dataclass property-replacement test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_plan_descriptor_protocol_rejects_unrepresentable_states() {
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+from jsoncompat import compile_model_runtimes
+from jsoncompat.codegen import dataclasses as dc
+from jsoncompat.codegen.dataclasses import (
+    JSONCOMPAT_MISSING,
+    FrozenDict,
+    FrozenList,
+    JsoncompatMissingType,
+)
+
+
+class Model:
+    __slots__ = (
+        "__jsoncompat_extra__",
+        "root",
+        "value",
+        "other",
+    )
+    __jsoncompat_schema__ = "{}"
+
+
+assert repr(JSONCOMPAT_MISSING) == "JSONCOMPAT_MISSING"
+for construct_missing in (
+    lambda: JsoncompatMissingType(),
+    lambda: object.__new__(JsoncompatMissingType),
+):
+    try:
+        construct_missing()
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("constructed a second native missing sentinel")
+
+
+def compile(descriptors):
+    return compile_model_runtimes([], descriptors, FrozenList, FrozenDict)
+
+
+def rejects(label, descriptors):
+    try:
+        compile(descriptors)
+    except (IndexError, TypeError, ValueError):
+        return
+    raise AssertionError(f"accepted malformed native descriptor: {label}")
+
+
+cases = (
+    ("empty node", [()]),
+    ("scalar trailing item", [("str", "trailing")]),
+    ("short list", [("list",)]),
+    ("long root", [("str",), ("root", Model, 0, "trailing")]),
+    ("empty literal", [("literal", ())]),
+    ("unsupported literal object", [("literal", (object(),))]),
+    ("empty union", [("union", (), None, None)]),
+    (
+        "discriminator without name",
+        [("str",), ("union", (0,), None, (("x", 0),))],
+    ),
+    (
+        "external discriminator target",
+        [
+            ("str",),
+            ("any",),
+            ("union", (0,), "kind", (("x", 1),)),
+        ],
+    ),
+    (
+        "duplicate discriminator value",
+        [
+            ("str",),
+            ("int",),
+            ("union", (0, 1), "kind", (("x", 0), ("x", 1))),
+        ],
+    ),
+    (
+        "long discriminator entry",
+        [("str",), ("union", (0,), "kind", (("x", 0, "trailing"),))],
+    ),
+    (
+        "long field",
+        [
+            ("str",),
+            ("model", Model, (("value", "value", 0, False, "trailing"),), None),
+        ],
+    ),
+    (
+        "duplicate JSON field",
+        [
+            ("str",),
+            (
+                "model",
+                Model,
+                (("value", "value", 0, False), ("value", "other", 0, False)),
+                None,
+            ),
+        ],
+    ),
+    (
+        "duplicate Python field",
+        [
+            ("str",),
+            (
+                "model",
+                Model,
+                (("value", "value", 0, False), ("other", "value", 0, False)),
+                None,
+            ),
+        ],
+    ),
+    (
+        "old nullable field presence",
+        [
+            ("str",),
+            (
+                "model",
+                Model,
+                (("value", "value", 0, None),),
+                None,
+            ),
+        ],
+    ),
+    (
+        "reserved extra field",
+        [
+            ("str",),
+            (
+                "model",
+                Model,
+                (("value", "__jsoncompat_extra__", 0, False),),
+                None,
+            ),
+        ],
+    ),
+)
+
+for label, descriptors in cases:
+    rejects(label, descriptors)
+
+try:
+    compile_model_runtimes([], [], FrozenList, FrozenDict, False)
+except TypeError:
+    pass
+else:
+    raise AssertionError("native runtime compiler accepted a caller-owned sentinel")
+
+# The discriminator protocol stores an ordinal into the enclosing non-empty
+# branch collection, rather than a global node id.
+compile(
+    [
+        ("str",),
+        ("int",),
+        ("union", (0, 1), "kind", (("text", 0), ("number", 1))),
+    ]
+)
+
+# The old protocol treated any non-None fourth item as the missing sentinel,
+# so False could cause a present JSON false value to disappear on output. The
+# fourth item is now only an omittable flag, and the canonical sentinel is
+# supplied once for the whole plan.
+required_runtime = compile_model_runtimes(
+    [(Model, 1)],
+    [("bool",), ("model", Model, (("value", "value", 0, False),), None)],
+    FrozenList,
+    FrozenDict,
+)[0]
+required_false = required_runtime.from_value({"value": False}, skip_validation=True)
+assert required_runtime.to_value(required_false, skip_validation=True) == {"value": False}
+
+dc.JSONCOMPAT_MISSING = False
+optional_runtime = compile_model_runtimes(
+    [(Model, 1)],
+    [("bool",), ("model", Model, (("value", "value", 0, True),), None)],
+    FrozenList,
+    FrozenDict,
+)[0]
+optional_missing = optional_runtime.from_value({}, skip_validation=True)
+assert optional_missing.value is JSONCOMPAT_MISSING
+assert optional_runtime.to_value(optional_missing, skip_validation=True) == {}
+assert optional_runtime.to_value(optional_missing) == {}
+assert optional_runtime.serialize(optional_missing, skip_validation=True) == "{}"
+assert optional_runtime.serialize(optional_missing) == "{}"
+optional_false = optional_runtime.from_value({"value": False}, skip_validation=True)
+assert optional_runtime.to_value(optional_false, skip_validation=True) == {"value": False}
+assert optional_runtime.to_value(optional_false) == {"value": False}
+assert optional_runtime.serialize(optional_false, skip_validation=True) == '{"value":false}'
+assert optional_runtime.serialize(optional_false) == '{"value":false}'
+"###,
+    );
+    let output = command
+        .output()
+        .expect("run native descriptor protocol invariant test");
+    assert!(
+        output.status.success(),
+        "native descriptor protocol invariant test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn omittable_constructor_uses_only_the_native_missing_singleton() {
+    let source = generate_dataclass_models(&json!({
+        "title": "OptionalValue",
+        "type": "object",
+        "properties": {
+            "value": {"type": ["boolean", "null"]}
+        },
+        "additionalProperties": false,
+    }))
+    .expect("generate omittable-value dataclass");
+    let module_path = write_temp_module("native_missing_singleton", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import dataclasses
+import importlib.util
+import sys
+
+from jsoncompat.codegen import dataclasses as dc
+
+module_path = sys.argv[1]
+canonical_missing = dc.JSONCOMPAT_MISSING
+dc.JSONCOMPAT_MISSING = False
+spec = importlib.util.spec_from_file_location("native_missing_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model_type = module.OptionalValue
+assert dataclasses.fields(model_type)[0].default is canonical_missing
+
+for skip_validation in (False, True):
+    implicit = model_type(skip_validation=skip_validation)
+    explicit = model_type(
+        value=canonical_missing,
+        skip_validation=skip_validation,
+    )
+    present_false = model_type(value=False, skip_validation=skip_validation)
+    present_null = model_type(value=None, skip_validation=skip_validation)
+    assert implicit.value is canonical_missing
+    assert explicit.value is canonical_missing
+    assert implicit.to_value(skip_validation=skip_validation) == {}
+    assert explicit.to_value(skip_validation=skip_validation) == {}
+    assert present_false.to_value(skip_validation=skip_validation) == {"value": False}
+    assert present_null.to_value(skip_validation=skip_validation) == {"value": None}
+
+    for from_value in (
+        lambda: model_type.from_value(
+            {"value": canonical_missing},
+            skip_validation=skip_validation,
+        ),
+        lambda: model_type.deserialize(
+            '{"value":"JSONCOMPAT_MISSING"}',
+            skip_validation=skip_validation,
+        ),
+    ):
+        try:
+            from_value()
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError("wire construction accepted the missing sentinel")
+
+# Rebinding the public convenience name before the generated module is even
+# executed cannot change the runtime-owned identity. The captured singleton
+# still means omitted; False remains present.
+assert model_type(value=canonical_missing).to_value() == {}
+assert model_type(value=dc.JSONCOMPAT_MISSING).to_value() == {"value": False}
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run native missing singleton constructor test");
+    assert!(
+        output.status.success(),
+        "native missing singleton constructor test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_huge_integer_literals_round_trip_in_checked_and_trusted_modes() {
+    let huge = u64::MAX - 15;
+    let source = generate_dataclass_models(&json!({
+        "title": "HugeLiteral",
+        "const": huge,
+    }))
+    .expect("generate huge integer literal dataclass");
+    let module_path = write_temp_module("huge_integer_literal", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+huge = int(sys.argv[2])
+spec = importlib.util.spec_from_file_location("huge_literal_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model_type = module.JSONCOMPAT_MODEL
+for skip_validation in (False, True):
+    value = model_type.from_value(huge, skip_validation=skip_validation)
+    assert value.root == huge
+    assert value.to_value(skip_validation=skip_validation) == huge
+    assert value.serialize(skip_validation=skip_validation) == str(huge)
+    decoded = model_type.deserialize(str(huge), skip_validation=skip_validation)
+    assert decoded.root == huge
+"###,
+    );
+    command.arg(module_path).arg(huge.to_string());
+    let output = command
+        .output()
+        .expect("run huge integer literal round-trip test");
+    assert!(
+        output.status.success(),
+        "huge integer literal round-trip test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclass_native_slots_reject_same_owner_aliases() {
+    let source = generate_dataclass_models(&json!({
+        "title": "SlotAlias",
+        "type": "object",
+        "properties": {
+            "left": {"type": "string"},
+            "right": {"type": "string"}
+        },
+        "required": ["left", "right"],
+        "additionalProperties": false,
+    }))
+    .expect("generate same-owner slot alias dataclass");
+    let module_path = write_temp_module("same_owner_slot_alias", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("same_owner_slot_alias_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+module.SlotAlias.left = module.SlotAlias.right
+try:
+    module.SlotAlias.from_value({"left": "L", "right": "R"})
+except TypeError as error:
+    assert "aliases member descriptor" in str(error), str(error)
+else:
+    raise AssertionError("same-owner member descriptor alias was accepted")
+"###,
+    );
+    command.arg(module_path);
+    let output = command.output().expect("run same-owner slot alias test");
+    assert!(
+        output.status.success(),
+        "same-owner slot alias test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn checked_output_revalidates_current_state_without_an_exposed_cache_marker() {
+    let source = generate_dataclass_models(&json!({
+        "title": "MutableEscapeHatch",
+        "type": "object",
+        "properties": {"value": {"type": "string", "minLength": 1}},
+        "required": ["value"],
+        "additionalProperties": false,
+    }))
+    .expect("generate checked-output dataclass");
+    let module_path = write_temp_module("checked_output_revalidation", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("checked_output_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+model_type = module.MutableEscapeHatch
+assert all(
+    "_jsoncompat_validated" not in getattr(base, "__slots__", ())
+    for base in model_type.__mro__
+)
+
+trusted_invalid = model_type.from_value({"value": ""}, skip_validation=True)
+assert not hasattr(trusted_invalid, "_jsoncompat_validated")
+assert trusted_invalid.to_value(skip_validation=True) == {"value": ""}
+assert trusted_invalid.serialize(skip_validation=True) == '{"value":""}'
+for checked_output in (trusted_invalid.to_value, trusted_invalid.serialize):
+    try:
+        checked_output()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("checked output trusted an unchecked invalid model")
+
+checked = model_type.from_value({"value": "valid"})
+assert checked.to_value() == {"value": "valid"}
+assert checked.serialize() == '{"value":"valid"}'
+assert not hasattr(checked, "_jsoncompat_validated")
+
+# Frozen dataclasses deliberately expose Python's low-level escape hatch. A
+# checked output operation must validate the current graph instead of trusting
+# construction-time state that this mutation could stale.
+object.__setattr__(checked, "value", "")
+assert checked.to_value(skip_validation=True) == {"value": ""}
+assert checked.serialize(skip_validation=True) == '{"value":""}'
+for checked_output in (checked.to_value, checked.serialize):
+    try:
+        checked_output()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("checked output trusted stale construction state")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run checked-output revalidation regression");
+    assert!(
+        output.status.success(),
+        "checked-output revalidation regression failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn output_materialization_rejects_non_json_mutations_before_validation() {
+    let source = generate_dataclass_models(&json!({
+        "title": "OutputShape",
+        "type": "object",
+        "properties": {
+            "typed": {"type": "string"},
+            "literal": {"const": "fixed"},
+            "anything": {},
+            "nested": {
+                "type": "object",
+                "properties": {"count": {"type": "integer"}},
+                "required": ["count"],
+                "additionalProperties": false
+            }
+        },
+        "required": ["typed", "literal", "anything", "nested"],
+        "additionalProperties": false,
+    }))
+    .expect("generate output-shape dataclass");
+    let module_path = write_temp_module("output_shape_proof", &source);
+
+    let any_source = generate_dataclass_models(&json!({
+        "title": "AnythingRoot"
+    }))
+    .expect("generate unconstrained root dataclass");
+    let any_module_path = write_temp_module("output_any_root_proof", &any_source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+module = load("output_shape_models", sys.argv[1])
+any_module = load("output_any_root_models", sys.argv[2])
+payload = {
+    "typed": "value",
+    "literal": "fixed",
+    "anything": {"safe": [1, True, None]},
+    "nested": {"count": 1},
+}
+
+
+def fresh():
+    return module.OutputShape.from_value(payload)
+
+
+def rejects_every_output(instance):
+    for skip_validation in (False, True):
+        for output in (instance.to_value, instance.serialize):
+            try:
+                output(skip_validation=skip_validation)
+            except TypeError:
+                pass
+            else:
+                raise AssertionError(
+                    f"{output!r} leaked a non-JSON value with "
+                    f"skip_validation={skip_validation}"
+                )
+
+
+for field_name in ("typed", "literal", "anything", "nested"):
+    instance = fresh()
+    object.__setattr__(instance, field_name, object())
+    rejects_every_output(instance)
+
+instance = fresh()
+object.__setattr__(instance.nested, "count", object())
+rejects_every_output(instance)
+
+instance = fresh()
+object.__setattr__(instance.anything, "root", object())
+rejects_every_output(instance)
+
+unconstrained = any_module.AnythingRoot.from_value({"safe": True})
+object.__setattr__(unconstrained, "root", object())
+rejects_every_output(unconstrained)
+
+
+class Text(str):
+    pass
+
+
+class Number(int):
+    pass
+
+
+instance = fresh()
+object.__setattr__(instance, "typed", Text("value"))
+object.__setattr__(instance, "literal", Text("fixed"))
+object.__setattr__(instance.anything, "root", {Text("key"): Text("value")})
+object.__setattr__(instance.nested, "count", Number(1))
+for skip_validation in (False, True):
+    value = instance.to_value(skip_validation=skip_validation)
+    assert type(value["typed"]) is str
+    assert type(value["literal"]) is str
+    assert type(next(iter(value["anything"]))) is str
+    assert type(value["anything"]["key"]) is str
+    assert type(value["nested"]["count"]) is int
+    assert instance.serialize(skip_validation=skip_validation) == (
+        '{"anything":{"key":"value"},"literal":"fixed",'
+        '"nested":{"count":1},"typed":"value"}'
+    )
+"###,
+    );
+    command.arg(module_path).arg(any_module_path);
+    let output = command
+        .output()
+        .expect("run output JSON materialization proof test");
+    assert!(
+        output.status.success(),
+        "output JSON materialization proof test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn trusted_direct_json_matches_trusted_materialization_for_edge_values() {
+    let source = generate_dataclass_models(&json!({
+        "title": "TrustedEquivalence",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "payload": {}
+        },
+        "required": ["name", "payload"],
+        "additionalProperties": {}
+    }))
+    .expect("generate trusted-writer equivalence dataclass");
+    let module_path = write_temp_module("trusted_writer_equivalence", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("trusted_writer_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class Text(str):
+    pass
+
+
+huge = 10**80
+instance = module.TrustedEquivalence.from_value(
+    {
+        "name": "declared",
+        "payload": {"huge": huge, "nested": [True, None]},
+        "dup": 0,
+    },
+    skip_validation=True,
+)
+
+# Exercise canonical string keys, duplicate-key last-write behavior, an extra
+# property colliding with a declared property, subclass scalar normalization,
+# and integers larger than u64. These mutations model every state the direct
+# writer must reconcile the same way as to_value().
+object.__setattr__(
+    instance.__jsoncompat_extra__,
+    "_items",
+    (
+        ((Text("dup")), 1),
+        ("dup", 2),
+        ("name", Text("extra-wins")),
+        ("huge", huge),
+    ),
+)
+
+materialized = instance.to_value(skip_validation=True)
+wire = instance.serialize(skip_validation=True)
+assert json.loads(wire) == materialized
+assert materialized["dup"] == 2
+assert materialized["name"] == "extra-wins"
+assert type(materialized["name"]) is str
+assert materialized["huge"] == huge
+
+
+def assert_trusted_rejects(value, exception):
+    for output in (value.to_value, value.serialize):
+        try:
+            output(skip_validation=True)
+        except exception:
+            pass
+        else:
+            raise AssertionError(
+                f"trusted output hid an overwritten invalid value: {output!r}"
+            )
+
+
+def with_duplicate_payload(first, second):
+    value = module.TrustedEquivalence.from_value(
+        {"name": "declared", "payload": {}},
+        skip_validation=True,
+    )
+    object.__setattr__(
+        value.payload.root,
+        "_items",
+        ((Text("duplicate"), first), ("duplicate", second)),
+    )
+    return value
+
+
+# Python-dict materialization proves every value before a canonical-key
+# collision overwrites it. The direct writer must not let its sorted pending
+# map hide either an invalid scalar or an earlier cycle.
+assert_trusted_rejects(with_duplicate_payload(object(), "valid"), TypeError)
+
+overwritten_cycle = []
+overwritten_cycle.append(overwritten_cycle)
+assert_trusted_rejects(with_duplicate_payload(overwritten_cycle, "valid"), ValueError)
+
+# Extra properties intentionally win wire-name collisions, but that precedence
+# cannot erase proof of the displaced declared field.
+invalid_declared = module.TrustedEquivalence.from_value(
+    {"name": "declared", "payload": None},
+    skip_validation=True,
+)
+object.__setattr__(invalid_declared, "name", object())
+object.__setattr__(
+    invalid_declared.__jsoncompat_extra__,
+    "_items",
+    (("name", "extra-wins"),),
+)
+assert_trusted_rejects(invalid_declared, TypeError)
+
+cycle = []
+cycle.append(cycle)
+object.__setattr__(instance.payload, "root", cycle)
+for output in (instance.to_value, instance.serialize):
+    try:
+        output(skip_validation=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"trusted output accepted a cycle: {output!r}")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run trusted direct JSON equivalence test");
+    assert!(
+        output.status.success(),
+        "trusted direct JSON equivalence test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn trusted_and_checked_output_share_one_depth_budget() {
+    let source = generate_dataclass_models(&json!({
+        "title": "DepthBoundary"
+    }))
+    .expect("generate unconstrained depth-boundary dataclass");
+    let module_path = write_temp_module("output_depth_boundary", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("depth_boundary_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+def nested_lists(depth):
+    value = None
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+instance = module.DepthBoundary.from_value(None, skip_validation=True)
+last_accepted = nested_lists(253)
+first_rejected = nested_lists(254)
+
+for skip_validation in (False, True):
+    object.__setattr__(instance, "root", last_accepted)
+    assert instance.to_value(skip_validation=skip_validation) == last_accepted
+    assert instance.serialize(skip_validation=skip_validation) == (
+        "[" * 253 + "null" + "]" * 253
+    )
+
+    object.__setattr__(instance, "root", first_rejected)
+    for output in (instance.to_value, instance.serialize):
+        try:
+            output(skip_validation=skip_validation)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                f"output exceeded the shared depth budget: {output!r}, "
+                f"skip_validation={skip_validation}"
+            )
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run output depth-boundary equivalence test");
+    assert!(
+        output.status.success(),
+        "output depth-boundary equivalence test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -400,11 +1253,25 @@ class DuplicateMapping(Mapping):
         return (("x", 1), ("x", 2))
 
 
-stateful = module.CanonicalKeys.from_value(
-    {"metadata": DuplicateMapping()},
+for skip_validation in (False, True):
+    raw = DuplicateMapping()
+    try:
+        module.CanonicalKeys.from_value(
+            {"metadata": raw},
+            skip_validation=skip_validation,
+        )
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("raw from_value accepted a non-JSON Mapping")
+
+direct = DuplicateMapping()
+stateful = module.CanonicalKeys(
+    metadata=module.CanonicalKeysMetadata.from_value({}),
+    __jsoncompat_extra__=direct,
     skip_validation=True,
 )
-assert stateful.to_value(skip_validation=True) == {"metadata": {"x": 2}}
+assert stateful.to_value(skip_validation=True) == {"x": 2, "metadata": {}}
 "###,
     );
     command.arg(module_path);
@@ -444,6 +1311,14 @@ fn checked_construction_canonicalizes_valid_literal_subclasses() {
         "const": true,
     }))
     .expect("generate boolean literal dataclass");
+    let numeric_union_source = generate_dataclass_models(&json!({
+        "title": "NumericUnion",
+        "anyOf": [
+            {"const": 1},
+            {"type": "number", "minimum": 2}
+        ],
+    }))
+    .expect("generate numeric literal union dataclass");
     let ambiguous_source = generate_dataclass_models(&json!({
         "title": "SignedValue",
         "oneOf": [
@@ -464,11 +1339,38 @@ fn checked_construction_canonicalizes_valid_literal_subclasses() {
         ]
     }))
     .expect("generate ambiguous model union");
+    let tuple_union_source = generate_dataclass_models(&json!({
+        "title": "TupleUnion",
+        "oneOf": [
+            {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"value": {"type": "integer", "minimum": 0}},
+                    "required": ["value"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"value": {"type": "integer", "maximum": -1}},
+                    "required": ["value"],
+                    "additionalProperties": false
+                }
+            }
+        ]
+    }))
+    .expect("generate ambiguous tuple union");
     let root_module_path = write_temp_module("root_literal_subclass", &root_source);
     let nested_module_path = write_temp_module("nested_literal_subclass", &nested_source);
     let numeric_module_path = write_temp_module("numeric_literal_subclass", &numeric_source);
     let boolean_module_path = write_temp_module("boolean_literal", &boolean_source);
     let ambiguous_module_path = write_temp_module("ambiguous_model_union", &ambiguous_source);
+    let numeric_union_module_path =
+        write_temp_module("numeric_literal_union", &numeric_union_source);
+    let tuple_union_module_path = write_temp_module("tuple_union", &tuple_union_source);
 
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
@@ -491,6 +1393,8 @@ nested = load("nested_literal_models", sys.argv[2])
 numeric = load("numeric_literal_models", sys.argv[3])
 boolean = load("boolean_literal_models", sys.argv[4])
 ambiguous = load("ambiguous_union_models", sys.argv[5])
+numeric_union = load("numeric_literal_union_models", sys.argv[6])
+tuple_union = load("tuple_union_models", sys.argv[7])
 
 
 class StringSubclass(str):
@@ -503,6 +1407,23 @@ class IntegerSubclass(int):
 
 class FloatSubclass(float):
     pass
+
+
+class RaisingIntegerSubclass(int):
+    __hash__ = int.__hash__
+
+    def __eq__(self, other):
+        raise RuntimeError("subclass equality must not run")
+
+
+class RaisingTuple(tuple):
+    def __iter__(self):
+        raise RuntimeError("tuple subclass iteration must not run")
+
+
+class RaisingList(list):
+    def __iter__(self):
+        raise RuntimeError("list subclass iteration must not run")
 
 
 for skip_validation in (False, True):
@@ -556,6 +1477,13 @@ for skip_validation in (False, True):
     assert json_equal_number.root == 1
     assert type(json_equal_number.root) in (int, float)
 
+    union_value = numeric_union.JSONCOMPAT_MODEL.from_value(
+        RaisingIntegerSubclass(1),
+        skip_validation=skip_validation,
+    )
+    assert union_value.root == 1
+    assert type(union_value.root) is int
+
     boolean_value = boolean.JSONCOMPAT_MODEL.from_value(
         True,
         skip_validation=skip_validation,
@@ -574,11 +1502,26 @@ for skip_validation in (False, True):
 
 checked_negative = ambiguous.JSONCOMPAT_MODEL.from_value({"value": -1})
 assert checked_negative.to_value() == {"value": -1}
+assert type(checked_negative.root) is ambiguous.SignedValueBranch1
+checked_positive = ambiguous.JSONCOMPAT_MODEL.from_value({"value": 1})
+assert checked_positive.to_value() == {"value": 1}
+assert type(checked_positive.root) is ambiguous.SignedValueBranch0
 trusted_positive = ambiguous.JSONCOMPAT_MODEL.from_value(
     {"value": 1},
     skip_validation=True,
 )
 assert trusted_positive.to_value(skip_validation=True) == {"value": 1}
+
+for Container in (RaisingTuple, RaisingList):
+    checked_array = tuple_union.JSONCOMPAT_MODEL.from_value(
+        Container(({"value": 1},))
+    )
+    assert type(checked_array.root[0]) is tuple_union.TupleUnionItem
+    trusted_array = tuple_union.JSONCOMPAT_MODEL.from_value(
+        Container(({"value": 1},)),
+        skip_validation=True,
+    )
+    assert type(trusted_array.root[0]) is tuple_union.TupleUnionItem2
 "###,
     );
     command
@@ -586,7 +1529,9 @@ assert trusted_positive.to_value(skip_validation=True) == {"value": 1}
         .arg(nested_module_path)
         .arg(numeric_module_path)
         .arg(boolean_module_path)
-        .arg(ambiguous_module_path);
+        .arg(ambiguous_module_path)
+        .arg(numeric_union_module_path)
+        .arg(tuple_union_module_path);
     let output = command
         .output()
         .expect("run generated dataclass literal-subclass test");
@@ -659,11 +1604,11 @@ for exception in (TypeError, ValueError, KeyboardInterrupt):
             {"metadata": unchecked},
             skip_validation=True,
         )
-    except exception as error:
-        assert str(error) == "user sentinel"
+    except TypeError:
+        pass
     else:
-        raise AssertionError(f"unchecked construction swallowed {exception.__name__}")
-    assert unchecked.items_calls == 1
+        raise AssertionError("unchecked construction accepted a non-JSON Mapping")
+    assert unchecked.items_calls == 0
 "###,
     );
     command.arg(module_path);
@@ -673,6 +1618,78 @@ for exception in (TypeError, ValueError, KeyboardInterrupt):
     assert!(
         output.status.success(),
         "generated dataclass control-flow exception test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn direct_union_construction_does_not_retry_hard_failures() {
+    let source = generate_dataclass_models(&json!({
+        "title": "DirectUnionEnvelope",
+        "type": "object",
+        "properties": {
+            "payload": {
+                "anyOf": [
+                    {
+                        "type": "array",
+                        "items": {"type": "integer"}
+                    },
+                    {"type": "integer"}
+                ]
+            }
+        },
+        "required": ["payload"],
+        "additionalProperties": false,
+    }))
+    .expect("generate direct union dataclass");
+    let module_path = write_temp_module("direct_union_hard_failure", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+from collections.abc import Sequence
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("direct_union_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+class HostileSequence(Sequence):
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, index):
+        raise RuntimeError("hard branch failure")
+
+
+try:
+    module.DirectUnionEnvelope(payload=HostileSequence(), skip_validation=True)
+except RuntimeError as error:
+    assert str(error) == "hard branch failure"
+else:
+    raise AssertionError("direct union construction swallowed a hard failure")
+
+try:
+    module.DirectUnionEnvelope(payload={}, skip_validation=True)
+except TypeError as error:
+    message = str(error)
+    assert "does not match any generated model union branch" in message, message
+    assert "expected sequence, got dict" in message, message
+else:
+    raise AssertionError("direct union construction accepted an unmatched value")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run direct union hard-failure test");
+    assert!(
+        output.status.success(),
+        "direct union hard-failure test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -788,6 +1805,83 @@ for model_type, value in cases:
 }
 
 #[test]
+fn native_plan_only_represents_string_keyed_json_mappings() {
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+from collections.abc import Mapping, Sequence
+import typing
+
+from jsoncompat.codegen import dataclasses as dc
+
+
+builder = dc._NativePlanBuilder({})
+assert builder.add(Mapping[str, int]) == 0
+assert builder.finish() == [("dict", 1), ("int",)]
+
+builder = dc._NativePlanBuilder({})
+assert builder.add(Sequence[int]) == 0
+assert builder.finish() == [("list", 1), ("int",)]
+
+builder = dc._NativePlanBuilder({})
+assert builder.add(int | str) == 0
+assert builder.finish() == [
+    ("union", (1, 2), None, None),
+    ("int",),
+    ("str",),
+]
+
+# Generated `Literal[...] | Literal[...]` source evaluates to typing.Union,
+# so this is part of the generated contract rather than a compatibility alias.
+builder = dc._NativePlanBuilder({})
+assert builder.add(typing.Literal["x"] | typing.Literal["y"]) == 0
+assert builder.finish()[0][0] == "union"
+
+for annotation, message in (
+    (Mapping[int, str], "JSON mappings must have string keys"),
+    (
+        dc.JsoncompatMissingType,
+        "JsoncompatMissingType is only valid in an omittable field",
+    ),
+):
+    try:
+        dc._NativePlanBuilder({}).add(annotation)
+    except dc._NativePlanUnsupported as error:
+        assert str(error) == message
+    else:
+        raise AssertionError(f"native plan accepted {annotation!r}")
+
+for annotation in (
+    list,
+    dict,
+    Sequence,
+    Mapping,
+    list[int],
+    dict[str, int],
+    typing.List[int],
+    typing.Dict[str, int],
+    typing.Sequence[int],
+    typing.Mapping[str, int],
+):
+    try:
+        dc._NativePlanBuilder({}).add(annotation)
+    except dc._NativePlanUnsupported:
+        pass
+    else:
+        raise AssertionError(f"native plan accepted fallback annotation {annotation!r}")
+"###,
+    );
+    let output = command
+        .output()
+        .expect("run native plan JSON mapping invariant test");
+    assert!(
+        output.status.success(),
+        "native plan JSON mapping invariant test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn trusted_generated_model_use_does_not_compile_its_schema() {
     let source = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -838,6 +1932,232 @@ else:
     assert!(
         output.status.success(),
         "lazy generated schema compilation test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn cyclic_values_reject_across_the_complete_graph_on_the_minimum_python_thread_stack() {
+    let recursive_source = generate_dataclass_models(&json!({
+        "title": "CycleEnvelope",
+        "type": "object",
+        "properties": {
+            "children": {
+                "type": "array",
+                "items": {"$ref": "#"},
+            },
+            "payload": {},
+        },
+        "required": ["children", "payload"],
+        "additionalProperties": false,
+    }))
+    .expect("generate recursive cycle-test dataclass");
+    let recursive_module_path =
+        write_temp_module("cyclic_recursive_small_stack", &recursive_source);
+
+    let list_source = generate_dataclass_models(&json!({
+        "title": "NestedList",
+        "type": "array",
+        "items": {
+            "type": "array",
+            "items": {},
+        },
+    }))
+    .expect("generate typed-list cycle-test dataclass");
+    let list_module_path = write_temp_module("cyclic_list_small_stack", &list_source);
+
+    let mapping_source = generate_dataclass_models(&json!({
+        "title": "OpenMapping",
+        "type": "object",
+        "additionalProperties": {},
+    }))
+    .expect("generate mapping cycle-test dataclass");
+    let mapping_module_path = write_temp_module("cyclic_mapping_small_stack", &mapping_source);
+
+    // Local references intentionally keep adjacent type unions intact during
+    // canonicalization. Their object arm is the supported schema path which
+    // emits an ordinary Mapping node rather than an object dataclass.
+    let ordinary_mapping_source = generate_dataclass_models(&json!({
+        "title": "MappingOrString",
+        "$defs": {
+            "label": {"type": "string"},
+        },
+        "type": ["object", "string"],
+        "properties": {
+            "label": {"$ref": "#/$defs/label"},
+        },
+    }))
+    .expect("generate ordinary mapping cycle-test dataclass");
+    assert!(
+        ordinary_mapping_source
+            .contains("root: (collections.abc.Mapping[str, typing.Any] | str) = dc.root_field()")
+    );
+    let ordinary_mapping_module_path = write_temp_module(
+        "cyclic_ordinary_mapping_small_stack",
+        &ordinary_mapping_source,
+    );
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+import threading
+import traceback
+from collections.abc import Sequence
+
+
+try:
+    threading.stack_size(32768)
+except (RuntimeError, ValueError):
+    raise SystemExit(0)
+
+EXPECTED = "cyclic containers are not JSON values"
+
+
+def import_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def expect_cycle(callback):
+    try:
+        callback()
+    except ValueError as error:
+        assert str(error) == EXPECTED, str(error)
+    else:
+        raise AssertionError("cyclic JSON value was accepted")
+
+
+class CyclicSequence(Sequence):
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, index):
+        if index == 0:
+            return self
+        raise IndexError(index)
+
+
+def exercise_cycles():
+    recursive_module = import_module("cyclic_recursive_models", sys.argv[1])
+    list_module = import_module("cyclic_list_models", sys.argv[2])
+    mapping_module = import_module("cyclic_mapping_models", sys.argv[3])
+    ordinary_mapping_module = import_module(
+        "cyclic_ordinary_mapping_models",
+        sys.argv[4],
+    )
+
+    recursive_model = recursive_module.JSONCOMPAT_MODEL
+    list_model = list_module.JSONCOMPAT_MODEL
+    mapping_model = mapping_module.JSONCOMPAT_MODEL
+    ordinary_mapping_model = ordinary_mapping_module.JSONCOMPAT_MODEL
+
+    # Module setup and runtime-plan compilation must not be covered by the
+    # expected-error assertions below.
+    recursive_model.from_value(
+        {"children": [], "payload": None},
+        skip_validation=True,
+    )
+    list_model(root=[[]], skip_validation=True)
+    mapping_model(__jsoncompat_extra__={"ready": True}, skip_validation=True)
+    ordinary_mapping_model(root={"ready": True}, skip_validation=True)
+
+    typed_cycle = {"children": [], "payload": None}
+    typed_cycle["children"].append(typed_cycle)
+    mixed_cycle = {"children": [], "payload": None}
+    mixed_cycle["payload"] = mixed_cycle
+    direct_list_cycle = []
+    direct_list_cycle.append(direct_list_cycle)
+    direct_mapping_cycle = {}
+    direct_mapping_cycle["self"] = direct_mapping_cycle
+
+    for skip_validation in (False, True):
+        expect_cycle(
+            lambda skip_validation=skip_validation: recursive_model.from_value(
+                typed_cycle,
+                skip_validation=skip_validation,
+            )
+        )
+        expect_cycle(
+            lambda skip_validation=skip_validation: recursive_model.from_value(
+                mixed_cycle,
+                skip_validation=skip_validation,
+            )
+        )
+
+    expect_cycle(
+        lambda: list_model(root=direct_list_cycle, skip_validation=True)
+    )
+    expect_cycle(
+        lambda: list_model(root=CyclicSequence(), skip_validation=True)
+    )
+    expect_cycle(
+        lambda: mapping_model(
+            __jsoncompat_extra__=direct_mapping_cycle,
+            skip_validation=True,
+        )
+    )
+    expect_cycle(
+        lambda: ordinary_mapping_model(
+            root=direct_mapping_cycle,
+            skip_validation=True,
+        )
+    )
+
+    shared_child = []
+    shared_mapping = {"left": shared_child, "right": shared_child}
+    shared = mapping_model(
+        __jsoncompat_extra__=shared_mapping,
+        skip_validation=True,
+    )
+    assert shared.to_value(skip_validation=True) == shared_mapping
+
+
+thread_errors = []
+original_excepthook = threading.excepthook
+
+
+def capture_thread_error(args):
+    thread_errors.append(
+        "".join(
+            traceback.format_exception(
+                args.exc_type,
+                args.exc_value,
+                args.exc_traceback,
+            )
+        )
+    )
+
+
+threading.excepthook = capture_thread_error
+try:
+    thread = threading.Thread(target=exercise_cycles)
+    thread.start()
+    thread.join(10)
+    assert not thread.is_alive(), "cyclic construction thread did not finish"
+finally:
+    threading.excepthook = original_excepthook
+
+assert thread_errors == [], thread_errors
+"###,
+    );
+    command
+        .arg(recursive_module_path)
+        .arg(list_module_path)
+        .arg(mapping_module_path)
+        .arg(ordinary_mapping_module_path);
+    let output = command
+        .output()
+        .expect("run complete-graph cycle small-stack subprocess test");
+    assert!(
+        output.status.success(),
+        "complete-graph cycle small-stack subprocess failed with {:?}: {}",
+        output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -911,7 +2231,7 @@ def import_weakrefs(index):
         runtime = model_type.__dict__["__jsoncompat_runtime__"]
         assert gc.is_tracked(runtime)
         runtime_referents = gc.get_referents(runtime)
-        assert set(classes).intersection(runtime_referents) == {model_type}
+        assert not set(classes).intersection(runtime_referents)
         plan_referents = tuple(
             referent
             for referent in runtime_referents
@@ -1160,16 +2480,13 @@ mapping_value = {
     "quantity": 3,
     "metadata": MappingProxyType({"source": "proxy"}),
 }
-try:
-    model.from_value(mapping_value)
-except ValueError:
-    pass
-else:
-    raise AssertionError("checked construction accepted a non-JSON Mapping")
-assert model.from_value(
-    mapping_value,
-    skip_validation=True,
-).to_value(skip_validation=True)["metadata"] == {"source": "proxy"}
+for skip_validation in (False, True):
+    try:
+        model.from_value(mapping_value, skip_validation=skip_validation)
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError("raw construction accepted a non-JSON Mapping")
 "###,
     );
     command.arg(module_path);
@@ -1687,7 +3004,7 @@ assert "generator_for" in str(caught[0].message)
 }
 
 #[test]
-fn generated_dataclasses_keep_validation_cache_separate_from_json_properties() {
+fn generated_dataclasses_allow_the_former_cache_name_as_a_json_property() {
     let source = generate_dataclass_models(&json!({
         "title": "cache collision",
         "type": "object",
@@ -1714,8 +3031,8 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 model = module.CacheCollision.from_value({"_jsoncompat_validated": False})
-assert model._jsoncompat_validated_ is False
-assert model._jsoncompat_validated is True
+assert model._jsoncompat_validated is False
+assert not hasattr(model, "_jsoncompat_validated_")
 assert model.to_value() == {"_jsoncompat_validated": False}
 assert model.serialize() == '{"_jsoncompat_validated":false}'
 "###,

@@ -8,7 +8,13 @@ import sys
 import warnings
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Literal, NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, NoReturn, Protocol, cast
+
+if TYPE_CHECKING:
+    from jsoncompat._native import (
+        JSONCOMPAT_MISSING as JSONCOMPAT_MISSING,
+        JsoncompatMissingType as JsoncompatMissingType,
+    )
 
 RoleLiteral = Literal["serializer", "deserializer", "both"]
 type JsonValue = (
@@ -89,6 +95,9 @@ class ModelRuntime(Protocol):
 
 
 class NativeModule(Protocol):
+    JSONCOMPAT_MISSING: Any
+    JsoncompatMissingType: type[Any]
+
     def check_compat(
         self,
         old_schema_json: str,
@@ -251,6 +260,8 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
         and hasattr(module, "compile_model_runtimes")
+        and hasattr(module, "JSONCOMPAT_MISSING")
+        and hasattr(module, "JsoncompatMissingType")
         and hasattr(validator, "is_valid_json")
         and hasattr(validator, "is_valid_value")
         and hasattr(validator, "_is_valid_borrowed_value")
@@ -282,6 +293,7 @@ except ModuleNotFoundError as error:
     try:
         _repo_native = _load_repo_native()
     except ModuleNotFoundError:
+        _native_symbols: NativeModule | None = None
         _check_compat_native: CheckCompatFn = _missing_check_compat
         _generate_value_native: GenerateValueFn = _missing_generate_value
         _generator_for_native: GeneratorForFn = _missing_generator_for
@@ -293,6 +305,7 @@ except ModuleNotFoundError as error:
         )
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
+        _native_symbols = _repo_native
         _check_compat_native = _repo_native.check_compat
         _generate_value_native = _repo_native.generate_value
         _generator_for_native = _repo_native.generator_for
@@ -304,6 +317,7 @@ except ModuleNotFoundError as error:
 else:
     if not _force_repo_native and not _has_reusable_schema_api(_native_module):
         _native_module = _load_repo_native()
+    _native_symbols = _native_module
     _check_compat_native = _native_module.check_compat
     _generate_value_native = _native_module.generate_value
     _generator_for_native = _native_module.generator_for
@@ -312,6 +326,21 @@ else:
     _serialize_json_native = _native_module.serialize_json
     _compile_model_runtimes_native = _native_module.compile_model_runtimes
     _is_valid_native = _native_module.is_valid
+
+
+if not TYPE_CHECKING:
+    if _native_symbols is None:
+
+        class JsoncompatMissingType:
+            __slots__ = ()
+
+            def __repr__(self) -> str:
+                return "JSONCOMPAT_MISSING"
+
+        JSONCOMPAT_MISSING = JsoncompatMissingType()
+    else:
+        JsoncompatMissingType = _native_symbols.JsoncompatMissingType
+        JSONCOMPAT_MISSING = _native_symbols.JSONCOMPAT_MISSING
 
 
 def check_compat(
@@ -385,6 +414,8 @@ __all__ = [
     "RoleLiteral",
     "JsonValue",
     "Generator",
+    "JSONCOMPAT_MISSING",
+    "JsoncompatMissingType",
     "Validator",
     "check_compat",
     "generate_value",

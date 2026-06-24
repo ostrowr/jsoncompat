@@ -12,7 +12,6 @@ const READER_MODEL_CLASS: &str = "ReaderDataclassModel";
 const READER_ROOT_MODEL_CLASS: &str = "ReaderDataclassRootModel";
 const WRITER_MODEL_CLASS: &str = "WriterDataclassModel";
 const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
-const VALIDATED_FIELD_NAME: &str = "_jsoncompat_validated";
 const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
 const OMITTABLE_TYPE_NAME: &str = "Omittable";
 const DATACLASSES_RUNTIME_MODULE: &str = "dc";
@@ -2127,7 +2126,6 @@ fn python_keyword_or_reserved(name: &str) -> bool {
             | "skip_validation"
             | "to_value"
             | "root"
-            | VALIDATED_FIELD_NAME
             | EXTRA_FIELD_NAME
     )
 }
@@ -2404,7 +2402,7 @@ mod tests {
                 .contains("get_additional_property_: str = dc.field(\"get_additional_property\")")
         );
         assert!(source.contains(
-            "_jsoncompat_validated_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"_jsoncompat_validated\")"
+            "_jsoncompat_validated: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"_jsoncompat_validated\")"
         ));
         assert!(source.contains("serialize_: str = dc.field(\"serialize\")"));
         assert!(source.contains(

@@ -9,6 +9,7 @@ from typing import (
     ClassVar,
     Literal,
     NoReturn,
+    Protocol,
     TypeVar,
     Union,
     cast,
@@ -18,7 +19,9 @@ from typing import (
 )
 
 from jsoncompat import (
+    JSONCOMPAT_MISSING,
     JsonValue,
+    JsoncompatMissingType,
     ModelRuntime,
     compile_model_runtimes,
 )
@@ -50,7 +53,6 @@ __all__ = [
 JSONCOMPAT_EXTRA_FIELD = "__jsoncompat_extra__"
 JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
 JSONCOMPAT_RUNTIME_FIELD = "__jsoncompat_runtime__"
-JSONCOMPAT_VALIDATED_FIELD = "_jsoncompat_validated"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
 JSONCOMPAT_FIELD_KIND_METADATA = "jsoncompat_field_kind"
@@ -61,15 +63,6 @@ _JSONCOMPAT_UNSET = object()
 JSONCOMPAT_ADDITIONAL_T = TypeVar("JSONCOMPAT_ADDITIONAL_T")
 _DATACLASS_MODEL_T = TypeVar("_DATACLASS_MODEL_T", bound="DataclassModel")
 
-
-class JsoncompatMissingType:
-    __slots__ = ()
-
-    def __repr__(self) -> str:
-        return "JSONCOMPAT_MISSING"
-
-
-JSONCOMPAT_MISSING = JsoncompatMissingType()
 
 type Omittable[T] = T | JsoncompatMissingType
 
@@ -167,15 +160,26 @@ class _DataclassModelMeta(type):
         )
 
 
-def field(json_name: str, *, omittable: bool = False) -> Any:
-    metadata = {
-        JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
-        JSONCOMPAT_JSON_NAME_METADATA: json_name,
-        JSONCOMPAT_MISSING_METADATA: omittable,
-    }
-    if omittable:
-        return dataclasses.field(default=JSONCOMPAT_MISSING, metadata=metadata)
-    return dataclasses.field(metadata=metadata)
+class _FieldFunction(Protocol):
+    def __call__(self, json_name: str, *, omittable: bool = False) -> Any: ...
+
+
+def _field_factory(missing: JsoncompatMissingType) -> _FieldFunction:
+    def field(json_name: str, *, omittable: bool = False) -> Any:
+        metadata = {
+            JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
+            JSONCOMPAT_JSON_NAME_METADATA: json_name,
+            JSONCOMPAT_MISSING_METADATA: omittable,
+        }
+        if omittable:
+            return dataclasses.field(default=missing, metadata=metadata)
+        return dataclasses.field(metadata=metadata)
+
+    return field
+
+
+field = _field_factory(JSONCOMPAT_MISSING)
+del _field_factory
 
 
 def extra_field() -> Any:
@@ -200,7 +204,7 @@ def root_field() -> Any:
 class DataclassModel(metaclass=_DataclassModelMeta):
     """Native runtime interface shared by generated frozen dataclasses."""
 
-    __slots__ = (JSONCOMPAT_VALIDATED_FIELD,)
+    __slots__ = ()
 
     skip_validation: dataclasses.InitVar[bool] = False
     __jsoncompat_schema__: ClassVar[str]
@@ -544,12 +548,18 @@ def _inspect_generated_model(
                     f"duplicate generated extra-properties field in {model_type.__name__}"
                 )
             origin = get_origin(annotation)
-            key_annotation, extra_annotation = _dict_annotations(annotation)
-            if origin not in {dict, Mapping} or key_annotation is not str:
+            args = get_args(annotation)
+            if (
+                not isinstance(annotation, types.GenericAlias)
+                or origin is not Mapping
+                or len(args) != 2
+                or args[0] is not str
+            ):
                 raise TypeError(
                     f"{model_type.__name__}.{JSONCOMPAT_EXTRA_FIELD} must be a "
                     "mapping with string keys"
                 )
+            extra_annotation = args[1]
         elif field_kind == _JSONCOMPAT_ROOT_FIELD:
             if dataclass_field.name != "root":
                 raise TypeError("generated root field must be named root")
@@ -617,7 +627,9 @@ class _NativePlanBuilder:
         if annotation is Any or annotation is JsonValue:
             return ("any",)
         if annotation is JsoncompatMissingType:
-            return ("missing", JSONCOMPAT_MISSING)
+            raise _NativePlanUnsupported(
+                "JsoncompatMissingType is only valid in an omittable field"
+            )
         if annotation is str:
             return ("str",)
         if annotation is int:
@@ -632,14 +644,22 @@ class _NativePlanBuilder:
             return self._model_descriptor(annotation)
 
         origin = get_origin(annotation)
-        if origin in {list, Sequence}:
+        if isinstance(annotation, types.GenericAlias) and origin is Sequence:
             args = get_args(annotation)
-            return ("list", self.add(args[0] if args else Any))
-        if origin in {dict, Mapping}:
+            if len(args) != 1:
+                raise _NativePlanUnsupported(
+                    "generated sequence annotations must have one item type"
+                )
+            return ("list", self.add(args[0]))
+        if isinstance(annotation, types.GenericAlias) and origin is Mapping:
             key, value = _dict_annotations(annotation)
-            return ("dict", self.add(key), self.add(value))
+            if key is not str:
+                raise _NativePlanUnsupported("JSON mappings must have string keys")
+            return ("dict", self.add(value))
         if origin is Literal:
             return ("literal", get_args(annotation))
+        # PEP 604 expressions containing typing.Literal evaluate to
+        # typing.Union even though generated source uses `|`.
         if origin in {types.UnionType, Union}:
             return self._union_descriptor(get_args(annotation))
         raise _NativePlanUnsupported(f"unsupported annotation {annotation!r}")
@@ -661,7 +681,7 @@ class _NativePlanBuilder:
                 field_spec.json_name,
                 field_spec.py_name,
                 self.add(field_spec.annotation),
-                JSONCOMPAT_MISSING if field_spec.omittable else None,
+                field_spec.omittable,
             )
             for field_spec in spec.fields
         )
@@ -684,7 +704,7 @@ class _NativePlanBuilder:
                     break
                 if kind not in {"str", "bool", "number", "null"}:
                     break
-                branches_by_value.append((value, self.node_ids[branch]))
+                branches_by_value.append((value, branches.index(branch)))
             else:
                 return (
                     "union",
@@ -717,7 +737,7 @@ def _discriminator_plans_for(
             if not isinstance(spec, _ObjectSpec):
                 return ()
             model_branches.append((branch, spec))
-        elif branch not in {JsoncompatMissingType, None, type(None)}:
+        elif branch not in {None, type(None)}:
             return ()
     if len(model_branches) < 2:
         return ()
@@ -783,13 +803,20 @@ def _jsoncompat_runtime_for(model_type: type[DataclassModel]) -> ModelRuntime:
 
 def _dict_annotations(annotation: Any) -> tuple[Any, Any]:
     args = get_args(annotation)
-    return (args[0], args[1]) if len(args) == 2 else (Any, Any)
+    if len(args) != 2:
+        raise _NativePlanUnsupported(
+            "generated mapping annotations must have key and value types"
+        )
+    return (args[0], args[1])
 
 
 def _branch_is_object_like(annotation: Any) -> bool:
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
         return True
-    return get_origin(annotation) in {dict, Mapping}
+    return (
+        isinstance(annotation, types.GenericAlias)
+        and get_origin(annotation) is Mapping
+    )
 
 
 def _literal_key(value: Any) -> tuple[str, Any] | None:
