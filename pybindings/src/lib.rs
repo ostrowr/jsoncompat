@@ -25,8 +25,8 @@ use jsonschema::InstanceRef as JSONInstanceRef;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
 use model_converter::{
-    ConstructedModelCandidate, ModelConverterPlan, ModelConverterPy, compile_model_converter_plan,
-    model_converter_for_root, model_converter_for_validated_root,
+    CandidateConstruction, ConstructedModelCandidate, ModelConverterPlan, ModelConverterPy,
+    compile_model_converter_plan, model_converter_for_root, model_converter_for_validated_root,
 };
 
 fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
@@ -537,41 +537,28 @@ fn construct_model_value(
     // ordinary dict/list input, schema validation can borrow the original
     // graph without repeating the shape-only traversal.
     let candidate = match converter.construct_candidate(py, instance) {
-        Ok(candidate) => candidate,
-        Err(conversion_error) => {
-            // Candidate construction reports ordinary representation mismatches
-            // as TypeError or ValueError. Exceptions outside that contract may
-            // have come from user-defined Mapping behavior and must retain their
-            // control-flow or resource-exhaustion semantics.
-            if !conversion_error.is_instance_of::<PyTypeError>(py)
-                && !conversion_error.is_instance_of::<PyValueError>(py)
-            {
-                return Err(conversion_error);
-            }
+        Ok(CandidateConstruction::Constructed(candidate)) => candidate,
+        Ok(CandidateConstruction::Mismatch(conversion_error)) => {
             let raw_is_valid = schema
                 .is_valid_instance(JSONInstanceRef::from_python(instance))
                 .map_err(validation_error)?;
             if raw_is_valid {
-                // Validation can accept JSON scalar subclasses which the
-                // unvalidated literal probe intentionally does not. Re-run the
-                // schema-aware converter to canonicalize those values.
-                return converter.construct(py, instance, true).map(Some);
+                return Err(PyErr::new::<PyRuntimeError, _>(format!(
+                    "schema-valid value cannot be represented by its generated model: {conversion_error}"
+                )));
             }
             return Ok(None);
         }
+        Err(error) => return Err(error),
     };
     let ConstructedModelCandidate {
         instance: converted,
-        raw_json_proven,
         ambiguous_union,
     } = candidate;
     let borrowed = JSONInstanceRef::from_python(instance);
-    let is_valid = if raw_json_proven {
-        schema.is_valid_instance_assuming_json(borrowed)
-    } else {
-        schema.is_valid_instance(borrowed)
-    }
-    .map_err(validation_error)?;
+    let is_valid = schema
+        .is_valid_instance_assuming_json(borrowed)
+        .map_err(validation_error)?;
     if !is_valid {
         return Ok(None);
     }

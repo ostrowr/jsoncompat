@@ -353,6 +353,7 @@ fn generated_dataclasses_normalize_keys_after_scalar_canonicalization() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
+from collections.abc import Mapping
 import importlib.util
 import sys
 
@@ -381,6 +382,29 @@ expected = {"metadata": {"x": 2}, "x": 4}
 assert model.to_value() == expected
 wire = model.serialize()
 assert module.CanonicalKeys.deserialize(wire).to_value() == expected
+
+
+class DuplicateMapping(Mapping):
+    def __getitem__(self, key):
+        if key == "x":
+            return 2
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(("x",))
+
+    def __len__(self):
+        return 1
+
+    def items(self):
+        return (("x", 1), ("x", 2))
+
+
+stateful = module.CanonicalKeys.from_value(
+    {"metadata": DuplicateMapping()},
+    skip_validation=True,
+)
+assert stateful.to_value(skip_validation=True) == {"metadata": {"x": 2}}
 "###,
     );
     command.arg(module_path);
@@ -410,8 +434,41 @@ fn checked_construction_canonicalizes_valid_literal_subclasses() {
         "additionalProperties": false,
     }))
     .expect("generate nested literal dataclass");
+    let numeric_source = generate_dataclass_models(&json!({
+        "title": "NumericLiteral",
+        "enum": [1, 2.5],
+    }))
+    .expect("generate numeric literal dataclass");
+    let boolean_source = generate_dataclass_models(&json!({
+        "title": "BooleanLiteral",
+        "const": true,
+    }))
+    .expect("generate boolean literal dataclass");
+    let ambiguous_source = generate_dataclass_models(&json!({
+        "title": "SignedValue",
+        "oneOf": [
+            {
+                "title": "NonNegative",
+                "type": "object",
+                "properties": {"value": {"type": "integer", "minimum": 0}},
+                "required": ["value"],
+                "additionalProperties": false
+            },
+            {
+                "title": "Negative",
+                "type": "object",
+                "properties": {"value": {"type": "integer", "maximum": -1}},
+                "required": ["value"],
+                "additionalProperties": false
+            }
+        ]
+    }))
+    .expect("generate ambiguous model union");
     let root_module_path = write_temp_module("root_literal_subclass", &root_source);
     let nested_module_path = write_temp_module("nested_literal_subclass", &nested_source);
+    let numeric_module_path = write_temp_module("numeric_literal_subclass", &numeric_source);
+    let boolean_module_path = write_temp_module("boolean_literal", &boolean_source);
+    let ambiguous_module_path = write_temp_module("ambiguous_model_union", &ambiguous_source);
 
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
@@ -431,21 +488,105 @@ def load(name, path):
 
 roots = load("root_literal_models", sys.argv[1])
 nested = load("nested_literal_models", sys.argv[2])
+numeric = load("numeric_literal_models", sys.argv[3])
+boolean = load("boolean_literal_models", sys.argv[4])
+ambiguous = load("ambiguous_union_models", sys.argv[5])
 
 
 class StringSubclass(str):
     pass
 
 
-root = roots.JSONCOMPAT_MODEL.from_value(StringSubclass("x"))
-assert root.root == "x"
-assert type(root.root) is str
-envelope = nested.LiteralEnvelope.from_value({"kind": StringSubclass("x")})
-assert envelope.kind == "x"
-assert type(envelope.kind) is str
+class IntegerSubclass(int):
+    pass
+
+
+class FloatSubclass(float):
+    pass
+
+
+for skip_validation in (False, True):
+    exact_root = roots.JSONCOMPAT_MODEL.from_value(
+        "x",
+        skip_validation=skip_validation,
+    )
+    assert exact_root.root == "x"
+    assert type(exact_root.root) is str
+    root = roots.JSONCOMPAT_MODEL.from_value(
+        StringSubclass("x"),
+        skip_validation=skip_validation,
+    )
+    assert root.root == "x"
+    assert type(root.root) is str
+    envelope = nested.LiteralEnvelope.from_value(
+        {"kind": StringSubclass("x")},
+        skip_validation=skip_validation,
+    )
+    assert envelope.kind == "x"
+    assert type(envelope.kind) is str
+
+    exact_integer = numeric.JSONCOMPAT_MODEL.from_value(
+        1,
+        skip_validation=skip_validation,
+    )
+    assert exact_integer.root == 1
+    assert type(exact_integer.root) is int
+    exact_float = numeric.JSONCOMPAT_MODEL.from_value(
+        2.5,
+        skip_validation=skip_validation,
+    )
+    assert exact_float.root == 2.5
+    assert type(exact_float.root) is float
+    integer = numeric.JSONCOMPAT_MODEL.from_value(
+        IntegerSubclass(1),
+        skip_validation=skip_validation,
+    )
+    assert integer.root == 1
+    assert type(integer.root) is int
+    float_value = numeric.JSONCOMPAT_MODEL.from_value(
+        FloatSubclass(2.5),
+        skip_validation=skip_validation,
+    )
+    assert float_value.root == 2.5
+    assert type(float_value.root) is float
+    json_equal_number = numeric.JSONCOMPAT_MODEL.from_value(
+        FloatSubclass(1.0),
+        skip_validation=skip_validation,
+    )
+    assert json_equal_number.root == 1
+    assert type(json_equal_number.root) in (int, float)
+
+    boolean_value = boolean.JSONCOMPAT_MODEL.from_value(
+        True,
+        skip_validation=skip_validation,
+    )
+    assert boolean_value.root is True
+    for non_boolean in (1, 1.0):
+        try:
+            boolean.JSONCOMPAT_MODEL.from_value(
+                non_boolean,
+                skip_validation=skip_validation,
+            )
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError("boolean literal accepted a JSON number")
+
+checked_negative = ambiguous.JSONCOMPAT_MODEL.from_value({"value": -1})
+assert checked_negative.to_value() == {"value": -1}
+trusted_positive = ambiguous.JSONCOMPAT_MODEL.from_value(
+    {"value": 1},
+    skip_validation=True,
+)
+assert trusted_positive.to_value(skip_validation=True) == {"value": 1}
 "###,
     );
-    command.arg(root_module_path).arg(nested_module_path);
+    command
+        .arg(root_module_path)
+        .arg(nested_module_path)
+        .arg(numeric_module_path)
+        .arg(boolean_module_path)
+        .arg(ambiguous_module_path);
     let output = command
         .output()
         .expect("run generated dataclass literal-subclass test");
@@ -483,7 +624,11 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 
-class InterruptingMapping(Mapping):
+class RaisingMapping(Mapping):
+    def __init__(self, exception):
+        self.exception = exception
+        self.items_calls = 0
+
     def __getitem__(self, key):
         raise KeyError(key)
 
@@ -494,15 +639,31 @@ class InterruptingMapping(Mapping):
         return 0
 
     def items(self):
-        raise KeyboardInterrupt("stop candidate conversion")
+        self.items_calls += 1
+        raise self.exception("user sentinel")
 
 
-try:
-    module.InterruptEnvelope.from_value({"metadata": InterruptingMapping()})
-except KeyboardInterrupt as error:
-    assert str(error) == "stop candidate conversion"
-else:
-    raise AssertionError("KeyboardInterrupt was replaced by schema validation failure")
+for exception in (TypeError, ValueError, KeyboardInterrupt):
+    checked = RaisingMapping(exception)
+    try:
+        module.InterruptEnvelope.from_value({"metadata": checked})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("checked construction accepted a non-JSON Mapping")
+    assert checked.items_calls == 0
+
+    unchecked = RaisingMapping(exception)
+    try:
+        module.InterruptEnvelope.from_value(
+            {"metadata": unchecked},
+            skip_validation=True,
+        )
+    except exception as error:
+        assert str(error) == "user sentinel"
+    else:
+        raise AssertionError(f"unchecked construction swallowed {exception.__name__}")
+    assert unchecked.items_calls == 1
 "###,
     );
     command.arg(module_path);
@@ -944,16 +1105,19 @@ assert model.deserialize(b'{"sku":"abc","quantity":3}').quantity == 3
 
 invalid_json_payloads = (
     '{"sku":"abc","sku":"duplicate","quantity":3}',
+    '{"sku":"abc","quantity":3,"metadata":{"x":1,"x":2}}',
+    '{"sku":"abc","quantity":3,"metadata":{"a":1,"b":2,"c":3,"a":4}}',
     '{"sku":"abc","quantity":1e999}',
     '{"sku":"abc","quantity":NaN}',
 )
-for payload in invalid_json_payloads:
-    try:
-        model.deserialize(payload)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError(f"invalid JSON payload was accepted: {payload!r}")
+for skip_validation in (False, True):
+    for payload in invalid_json_payloads:
+        try:
+            model.deserialize(payload, skip_validation=skip_validation)
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError(f"invalid JSON payload was accepted: {payload!r}")
 
 invalid_values = [
     {"quantity": 3},
