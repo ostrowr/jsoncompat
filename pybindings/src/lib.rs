@@ -539,11 +539,23 @@ fn construct_model_value(
     let candidate = match converter.construct_candidate(py, instance) {
         Ok(candidate) => candidate,
         Err(conversion_error) => {
+            // Candidate construction reports ordinary representation mismatches
+            // as TypeError or ValueError. Exceptions outside that contract may
+            // have come from user-defined Mapping behavior and must retain their
+            // control-flow or resource-exhaustion semantics.
+            if !conversion_error.is_instance_of::<PyTypeError>(py)
+                && !conversion_error.is_instance_of::<PyValueError>(py)
+            {
+                return Err(conversion_error);
+            }
             let raw_is_valid = schema
                 .is_valid_instance(JSONInstanceRef::from_python(instance))
                 .map_err(validation_error)?;
             if raw_is_valid {
-                return Err(conversion_error);
+                // Validation can accept JSON scalar subclasses which the
+                // unvalidated literal probe intentionally does not. Re-run the
+                // schema-aware converter to canonicalize those values.
+                return converter.construct(py, instance, true).map(Some);
             }
             return Ok(None);
         }

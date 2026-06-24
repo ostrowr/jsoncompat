@@ -286,6 +286,237 @@ for unbound in (
 }
 
 #[test]
+fn generated_dataclass_native_slots_reject_foreign_descriptors() {
+    let source = generate_dataclass_models(&json!({
+        "title": "SlotSafety",
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": false,
+    }))
+    .expect("generate slot-safety dataclass");
+    let module_path = write_temp_module("foreign_slot_descriptor", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("slot_safety_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class ForeignSlots:
+    __slots__ = tuple(f"slot_{index}" for index in range(100))
+
+
+# Install a valid member descriptor whose offset belongs to a much larger,
+# unrelated allocation before the generated runtime compiles its slot plan.
+module.SlotSafety.value = ForeignSlots.slot_99
+for _ in range(2):
+    try:
+        module.SlotSafety.from_value({"value": "safe"})
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("foreign slot descriptor was used for native construction")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass foreign-slot test");
+    assert!(
+        output.status.success(),
+        "generated dataclass foreign-slot test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_normalize_keys_after_scalar_canonicalization() {
+    let source = generate_dataclass_models(&json!({
+        "title": "CanonicalKeys",
+        "type": "object",
+        "properties": {"metadata": {}},
+        "required": ["metadata"],
+        "additionalProperties": {"type": "integer"},
+    }))
+    .expect("generate key-normalization dataclass");
+    let module_path = write_temp_module("canonical_keys", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("canonical_key_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class IdentityString(str):
+    __hash__ = object.__hash__
+    __eq__ = object.__eq__
+
+
+def duplicate_x(first, second):
+    result = {IdentityString("x"): first, IdentityString("x"): second}
+    assert len(result) == 2
+    return result
+
+
+value = {"metadata": duplicate_x(1, 2), **duplicate_x(3, 4)}
+model = module.CanonicalKeys.from_value(value)
+expected = {"metadata": {"x": 2}, "x": 4}
+assert model.to_value() == expected
+wire = model.serialize()
+assert module.CanonicalKeys.deserialize(wire).to_value() == expected
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass key-normalization test");
+    assert!(
+        output.status.success(),
+        "generated dataclass key-normalization test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn checked_construction_canonicalizes_valid_literal_subclasses() {
+    let root_source = generate_dataclass_models(&json!({
+        "title": "RootLiteral",
+        "type": "string",
+        "const": "x",
+    }))
+    .expect("generate root literal dataclass");
+    let nested_source = generate_dataclass_models(&json!({
+        "title": "LiteralEnvelope",
+        "type": "object",
+        "properties": {"kind": {"enum": ["x", "y"]}},
+        "required": ["kind"],
+        "additionalProperties": false,
+    }))
+    .expect("generate nested literal dataclass");
+    let root_module_path = write_temp_module("root_literal_subclass", &root_source);
+    let nested_module_path = write_temp_module("nested_literal_subclass", &nested_source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+roots = load("root_literal_models", sys.argv[1])
+nested = load("nested_literal_models", sys.argv[2])
+
+
+class StringSubclass(str):
+    pass
+
+
+root = roots.JSONCOMPAT_MODEL.from_value(StringSubclass("x"))
+assert root.root == "x"
+assert type(root.root) is str
+envelope = nested.LiteralEnvelope.from_value({"kind": StringSubclass("x")})
+assert envelope.kind == "x"
+assert type(envelope.kind) is str
+"###,
+    );
+    command.arg(root_module_path).arg(nested_module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass literal-subclass test");
+    assert!(
+        output.status.success(),
+        "generated dataclass literal-subclass test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn checked_candidate_construction_preserves_control_flow_exceptions() {
+    let source = generate_dataclass_models(&json!({
+        "title": "InterruptEnvelope",
+        "type": "object",
+        "properties": {"metadata": {}},
+        "required": ["metadata"],
+        "additionalProperties": false,
+    }))
+    .expect("generate interrupt dataclass");
+    let module_path = write_temp_module("candidate_keyboard_interrupt", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+from collections.abc import Mapping
+import importlib.util
+import sys
+
+module_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("interrupt_models", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class InterruptingMapping(Mapping):
+    def __getitem__(self, key):
+        raise KeyError(key)
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 0
+
+    def items(self):
+        raise KeyboardInterrupt("stop candidate conversion")
+
+
+try:
+    module.InterruptEnvelope.from_value({"metadata": InterruptingMapping()})
+except KeyboardInterrupt as error:
+    assert str(error) == "stop candidate conversion"
+else:
+    raise AssertionError("KeyboardInterrupt was replaced by schema validation failure")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass control-flow exception test");
+    assert!(
+        output.status.success(),
+        "generated dataclass control-flow exception test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_module_lazily_compiles_one_shared_plan_for_every_recursive_model_root() {
     let source = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",

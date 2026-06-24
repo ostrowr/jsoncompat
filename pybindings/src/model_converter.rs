@@ -608,7 +608,9 @@ impl ModelConverterPy {
             } => {
                 if let Ok(input) = value.cast::<PyDict>() {
                     let mut output = Vec::with_capacity(input.len());
+                    let mut normalization_required = false;
                     for (key_value, item_value) in input {
+                        normalization_required |= !key_value.is_exact_instance_of::<PyString>();
                         let converted_key = self.convert_direct(
                             py,
                             *key,
@@ -625,7 +627,7 @@ impl ModelConverterPy {
                         )?;
                         output.push((converted_key, converted_value));
                     }
-                    return self.freeze_dict_items(py, output);
+                    return self.freeze_dict_items_normalized(py, output, normalization_required);
                 }
 
                 let input = value
@@ -767,6 +769,26 @@ impl ModelConverterPy {
         Ok(instance.unbind())
     }
 
+    fn freeze_dict_items_normalized(
+        &self,
+        py: Python<'_>,
+        items: Vec<(Py<PyAny>, Py<PyAny>)>,
+        normalization_required: bool,
+    ) -> PyResult<Py<PyAny>> {
+        if !normalization_required {
+            return self.freeze_dict_items(py, items);
+        }
+
+        // Distinct scalar subclasses can coexist in the input dict while
+        // canonicalizing to equal builtin keys. Preserve Python dict's
+        // last-write-wins behavior before committing immutable storage.
+        let normalized = PyDict::new(py);
+        for (key, value) in items {
+            normalized.set_item(key, value)?;
+        }
+        self.freeze_dict(py, &normalized)
+    }
+
     fn frozen_dict_items<'py>(&self, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
         model_attribute_bound(
             value,
@@ -829,9 +851,11 @@ impl ModelConverterPy {
                     "cyclic containers are not JSON values",
                 ));
             }
+            let mut normalization_required = false;
             let result = properties
                 .iter()
                 .map(|(key, item)| {
+                    normalization_required |= !key.is_exact_instance_of::<PyString>();
                     let key = key.extract::<String>().map_err(|_| {
                         PyErr::new::<PyTypeError, _>("JSON object keys must be strings")
                     })?;
@@ -845,7 +869,7 @@ impl ModelConverterPy {
                 })
                 .collect::<PyResult<Vec<_>>>();
             active_containers.remove(&identity);
-            return self.freeze_dict_items(py, result?);
+            return self.freeze_dict_items_normalized(py, result?, normalization_required);
         }
         if let Ok(properties) = value.cast::<PyMapping>() {
             let identity = value.as_ptr() as usize;
@@ -986,13 +1010,15 @@ impl ModelConverterPy {
     ) -> PyResult<Py<PyAny>> {
         if let Ok(input) = value.cast::<PyDict>() {
             let mut output = Vec::with_capacity(input.len());
+            let mut normalization_required = false;
             for (key, item) in input {
+                normalization_required |= !key.is_exact_instance_of::<PyString>();
                 let converted_key = self.convert(py, key_node, &key, state, remaining_depth - 1)?;
                 let converted_value =
                     self.convert(py, value_node, &item, state, remaining_depth - 1)?;
                 output.push((converted_key, converted_value));
             }
-            return self.freeze_dict_items(py, output);
+            return self.freeze_dict_items_normalized(py, output, normalization_required);
         }
 
         // General Mapping implementations can yield duplicate or stateful
@@ -1307,14 +1333,24 @@ impl ModelConverterPy {
         let instance = allocate_model(py, model_type, &self.object_new)?;
         let mut extra_output = extra_value.map(|_| Vec::new());
         let mut present_fields = 0;
+        let mut normalization_required = false;
 
         for (key, item) in input {
             let key = key
                 .cast::<PyString>()
                 .map_err(|_| PyErr::new::<PyTypeError, _>("JSON object keys must be strings"))?;
+            normalization_required |= !key.is_exact_instance_of::<PyString>();
             let key_string = key.to_str()?;
             if let Some(field_index) = fields_by_json_name.get(key_string) {
                 let field = &fields[*field_index];
+                let already_present = normalization_required
+                    && model_attribute_is_set(
+                        py,
+                        &instance,
+                        model_type,
+                        &field.py_name,
+                        field.slot_offset,
+                    )?;
                 let converted =
                     self.convert(py, field.value_node, &item, state, remaining_depth - 1)?;
                 set_model_attribute(
@@ -1325,7 +1361,9 @@ impl ModelConverterPy {
                     field.slot_offset,
                     &converted,
                 )?;
-                present_fields += 1;
+                if !already_present {
+                    present_fields += 1;
+                }
             } else if let (Some(extra_node), Some(output)) = (extra_value, extra_output.as_mut()) {
                 let converted = self.convert(py, extra_node, &item, state, remaining_depth - 1)?;
                 output.push((PyString::new(py, key_string).into_any().unbind(), converted));
@@ -1359,7 +1397,7 @@ impl ModelConverterPy {
         }
 
         let extra = extra_output
-            .map(|output| self.freeze_dict_items(py, output))
+            .map(|output| self.freeze_dict_items_normalized(py, output, normalization_required))
             .transpose()?;
 
         if let (Some(name), Some(extra)) = (extra_py_name, extra.as_ref()) {
@@ -1490,7 +1528,9 @@ impl ModelConverterPy {
             let extra = if let Some(extra_input) = extra_input {
                 if let Ok(extra_input) = extra_input.cast::<PyDict>() {
                     let mut output = Vec::with_capacity(extra_input.len());
+                    let mut normalization_required = false;
                     for (key, value) in extra_input {
+                        normalization_required |= !key.is_exact_instance_of::<PyString>();
                         let key_string = key.extract::<String>().map_err(|_| {
                             PyErr::new::<PyTypeError, _>("JSON object keys must be strings")
                         })?;
@@ -1511,7 +1551,7 @@ impl ModelConverterPy {
                             converted,
                         ));
                     }
-                    self.freeze_dict_items(py, output)?
+                    self.freeze_dict_items_normalized(py, output, normalization_required)?
                 } else {
                     let extra_input = extra_input.cast::<PyMapping>().map_err(|_| {
                         PyErr::new::<PyTypeError, _>(
@@ -3623,8 +3663,10 @@ pub(crate) fn model_converter_for_root(
 fn python_slot_offset(model_type: &Bound<'_, PyType>, name: &str) -> Option<isize> {
     let descriptor = model_type.getattr(name).ok()?;
     // SAFETY: exact member descriptors use the public CPython
-    // PyMemberDescrObject/PyMemberDef layout. We validate the descriptor type,
-    // member pointer, and object-valued type code before retaining the offset.
+    // PyMemberDescrObject/PyMemberDef layout. We validate that the descriptor
+    // belongs to this concrete layout, names the requested member, and covers
+    // one aligned object-pointer slot within the allocation before retaining
+    // its offset.
     unsafe {
         if ffi::Py_IS_TYPE(
             descriptor.as_ptr(),
@@ -3634,14 +3676,30 @@ fn python_slot_offset(model_type: &Bound<'_, PyType>, name: &str) -> Option<isiz
             return None;
         }
         let descriptor = descriptor.as_ptr().cast::<ffi::PyMemberDescrObject>();
+        let owner = (*descriptor).d_common.d_type;
         let member = (*descriptor).d_member;
-        if member.is_null() || (*member).name.is_null() {
+        let concrete_type = model_type.as_ptr().cast::<ffi::PyTypeObject>();
+        if owner.is_null()
+            || ffi::PyType_IsSubtype(concrete_type, owner) == 0
+            || member.is_null()
+            || (*member).name.is_null()
+        {
             return None;
         }
-        if (*member).type_code != ffi::Py_T_OBJECT_EX {
+        let member_name = std::ffi::CStr::from_ptr((*member).name);
+        if member_name.to_bytes() != name.as_bytes() || (*member).type_code != ffi::Py_T_OBJECT_EX {
             return None;
         }
-        Some((*member).offset)
+        let offset = usize::try_from((*member).offset).ok()?;
+        let basicsize = usize::try_from((*concrete_type).tp_basicsize).ok()?;
+        let pointer_size = std::mem::size_of::<*mut ffi::PyObject>();
+        if offset < std::mem::size_of::<ffi::PyObject>()
+            || offset % std::mem::align_of::<*mut ffi::PyObject>() != 0
+            || offset.checked_add(pointer_size)? > basicsize
+        {
+            return None;
+        }
+        isize::try_from(offset).ok()
     }
 }
 
