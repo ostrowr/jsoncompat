@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -91,6 +92,7 @@ class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel[typing.Any]):
     name: str = dc.field("name")
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -180,6 +182,7 @@ class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     name: str = dc.field("name")
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV2Reader(dc.ReaderDataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -262,6 +265,7 @@ class ExamplesStampUserProfileV2Reader(dc.ReaderDataclassModel):
     version: typing.Literal[2] = dc.field("version")
     data: ExamplesStampUserProfileV2 = dc.field("data")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileV1Reader(dc.ReaderDataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -345,6 +349,7 @@ class ExamplesStampUserProfileV1Reader(dc.ReaderDataclassModel):
     data: ExamplesStampUserProfileV1 = dc.field("data")
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ExamplesStampUserProfileReader(dc.ReaderDataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

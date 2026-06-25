@@ -89,6 +89,7 @@ assert_type(
     item.get_additional_property("priority"),
     float | JsoncompatMissingType,
 )
+assert_type(JsoncompatMissingType(), JsoncompatMissingType)
 
 item_from_constructor = InventoryItem(
     sku="sku-456",
@@ -150,8 +151,6 @@ InventoryItem(
     sku="sku-456",
     metadata=InventoryItemMetadata(warehouse="east"),
 ).serialize(format="json")
-
-JsoncompatMissingType()
 "#,
     )?;
 
@@ -176,10 +175,6 @@ JsoncompatMissingType()
     assert!(
         invalid_stdout.contains("warehouse") && invalid_stdout.contains("str"),
         "pyright failure did not report the nested warehouse type mismatch:\n{invalid_stdout}",
-    );
-    assert!(
-        invalid_stdout.contains("Expected 1 more positional argument"),
-        "pyright failure did not reject construction of the missing singleton type:\n{invalid_stdout}",
     );
     assert!(
         invalid_stdout.contains("JsoncompatMissingType")

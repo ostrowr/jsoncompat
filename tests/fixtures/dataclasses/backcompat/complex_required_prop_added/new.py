@@ -6,6 +6,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaConfig(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -22,6 +23,7 @@ class GeneratedSchemaConfig(dc.DataclassModel):
 }"""
     enable: (typing.Literal[False] | typing.Literal[True]) = dc.field("enable")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

@@ -1,9 +1,9 @@
-from typing import Final, Never, final
+from typing import Final, Self, final
 
 
 @final
 class JsoncompatMissingType:
-    def __new__(cls, _unconstructible: Never, /) -> Never: ...
+    def __new__(cls) -> Self: ...
     def __repr__(self) -> str: ...
 
 

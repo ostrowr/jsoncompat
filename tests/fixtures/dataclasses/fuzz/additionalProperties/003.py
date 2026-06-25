@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[(typing.Literal[False] | typing.Literal[True])]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -23,11 +24,13 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[(typing.Literal[False] 
 }"""
     __jsoncompat_extra__: collections.abc.Mapping[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

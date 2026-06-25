@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Customer(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -76,6 +77,7 @@ class Customer(dc.DataclassModel):
     email: str = dc.field("email")
     name: str = dc.field("name")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OrderItem(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -151,6 +153,7 @@ class OrderItem(dc.DataclassModel):
     sku: str = dc.field("sku")
     unitPriceCents: int = dc.field("unitPriceCents")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Order(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

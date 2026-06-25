@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -30,6 +31,7 @@ class GeneratedSchemaItem(dc.DataclassModel):
     host: str = dc.field("host")
     port: int = dc.field("port")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

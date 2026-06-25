@@ -260,10 +260,14 @@ struct JsoncompatMissingPy;
 
 static JSONCOMPAT_MISSING_SINGLETON: PyOnceLock<Py<JsoncompatMissingPy>> = PyOnceLock::new();
 
-fn jsoncompat_missing(py: Python<'_>) -> PyResult<Py<PyAny>> {
+fn typed_jsoncompat_missing(py: Python<'_>) -> PyResult<Py<JsoncompatMissingPy>> {
     JSONCOMPAT_MISSING_SINGLETON
         .get_or_try_init(py, || Py::new(py, JsoncompatMissingPy))
-        .map(|missing| missing.clone_ref(py).into_any())
+        .map(|missing| missing.clone_ref(py))
+}
+
+fn jsoncompat_missing(py: Python<'_>) -> PyResult<Py<PyAny>> {
+    typed_jsoncompat_missing(py).map(Py::into_any)
 }
 
 #[pyclass(name = "_ModelPlan", module = "jsoncompat._native", unsendable)]
@@ -291,7 +295,24 @@ struct GeneratorPy {
 
 #[pymethods]
 impl JsoncompatMissingPy {
+    #[new]
+    fn new(py: Python<'_>) -> PyResult<Py<Self>> {
+        typed_jsoncompat_missing(py)
+    }
+
     fn __repr__(&self) -> &'static str {
+        "JSONCOMPAT_MISSING"
+    }
+
+    fn __copy__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        jsoncompat_missing(py)
+    }
+
+    fn __deepcopy__(&self, py: Python<'_>, _memo: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        jsoncompat_missing(py)
+    }
+
+    fn __reduce__(&self) -> &'static str {
         "JSONCOMPAT_MISSING"
     }
 }

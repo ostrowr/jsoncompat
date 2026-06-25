@@ -247,26 +247,13 @@ for forbidden in (
     else:
         raise AssertionError("reader/writer direction guard did not fire")
 
-class CustomProfile(Profile):
-    pass
-
-for unbound in (
-    lambda: CustomProfile(
-        name="Ada",
-        tags=[],
-        attributes=ProfileAttributes.from_value({}),
-        __jsoncompat_extra__={},
-    ),
-    lambda: CustomProfile.deserialize(
-        '{"name":"Ada","tags":[],"attributes":{}}'
-    ),
-):
-    try:
-        unbound()
-    except TypeError as error:
-        assert "must be an unmodified generated frozen dataclass" in str(error)
-    else:
-        raise AssertionError("an unbound custom subclass used generated runtime state")
+try:
+    class CustomProfile(Profile):
+        pass
+except TypeError as error:
+    assert "generated model Profile cannot be subclassed" in str(error)
+else:
+    raise AssertionError("a generated model subclass was representable")
 "###,
     );
     command
@@ -330,18 +317,13 @@ for _ in range(2):
 module.SlotSafety.value = original_value_descriptor
 module.SlotSafety.from_value({"value": "safe"})
 
-class SlotSafetySubclass(module.SlotSafety):
-    __slots__ = ()
-
-
-runtime = module.SlotSafety.__dict__["__jsoncompat_runtime__"]
-subclass_instance = object.__new__(SlotSafetySubclass)
 try:
-    runtime.to_value(subclass_instance, skip_validation=True)
+    class SlotSafetySubclass(module.SlotSafety):
+        __slots__ = ()
 except TypeError as error:
-    assert "expected SlotSafety" in str(error), str(error)
+    assert "generated model SlotSafety cannot be subclassed" in str(error), str(error)
 else:
-    raise AssertionError("generic attribute path accepted a foreign owner type")
+    raise AssertionError("a generated model subclass was representable")
 "###,
     );
     command.arg(module_path);
@@ -436,10 +418,9 @@ class Model:
 
 
 assert repr(JSONCOMPAT_MISSING) == "JSONCOMPAT_MISSING"
-for construct_missing in (
-    lambda: JsoncompatMissingType(),
-    lambda: object.__new__(JsoncompatMissingType),
-):
+assert JsoncompatMissingType() is JSONCOMPAT_MISSING
+assert JsoncompatMissingType.__new__(JsoncompatMissingType) is JSONCOMPAT_MISSING
+for construct_missing in (lambda: object.__new__(JsoncompatMissingType),):
     try:
         construct_missing()
     except TypeError:
@@ -464,6 +445,18 @@ cases = (
     ("empty node", [()]),
     ("scalar trailing item", [("str", "trailing")]),
     ("short list", [("list",)]),
+    ("external list item", [("list", 1)]),
+    ("external dict value", [("dict", 1)]),
+    ("external union branch", [("union", (1,), None, None)]),
+    ("external root value", [("root", Model, 1)]),
+    (
+        "external model field value",
+        [("model", Model, (("value", "value", 1, False),), None)],
+    ),
+    (
+        "external additional-property value",
+        [("model", Model, (), 1)],
+    ),
     ("long root", [("str",), ("root", Model, 0, "trailing")]),
     ("empty literal", [("literal", ())]),
     ("unsupported literal object", [("literal", (object(),))]),
@@ -629,13 +622,21 @@ fn omittable_constructor_uses_only_the_native_missing_singleton() {
     command.arg("-B").arg("-c").arg(
         r###"
 import dataclasses
+import copy
+import importlib
 import importlib.util
+import pickle
 import sys
 
+import jsoncompat
 from jsoncompat.codegen import dataclasses as dc
 
 module_path = sys.argv[1]
 canonical_missing = dc.JSONCOMPAT_MISSING
+assert copy.copy(canonical_missing) is canonical_missing
+assert copy.deepcopy(canonical_missing) is canonical_missing
+assert pickle.loads(pickle.dumps(canonical_missing)) is canonical_missing
+assert importlib.reload(jsoncompat).JSONCOMPAT_MISSING is canonical_missing
 dc.JSONCOMPAT_MISSING = False
 spec = importlib.util.spec_from_file_location("native_missing_models", module_path)
 module = importlib.util.module_from_spec(spec)
@@ -656,6 +657,9 @@ for skip_validation in (False, True):
     present_null = model_type(value=None, skip_validation=skip_validation)
     assert implicit.value is canonical_missing
     assert explicit.value is canonical_missing
+    assert copy.deepcopy(implicit).value is canonical_missing
+    assert pickle.loads(pickle.dumps(implicit)).value is canonical_missing
+    assert dataclasses.asdict(implicit)["value"] is canonical_missing
     assert implicit.to_value(skip_validation=skip_validation) == {}
     assert explicit.to_value(skip_validation=skip_validation) == {}
     assert present_false.to_value(skip_validation=skip_validation) == {"value": False}
@@ -692,6 +696,81 @@ assert model_type(value=dc.JSONCOMPAT_MISSING).to_value() == {"value": False}
     assert!(
         output.status.success(),
         "native missing singleton constructor test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_unavailable_missing_singleton_is_unforgeable_and_reload_stable() {
+    let package_root = write_isolated_jsoncompat_package("fallback_missing_singleton");
+    let expected_init = package_root.join("jsoncompat").join("__init__.py");
+
+    let mut command = python_env::python_command();
+    command
+        .env_remove("JSONCOMPAT_NATIVE_PROFILE")
+        .env("PYTHONPATH", &package_root)
+        .current_dir(&package_root)
+        .arg("-B")
+        .arg("-c")
+        .arg(
+            r###"
+import copy
+import importlib
+import pathlib
+import pickle
+import sys
+
+import jsoncompat
+
+
+assert pathlib.Path(jsoncompat.__file__).resolve() == pathlib.Path(sys.argv[1]).resolve()
+assert jsoncompat._native_symbols is None
+canonical = jsoncompat.JSONCOMPAT_MISSING
+missing_type = jsoncompat.JsoncompatMissingType
+assert type(canonical) is missing_type
+assert canonical is Ellipsis
+assert missing_type is type(Ellipsis)
+
+for label, construct in (
+    ("object.__new__", lambda: object.__new__(missing_type)),
+):
+    try:
+        construct()
+    except TypeError:
+        pass
+    else:
+        raise AssertionError(f"constructed a second fallback missing sentinel via {label}")
+
+try:
+    class ForgedMissing(missing_type):
+        pass
+except TypeError:
+    pass
+else:
+    raise AssertionError("subclassed the fallback missing sentinel type")
+
+assert missing_type() is canonical
+assert missing_type.__new__(missing_type) is canonical
+assert copy.copy(canonical) is canonical
+assert copy.deepcopy(canonical) is canonical
+assert pickle.loads(pickle.dumps(canonical)) is canonical
+
+reloaded = importlib.reload(jsoncompat)
+assert reloaded._native_symbols is None
+assert reloaded.JsoncompatMissingType is missing_type
+assert reloaded.JSONCOMPAT_MISSING is canonical
+assert copy.copy(canonical) is canonical
+assert copy.deepcopy(canonical) is canonical
+assert pickle.loads(pickle.dumps(canonical)) is canonical
+"###,
+        )
+        .arg(expected_init);
+    let output = command
+        .output()
+        .expect("run isolated native-unavailable singleton test");
+    assert!(
+        output.status.success(),
+        "isolated native-unavailable singleton test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -1997,6 +2076,12 @@ fn cyclic_values_reject_across_the_complete_graph_on_the_minimum_python_thread_s
         &ordinary_mapping_source,
     );
 
+    let any_source = generate_dataclass_models(&json!({
+        "title": "AnyRoot",
+    }))
+    .expect("generate any-root cycle-test dataclass");
+    let any_module_path = write_temp_module("cyclic_any_small_stack", &any_source);
+
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
@@ -2005,6 +2090,8 @@ import sys
 import threading
 import traceback
 from collections.abc import Sequence
+
+from jsoncompat.codegen.dataclasses import SerializationFormat
 
 
 try:
@@ -2051,11 +2138,13 @@ def exercise_cycles():
         "cyclic_ordinary_mapping_models",
         sys.argv[4],
     )
+    any_module = import_module("cyclic_any_models", sys.argv[5])
 
     recursive_model = recursive_module.JSONCOMPAT_MODEL
     list_model = list_module.JSONCOMPAT_MODEL
     mapping_model = mapping_module.JSONCOMPAT_MODEL
     ordinary_mapping_model = ordinary_mapping_module.JSONCOMPAT_MODEL
+    any_model = any_module.JSONCOMPAT_MODEL
 
     # Module setup and runtime-plan compilation must not be covered by the
     # expected-error assertions below.
@@ -2117,6 +2206,31 @@ def exercise_cycles():
     )
     assert shared.to_value(skip_validation=True) == shared_mapping
 
+    output_cycle = []
+    output_cycle.append(output_cycle)
+    cyclic_output = any_model.from_value(None, skip_validation=True)
+    object.__setattr__(cyclic_output, "root", output_cycle)
+    for output in (
+        lambda: cyclic_output.to_value(skip_validation=True),
+        lambda: cyclic_output.to_value(),
+        lambda: cyclic_output.serialize(),
+        lambda: cyclic_output.serialize(format=SerializationFormat.YAML),
+        lambda: cyclic_output.serialize(format=SerializationFormat.MSGPACK),
+    ):
+        expect_cycle(output)
+
+    shared_output = []
+    acyclic_output = any_model.from_value(None, skip_validation=True)
+    object.__setattr__(
+        acyclic_output,
+        "root",
+        {"left": shared_output, "right": shared_output},
+    )
+    assert acyclic_output.to_value(skip_validation=True) == {
+        "left": [],
+        "right": [],
+    }
+
 
 thread_errors = []
 original_excepthook = threading.excepthook
@@ -2150,7 +2264,8 @@ assert thread_errors == [], thread_errors
         .arg(recursive_module_path)
         .arg(list_module_path)
         .arg(mapping_module_path)
-        .arg(ordinary_mapping_module_path);
+        .arg(ordinary_mapping_module_path)
+        .arg(any_module_path);
     let output = command
         .output()
         .expect("run complete-graph cycle small-stack subprocess test");
@@ -2230,16 +2345,6 @@ def import_weakrefs(index):
     for model_type in classes:
         runtime = model_type.__dict__["__jsoncompat_runtime__"]
         assert gc.is_tracked(runtime)
-        runtime_referents = gc.get_referents(runtime)
-        assert not set(classes).intersection(runtime_referents)
-        plan_referents = tuple(
-            referent
-            for referent in runtime_referents
-            if type(referent).__module__ == "jsoncompat._native"
-            and type(referent).__name__ == "_ModelPlan"
-        )
-        assert len(plan_referents) == 1
-        assert set(classes).issubset(gc.get_referents(plan_referents[0]))
     module_ref = weakref.ref(module)
     class_refs = tuple(weakref.ref(model_type) for model_type in classes)
     del sys.modules[module_name]
@@ -3004,6 +3109,110 @@ assert "generator_for" in str(caught[0].message)
 }
 
 #[test]
+fn reusable_python_runtimes_are_thread_local_and_safe_across_threads() {
+    let source = generate_dataclass_models(&json!({
+        "title": "ThreadedProfile",
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+        "additionalProperties": false,
+    }))
+    .expect("generate threaded runtime dataclass");
+    let module_path = write_temp_module("thread_local_runtime", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+import threading
+
+import jsoncompat
+
+
+def import_models(name):
+    spec = importlib.util.spec_from_file_location(name, sys.argv[1])
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+schema = '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}'
+validator = jsoncompat.validator_for(schema)
+generator = jsoncompat.generator_for(schema)
+models = import_models("threaded_models_first_use")
+model_type = models.JSONCOMPAT_MODEL
+
+# Establish native state on thread A, then reuse every public object on B.
+main_instance = model_type.from_value({"name": "main"})
+assert validator.is_valid_json('{"name":"main"}')
+assert validator.is_valid_value({"name": "main"})
+assert validator.parse_json('{"name":"main"}')[0]
+assert validator.serialize_json({"name": "main"}) == '{"name":"main"}'
+assert validator.is_valid_json(generator.generate_value(2))
+
+errors = []
+
+
+def cross_thread_use():
+    try:
+        assert main_instance.to_value() == {"name": "main"}
+        value = model_type.deserialize('{"name":"worker"}')
+        assert value.serialize() == '{"name":"worker"}'
+        assert validator.is_valid_value({"name": "worker"})
+        assert validator.is_valid_json(generator.generate_value(2))
+    except BaseException as error:
+        errors.append(error)
+
+
+thread = threading.Thread(target=cross_thread_use)
+thread.start()
+thread.join(10)
+assert not thread.is_alive()
+assert errors == [], errors
+
+# A fresh generated module has no bound runtime. Several threads may race its
+# first use; each must receive native state owned by that thread.
+concurrent_models = import_models("threaded_models_concurrent_first_use")
+concurrent_type = concurrent_models.JSONCOMPAT_MODEL
+barrier = threading.Barrier(4)
+
+
+def concurrent_first_use(index):
+    try:
+        barrier.wait()
+        value = concurrent_type.from_value({"name": f"worker-{index}"})
+        assert value.to_value() == {"name": f"worker-{index}"}
+        assert validator.is_valid_json(value.serialize())
+        assert validator.is_valid_json(generator.generate_value(2))
+    except BaseException as error:
+        errors.append(error)
+
+
+threads = [threading.Thread(target=concurrent_first_use, args=(index,)) for index in range(4)]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join(10)
+assert all(not thread.is_alive() for thread in threads)
+assert errors == [], errors
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run thread-local reusable runtime test");
+    assert!(
+        output.status.success(),
+        "thread-local reusable runtime test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_allow_the_former_cache_name_as_a_json_property() {
     let source = generate_dataclass_models(&json!({
         "title": "cache collision",
@@ -3258,4 +3467,27 @@ fn write_temp_module(test_name: &str, source: &str) -> PathBuf {
     let module_path = dir.join("generated_models.py");
     fs::write(&module_path, source).expect("write temporary test module");
     module_path
+}
+
+fn write_isolated_jsoncompat_package(test_name: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should be after epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "jsoncompat-isolated-package-{test_name}-{}-{unique}",
+        std::process::id(),
+    ));
+    let package = root.join("jsoncompat");
+    fs::create_dir_all(&package).expect("create isolated jsoncompat package directory");
+    let source = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("pybindings")
+            .join("jsoncompat")
+            .join("__init__.py"),
+    )
+    .expect("read jsoncompat package initializer");
+    fs::write(package.join("__init__.py"), source)
+        .expect("write isolated jsoncompat package initializer");
+    root
 }

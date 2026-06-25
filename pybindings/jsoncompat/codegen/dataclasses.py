@@ -138,6 +138,30 @@ class FrozenDict[K, V](Mapping[K, V]):
 
 
 class _DataclassModelMeta(type):
+    def __new__(
+        mcls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> _DataclassModelMeta:
+        inherited_generated = next(
+            (
+                base
+                for base in bases
+                if JSONCOMPAT_SCHEMA_FIELD in getattr(base, "__dict__", {})
+            ),
+            None,
+        )
+        if inherited_generated is not None:
+            raise TypeError(
+                f"generated model {inherited_generated.__name__} cannot be subclassed"
+            )
+        return cast(
+            _DataclassModelMeta,
+            super().__new__(mcls, name, bases, namespace, **kwargs),
+        )
+
     @property
     def __signature__(cls) -> inspect.Signature:
         signature = inspect.signature(cls.__init__)

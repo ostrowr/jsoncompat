@@ -846,6 +846,7 @@ fn render_dataclass_module(
 }
 
 fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
+    writeln!(output, "@typing.final").expect("writing to String cannot fail");
     writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
         .expect("writing to String cannot fail");
     writeln!(
@@ -939,6 +940,7 @@ fn render_writer_class(
     };
     let payload_type = resolve_schema_ref_name(writer, &payload_ref, "#")?;
 
+    writeln!(output, "@typing.final").expect("writing to String cannot fail");
     writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
         .expect("writing to String cannot fail");
     writeln!(
@@ -1004,6 +1006,7 @@ fn render_reader_variants(
         };
         let payload_type = resolve_schema_ref_name(reader, &payload_ref, &pointer)?;
 
+        writeln!(output, "@typing.final").expect("writing to String cannot fail");
         writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
             .expect("writing to String cannot fail");
         writeln!(
@@ -1124,6 +1127,7 @@ fn render_reader_root_class(
         )?);
     }
 
+    writeln!(output, "@typing.final").expect("writing to String cannot fail");
     writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
         .expect("writing to String cannot fail");
     writeln!(

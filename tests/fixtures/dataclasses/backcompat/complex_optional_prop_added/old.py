@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaNested(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -28,6 +29,7 @@ class GeneratedSchemaNested(dc.DataclassModel):
     count: dc.Omittable[int] = dc.field("count", omittable=True)
     flag: (typing.Literal[False] | typing.Literal[True]) = dc.field("flag")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

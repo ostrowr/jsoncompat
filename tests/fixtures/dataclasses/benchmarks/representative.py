@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaCustomer(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -94,6 +95,7 @@ class GeneratedSchemaCustomer(dc.DataclassModel):
     segment: (typing.Literal["enterprise"] | typing.Literal["self_serve"] | typing.Literal["startup"]) = dc.field("segment")
     trialDaysRemaining: dc.Omittable[int] = dc.field("trialDaysRemaining", omittable=True)
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -177,6 +179,7 @@ class GeneratedSchemaItem(dc.DataclassModel):
     sku: (typing.Literal["audit-log"] | typing.Literal["starter-seat"] | typing.Literal["team-seat"]) = dc.field("sku")
     unitPrice: int = dc.field("unitPrice")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[str]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

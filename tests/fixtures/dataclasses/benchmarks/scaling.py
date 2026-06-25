@@ -7,6 +7,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaDirectoryMetadata(dc.DataclassAdditionalModel[str]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -109,6 +110,7 @@ class GeneratedSchemaDirectoryMetadata(dc.DataclassAdditionalModel[str]):
 }"""
     __jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaDirectory(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -247,6 +249,7 @@ class GeneratedSchemaDirectory(dc.DataclassModel):
     name: str = dc.field("name")
     owner: (str | None) = dc.field("owner")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaFileMetadata(dc.DataclassAdditionalModel[str]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -349,6 +352,7 @@ class GeneratedSchemaFileMetadata(dc.DataclassAdditionalModel[str]):
 }"""
     __jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaFile(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -492,6 +496,7 @@ class GeneratedSchemaFile(dc.DataclassModel):
     name: str = dc.field("name")
     size: int = dc.field("size")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaNode(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -598,6 +603,7 @@ class GeneratedSchemaNode(dc.DataclassRootModel):
 }"""
     root: (GeneratedSchemaDirectory | GeneratedSchemaFile) = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
