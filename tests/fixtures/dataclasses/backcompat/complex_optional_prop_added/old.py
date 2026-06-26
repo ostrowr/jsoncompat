@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaNested(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -27,6 +29,7 @@ class GeneratedSchemaNested(dc.DataclassModel):
     count: dc.Omittable[int] = dc.field("count", omittable=True)
     flag: (typing.Literal[False] | typing.Literal[True]) = dc.field("flag")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -71,6 +74,6 @@ class GeneratedSchema(dc.DataclassModel):
     id: str = dc.field("id")
     name: str = dc.field("name")
     nested: dc.Omittable[GeneratedSchemaNested] = dc.field("nested", omittable=True)
-    tags: dc.Omittable[list[str]] = dc.field("tags", omittable=True)
+    tags: dc.Omittable[collections.abc.Sequence[str]] = dc.field("tags", omittable=True)
 
 JSONCOMPAT_MODEL = GeneratedSchema

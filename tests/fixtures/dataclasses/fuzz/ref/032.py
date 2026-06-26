@@ -6,6 +6,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaFoo(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -18,6 +19,7 @@ class GeneratedSchemaFoo(dc.DataclassRootModel):
 }"""
     root: float = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

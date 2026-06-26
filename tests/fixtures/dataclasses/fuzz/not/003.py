@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2Foo(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -13,6 +15,7 @@ class GeneratedSchemaBranch2Foo(dc.DataclassRootModel):
 }"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -26,13 +29,15 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     foo: dc.Omittable[GeneratedSchemaBranch2Foo] = dc.field("foo", omittable=True)
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -43,6 +48,6 @@ class GeneratedSchema(dc.DataclassRootModel):
     }
   }
 }"""
-    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) = dc.root_field()
+    root: ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

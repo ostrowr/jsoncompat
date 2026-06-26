@@ -147,6 +147,20 @@ impl SchemaDocument {
         Ok(self.raw_validator()?.is_valid(value))
     }
 
+    /// Validate a borrowed instance representation against the original schema.
+    pub fn is_valid_instance(&self, value: jsonschema::InstanceRef<'_>) -> Result<bool> {
+        Ok(self.raw_validator()?.is_valid_instance(value))
+    }
+
+    /// Validate a borrowed representation whose surrounding pipeline also
+    /// performs a complete JSON-shape check.
+    pub fn is_valid_instance_assuming_json(
+        &self,
+        value: jsonschema::InstanceRef<'_>,
+    ) -> Result<bool> {
+        Ok(self.raw_validator()?.is_valid_instance_assuming_json(value))
+    }
+
     #[cfg(test)]
     pub(crate) fn is_valid_canonicalized(&self, value: &Value) -> Result<bool> {
         let canonical = self.canonical_schema_json()?;

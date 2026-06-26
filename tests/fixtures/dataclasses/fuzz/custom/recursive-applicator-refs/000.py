@@ -6,6 +6,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTreeBranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -53,6 +54,7 @@ class GeneratedSchemaTreeBranch1(dc.DataclassModel):
     left: GeneratedSchemaTree = dc.field("left")
     right: GeneratedSchemaTree = dc.field("right")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTree(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -105,6 +107,7 @@ class GeneratedSchemaTree(dc.DataclassRootModel):
 }"""
     root: (GeneratedSchemaTreeBranch1 | None) = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

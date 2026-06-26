@@ -1,0 +1,46 @@
+{
+  "fuzz/allOf/004": {
+    "reason": "allOf contains a false branch",
+    "schema_digest": "abf980d903d718489f937bb677cc6e1bc422c0c870596e4bfb132c0111c2dac8"
+  },
+  "fuzz/allOf/005": {
+    "reason": "allOf contains only false branches",
+    "schema_digest": "86ab6028b5f8e6a2024d3a1ab4ff7a84fcdbf96276e7ccc6ed6217a6dab8c7f0"
+  },
+  "fuzz/anyOf/004": {
+    "reason": "anyOf contains only false branches",
+    "schema_digest": "5cef4d5ec7f4f3ac2b29e4fc537fa43cf75e6f5283309d596d6627de82b0b079"
+  },
+  "fuzz/boolean_schema/001": {
+    "reason": "the schema is false",
+    "schema_digest": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa"
+  },
+  "fuzz/not/004": {
+    "reason": "not rejects the unconstrained schema",
+    "schema_digest": "a05696b2b60418a99ca9c44840a129c8a63da9c97e6e29ddde9222dceb218eae"
+  },
+  "fuzz/not/005": {
+    "reason": "not rejects the true schema",
+    "schema_digest": "09bce15d5a2c3fc171aec3ea02caf4903960674c1a6f4314c244f0b3ace4de08"
+  },
+  "fuzz/oneOf/002": {
+    "reason": "every branch is true, so every value matches more than one branch",
+    "schema_digest": "0eb3484a45d92b86c7eb551f6ae41b3f6cc88fbb998192f76a6b350f7f2e830a"
+  },
+  "fuzz/oneOf/004": {
+    "reason": "more than one branch is true, so every value matches more than one branch",
+    "schema_digest": "f60c7f62b2ab06435c217eece45587ce774d4f8ee71d9d9d468908434a14f4d4"
+  },
+  "fuzz/oneOf/005": {
+    "reason": "every branch is false",
+    "schema_digest": "cbc1b0724669c923998a2c7c4276dd36ac3af46f3e26f9df4e711a7b004af378"
+  },
+  "fuzz/ref/010": {
+    "reason": "$ref resolves to the false schema",
+    "schema_digest": "7bb9ce1aca8cc17196153b79876055273b30da74d8948eb0bfd394c47e519c8e"
+  },
+  "fuzz/unevaluatedProperties/012": {
+    "reason": "the double negation requires bar while unevaluatedProperties rejects bar",
+    "schema_digest": "2bcbcf6a737fe632c2ab03c32c0699fff408978cdd0a6849d905059e57e52f6b"
+  }
+}

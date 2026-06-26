@@ -1,6 +1,6 @@
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
-use json_schema_ast::{SchemaBuildError, SchemaDocument};
-use serde_json::{Map, Value};
+use json_schema_ast::{SchemaBuildError, SchemaDocument, SchemaNodeKind};
+use serde_json::{Map, Value, json};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
@@ -15,6 +15,7 @@ const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
 const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
 const OMITTABLE_TYPE_NAME: &str = "Omittable";
 const DATACLASSES_RUNTIME_MODULE: &str = "dc";
+const CODEGEN_ANY_KEY: &str = "__jsoncompat_codegen_any";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataclassError {
@@ -312,11 +313,31 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
     ) -> Result<String, DataclassError> {
+        if obj.get(CODEGEN_ANY_KEY).and_then(Value::as_bool) == Some(true) {
+            return Ok("dc.JsonValue".to_owned());
+        }
+        if self.annotation_requires_full_schema_context(pointer, obj) {
+            // A branch model validates its projected subschema independently.
+            // That is unsound when `unevaluatedProperties` depends on
+            // annotations produced by a sibling `if`: the containing schema
+            // can accept a property which the projected object branch rejects.
+            // Keep the value generic and let the containing model's validator
+            // enforce the complete schema instead.
+            return Ok("dc.JsonValue".to_owned());
+        }
         if let Some(ref_value) = obj.get("$ref") {
             let ref_value = ref_value.as_str().ok_or_else(|| {
                 invalid_schema(join_pointer(pointer, "$ref"), "$ref must be a string")
             })?;
             return self.ref_annotation(ref_value, pointer);
+        }
+
+        // Adjacent applicators can narrow an explicit scalar type, but they
+        // cannot make values of another JSON type valid. Keep that hard type
+        // boundary in the generated API instead of expanding constraint-only
+        // branches into a union of every JSON value kind.
+        if let Some(type_annotation) = parse_explicit_scalar_type_annotation(obj, pointer)? {
+            return Ok(type_annotation);
         }
 
         if obj.contains_key("oneOf") {
@@ -343,7 +364,10 @@ impl<'a> DataclassModuleBuilder<'a> {
         {
             let item_annotation =
                 self.inline_annotation(items, &join_pointer(pointer, "items"), scope_name, "Item")?;
-            return Ok(format!("list[{item_annotation}]"));
+            return Ok(format!(
+                "{}[{item_annotation}]",
+                collections_abc_symbol("Sequence")
+            ));
         }
 
         if let Some(type_annotation) = parse_type_annotation(obj, pointer)? {
@@ -351,6 +375,123 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         Ok(typing_symbol("Any"))
+    }
+
+    fn annotation_requires_full_schema_context(
+        &self,
+        pointer: &str,
+        codegen_schema: &Map<String, Value>,
+    ) -> bool {
+        if !codegen_schema.contains_key("oneOf") && !codegen_schema.contains_key("anyOf") {
+            return false;
+        }
+        let Some(source_schema) = resolve_json_pointer(self.validation_root, pointer) else {
+            return false;
+        };
+        self.schema_has_context_dependent_unevaluated_properties(
+            source_schema,
+            false,
+            &mut BTreeSet::new(),
+        )
+    }
+
+    fn schema_has_context_dependent_unevaluated_properties(
+        &self,
+        schema: &Value,
+        inherited_unevaluated_properties: bool,
+        visited_refs: &mut BTreeSet<(String, bool)>,
+    ) -> bool {
+        let Value::Object(schema) = schema else {
+            return false;
+        };
+        let has_restrictive_unevaluated_properties = inherited_unevaluated_properties
+            || schema
+                .get("unevaluatedProperties")
+                .is_some_and(|unevaluated| unevaluated != &Value::Bool(true));
+
+        // `if` contributes annotations even without `then` or `else`, and
+        // `anyOf` combines annotations from every successful branch. A
+        // projected canonical branch cannot validate either case in isolation
+        // when an enclosing `unevaluatedProperties` consumes those annotations.
+        if has_restrictive_unevaluated_properties
+            && (schema.contains_key("if") || schema.contains_key("anyOf"))
+        {
+            return true;
+        }
+
+        for keyword in ["$ref", "$dynamicRef"] {
+            let Some(ref_value) = schema.get(keyword).and_then(Value::as_str) else {
+                continue;
+            };
+            let visit = (ref_value.to_owned(), has_restrictive_unevaluated_properties);
+            if !visited_refs.insert(visit.clone()) {
+                continue;
+            }
+            let requires_context = resolve_json_pointer(self.validation_root, ref_value)
+                .is_some_and(|target| {
+                    self.schema_has_context_dependent_unevaluated_properties(
+                        target,
+                        has_restrictive_unevaluated_properties,
+                        visited_refs,
+                    )
+                });
+            visited_refs.remove(&visit);
+            if requires_context {
+                return true;
+            }
+        }
+
+        for keyword in ["allOf", "anyOf", "oneOf"] {
+            if schema
+                .get(keyword)
+                .and_then(Value::as_array)
+                .is_some_and(|subschemas| {
+                    subschemas.iter().any(|subschema| {
+                        self.schema_has_context_dependent_unevaluated_properties(
+                            subschema,
+                            has_restrictive_unevaluated_properties,
+                            visited_refs,
+                        )
+                    })
+                })
+            {
+                return true;
+            }
+        }
+
+        if schema
+            .get("dependentSchemas")
+            .and_then(Value::as_object)
+            .is_some_and(|dependent_schemas| {
+                dependent_schemas.values().any(|subschema| {
+                    self.schema_has_context_dependent_unevaluated_properties(
+                        subschema,
+                        has_restrictive_unevaluated_properties,
+                        visited_refs,
+                    )
+                })
+            })
+        {
+            return true;
+        }
+
+        // An `if` without an enclosing unevaluated-properties consumer may
+        // still contain a complete context-dependent schema of its own.
+        if schema.contains_key("if") {
+            for keyword in ["if", "then", "else"] {
+                if schema.get(keyword).is_some_and(|subschema| {
+                    self.schema_has_context_dependent_unevaluated_properties(
+                        subschema,
+                        false,
+                        visited_refs,
+                    )
+                }) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     fn ref_annotation(&mut self, ref_value: &str, pointer: &str) -> Result<String, DataclassError> {
@@ -414,12 +555,20 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         if has_unconstrained_prefix_item {
-            return Ok(format!("list[{}]", typing_symbol("Any")));
+            return Ok(format!(
+                "{}[{}]",
+                collections_abc_symbol("Sequence"),
+                typing_symbol("Any")
+            ));
         }
 
         match obj.get("items") {
             None | Some(Value::Bool(true)) => {
-                return Ok(format!("list[{}]", typing_symbol("Any")));
+                return Ok(format!(
+                    "{}[{}]",
+                    collections_abc_symbol("Sequence"),
+                    typing_symbol("Any")
+                ));
             }
             Some(Value::Bool(false)) => {}
             Some(items) => item_annotations.push(self.inline_annotation(
@@ -431,10 +580,18 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         if item_annotations.is_empty() {
-            return Ok(format!("list[{}]", typing_symbol("Any")));
+            return Ok(format!(
+                "{}[{}]",
+                collections_abc_symbol("Sequence"),
+                typing_symbol("Any")
+            ));
         }
 
-        Ok(format!("list[{}]", union_annotation(&item_annotations)))
+        Ok(format!(
+            "{}[{}]",
+            collections_abc_symbol("Sequence"),
+            union_annotation(&item_annotations)
+        ))
     }
 
     fn inline_annotation(
@@ -528,9 +685,80 @@ pub fn generate_dataclass_models(schema: &Value) -> Result<String, DataclassErro
 pub fn generate_dataclass_models_from_document(
     document: &SchemaDocument,
 ) -> Result<String, DataclassError> {
-    render_dataclass_module(
-        document.canonical_schema_json()?,
-        document.source_schema_json(),
+    let canonical = document.canonical_schema_json()?;
+    if canonical_schema_is_unconstrained(canonical)
+        || document.root().is_ok_and(|root| {
+            matches!(
+                root.kind(),
+                SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true)
+            )
+        })
+    {
+        let codegen_schema = unconstrained_codegen_schema(canonical);
+        return render_dataclass_module(&codegen_schema, document.source_schema_json());
+    }
+    render_dataclass_module(canonical, document.source_schema_json())
+}
+
+fn unconstrained_codegen_schema(canonical: &Value) -> Value {
+    let Value::Object(object) = canonical else {
+        return Value::Bool(true);
+    };
+    let metadata = object
+        .iter()
+        .filter(|(key, _)| is_codegen_metadata_key(key))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Map<_, _>>();
+    if metadata.is_empty() {
+        Value::Bool(true)
+    } else {
+        let mut metadata = metadata;
+        metadata.insert(CODEGEN_ANY_KEY.to_owned(), Value::Bool(true));
+        Value::Object(metadata)
+    }
+}
+
+fn canonical_schema_is_unconstrained(canonical: &Value) -> bool {
+    if canonical == &Value::Bool(true) {
+        return true;
+    }
+    let Some(object) = canonical.as_object() else {
+        return false;
+    };
+    if !object.iter().all(|(key, value)| {
+        key == "anyOf"
+            || is_codegen_metadata_key(key)
+            || (key == "dependencies"
+                && value.as_object().is_some_and(|dependencies| {
+                    dependencies
+                        .values()
+                        .all(|dependency| dependency.as_array().is_some_and(Vec::is_empty))
+                }))
+    }) {
+        return false;
+    }
+    object.get("anyOf")
+        == Some(&json!([
+            {"enum": [null]},
+            {"enum": [false, true]},
+            {"minProperties": 0, "properties": {}, "type": "object"},
+            {"items": true, "minItems": 0, "type": "array"},
+            {"minLength": 0, "type": "string"},
+            {"type": "number"}
+        ]))
+}
+
+fn is_codegen_metadata_key(key: &str) -> bool {
+    matches!(
+        key,
+        "$schema"
+            | "$id"
+            | "$anchor"
+            | "$dynamicAnchor"
+            | "$defs"
+            | "definitions"
+            | "title"
+            | JSONCOMPAT_METADATA_KEY
     )
 }
 
@@ -549,9 +777,14 @@ fn render_dataclass_module(
     let root_metadata = parse_optional_metadata(schema, "#")?;
     let mut builder = DataclassModuleBuilder::new(named_refs, schema, validation_schema);
     match &root_metadata {
-        Some(JsoncompatMetadata::Writer { .. }) | Some(JsoncompatMetadata::Reader { .. }) => {
+        Some(JsoncompatMetadata::Writer { .. }) => {
             emit_root_defs(&mut builder, schema)?;
             builder.reserve_class_name(&root_name, "#")?;
+        }
+        Some(JsoncompatMetadata::Reader { .. }) => {
+            emit_root_defs(&mut builder, schema)?;
+            builder.reserve_class_name(&root_name, "#")?;
+            reserve_reader_variant_class_names(&mut builder, schema)?;
         }
         Some(JsoncompatMetadata::ReaderVariant { .. }) => {
             return Err(invalid_schema(
@@ -565,10 +798,6 @@ fn render_dataclass_module(
     }
 
     let mut output = String::new();
-    output.push_str("from __future__ import annotations\n\n");
-    output.push_str("from dataclasses import dataclass\n");
-    output.push_str("import typing\n\n");
-    output.push_str("from jsoncompat.codegen import dataclasses as dc\n\n\n");
 
     for class_spec in &builder.classes {
         render_class_spec(&mut output, class_spec);
@@ -606,10 +835,18 @@ fn render_dataclass_module(
 
     writeln!(&mut output, "JSONCOMPAT_MODEL = {root_name}").expect("writing to String cannot fail");
 
-    Ok(output)
+    let collections_import = if output.contains("collections.abc.") {
+        "import collections.abc\n"
+    } else {
+        ""
+    };
+    Ok(format!(
+        "from __future__ import annotations\n\n{collections_import}from dataclasses import dataclass\nimport typing\n\nfrom jsoncompat.codegen import dataclasses as dc\n\n\n{output}"
+    ))
 }
 
 fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
+    writeln!(output, "@typing.final").expect("writing to String cannot fail");
     writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
         .expect("writing to String cannot fail");
     writeln!(
@@ -666,7 +903,7 @@ fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
             if let Some(extra_annotation) = extra_annotation {
                 writeln!(
                     output,
-                    "    {EXTRA_FIELD_NAME}: dict[str, {extra_annotation}] = {}.extra_field()",
+                    "    {EXTRA_FIELD_NAME}: collections.abc.Mapping[str, {extra_annotation}] = {}.extra_field()",
                     DATACLASSES_RUNTIME_MODULE,
                 )
                 .expect("writing to String cannot fail");
@@ -703,6 +940,7 @@ fn render_writer_class(
     };
     let payload_type = resolve_schema_ref_name(writer, &payload_ref, "#")?;
 
+    writeln!(output, "@typing.final").expect("writing to String cannot fail");
     writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
         .expect("writing to String cannot fail");
     writeln!(
@@ -768,6 +1006,7 @@ fn render_reader_variants(
         };
         let payload_type = resolve_schema_ref_name(reader, &payload_ref, &pointer)?;
 
+        writeln!(output, "@typing.final").expect("writing to String cannot fail");
         writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
             .expect("writing to String cannot fail");
         writeln!(
@@ -802,6 +1041,30 @@ fn render_reader_variants(
         .expect("writing to String cannot fail");
     }
 
+    Ok(())
+}
+
+fn reserve_reader_variant_class_names(
+    builder: &mut DataclassModuleBuilder<'_>,
+    reader: &Value,
+) -> Result<(), DataclassError> {
+    let reader = expect_schema_object(reader, "#")?;
+    let branches = reader
+        .get("oneOf")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid_schema("#/oneOf".to_owned(), "oneOf must be an array"))?;
+    for (index, branch) in branches.iter().enumerate() {
+        let pointer = format!("#/oneOf/{index}");
+        let branch = expect_schema_object(branch, &pointer)?;
+        let metadata = parse_metadata(branch, &pointer)?;
+        let JsoncompatMetadata::ReaderVariant { name, .. } = metadata else {
+            return Err(invalid_schema(
+                join_pointer(&pointer, JSONCOMPAT_METADATA_KEY),
+                "reader branch must have reader_variant metadata",
+            ));
+        };
+        builder.reserve_class_name(&name, &pointer)?;
+    }
     Ok(())
 }
 
@@ -864,6 +1127,7 @@ fn render_reader_root_class(
         )?);
     }
 
+    writeln!(output, "@typing.final").expect("writing to String cannot fail");
     writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
         .expect("writing to String cannot fail");
     writeln!(
@@ -880,11 +1144,11 @@ fn render_reader_root_class(
         ))?)
     )
     .expect("writing to String cannot fail");
+    let annotation = union_annotation(&variant_names);
     writeln!(
         output,
         "    root: {} = {}.root_field()",
-        union_annotation(&variant_names),
-        DATACLASSES_RUNTIME_MODULE,
+        annotation, DATACLASSES_RUNTIME_MODULE,
     )
     .expect("writing to String cannot fail");
     Ok(())
@@ -1175,6 +1439,29 @@ fn parse_type_annotation(
     }
 }
 
+fn parse_explicit_scalar_type_annotation(
+    obj: &Map<String, Value>,
+    pointer: &str,
+) -> Result<Option<String>, DataclassError> {
+    let Some(type_value) = obj.get("type") else {
+        return Ok(None);
+    };
+    let is_scalar = |type_name: &str| !matches!(type_name, "array" | "object");
+    match type_value {
+        Value::String(type_name) if is_scalar(type_name) => parse_type_annotation(obj, pointer),
+        Value::Array(type_names)
+            if !type_names.is_empty()
+                && type_names
+                    .iter()
+                    .all(|type_name| type_name.as_str().is_some_and(&is_scalar)) =>
+        {
+            parse_type_annotation(obj, pointer)
+        }
+        Value::String(_) | Value::Array(_) => Ok(None),
+        _ => parse_type_annotation(obj, pointer),
+    }
+}
+
 fn single_type_annotation(type_name: &str, pointer: &str) -> Result<String, DataclassError> {
     match type_name {
         "string" => Ok("str".to_owned()),
@@ -1182,8 +1469,16 @@ fn single_type_annotation(type_name: &str, pointer: &str) -> Result<String, Data
         "number" => Ok("float".to_owned()),
         "boolean" => Ok("bool".to_owned()),
         "null" => Ok("None".to_owned()),
-        "array" => Ok(format!("list[{}]", typing_symbol("Any"))),
-        "object" => Ok(format!("dict[str, {}]", typing_symbol("Any"))),
+        "array" => Ok(format!(
+            "{}[{}]",
+            collections_abc_symbol("Sequence"),
+            typing_symbol("Any")
+        )),
+        "object" => Ok(format!(
+            "{}[str, {}]",
+            collections_abc_symbol("Mapping"),
+            typing_symbol("Any")
+        )),
         _ => Err(invalid_schema(
             join_pointer(pointer, "type"),
             format!("unsupported JSON Schema type '{type_name}'"),
@@ -1726,6 +2021,10 @@ fn typing_symbol(name: &str) -> String {
     format!("typing.{name}")
 }
 
+fn collections_abc_symbol(name: &str) -> String {
+    format!("collections.abc.{name}")
+}
+
 fn python_string_literal(value: &str) -> String {
     serde_json::to_string(value).expect("Python string literal source is valid JSON")
 }
@@ -1778,7 +2077,9 @@ fn python_field_name(json_name: &str) -> String {
     if output.is_empty() {
         output.push_str("field_");
     }
-    if python_keyword_or_reserved(&output) {
+    if output.starts_with("__") && output.ends_with("__") {
+        output.insert_str(0, "field_");
+    } else if python_keyword_or_reserved(&output) {
         output.push('_');
     }
     output
@@ -1822,10 +2123,12 @@ fn python_keyword_or_reserved(name: &str) -> bool {
             | "while"
             | "with"
             | "yield"
-            | "from_json"
-            | "from_json_string"
-            | "to_json"
-            | "to_json_string"
+            | "deserialize"
+            | "from_value"
+            | "get_additional_property"
+            | "serialize"
+            | "skip_validation"
+            | "to_value"
             | "root"
             | EXTRA_FIELD_NAME
     )
@@ -1925,6 +2228,191 @@ mod tests {
         assert!(source.contains("class UserProfile(dc.DataclassModel):"));
         assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
+        assert!(!source.contains("import collections.abc"));
+        assert!(!source.contains("bind_generated_models"));
+        assert!(source.ends_with("JSONCOMPAT_MODEL = UserProfile\n"));
+    }
+
+    #[test]
+    fn generated_fields_encode_optional_and_extra_types_without_a_manifest() {
+        let schema = json!({
+            "title": "labels",
+            "type": "object",
+            "properties": {
+                "count": { "type": "integer" }
+            },
+            "additionalProperties": { "type": "string" }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[str]):"));
+        assert!(source.contains("count: dc.Omittable[int] = dc.field(\"count\", omittable=True)"));
+        assert!(source.contains(
+            "__jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field()"
+        ));
+        assert!(!source.contains("bind_generated_models"));
+    }
+
+    #[test]
+    fn generated_fields_distinguish_null_extras_from_no_extras() {
+        let schema = json!({
+            "title": "null extras",
+            "type": "object",
+            "additionalProperties": { "type": "null" }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class NullExtras(dc.DataclassAdditionalModel[None]):"));
+        assert!(source.contains(
+            "__jsoncompat_extra__: collections.abc.Mapping[str, None] = dc.extra_field()"
+        ));
+        assert!(!source.contains("bind_generated_models"));
+    }
+
+    #[test]
+    fn sibling_if_annotations_keep_unevaluated_properties_in_the_parent_validator() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "if": {
+                "patternProperties": {
+                    "foo": { "type": "string" }
+                }
+            },
+            "unevaluatedProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+        assert!(!source.contains("class GeneratedSchemaBranch"));
+        assert!(!source.contains("bind_generated_models"));
+    }
+
+    #[test]
+    fn nested_if_annotations_keep_unevaluated_properties_in_the_parent_validator() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "allOf": [{
+                "if": {
+                    "patternProperties": {
+                        "foo": { "type": "string" }
+                    }
+                }
+            }],
+            "unevaluatedProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+        assert!(!source.contains("class GeneratedSchemaBranch"));
+        assert!(!source.contains("bind_generated_models"));
+    }
+
+    #[test]
+    fn successful_any_of_annotations_keep_unevaluated_properties_in_the_parent_validator() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "anyOf": [
+                {
+                    "properties": {
+                        "foo": { "type": "string" }
+                    }
+                },
+                {
+                    "properties": {
+                        "bar": { "type": "integer" }
+                    }
+                }
+            ],
+            "unevaluatedProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+        assert!(!source.contains("class GeneratedSchemaBranch"));
+        assert!(!source.contains("bind_generated_models"));
+    }
+
+    #[test]
+    fn referenced_if_annotations_are_detected_at_the_parent_instance_location() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "conditional": {
+                    "if": {
+                        "patternProperties": {
+                            "foo": { "type": "string" }
+                        }
+                    }
+                }
+            },
+            "allOf": [{ "$ref": "#/$defs/conditional" }],
+            "unevaluatedProperties": false
+        });
+        let builder = DataclassModuleBuilder::new(BTreeMap::new(), &schema, &schema);
+
+        assert!(builder.schema_has_context_dependent_unevaluated_properties(
+            &schema,
+            false,
+            &mut BTreeSet::new(),
+        ));
+    }
+
+    #[test]
+    fn generated_fields_do_not_shadow_model_conversion_interfaces() {
+        let schema = json!({
+            "title": "interface names",
+            "type": "object",
+            "properties": {
+                "__jsoncompat_schema__": { "type": "string" },
+                "__post_init__": { "type": "string" },
+                "deserialize": { "type": "string" },
+                "from_value": { "type": "string" },
+                "get_additional_property": { "type": "string" },
+                "_jsoncompat_validated": { "type": "boolean" },
+                "serialize": { "type": "string" },
+                "skip_validation": { "type": "boolean" },
+                "to_value": { "type": "string" }
+            },
+            "required": [
+                "__jsoncompat_schema__",
+                "__post_init__",
+                "deserialize",
+                "from_value",
+                "get_additional_property",
+                "_jsoncompat_validated",
+                "serialize",
+                "skip_validation",
+                "to_value"
+            ],
+            "additionalProperties": false
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(
+            source
+                .contains("field___jsoncompat_schema__: str = dc.field(\"__jsoncompat_schema__\")")
+        );
+        assert!(source.contains("field___post_init__: str = dc.field(\"__post_init__\")"));
+        assert!(source.contains("deserialize_: str = dc.field(\"deserialize\")"));
+        assert!(source.contains("from_value_: str = dc.field(\"from_value\")"));
+        assert!(
+            source
+                .contains("get_additional_property_: str = dc.field(\"get_additional_property\")")
+        );
+        assert!(source.contains(
+            "_jsoncompat_validated: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"_jsoncompat_validated\")"
+        ));
+        assert!(source.contains("serialize_: str = dc.field(\"serialize\")"));
+        assert!(source.contains(
+            "skip_validation_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"skip_validation\")"
+        ));
+        assert!(source.contains("to_value_: str = dc.field(\"to_value\")"));
     }
 
     #[test]
@@ -1993,7 +2481,95 @@ mod tests {
         assert!(source.contains("class UserProfileV1(dc.DataclassModel):"));
         assert!(source.contains("class UserProfileWriter(dc.WriterDataclassModel):"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfileWriter"));
+        assert!(source.contains("version: typing.Literal[1] = dc.field(\"version\")"));
+        assert!(source.contains("data: UserProfileV1 = dc.field(\"data\")"));
+        assert!(!source.contains("bind_generated_models"));
     }
+
+    #[test]
+    fn generate_dataclass_models_emits_reader_classes_without_a_manifest() {
+        let schema = reader_schema(&["UserProfileV1Reader"]);
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("class UserProfileV1Reader(dc.ReaderDataclassModel):"));
+        assert!(source.contains("data: UserProfileV1 = dc.field(\"data\")"));
+        assert!(source.contains("class UserProfileReader(dc.ReaderDataclassRootModel):"));
+        assert!(source.contains("root: UserProfileV1Reader = dc.root_field()"));
+        assert!(!source.contains("bind_generated_models"));
+    }
+
+    #[test]
+    fn reader_variant_name_cannot_collide_with_reader_root() {
+        let schema = reader_schema(&["UserProfileReader"]);
+
+        assert!(matches!(
+            generate_dataclass_models(&schema),
+            Err(DataclassError::DuplicateDeclaration { name }) if name == "UserProfileReader"
+        ));
+    }
+
+    #[test]
+    fn reader_variant_names_must_be_unique() {
+        let schema = reader_schema(&["UserProfileV1Reader", "UserProfileV1Reader"]);
+
+        assert!(matches!(
+            generate_dataclass_models(&schema),
+            Err(DataclassError::DuplicateDeclaration { name }) if name == "UserProfileV1Reader"
+        ));
+    }
+
+    fn reader_schema(variant_names: &[&str]) -> Value {
+        let branches = variant_names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let version = index + 1;
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "version": { "const": version },
+                        "data": { "$ref": "#/$defs/v1" }
+                    },
+                    "required": ["version", "data"],
+                    "additionalProperties": false,
+                    "x-jsoncompat": {
+                        "kind": "reader_variant",
+                        "stable_id": "user-profile",
+                        "name": name,
+                        "version": version,
+                        "payload_ref": "#/$defs/v1"
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        json!({
+            "oneOf": branches,
+            "$defs": {
+                "v1": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false,
+                    "x-jsoncompat": {
+                        "kind": "declaration",
+                        "stable_id": "user-profile",
+                        "name": "UserProfileV1",
+                        "version": 1,
+                        "schema_ref": "#/$defs/v1"
+                    }
+                }
+            },
+            "x-jsoncompat": {
+                "kind": "reader",
+                "stable_id": "user-profile",
+                "name": "UserProfileReader"
+            }
+        })
+    }
+
     #[test]
     fn float_form_enum_values_use_float_annotation() {
         let schema = json!({
@@ -2074,7 +2650,7 @@ mod tests {
 
         assert!(source.contains("class GeneratedSchema(dc.DataclassRootModel):"));
         assert!(source.contains("root: typing.Literal[\"scalar\"] = dc.root_field()"));
-        assert!(!source.contains("root: list["));
+        assert!(!source.contains("root: collections.abc.Sequence["));
     }
 
     #[test]
@@ -2166,8 +2742,13 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("coordinates: list[(int | str)] = dc.field(\"coordinates\")"));
-        assert!(!source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
+        assert!(source.contains(
+            "coordinates: collections.abc.Sequence[(int | str)] = dc.field(\"coordinates\")"
+        ));
+        assert!(source.contains("import collections.abc"));
+        assert!(!source.contains(
+            "coordinates: collections.abc.Sequence[typing.Any] = dc.field(\"coordinates\")"
+        ));
     }
 
     #[test]
@@ -2188,7 +2769,9 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("coordinates: list[typing.Any] = dc.field(\"coordinates\")"));
+        assert!(source.contains(
+            "coordinates: collections.abc.Sequence[typing.Any] = dc.field(\"coordinates\")"
+        ));
         assert!(!source.contains("PrefixItem"));
     }
 
@@ -2206,7 +2789,9 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("class Labels(dc.DataclassAdditionalModel[int]):"));
-        assert!(source.contains("__jsoncompat_extra__: dict[str, int] = dc.extra_field()"));
+        assert!(source.contains(
+            "__jsoncompat_extra__: collections.abc.Mapping[str, int] = dc.extra_field()"
+        ));
     }
 
     #[test]
@@ -2262,5 +2847,51 @@ mod tests {
 
         assert!(source.contains("class GeneratedSchemaValue(dc.DataclassRootModel):"));
         assert!(source.contains("    root: typing.Any = dc.root_field()"));
+    }
+
+    #[test]
+    fn explicit_scalar_type_bounds_constraint_only_union_branches() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "anyOf": [
+                {"maxLength": 2},
+                {"minLength": 4}
+            ]
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("    root: str = dc.root_field()"));
+        assert!(!source.contains("class GeneratedSchemaBranch"));
+        assert!(!source.contains("typing.Any |"));
+    }
+
+    #[test]
+    fn semantically_unconstrained_root_does_not_emit_primitive_union_wrappers() {
+        for schema in [
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "oneOf": [true, false, false]
+            }),
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "dependencies": {"unused": []}
+            }),
+        ] {
+            let document = SchemaDocument::from_json(&schema).unwrap();
+            let canonical = document.canonical_schema_json().unwrap();
+            let source = generate_dataclass_models_from_document(&document).unwrap();
+
+            assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+            assert!(
+                !source.contains("class GeneratedSchemaBranch"),
+                "canonical={canonical}\n{source}"
+            );
+            assert!(
+                !source.contains("class GeneratedSchemaItem"),
+                "canonical={canonical}\n{source}"
+            );
+        }
     }
 }

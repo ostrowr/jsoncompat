@@ -6,6 +6,7 @@ import typing
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaABranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -62,6 +63,7 @@ class GeneratedSchemaABranch1(dc.DataclassModel):
 }"""
     next: GeneratedSchemaB = dc.field("next")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaA(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -125,6 +127,7 @@ class GeneratedSchemaA(dc.DataclassRootModel):
 }"""
     root: (GeneratedSchemaABranch1 | None) = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBBranch1(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -181,6 +184,7 @@ class GeneratedSchemaBBranch1(dc.DataclassModel):
 }"""
     next: GeneratedSchemaA = dc.field("next")
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaB(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -244,6 +248,7 @@ class GeneratedSchemaB(dc.DataclassRootModel):
 }"""
     root: (GeneratedSchemaBBranch1 | None) = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneBranch2B(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneBranch2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -75,18 +78,21 @@ class GeneratedSchemaOneBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     b: GeneratedSchemaOneBranch2B = dc.field("b")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneBranch22Xx(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneBranch22(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -154,18 +160,21 @@ class GeneratedSchemaOneBranch22(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     xx: GeneratedSchemaOneBranch22Xx = dc.field("xx")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneItem2(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneBranch23All(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneBranch23(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -231,13 +240,15 @@ class GeneratedSchemaOneBranch23(dc.DataclassAdditionalModel[typing.Any]):
   "unevaluatedProperties": true
 }"""
     all: GeneratedSchemaOneBranch23All = dc.field("all")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOneItem3(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaOne(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -320,13 +331,15 @@ class GeneratedSchemaOne(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | float | list[GeneratedSchemaOneItem] | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch22 | float | list[GeneratedSchemaOneItem2] | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch23 | float | list[GeneratedSchemaOneItem3] | str | None) | GeneratedSchemaTwo) = dc.root_field()
+    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch2 | collections.abc.Sequence[GeneratedSchemaOneItem] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch22 | collections.abc.Sequence[GeneratedSchemaOneItem2] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaOneBranch23 | collections.abc.Sequence[GeneratedSchemaOneItem3] | float | str | None) | GeneratedSchemaTwo) = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoBranch2C(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoBranch2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -391,18 +404,21 @@ class GeneratedSchemaTwoBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     c: GeneratedSchemaTwoBranch2C = dc.field("c")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoBranch22D(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoBranch22(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -467,13 +483,15 @@ class GeneratedSchemaTwoBranch22(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     d: GeneratedSchemaTwoBranch22D = dc.field("d")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwoItem2(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaTwo(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -547,13 +565,15 @@ class GeneratedSchemaTwo(dc.DataclassRootModel):
     }
   ]
 }"""
-    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | float | list[GeneratedSchemaTwoItem] | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch22 | float | list[GeneratedSchemaTwoItem2] | str | None)) = dc.root_field()
+    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch2 | collections.abc.Sequence[GeneratedSchemaTwoItem] | float | str | None) | ((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaTwoBranch22 | collections.abc.Sequence[GeneratedSchemaTwoItem2] | float | str | None)) = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2A(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -620,13 +640,15 @@ class GeneratedSchemaBranch2(dc.DataclassAdditionalModel[typing.Any]):
   "unevaluatedProperties": false
 }"""
     a: GeneratedSchemaBranch2A = dc.field("a")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaItem(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """true"""
     root: typing.Any = dc.root_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassRootModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -697,6 +719,6 @@ class GeneratedSchema(dc.DataclassRootModel):
   ],
   "unevaluatedProperties": false
 }"""
-    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | float | list[GeneratedSchemaItem] | str | None) | GeneratedSchemaOne) = dc.root_field()
+    root: (((typing.Literal[False] | typing.Literal[True]) | GeneratedSchemaBranch2 | collections.abc.Sequence[GeneratedSchemaItem] | float | str | None) | GeneratedSchemaOne) = dc.root_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

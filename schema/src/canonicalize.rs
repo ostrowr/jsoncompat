@@ -936,7 +936,11 @@ fn simplify_oneof(
         return None;
     }
 
-    if branches.len() == 1 && branches[0] == Value::Bool(false) {
+    let always_valid_count = branches
+        .iter()
+        .filter(|branch| branch.as_bool() == Some(true))
+        .count();
+    if always_valid_count > 1 {
         let mut obj = if preserve_unknown_keyword_at_pointer(pointer, local_ref_targets) {
             preserved_meta(schema)
         } else {
@@ -946,10 +950,45 @@ fn simplify_oneof(
         return Some(Value::Object(sorted_object(obj)));
     }
 
-    if can_rewrite_oneof_to_anyof(branches) {
-        let branches = branches.clone();
+    let mut live_branches = branches
+        .iter()
+        .filter(|branch| branch.as_bool() != Some(false))
+        .cloned()
+        .collect::<Vec<_>>();
+    if always_valid_count == 1 && live_branches.len() == 1 {
+        let has_adjacent_constraint = schema
+            .keys()
+            .any(|key| key != "oneOf" && !is_schema_metadata_key(key));
+        if !has_adjacent_constraint {
+            let metadata = preserved_meta(schema);
+            return Some(if metadata.is_empty() {
+                Value::Bool(true)
+            } else {
+                Value::Object(metadata)
+            });
+        }
         schema.remove("oneOf");
-        schema.insert("anyOf".to_owned(), Value::Array(branches));
+        return None;
+    }
+    if live_branches.is_empty() {
+        let mut obj = if preserve_unknown_keyword_at_pointer(pointer, local_ref_targets) {
+            preserved_meta(schema)
+        } else {
+            preserved_terminal_meta(schema)
+        };
+        obj.insert("not".to_owned(), Value::Bool(true));
+        return Some(Value::Object(sorted_object(obj)));
+    }
+    if live_branches.len() != branches.len() {
+        schema.insert("oneOf".to_owned(), Value::Array(live_branches.clone()));
+    }
+
+    if can_rewrite_oneof_to_anyof(&live_branches) {
+        schema.remove("oneOf");
+        schema.insert(
+            "anyOf".to_owned(),
+            Value::Array(std::mem::take(&mut live_branches)),
+        );
     }
     None
 }

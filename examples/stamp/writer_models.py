@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -69,8 +71,9 @@ class UserProfileV2(dc.DataclassAdditionalModel[typing.Any]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserProfileWriter(dc.WriterDataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{

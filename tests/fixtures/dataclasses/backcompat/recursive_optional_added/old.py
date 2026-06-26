@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassModel):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -27,7 +29,7 @@ class GeneratedSchema(dc.DataclassModel):
   ],
   "type": "object"
 }"""
-    children: dc.Omittable[list[GeneratedSchema]] = dc.field("children", omittable=True)
+    children: dc.Omittable[collections.abc.Sequence[GeneratedSchema]] = dc.field("children", omittable=True)
     value: int = dc.field("value")
 
 JSONCOMPAT_MODEL = GeneratedSchema

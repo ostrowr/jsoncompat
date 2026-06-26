@@ -1,0 +1,95 @@
+{
+  "$defs": {
+    "customer": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "segment": {
+          "enum": [
+            "self_serve",
+            "startup",
+            "enterprise"
+          ]
+        },
+        "trialDaysRemaining": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "segment"
+      ],
+      "type": "object"
+    },
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "quantity": {
+          "type": "integer"
+        },
+        "sku": {
+          "enum": [
+            "starter-seat",
+            "team-seat",
+            "audit-log"
+          ]
+        },
+        "unitPrice": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sku",
+        "quantity",
+        "unitPrice"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": {
+    "type": "string"
+  },
+  "properties": {
+    "couponCode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "currency": {
+      "enum": [
+        "USD",
+        "EUR",
+        "GBP"
+      ]
+    },
+    "customer": {
+      "$ref": "#/$defs/customer"
+    },
+    "event": {
+      "enum": [
+        "checkout.completed",
+        "checkout.failed"
+      ]
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/item"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "event",
+    "customer",
+    "items",
+    "currency"
+  ],
+  "type": "object"
+}

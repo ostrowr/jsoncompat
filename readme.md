@@ -103,19 +103,29 @@ jsoncompat codegen --target schema reader.schema.json
 jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 ```
 
-### Dataclass code generation
+## Dataclass code generation
 
 `jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
 canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
-frozen, slotted Python dataclasses that import shared construction and
-serialization helpers from `jsoncompat.codegen.dataclasses`. Generated classes
-carry the original input schema in `__jsoncompat_schema__`, cache a
-`jsoncompat.validator_for(...)` validator for runtime checks, and expose:
+frozen, slotted Python dataclasses backed by one native construction and
+serialization runtime. Importing a generated module only defines ordinary
+dataclasses. The first constructor or conversion call derives one shared native
+plan from their field metadata and caches it on every generated class in the
+module; there is never a reflective per-value or Python-constructor fallback.
+The JSON Schema validator is compiled separately on the first checked use, so
+`skip_validation=True` does not pay validator startup cost. Generated classes
+carry the original input schema in `__jsoncompat_schema__` and expose:
 
-- `from_json(...)` / `from_json_string(...)` constructors for schema-checked
-  deserialization;
-- `to_json(...)` / `to_json_string(...)` serializers that validate emitted
-  JSON against the attached schema;
+```bash
+jsoncompat codegen --target dataclasses schema.json > models.py
+```
+
+- `from_value(...)` / `to_value(...)` for schema-checked conversion between
+  generated models and Python JSON values;
+- `deserialize(...)` / `serialize(...)` for JSON, YAML, and MessagePack wire
+  formats, with JSON as the default;
+- keyword-only `skip_validation=True` on direct construction and every
+  conversion method when the caller can guarantee the value is schema-valid;
 - `__jsoncompat_extra__` for schema-admitted object properties that are not
   declared under `properties`, including `additionalProperties` and
   `patternProperties`;
@@ -132,6 +142,26 @@ generated writer envelopes inherit from `WriterDataclassModel`, which disables
 deserialization methods, and generated reader envelopes inherit from
 `ReaderDataclassModel` / `ReaderDataclassRootModel`, which disable
 serialization methods.
+
+`skip_validation=True` skips only the attached JSON Schema check. Wire-format
+parsing and JSON-value normalization, runtime type conversion, and reader/writer
+direction guards still apply.
+
+The runtime contract applies only to dataclasses emitted by this command.
+Hand-written subclasses, custom `__init__` / `__new__` / `__post_init__`
+hooks, inheritance between generated models, and Python default factories are
+not supported model-definition APIs. JSON Schema `default` remains an
+annotation and does not manufacture a Python value for a missing property.
+
+Install optional codecs with `jsoncompat[yaml]` and `jsoncompat[msgpack]`.
+Every decoded format is restricted to JSON-compatible values before model
+construction; format-specific values such as YAML timestamps or MessagePack
+binary/extension values are rejected.
+
+See the [canonical plain-schema example](examples/dataclasses/demo.py) for an
+ordinary model that both serializes and deserializes. The
+[canonical stamped-schema example](examples/stamp/demo.py) covers separate
+writer/reader envelopes and historical versions.
 
 ## Choose a role
 

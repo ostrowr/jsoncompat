@@ -47,6 +47,34 @@ print(example)
 - `jsoncompat.codegen.dataclasses` runtime helpers for generated dataclass models
 - `Role.SERIALIZER`, `Role.DESERIALIZER`, and `Role.BOTH` are string constants accepted by `check_compat`.
 
+Generated dataclasses use `from_value(...)` / `to_value(...)` for Python JSON
+values and `deserialize(...)` / `serialize(...)` for encoded JSON, YAML, and
+MessagePack. JSON is the default format. Install optional codecs with
+`jsoncompat[yaml]` or `jsoncompat[msgpack]`. All direct constructors and
+conversion methods accept keyword-only `skip_validation=True` when the caller
+already guarantees schema validity. It skips only the attached JSON Schema
+check; wire-format parsing and JSON-value normalization, runtime type
+conversion, and reader/writer direction guards still apply.
+
+Only classes emitted by `jsoncompat codegen --target dataclasses` implement
+this runtime contract. Generated modules contain only dataclass declarations;
+the first constructor or conversion call derives and caches one shared native
+plan from their field metadata. Checked use then compiles the relevant JSON
+Schema validator once, while `skip_validation=True` leaves it uncompiled. There
+is no custom-subclass or Python-constructor fallback. Custom construction hooks
+and Python defaults/default factories are therefore intentionally outside the
+model-definition surface.
+
+Generated array and object fields accept ordinary lists and dictionaries at
+construction boundaries, then store them as deeply immutable values exposed as
+`Sequence[...]` and `Mapping[...]`. Use `to_value()` when a mutable JSON-value
+tree is required by another API.
+
+See the [canonical plain-schema example](../examples/dataclasses/demo.py) for an
+ordinary generated model that both serializes and deserializes. The
+[canonical stamped-schema example](../examples/stamp/demo.py) covers versioned
+writer/reader envelopes and historical schemas.
+
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 
 ## More detail
@@ -61,8 +89,60 @@ Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and
 Run the generated dataclass runtime microbenchmark from the repository root:
 
 ```bash
-env -u VIRTUAL_ENV uv run --project pybindings python pybindings/bench_dataclasses_runtime.py
+just python-bench
 ```
+
+The benchmark pins Pydantic v2 and compares the same valid nested payload using
+strict, frozen Pydantic models. Pydantic's dump methods do not revalidate the
+model, so their closest jsoncompat comparison is the `skip_validation=True`
+serialization path.
+
+To measure fresh-interpreter startup separately from steady-state conversion,
+including generated-module import, first trusted use, first checked use, and an
+equivalent Pydantic v2 graph:
+
+```bash
+just python-bench-startup
+```
+
+Each sample runs in a new Python process and reports both absolute time and the
+increment over an empty process. Results are written under
+`target/python-benchmark` alongside the other repeatable benchmark profiles.
+
+For a larger workload, benchmark a balanced recursive graph containing
+discriminated unions, lists, mappings, and omitted fields:
+
+```bash
+just python-bench-scale
+```
+
+The default depth and fanout produce 1,365 model nodes. Override them, along
+with the iteration and repeat counts, as positional recipe arguments. The
+underlying script also accepts `--profile` to print cumulative Python profiles
+for checked and trusted JSON deserialization.
+
+To benchmark JSON -> generated dataclass -> JSON across the complete checked-in
+JSON Schema fixture corpus, and compare Pydantic v2 wherever its generated peer
+passes the semantic-equivalence screen:
+
+```bash
+just python-bench-fixtures
+```
+
+This includes every embedded fuzz schema and both sides of every backcompat
+fixture. Jsoncompat timings cover every fixture with a representable schema and
+valid sample independently of Pydantic coverage. Generated Pydantic modules
+and the detailed JSON report are written to
+`target/python-fixture-benchmark`. The report retains explicit entries for
+jsoncompat or Pydantic generation failures, semantic mismatches, and schemas
+without a shared valid value; those cases are never silently removed from the
+denominator. Before timing, generated Pydantic validators are screened against
+the jsoncompat schema validator with every fixture test plus deterministic type
+and property mutations. This prevents ignored JSON Schema keywords from looking
+like performance wins. Pydantic uses one precompiled `TypeAdapter` per generated
+type, as recommended for repeated validation. Shared generated values are
+checked in separately from the generated model artifacts so fresh clones
+benchmark the same values.
 
 ## License
 

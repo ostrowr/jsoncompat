@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import collections.abc
 from dataclasses import dataclass
 import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchemaFlags(dc.DataclassAdditionalModel[(typing.Literal[False] | typing.Literal[True])]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -20,8 +22,9 @@ class GeneratedSchemaFlags(dc.DataclassAdditionalModel[(typing.Literal[False] | 
   },
   "type": "object"
 }"""
-    __jsoncompat_extra__: dict[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, (typing.Literal[False] | typing.Literal[True])] = dc.extra_field()
 
+@typing.final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
     __jsoncompat_schema__: typing.ClassVar[str] = """{
@@ -46,6 +49,6 @@ class GeneratedSchema(dc.DataclassAdditionalModel[typing.Any]):
   "type": "object"
 }"""
     flags: GeneratedSchemaFlags = dc.field("flags")
-    __jsoncompat_extra__: dict[str, typing.Any] = dc.extra_field()
+    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field()
 
 JSONCOMPAT_MODEL = GeneratedSchema

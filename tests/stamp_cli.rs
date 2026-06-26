@@ -165,14 +165,14 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 model = module.JSONCOMPAT_MODEL
-user = model.from_json({"name": "Ada", "nickname": "ace"})
+user = model.from_value({"name": "Ada", "nickname": "ace"})
 assert user.name == "Ada"
 assert user.age is JSONCOMPAT_MISSING
 assert user.__jsoncompat_extra__ == {"nickname": "ace"}
-assert user.to_json() == {"name": "Ada", "nickname": "ace"}
+assert user.to_value() == {"name": "Ada", "nickname": "ace"}
 
 try:
-    model.from_json({"name": ""})
+    model.from_value({"name": ""})
 except ValueError:
     pass
 else:
@@ -311,18 +311,18 @@ sys.modules[reader_spec.name] = reader_module
 reader_spec.loader.exec_module(reader_module)
 
 writer = writer_module.UserProfileWriter(version=1, data=writer_module.UserProfileV1(name="Ada"))
-assert writer.to_json() == {"version": 1, "data": {"name": "Ada"}}
+assert writer.to_value() == {"version": 1, "data": {"name": "Ada"}}
 
-reader = reader_module.UserProfileReader.from_json({"version": 1, "data": {"name": "Ada"}})
+reader = reader_module.UserProfileReader.from_value({"version": 1, "data": {"name": "Ada"}})
 assert reader.root.version == 1
 assert reader.root.data.name == "Ada"
 
 for forbidden in (
-    lambda: writer_module.UserProfileWriter.from_json({"version": 1, "data": {"name": "Ada"}}),
-    lambda: writer_module.UserProfileWriter.from_json_string('{"version":1,"data":{"name":"Ada"}}'),
-    lambda: reader.root.to_json(),
-    lambda: reader.to_json(),
-    lambda: reader.to_json_string(),
+    lambda: writer_module.UserProfileWriter.from_value({"version": 1, "data": {"name": "Ada"}}),
+    lambda: writer_module.UserProfileWriter.deserialize('{"version":1,"data":{"name":"Ada"}}'),
+    lambda: reader.root.to_value(),
+    lambda: reader.to_value(),
+    lambda: reader.serialize(),
 ):
     try:
         forbidden()
@@ -338,7 +338,7 @@ for payload in (
     {"data": {"name": "Ada"}},
 ):
     try:
-        writer_module.UserProfileWriter.from_json(payload)
+        writer_module.UserProfileWriter.from_value(payload)
     except TypeError:
         pass
     else:
@@ -489,9 +489,9 @@ reader_spec.loader.exec_module(reader_module)
 profile = writer_module.LegacyProfileV1Profile(name="Ada")
 payload = writer_module.LegacyProfileV1(profile=profile)
 writer = writer_module.LegacyProfileWriter(version=1, data=payload)
-assert writer.to_json() == {"version": 1, "data": {"profile": {"name": "Ada"}}}
+assert writer.to_value() == {"version": 1, "data": {"profile": {"name": "Ada"}}}
 
-reader = reader_module.LegacyProfileReader.from_json(
+reader = reader_module.LegacyProfileReader.from_value(
     {"version": 1, "data": {"profile": {"name": "Ada"}}}
 )
 assert reader.root.version == 1
@@ -499,7 +499,7 @@ assert reader.root.data.profile.name == "Ada"
 
 for factory in (
     lambda: writer_module.LegacyProfileV1Profile(name=1),
-    lambda: reader_module.LegacyProfileReader.from_json(
+    lambda: reader_module.LegacyProfileReader.from_value(
         {"version": 1, "data": {"profile": {"name": 1}}}
     ),
 ):
