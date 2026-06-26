@@ -30,7 +30,10 @@ use pyo3::types::{
     PyTuple, PyType,
 };
 
-const MAX_MODEL_DEPTH: u16 = 255;
+// Keep recursive conversion comfortably inside the smallest native thread
+// stacks used by supported platforms. In particular, Windows debug builds can
+// exhaust their stack before a 255-level guard is reached.
+const MAX_MODEL_DEPTH: u16 = 64;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct NodeId(usize);

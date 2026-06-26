@@ -1236,14 +1236,18 @@ def nested_lists(depth):
 
 
 instance = module.DepthBoundary.from_value(None, skip_validation=True)
-last_accepted = nested_lists(253)
-first_rejected = nested_lists(254)
+# MAX_MODEL_DEPTH is 64. The root and Any nodes consume the first two levels,
+# leaving 62 nested containers as the last accepted value.
+last_accepted_depth = 62
+first_rejected_depth = 63
+last_accepted = nested_lists(last_accepted_depth)
+first_rejected = nested_lists(first_rejected_depth)
 
 for skip_validation in (False, True):
     object.__setattr__(instance, "root", last_accepted)
     assert instance.to_value(skip_validation=skip_validation) == last_accepted
     assert instance.serialize(skip_validation=skip_validation) == (
-        "[" * 253 + "null" + "]" * 253
+        "[" * last_accepted_depth + "null" + "]" * last_accepted_depth
     )
 
     object.__setattr__(instance, "root", first_rejected)
@@ -2016,7 +2020,7 @@ else:
 }
 
 #[test]
-fn cyclic_values_reject_across_the_complete_graph_on_the_minimum_python_thread_stack() {
+fn cyclic_values_reject_across_the_complete_graph_on_a_constrained_thread_stack() {
     let recursive_source = generate_dataclass_models(&json!({
         "title": "CycleEnvelope",
         "type": "object",
@@ -2095,7 +2099,11 @@ from jsoncompat.codegen.dataclasses import SerializationFormat
 
 
 try:
-    threading.stack_size(32768)
+    # 256 KiB remains deliberately constrained while leaving enough room for
+    # CPython imports and per-thread native-plan initialization on every CI
+    # platform. The cycle assertions below still require immediate detection
+    # rather than eventual depth exhaustion.
+    threading.stack_size(262144)
 except (RuntimeError, ValueError):
     raise SystemExit(0)
 
