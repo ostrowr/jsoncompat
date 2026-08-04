@@ -4499,10 +4499,7 @@ fn inspect_native_slot(model_type: &Bound<'_, PyType>, name: &str) -> PyResult<S
     let descriptor_name = descriptor.getattr("__name__")?;
     if !descriptor.get_type().is(&member_descriptor_type)
         || !owner.is(model_type)
-        || descriptor_name
-            .cast::<PyString>()
-            .and_then(PyString::to_str)?
-            != name
+        || descriptor_name.cast::<PyString>()?.to_str()? != name
         || !descriptor.hasattr("__get__")?
         || !descriptor.hasattr("__set__")?
     {
