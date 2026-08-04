@@ -40,6 +40,12 @@ Package READMEs stay user-facing on purpose. Deeper implementation notes live he
 
 `SchemaDocument::from_json()` stores the raw source JSON, canonicalizes it once, and preserves precise frontend errors. The raw `jsonschema` backend remains the source of truth for user-facing value validation through `SchemaDocument::is_valid()`.
 
+Publishable Rust crates depend on the upstream `jsonschema` package from
+crates.io. The unpublished Python extension separately owns its forked
+validator, which provides borrowed Python/Jiter instance validation for the
+generated-model runtime. Fork-only validator types must never appear in a
+published crate's dependencies or public interfaces.
+
 The compatibility layer works over the resolved schema graph:
 
 - `SchemaDocument::root()` resolves local `#` / `#/...` references into immutable `SchemaNode`s;

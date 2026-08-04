@@ -39,6 +39,17 @@ fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
     Ok(schema)
 }
 
+fn validated_python_schema(raw: &JsonValue) -> Result<PythonSchema, String> {
+    let document = validated_schema(raw)?;
+    let validator = jsonschema::draft202012::options()
+        .build(document.source_schema_json())
+        .map_err(|error| format!("schema failed Draft 2020-12 validator compilation: {error}"))?;
+    Ok(PythonSchema {
+        document,
+        validator,
+    })
+}
+
 fn compatibility_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
     let schema = SchemaDocument::from_json(raw).map_err(|error| error.to_string())?;
     validate_compatibility_input(&schema).map_err(|error| error.to_string())?;
@@ -250,9 +261,28 @@ fn py_int_to_json_value(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
     parse_json(&rendered)
 }
 
+struct PythonSchema {
+    document: SchemaDocument,
+    validator: jsonschema::Validator,
+}
+
+impl PythonSchema {
+    fn document(&self) -> &SchemaDocument {
+        &self.document
+    }
+
+    fn is_valid_instance(&self, instance: JSONInstanceRef<'_>) -> bool {
+        self.validator.is_valid_instance(instance)
+    }
+
+    fn is_valid_instance_assuming_json(&self, instance: JSONInstanceRef<'_>) -> bool {
+        self.validator.is_valid_instance_assuming_json(instance)
+    }
+}
+
 #[pyclass(name = "Validator", module = "jsoncompat._native", unsendable)]
 struct ValidatorPy {
-    schema: Rc<SchemaDocument>,
+    schema: Rc<PythonSchema>,
 }
 
 #[pyclass(name = "JsoncompatMissingType", module = "jsoncompat._native", frozen)]
@@ -332,17 +362,17 @@ impl ValidatorPy {
     ///     `True` if the value satisfies the schema, `False` otherwise.
     fn is_valid_json(&self, instance_json: &str) -> PyResult<bool> {
         let instance = parse_json(instance_json)?;
-        self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance))
+        Ok(self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance)))
     }
 
     /// Check whether a Python JSON-compatible value satisfies this validator's schema.
     fn is_valid_value(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
         let instance = py_to_json_value(instance)?;
-        self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance))
+        Ok(self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance)))
     }
 
     /// Check a Python JSON value in place without allocating a serde value tree.
-    fn _is_valid_borrowed_value(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
+    fn _is_valid_borrowed_value(&self, instance: &Bound<'_, PyAny>) -> bool {
         self.validate_instance(JSONInstanceRef::from_python(instance))
     }
 
@@ -352,13 +382,13 @@ impl ValidatorPy {
         py: Python<'_>,
         payload: &Bound<'_, PyAny>,
     ) -> PyResult<(bool, Py<PyAny>)> {
-        parse_and_validate_json_to_python(&self.schema, py, payload)
+        parse_and_validate_json_to_python(self.schema.document(), py, payload)
     }
 
     /// Validate and serialize a Python JSON-compatible value in one traversal.
     fn serialize_json(&self, instance: &Bound<'_, PyAny>) -> PyResult<Option<String>> {
         let instance = py_to_serializable_json_value(instance)?;
-        if self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance))? {
+        if self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance)) {
             serialize_json_value(&instance).map(Some)
         } else {
             Ok(None)
@@ -367,14 +397,12 @@ impl ValidatorPy {
 }
 
 impl ValidatorPy {
-    fn validate_instance(&self, instance: JSONInstanceRef<'_>) -> PyResult<bool> {
-        let result = self.schema.is_valid_instance(instance);
-        result.map_err(validation_error)
+    fn validate_instance(&self, instance: JSONInstanceRef<'_>) -> bool {
+        self.schema.is_valid_instance(instance)
     }
 
-    fn validate_instance_assuming_json(&self, instance: JSONInstanceRef<'_>) -> PyResult<bool> {
-        let result = self.schema.is_valid_instance_assuming_json(instance);
-        result.map_err(validation_error)
+    fn validate_instance_assuming_json(&self, instance: JSONInstanceRef<'_>) -> bool {
+        self.schema.is_valid_instance_assuming_json(instance)
     }
 }
 
@@ -617,10 +645,6 @@ fn construct_model_json_bytes_checked(
     converter.construct_jiter_checked(py, &parsed)
 }
 
-fn validation_error(error: impl std::fmt::Display) -> PyErr {
-    PyErr::new::<PyValueError, _>(format!("Validation failed: {error}"))
-}
-
 #[pymethods]
 impl GeneratorPy {
     /// Generate a JSON value intended to satisfy this generator's schema.
@@ -745,7 +769,10 @@ fn parse_schema(schema_json: &str) -> PyResult<SchemaDocument> {
 }
 
 fn validator_for_schema(schema_json: &str) -> PyResult<ValidatorPy> {
-    let schema = Rc::new(parse_schema(schema_json)?);
+    let raw = parse_json(schema_json)?;
+    let schema = validated_python_schema(&raw)
+        .map_err(|error| PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}")))?;
+    let schema = Rc::new(schema);
     Ok(ValidatorPy { schema })
 }
 

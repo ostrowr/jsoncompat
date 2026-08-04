@@ -10,7 +10,6 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::rc::Rc;
 
-use ::jsoncompat::SchemaDocument;
 use jiter::JsonValue as JiterJsonValue;
 use jsonschema::{
     InstanceRef as JsonInstanceRef, ProjectedPythonKind, ProjectedPythonValue,
@@ -29,6 +28,8 @@ use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PySequence, PyString,
     PyTuple, PyType,
 };
+
+use super::PythonSchema;
 
 // Keep recursive conversion comfortably inside the smallest native thread
 // stacks used by supported platforms. In particular, Windows debug builds can
@@ -641,13 +642,13 @@ enum JsonShape {
 
 struct BranchSchema {
     raw: serde_json::Value,
-    compiled: OnceCell<SchemaDocument>,
+    compiled: OnceCell<PythonSchema>,
 }
 
 impl BranchSchema {
-    fn compiled(&self) -> PyResult<&SchemaDocument> {
+    fn compiled(&self) -> PyResult<&PythonSchema> {
         if self.compiled.get().is_none() {
-            let compiled = super::validated_schema(&self.raw).map_err(|error| {
+            let compiled = super::validated_python_schema(&self.raw).map_err(|error| {
                 PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
             })?;
             self.compiled.set(compiled).map_err(|_| {
@@ -661,9 +662,7 @@ impl BranchSchema {
     }
 
     fn is_valid_instance(&self, instance: JsonInstanceRef<'_>) -> PyResult<bool> {
-        self.compiled()?
-            .is_valid_instance(instance)
-            .map_err(super::validation_error)
+        Ok(self.compiled()?.is_valid_instance(instance))
     }
 
     fn is_valid_python_value(&self, py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
@@ -672,7 +671,7 @@ impl BranchSchema {
 }
 
 pub(crate) fn validate_python_value(
-    schema: &SchemaDocument,
+    schema: &PythonSchema,
     py: Python<'_>,
     value: &Bound<'_, PyAny>,
     assume_json: bool,
@@ -685,11 +684,10 @@ pub(crate) fn validate_python_value(
         } else {
             schema.is_valid_instance(instance)
         }
-        .map_err(super::validation_error)
     };
-    canonical
+    Ok(canonical
         .as_ref()
-        .map_or_else(|| validate(value), |value| validate(value.bind(py)))
+        .map_or_else(|| validate(value), |value| validate(value.bind(py))))
 }
 
 enum ConversionNode {
@@ -777,8 +775,7 @@ impl KwargsCandidate<'_> {
                 .schema()?
                 .is_valid_instance_assuming_json(projected),
             JsonShape::NeedsValidation => self.converter.schema()?.is_valid_instance(projected),
-        }
-        .map_err(super::validation_error)?;
+        };
         if !is_valid {
             return Ok(None);
         }
@@ -1047,7 +1044,7 @@ impl RootedModelConverterPlan {
 }
 
 impl ModelConverterPy {
-    pub(crate) fn schema(&self) -> PyResult<&SchemaDocument> {
+    pub(crate) fn schema(&self) -> PyResult<&PythonSchema> {
         match self.node(self.root.0) {
             ConversionNode::Model { branch_schema, .. }
             | ConversionNode::Root { branch_schema, .. } => branch_schema.compiled(),
@@ -1119,9 +1116,9 @@ impl ModelConverterPy {
     }
 
     pub(crate) fn is_valid_raw_python(&self, value: &Bound<'_, PyAny>) -> PyResult<bool> {
-        self.schema()?
-            .is_valid_instance(JsonInstanceRef::from_python(value))
-            .map_err(super::validation_error)
+        Ok(self
+            .schema()?
+            .is_valid_instance(JsonInstanceRef::from_python(value)))
     }
 
     pub(crate) fn validate_json_value(
@@ -1129,9 +1126,9 @@ impl ModelConverterPy {
         py: Python<'_>,
         value: &MaterializedJsonValue,
     ) -> PyResult<bool> {
-        self.schema()?
-            .is_valid_instance_assuming_json(JsonInstanceRef::from_python(value.0.bind(py)))
-            .map_err(super::validation_error)
+        Ok(self
+            .schema()?
+            .is_valid_instance_assuming_json(JsonInstanceRef::from_python(value.0.bind(py))))
     }
 
     pub(crate) fn construct_jiter_unchecked(
@@ -1152,8 +1149,7 @@ impl ModelConverterPy {
     ) -> PyResult<Option<Py<PyAny>>> {
         let is_valid = self
             .schema()?
-            .is_valid_instance_assuming_json(JsonInstanceRef::from_jiter(value))
-            .map_err(super::validation_error)?;
+            .is_valid_instance_assuming_json(JsonInstanceRef::from_jiter(value));
         if !is_valid {
             return Ok(None);
         }
@@ -4503,10 +4499,7 @@ fn inspect_native_slot(model_type: &Bound<'_, PyType>, name: &str) -> PyResult<S
     let descriptor_name = descriptor.getattr("__name__")?;
     if !descriptor.get_type().is(&member_descriptor_type)
         || !owner.is(model_type)
-        || descriptor_name
-            .cast::<PyString>()
-            .and_then(PyString::to_str)?
-            != name
+        || descriptor_name.cast::<PyString>()?.to_str()? != name
         || !descriptor.hasattr("__get__")?
         || !descriptor.hasattr("__set__")?
     {
