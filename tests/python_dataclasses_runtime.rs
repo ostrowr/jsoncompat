@@ -3030,6 +3030,8 @@ assert validator.is_valid_json(valid_json)
 assert not validator.is_valid_json(invalid_json)
 assert validator.is_valid_value({"name": "Ada"})
 assert not validator.is_valid_value({"name": 1})
+assert validator._is_valid_borrowed_value({"name": "Ada"})
+assert not validator._is_valid_borrowed_value({"name": 1})
 
 array_validator = jsoncompat.validator_for('{"type":"array","items":{"type":"integer"}}')
 assert array_validator.is_valid_value((1, 2, 3))
