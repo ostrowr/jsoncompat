@@ -95,11 +95,11 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             arch: x86_64
             manylinux: auto
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             target: aarch64-unknown-linux-gnu
             arch: aarch64
             manylinux: auto
@@ -126,10 +126,10 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
             arch: x86_64
-          - runner: ubuntu-22.04
+          - runner: ubuntu-24.04
             target: aarch64-unknown-linux-musl
             arch: aarch64
     steps:
