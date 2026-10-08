@@ -10,6 +10,19 @@ Install from PyPI:
 pip install jsoncompat==0.3.1
 ```
 
+Releases also provide a source distribution for platforms without a matching
+wheel. To request a source build explicitly:
+
+```bash
+pip install --no-binary=jsoncompat jsoncompat
+```
+
+Source builds require Python 3.12 or newer, a current stable Rust toolchain,
+and the platform's native linker/build tools. Network access is required to
+fetch the build backend, Rust crates, and the pinned Git validator dependency.
+The archive includes the local Rust workspace dependencies and Python sources;
+you do not need a repository checkout.
+
 ## Quick start
 
 ```python
