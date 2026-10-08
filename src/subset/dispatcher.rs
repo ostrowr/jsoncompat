@@ -131,6 +131,13 @@ pub(super) fn analyze_subschema_with_context(
     if sub == sup {
         return SubschemaAnalysis::compatible();
     }
+    if let Some(proven) = exact::exact_numeric_subset(sub, sup) {
+        return SubschemaAnalysis::from_check(proven, mode, || {
+            Some(SubschemaExplanation::new(
+                "exact numeric constraints are not known to be contained by the comparison target",
+            ))
+        });
+    }
 
     let normalized_sub = unwrap_singleton_applicators(sub);
     let normalized_sup = unwrap_singleton_applicators(sup);

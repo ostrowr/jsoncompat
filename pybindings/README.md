@@ -44,7 +44,7 @@ print(example)
 
 - `check_compat(old_schema_json: str, new_schema_json: str, role: str = "both") -> bool`
   - `role` must be `"serializer"`, `"deserializer"`, or `"both"`.
-  - Raises `ValueError` for invalid schemas or hard unsupported compatibility features such as non-integral `number.multipleOf`.
+  - Raises `ValueError` for invalid schemas or unsupported dialects or unresolved resources.
 - `generator_for(schema_json: str) -> Generator`
   - Parses the schema once and returns a reusable generator.
   - `Generator.generate_value(depth: int = 5) -> str` returns a JSON string for one generated value accepted by the schema.
@@ -373,3 +373,9 @@ benchmark the same values.
 MIT License. See:
 
 - https://github.com/ostrowr/jsoncompat/blob/main/LICENSE
+
+`analyze_compat(old_schema_json, new_schema_json, role="both")` returns a JSON
+string with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible
+results include `direction` and `counterexample`; unknown results include
+`reason`. `check_compat` remains boolean and returns false when no inclusion
+proof is available. See the [keyword support matrix](../keyword-support.md).

@@ -23,7 +23,6 @@ const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
     "https://json-schema.org/draft/2020-12/schema#";
 const OPENAPI_31_SCHEMA_OBJECT_DIALECT: &str = "https://spec.openapis.org/oas/3.1/dialect/base";
 const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base";
-const MAX_EXACT_F64_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -6077,9 +6076,6 @@ impl SchemaReferenceRewrite {
         object: &Map<String, Value>,
         pointer: &JsonPointer,
     ) -> Result<(), OpenApiError> {
-        if matches!(self, Self::Lowering) {
-            reject_unsafe_number_bounds_in_schema_object(object, pointer)?;
-        }
         validate_optional_external_docs_field(object, pointer)?;
         validate_optional_xml_field(object, pointer)
     }
@@ -6179,13 +6175,6 @@ fn unsupported_lowering_schema_keyword_feature(keyword: &str) -> Option<&'static
         "$anchor" => Some("JSON Schema keyword '$anchor'"),
         "$dynamicRef" => Some("JSON Schema keyword '$dynamicRef'"),
         "$dynamicAnchor" => Some("JSON Schema keyword '$dynamicAnchor'"),
-        "additionalItems" => Some("JSON Schema keyword 'additionalItems'"),
-        "contentEncoding" => Some("JSON Schema keyword 'contentEncoding'"),
-        "contentMediaType" => Some("JSON Schema keyword 'contentMediaType'"),
-        "contentSchema" => Some("JSON Schema keyword 'contentSchema'"),
-        "dependencies" => Some("JSON Schema keyword 'dependencies'"),
-        "unevaluatedItems" => Some("JSON Schema keyword 'unevaluatedItems'"),
-        "unevaluatedProperties" => Some("JSON Schema keyword 'unevaluatedProperties'"),
         _ => None,
     }
 }
@@ -6232,57 +6221,6 @@ fn schema_object_explicitly_excludes_array(schema: &Map<String, Value>) -> bool 
         }
         _ => false,
     }
-}
-
-fn reject_unsafe_number_bounds_in_schema_object(
-    object: &Map<String, Value>,
-    pointer: &JsonPointer,
-) -> Result<(), OpenApiError> {
-    if schema_object_has_integer_only_numeric_domain(object) {
-        return Ok(());
-    }
-
-    for keyword in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"] {
-        let Some(value) = object.get(keyword) else {
-            continue;
-        };
-        if !number_bound_is_outside_exact_f64_integer_range(value) {
-            continue;
-        }
-        return Err(unsupported_compatibility_feature(
-            &pointer.child(keyword),
-            "JSON Schema number bounds outside the exact f64 integer range [-9007199254740991, 9007199254740991]",
-        ));
-    }
-
-    Ok(())
-}
-
-fn schema_object_has_integer_only_numeric_domain(object: &Map<String, Value>) -> bool {
-    match object.get("type") {
-        Some(Value::String(schema_type)) => schema_type == "integer",
-        Some(Value::Array(schema_types)) => {
-            let mut has_integer = false;
-            for schema_type in schema_types {
-                let Some(schema_type) = schema_type.as_str() else {
-                    return false;
-                };
-                match schema_type {
-                    "integer" => has_integer = true,
-                    "number" => return false,
-                    _ => {}
-                }
-            }
-            has_integer
-        }
-        _ => false,
-    }
-}
-
-fn number_bound_is_outside_exact_f64_integer_range(value: &Value) -> bool {
-    value
-        .as_f64()
-        .is_some_and(|value| value.is_finite() && value.abs() > MAX_EXACT_F64_INTEGER)
 }
 
 fn rewrite_schema_map_refs(

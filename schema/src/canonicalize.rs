@@ -1252,6 +1252,9 @@ fn infer_required_properties(schema: &mut Map<String, Value>, pointer: &str) -> 
 /// Select the stronger endpoint before normalizing integer bounds. Comparing
 /// JSON integers through f64 would merge adjacent values beyond 2^53.
 fn normalize_numeric_bounds(schema: &mut Map<String, Value>, pointer: &str) -> Result<()> {
+    if crate::exact::needs_exact_number(schema) {
+        return Ok(());
+    }
     for (inclusive, exclusive, inclusive_is_stronger) in [
         ("maximum", "exclusiveMaximum", Ordering::Less),
         ("minimum", "exclusiveMinimum", Ordering::Greater),
@@ -1478,7 +1481,7 @@ fn lower_enum_with_type(schema: &mut Map<String, Value>) {
 
 fn lower_equal_bounds_to_enum(
     schema: &mut Map<String, Value>,
-    pointer: &str,
+    _pointer: &str,
 ) -> Result<Option<Value>> {
     let Some(Value::String(type_name)) = schema.get("type") else {
         return Ok(None);
@@ -1492,14 +1495,17 @@ fn lower_equal_bounds_to_enum(
     if minimum != maximum {
         return Ok(None);
     }
+    if type_name == "integer"
+        && !crate::exact::decimal(minimum)
+            .expect("validated bound")
+            .is_integer()
+    {
+        return Ok(Some(Value::Object(unsatisfiable_object(schema))));
+    }
     if let Some(multiple_of) = schema.get("multipleOf")
-        && !value_is_multiple_of(
-            minimum,
-            multiple_of,
-            type_name,
-            &join_pointer(pointer, "minimum"),
-            &join_pointer(pointer, "multipleOf"),
-        )?
+        && !(crate::exact::decimal(minimum).expect("validated bound")
+            / crate::exact::decimal(multiple_of).expect("validated divisor"))
+        .is_integer()
     {
         return Ok(Some(Value::Object(unsatisfiable_object(schema))));
     }
@@ -1998,68 +2004,6 @@ fn value_matches_type(value: &Value, type_value: &Value) -> bool {
     }
 }
 
-fn value_is_multiple_of(
-    value: &Value,
-    multiple_of: &Value,
-    type_name: &str,
-    value_pointer: &str,
-    multiple_of_pointer: &str,
-) -> Result<bool> {
-    match type_name {
-        "integer" => {
-            let value = integer_value_from_json(value, value_pointer)?;
-            let multiple_of = integer_value_from_json(multiple_of, multiple_of_pointer)?;
-            Ok(multiple_of != 0 && value % multiple_of == 0)
-        }
-        "number" => {
-            let Some(value) = value.as_f64() else {
-                return Err(CanonicalizeError::NonFiniteNumericKeyword {
-                    pointer: value_pointer.to_owned(),
-                    keyword: last_pointer_token(value_pointer),
-                });
-            };
-            let Some(multiple_of) = multiple_of.as_f64() else {
-                return Err(CanonicalizeError::NonFiniteNumericKeyword {
-                    pointer: multiple_of_pointer.to_owned(),
-                    keyword: last_pointer_token(multiple_of_pointer),
-                });
-            };
-            if multiple_of == 0.0 {
-                return Ok(false);
-            }
-            let quotient = value / multiple_of;
-            Ok((quotient - quotient.round()).abs() <= f64::EPSILON * quotient.abs().max(1.0) * 4.0)
-        }
-        _ => Ok(true),
-    }
-}
-
-fn integer_value_from_json(value: &Value, pointer: &str) -> Result<i64> {
-    let Some(number) = value.as_number() else {
-        return Err(CanonicalizeError::IntegerKeywordOutOfRange {
-            pointer: pointer.to_owned(),
-            keyword: last_pointer_token(pointer),
-        });
-    };
-    if let Some(value) = number.as_i64() {
-        return Ok(value);
-    }
-    if let Some(value) = number.as_u64() {
-        return checked_i64_from_u64(value, pointer);
-    }
-    Err(CanonicalizeError::IntegerKeywordOutOfRange {
-        pointer: pointer.to_owned(),
-        keyword: last_pointer_token(pointer),
-    })
-}
-
-fn checked_i64_from_u64(value: u64, pointer: &str) -> Result<i64> {
-    i64::try_from(value).map_err(|_| CanonicalizeError::IntegerKeywordOutOfRange {
-        pointer: pointer.to_owned(),
-        keyword: last_pointer_token(pointer),
-    })
-}
-
 fn preserved_meta(schema: &Map<String, Value>) -> Map<String, Value> {
     let mut out = Map::new();
     for key in PRESERVED_SCHEMA_METADATA_KEYS {
@@ -2103,60 +2047,61 @@ fn should_strip_keyword(key: &str) -> bool {
 }
 
 fn is_known_keyword(key: &str) -> bool {
-    matches!(
-        key,
-        "$schema"
-            | "$id"
-            | "$anchor"
-            | "$dynamicAnchor"
-            | "$ref"
-            | "$dynamicRef"
-            | "$defs"
-            | "$vocabulary"
-            | "definitions"
-            | "title"
-            | "type"
-            | "enum"
-            | "const"
-            | "allOf"
-            | "anyOf"
-            | "oneOf"
-            | "not"
-            | "if"
-            | "then"
-            | "else"
-            | "properties"
-            | "patternProperties"
-            | "required"
-            | "additionalProperties"
-            | "propertyNames"
-            | "minProperties"
-            | "maxProperties"
-            | "dependentRequired"
-            | "dependentSchemas"
-            | "unevaluatedProperties"
-            | "items"
-            | "prefixItems"
-            | "contains"
-            | "minItems"
-            | "maxItems"
-            | "uniqueItems"
-            | "minContains"
-            | "maxContains"
-            | "unevaluatedItems"
-            | "minLength"
-            | "maxLength"
-            | "pattern"
-            | "format"
-            | "minimum"
-            | "maximum"
-            | "exclusiveMinimum"
-            | "exclusiveMaximum"
-            | "multipleOf"
-            | "dependencies"
-            | "additionalItems"
-            | JSONCOMPAT_METADATA_KEY
-    )
+    key == crate::options::ASSERT_FORMAT
+        || matches!(
+            key,
+            "$schema"
+                | "$id"
+                | "$anchor"
+                | "$dynamicAnchor"
+                | "$ref"
+                | "$dynamicRef"
+                | "$defs"
+                | "$vocabulary"
+                | "definitions"
+                | "title"
+                | "type"
+                | "enum"
+                | "const"
+                | "allOf"
+                | "anyOf"
+                | "oneOf"
+                | "not"
+                | "if"
+                | "then"
+                | "else"
+                | "properties"
+                | "patternProperties"
+                | "required"
+                | "additionalProperties"
+                | "propertyNames"
+                | "minProperties"
+                | "maxProperties"
+                | "dependentRequired"
+                | "dependentSchemas"
+                | "unevaluatedProperties"
+                | "items"
+                | "prefixItems"
+                | "contains"
+                | "minItems"
+                | "maxItems"
+                | "uniqueItems"
+                | "minContains"
+                | "maxContains"
+                | "unevaluatedItems"
+                | "minLength"
+                | "maxLength"
+                | "pattern"
+                | "format"
+                | "minimum"
+                | "maximum"
+                | "exclusiveMinimum"
+                | "exclusiveMaximum"
+                | "multipleOf"
+                | "dependencies"
+                | "additionalItems"
+                | JSONCOMPAT_METADATA_KEY
+        )
 }
 
 fn sorted_unique_json(values: &[Value]) -> Vec<Value> {

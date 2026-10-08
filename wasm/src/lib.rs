@@ -124,6 +124,22 @@ pub fn check_compat_js(
         .map_err(|e| JsValue::from_str(&format!("compatibility check failed: {e}")))
 }
 
+/// Return a JSON object with compatible, incompatible, or unknown status.
+#[wasm_bindgen(js_name = analyze_compat)]
+pub fn analyze_compat_js(
+    old_schema_json: &str,
+    new_schema_json: &str,
+    role: &str,
+) -> Result<String, JsValue> {
+    let old = compatibility_schema(&parse_json(old_schema_json)?)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let new = compatibility_schema(&parse_json(new_schema_json)?)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let result = jsoncompat::analyze_compat(&old, &new, parse_role(role)?)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    serde_json::to_string(&result).map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
 /// Generate a JSON value (string) that should satisfy the given schema.
 ///
 /// * `schema_json` – schema as JSON string

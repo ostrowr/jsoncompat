@@ -718,36 +718,22 @@ fn canonicalize_converts_integral_exclusive_integer_bounds_and_checks_equal_boun
 }
 
 #[test]
-fn canonicalize_rejects_integer_bounds_above_i64_max() {
-    let error = canonicalize_schema(&json!({
-        "type": "integer",
-        "minimum": 9223372036854775809_u64,
-        "maximum": 9223372036854775809_u64,
-        "multipleOf": 3
-    }))
-    .unwrap_err();
-
-    assert!(matches!(
-        error,
-        CanonicalizeError::IntegerKeywordOutOfRange {
-            pointer,
-            ..
-        } if pointer == "#/minimum" || pointer == "#/maximum"
-    ));
+fn canonicalize_preserves_integer_bounds_above_i64_max() {
+    let raw = json!({"type":"integer","minimum":9223372036854775809_u64,"maximum":9223372036854775812_u64,"multipleOf":3});
+    assert_canonicalizes_to(&raw, &raw);
 }
 
 #[test]
-fn canonicalize_rejects_unrepresentable_integer_bounds_instead_of_claiming_emptiness() {
+fn canonicalize_preserves_wide_integer_bounds_instead_of_claiming_emptiness() {
     for raw in [
         json!({"type": "integer", "exclusiveMaximum": i64::MIN}),
         json!({"type": "integer", "exclusiveMinimum": i64::MAX}),
         json!({"type": "integer", "minimum": 9223372036854775808.0}),
         json!({"type": "integer", "exclusiveMaximum": u64::MAX}),
     ] {
-        assert!(matches!(
-            canonicalize_schema(&raw),
-            Err(CanonicalizeError::IntegerKeywordOutOfRange { .. })
-        ));
+        let mut expected = raw.clone();
+        expected["multipleOf"] = json!(1);
+        assert_canonicalizes_to(&raw, &expected);
     }
 }
 

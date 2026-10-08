@@ -77,6 +77,7 @@ struct DataclassModuleBuilder<'a> {
     named_refs: BTreeMap<String, String>,
     codegen_root: &'a Value,
     validation_root: &'a Value,
+    source_root: &'a Value,
     validation_root_defs: Option<&'a Map<String, Value>>,
     validation_root_legacy_defs: Option<&'a Map<String, Value>>,
     inline_names: BTreeMap<String, String>,
@@ -103,7 +104,12 @@ impl<'a> DataclassModuleBuilder<'a> {
         .map(|name| (name.to_owned(), "#/generated-preamble".to_owned()))
         .collect();
 
+        let source_root = validation_root;
+        // Nested classes are emitted from canonical schema positions, so their
+        // validation context must use the same positions and reference targets.
+        let validation_root = codegen_root;
         Self {
+            source_root,
             classes: Vec::new(),
             class_names,
             named_refs,
@@ -316,6 +322,9 @@ impl<'a> DataclassModuleBuilder<'a> {
         fallback_schema: &Value,
         pointer: &str,
     ) -> Result<String, DataclassError> {
+        if pointer == "#" {
+            return pretty_schema_literal(self.source_root);
+        }
         let validation_schema = resolve_json_pointer(self.validation_root, pointer)
             .unwrap_or(fallback_schema)
             .clone();
@@ -2674,15 +2683,9 @@ mod tests {
             }
         });
 
-        let error = generate_dataclass_models(&schema).unwrap_err();
-
-        assert!(matches!(
-            error,
-            DataclassError::UnsupportedRef {
-                ref ref_value,
-                ..
-            } if ref_value == "http://localhost:1234/draft2020-12/nested.json#foo"
-        ));
+        let source = generate_dataclass_models(&schema).unwrap();
+        assert!(source.contains("root: int = dc.root_field()"));
+        assert!(source.contains("class GeneratedSchema("));
     }
 
     #[test]

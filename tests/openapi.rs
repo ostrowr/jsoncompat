@@ -129,7 +129,7 @@ fn openapi_documents_reject_invalid_added_operations_before_compatibility() {
 }
 
 #[test]
-fn compatibility_rejects_unsupported_features_in_added_operations() {
+fn compatibility_supports_decimal_multiples_in_added_operations() {
     let old = spec(get_operation());
     let new = json!({
         "openapi": "3.1.0",
@@ -152,11 +152,7 @@ fn compatibility_rejects_unsupported_features_in_added_operations() {
         }
     });
 
-    let error = compat_error(old, new);
-    assert!(
-        error.contains("non-integral number multipleOf constraints are not supported"),
-        "{error}"
-    );
+    assert!(report(old, new).is_compatible());
 }
 
 #[test]
@@ -211,7 +207,7 @@ fn openapi_documents_reject_invalid_unchanged_operations_before_compatibility() 
 }
 
 #[test]
-fn compatibility_rejects_unsupported_features_in_unchanged_operations() {
+fn compatibility_supports_decimal_multiples_in_unchanged_operations() {
     let invalid = spec(json!({
         "responses": {
             "200": response_schema(json!({
@@ -221,11 +217,7 @@ fn compatibility_rejects_unsupported_features_in_unchanged_operations() {
         }
     }));
 
-    let error = compat_error(invalid.clone(), invalid);
-    assert!(
-        error.contains("non-integral number multipleOf constraints are not supported"),
-        "{error}"
-    );
+    assert!(report(invalid.clone(), invalid).is_compatible());
 }
 
 #[test]
@@ -2235,7 +2227,7 @@ fn openapi_documents_reject_backend_invalid_webhook_schemas_before_reporting_web
 }
 
 #[test]
-fn openapi_documents_keep_valid_but_unsupported_component_schemas_for_lowering_validation() {
+fn openapi_documents_support_legacy_component_schema_keywords() {
     for (keyword, schema) in [
         (
             "dependencies",
@@ -2269,17 +2261,8 @@ fn openapi_documents_keep_valid_but_unsupported_component_schemas_for_lowering_v
         }))
         .expect("valid-but-unsupported component schemas should build before lowering");
 
-        let error = validate_openapi_compatibility_input(&document)
-            .expect_err("unsupported component schema keywords must fail during lowering readiness")
-            .to_string();
-
-        assert!(
-            error.contains(&format!("#/components/schemas/Deferred/{keyword}"))
-                && error.contains(&format!(
-                    "OpenAPI compatibility checks do not support JSON Schema keyword '{keyword}'"
-                )),
-            "{keyword}: {error}"
-        );
+        validate_openapi_compatibility_input(&document)
+            .unwrap_or_else(|error| panic!("{keyword}: {error}"));
     }
 }
 
@@ -2318,7 +2301,7 @@ fn openapi_documents_keep_valid_but_unsupported_component_schema_reference_keywo
 }
 
 #[test]
-fn openapi_documents_keep_valid_component_refs_inside_later_lowering_schema_keywords() {
+fn openapi_documents_support_component_refs_inside_evaluated_keywords() {
     for (keyword, deferred_schema) in [
         (
             "contentSchema",
@@ -2363,17 +2346,8 @@ fn openapi_documents_keep_valid_component_refs_inside_later_lowering_schema_keyw
             )
         });
 
-        let error = validate_openapi_compatibility_input(&document)
-            .expect_err("later-lowering schema keywords must fail during compatibility readiness")
-            .to_string();
-
-        assert!(
-            error.contains(&format!("#/components/schemas/Deferred/{keyword}"))
-                && error.contains(&format!(
-                    "OpenAPI compatibility checks do not support JSON Schema keyword '{keyword}'"
-                )),
-            "{keyword}: {error}"
-        );
+        validate_openapi_compatibility_input(&document)
+            .unwrap_or_else(|error| panic!("{keyword}: {error}"));
     }
 }
 
@@ -4608,7 +4582,7 @@ fn media_type_parameters_do_not_change_compatibility() {
 }
 
 #[test]
-fn compatibility_rejects_schema_keywords_without_openapi_compatibility_semantics() {
+fn compatibility_supports_evaluated_and_annotation_keywords() {
     for keyword in [
         "additionalItems",
         "contentEncoding",
@@ -4632,7 +4606,7 @@ fn compatibility_rejects_schema_keywords_without_openapi_compatibility_semantics
             "unevaluatedProperties" => json!({ "type": "object", (keyword): false }),
             _ => unreachable!("covered keyword cases"),
         };
-        let error = compat_error(
+        let _report = report(
             spec(json!({
                 "requestBody": {
                     "content": {
@@ -4646,18 +4620,6 @@ fn compatibility_rejects_schema_keywords_without_openapi_compatibility_semantics
                 }
             })),
             spec(get_operation()),
-        );
-
-        assert!(error.contains(keyword), "{keyword}: {error}");
-        assert!(
-            error.contains("OpenAPI compatibility checks do not support JSON Schema keyword"),
-            "{keyword}: {error}"
-        );
-        assert!(
-            error.contains(&format!(
-                "#/paths/~1pets/get/requestBody/content/application~1json/schema/{keyword}"
-            )),
-            "{keyword}: {error}"
         );
     }
 }
@@ -4704,8 +4666,8 @@ fn compatibility_rejects_schema_reference_keywords_without_openapi_compatibility
 }
 
 #[test]
-fn compatibility_rejects_number_bounds_outside_the_exact_f64_integer_range() {
-    let error = compat_error(
+fn compatibility_supports_number_bounds_outside_the_exact_f64_integer_range() {
+    let _report = report(
         spec(json!({
             "requestBody": {
                 "content": {
@@ -4722,17 +4684,6 @@ fn compatibility_rejects_number_bounds_outside_the_exact_f64_integer_range() {
             }
         })),
         spec(get_operation()),
-    );
-
-    assert!(
-        error.contains(
-            "JSON Schema number bounds outside the exact f64 integer range [-9007199254740991, 9007199254740991]"
-        ),
-        "{error}"
-    );
-    assert!(
-        error.contains("#/paths/~1pets/get/requestBody/content/application~1json/schema/maximum"),
-        "{error}"
     );
 }
 

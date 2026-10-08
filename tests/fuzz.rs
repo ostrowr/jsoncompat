@@ -28,14 +28,9 @@ const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/s
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("not.json".to_string(), [8].iter().cloned().collect());
-    map.insert(
-        "unevaluatedItems.json".to_string(),
-        [12, 18].iter().cloned().collect(),
-    );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 15].iter().cloned().collect(),
+        [12].iter().cloned().collect(),
     );
 
     map
@@ -301,30 +296,8 @@ fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
     }
 }
 
-fn internal_evaluator_should_be_exact(schema: &SchemaNode, canonical_schema: &Value) -> bool {
-    canonical_keywords_are_supported_by_internal_evaluator(canonical_schema)
-        && schema_is_supported_by_internal_evaluator(schema, &mut HashSet::new())
-}
-
-fn canonical_keywords_are_supported_by_internal_evaluator(schema: &Value) -> bool {
-    let Value::Object(object) = schema else {
-        return true;
-    };
-
-    if object.contains_key("unevaluatedItems")
-        || object.contains_key("unevaluatedProperties")
-        || object.contains_key("dependencies")
-    {
-        return false;
-    }
-
-    object.values().all(|value| match value {
-        Value::Array(values) => values
-            .iter()
-            .all(canonical_keywords_are_supported_by_internal_evaluator),
-        Value::Object(_) => canonical_keywords_are_supported_by_internal_evaluator(value),
-        _ => true,
-    })
+fn internal_evaluator_should_be_exact(schema: &SchemaNode, _canonical_schema: &Value) -> bool {
+    schema_is_supported_by_internal_evaluator(schema, &mut HashSet::new())
 }
 
 fn schema_is_supported_by_internal_evaluator(
@@ -347,7 +320,7 @@ fn schema_is_supported_by_internal_evaluator(
                     .as_ref()
                     .is_none_or(|pattern| pattern.support() == PatternSupport::Supported)
         }
-        Number { .. } | Integer { .. } => true,
+        Number { .. } | Integer { .. } | Validation(_) => true,
         Object {
             properties,
             pattern_properties,

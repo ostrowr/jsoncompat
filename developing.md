@@ -187,8 +187,8 @@ supplement these labels; generation alone can miss optional pattern properties.
 
 The JSON Schema fixture runner audits imported example labels as well as custom
 ones, including negative examples for empty schemas. Optional format-assertion
-examples use an assertion-enabled validator for their labels; production
-compatibility continues to treat `format` as an annotation. Unsupported
+examples use an assertion-enabled validator for their labels; ordinary
+Draft 2020-12 treats `format` as an annotation, with opt-in and vocabulary-selected assertion support. Unsupported
 reference targets and dialects retain explicit skips. The suite is a regression
 corpus, not an exhaustive proof over all JSON Schemas; conservative false
 verdicts and the documented unsupported features remain possible.
@@ -203,9 +203,11 @@ are retained as regression identifiers, not current support claims.
 
 The end-user README intentionally keeps the feature summary short. The main implementation-facing rules that matter when extending support are:
 
-- raw JSON Schema warnings currently cover `additionalItems`, `contentEncoding`, `contentMediaType`, `contentSchema`, `dependencies`, `unevaluatedItems`, and `unevaluatedProperties`;
-- hard compatibility errors currently cover `$id`, `$anchor`, `$dynamicRef`, `$dynamicAnchor`, unsupported non-local references, non-integral `number.multipleOf`, and number-schema bounds outside the adjacent-integer-safe `f64` range `[-9007199254740991, 9007199254740991]`;
-- integer bounds normalize with exact integer arithmetic; endpoints outside the signed 64-bit representation are rejected instead of clamped or mislabeled as empty languages;
+- the [keyword support matrix](keyword-support.md) tracks parsing, validation, canonicalization, proof, and generation separately;
+- scoped references are linked into a memoized local graph; no implicit network retrieval occurs;
+- unevaluated constraints share evaluated-location bookkeeping and retain executable validation when structural expansion is too large or recursive;
+- decimal multiples and wide bounds use exact rational assertions shared by membership checks and compatibility proofs; ordinary bounds retain a small-number fast path;
+- `analyze_compat` distinguishes a proof, a validated counterexample, and an unknown result; the legacy boolean API remains conservative;
 - deserializer compatibility can assume old producers omit optional undeclared properties; required and dependency-forced names must still be checked. Intersections, negation, conditionals, exact-one unions, and `contains` proofs use full validation semantics, and recursion keys distinguish those semantics;
 - string-pattern reasoning is intentionally conservative when the checker cannot prove regex-language inclusion;
 - generation may rely on retries for heuristic cases and distinguishes deterministic `Unsatisfiable` from `ExhaustedAttempts`.

@@ -12,7 +12,7 @@ jsoncompat compares:
 - OpenAPI 3.1 Schema Objects;
 - JSON OpenAPI 3.1 documents with path operations.
 
-If a schema declares `$schema`, it must use Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. OpenAPI 3.0-only shortcuts such as `nullable` are not reinterpreted.
+By default, `$schema` must use Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. Rust callers can supply Draft 2020-12 vocabulary metaschemas and external resources through `SchemaOptions`. OpenAPI 3.0-only shortcuts such as `nullable` are not reinterpreted.
 
 > [!WARNING]
 > jsoncompat is alpha software. It is intentionally conservative in places, and it can still miss incompatible changes or report false positives.
@@ -244,17 +244,22 @@ let report = check_openapi_compat(&old, &new).unwrap();
 assert!(report.is_compatible());
 ```
 
-The Rust API also exposes structured compatibility errors, OpenAPI issue reports, incompatibility explanations, and schema-guided value generation.
+Use `analyze_compat(&old, &new, role)` for a three-way result: `Compatible`,
+`Incompatible { direction, counterexample }`, or `Unknown { reason }`. An
+incompatible result always includes a validated witness. The boolean
+`check_compat` API returns false when inclusion is not proved, including unknown
+cases. The CLI reports that distinction explicitly.
+
+See the [keyword support matrix](keyword-support.md) for parsing, validation,
+proof, generation, resource-resolution, and format-vocabulary coverage.
 
 ## Warnings and hard errors
 
-jsoncompat keeps warnings and hard errors separate:
-
-- unsupported-but-valid schema details produce warnings and the modeled comparison continues;
-- inputs that would make a verdict unsafe fail before comparison;
-- unsupported OpenAPI contract surfaces fail before comparison rather than being silently ignored.
-
-The CLI prints warnings with exact pointers so you can see what was ignored. See [developing.md](developing.md) for the detailed support boundaries and the reasoning behind them.
+Malformed schemas, missing resources, unsupported dialects, and unsupported
+OpenAPI contract surfaces produce errors. Supported annotations do not produce
+warnings or affect compatibility. Complex valid schemas can yield an unknown
+proof result. See the [keyword support matrix](keyword-support.md) for precise
+boundaries.
 
 ## What to read next
 

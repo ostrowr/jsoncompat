@@ -97,6 +97,8 @@ class NativeModule(Protocol):
         role: RoleLiteral,
     ) -> bool: ...
 
+    def analyze_compat(self, old_schema_json: str, new_schema_json: str, role: RoleLiteral) -> str: ...
+
     def generate_value(self, schema_json: str, depth: int) -> str: ...
 
     def generator_for(self, schema_json: str) -> Generator: ...
@@ -315,6 +317,13 @@ if not TYPE_CHECKING:
         JSONCOMPAT_MISSING = _native_symbols.JSONCOMPAT_MISSING
 
 
+def analyze_compat(old_schema_json: str, new_schema_json: str, role: RoleLiteral = "both") -> str:
+    """Return a JSON verdict with status and a counterexample or unknown reason."""
+    if _native_symbols is None:
+        raise ModuleNotFoundError("Build the jsoncompat native extension before calling analyze_compat().")
+    return _native_symbols.analyze_compat(old_schema_json, new_schema_json, role)
+
+
 def check_compat(
     old_schema_json: str,
     new_schema_json: str,
@@ -442,6 +451,7 @@ __all__ = [
     "JsoncompatMissingType",
     "Validator",
     "check_compat",
+    "analyze_compat",
     "generate_value",
     "generator_for",
     "is_valid",
