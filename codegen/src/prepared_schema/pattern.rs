@@ -7,26 +7,34 @@ use fancy_regex::{Assertion, Expr, LookAround};
 use regex_automata::{
     Anchored, Input, MatchKind,
     dfa::{Automaton, dense, sparse},
+    util::look::{Look, LookMatcher},
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Serialize)]
 pub(super) struct PortableDfa {
+    native: sparse::DFA<Vec<u8>>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct DfaBytes {
     little: Vec<u8>,
     big: Vec<u8>,
-    #[serde(skip)]
-    native: sparse::DFA<Vec<u8>>,
+}
+
+impl Serialize for PortableDfa {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DfaBytes {
+            little: self.native.to_bytes_little_endian(),
+            big: self.native.to_bytes_big_endian(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl<'de> Deserialize<'de> for PortableDfa {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Wire {
-            little: Vec<u8>,
-            big: Vec<u8>,
-        }
-        let Wire { little, big } = Wire::deserialize(deserializer)?;
+        let DfaBytes { little, big } = DfaBytes::deserialize(deserializer)?;
         let bytes = if cfg!(target_endian = "little") {
             &little
         } else {
@@ -36,11 +44,10 @@ impl<'de> Deserialize<'de> for PortableDfa {
         if consumed != bytes.len() {
             return Err(serde::de::Error::custom("trailing bytes in prepared regex"));
         }
-        let native = dfa.to_owned();
+        // The wire copies serve portability only; retain just the validated
+        // native automaton once loading has finished.
         Ok(Self {
-            little,
-            big,
-            native,
+            native: dfa.to_owned(),
         })
     }
 }
@@ -57,19 +64,16 @@ impl PortableDfa {
             .map_err(|error| error.to_string())?
             .to_sparse()
             .map_err(|error| error.to_string())?;
-        Ok(Self {
-            little: dfa.to_bytes_little_endian(),
-            big: dfa.to_bytes_big_endian(),
-            native: dfa,
-        })
+        Ok(Self { native: dfa })
     }
 
-    fn ends(&self, text: &str, start: usize, budget: &mut usize) -> Vec<usize> {
+    fn ends(&self, text: &str, start: usize, budget: &mut Option<usize>) -> Vec<usize> {
         let Ok(mut state) = self.native.start_state_forward(
             &Input::new(text)
                 .span(start..text.len())
                 .anchored(Anchored::Yes),
         ) else {
+            *budget = None;
             return Vec::new();
         };
         let mut ends = Vec::new();
@@ -81,7 +85,11 @@ impl PortableDfa {
             if self.native.is_match_state(state) {
                 ends.push(start + offset);
             }
-            if self.native.is_dead_state(state) || self.native.is_quit_state(state) {
+            if self.native.is_quit_state(state) {
+                *budget = None;
+                return Vec::new();
+            }
+            if self.native.is_dead_state(state) {
                 return ends;
             }
         }
@@ -95,8 +103,34 @@ impl PortableDfa {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub(super) enum WordBoundary {
+    Both,
+    Neither,
+    Start,
+    End,
+    StartHalf,
+    EndHalf,
+}
+
+impl WordBoundary {
+    fn is_match(&self, text: &str, at: usize) -> bool {
+        let look = match self {
+            Self::Both => Look::WordUnicode,
+            Self::Neither => Look::WordUnicodeNegate,
+            Self::Start => Look::WordStartUnicode,
+            Self::End => Look::WordEndUnicode,
+            Self::StartHalf => Look::WordStartHalfUnicode,
+            Self::EndHalf => Look::WordEndHalfUnicode,
+        };
+        LookMatcher::new().matches(look, text.as_bytes(), at)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(super) enum Pattern {
     Dfa(Box<PortableDfa>),
+    Boundary(WordBoundary),
     Sequence(Vec<Pattern>),
     Alternative(Vec<Pattern>),
     Look {
@@ -123,6 +157,22 @@ impl Pattern {
 
     fn from_expr(expr: &Expr) -> Result<Self, String> {
         match expr {
+            Expr::Assertion(
+                assertion @ (Assertion::WordBoundary
+                | Assertion::NotWordBoundary
+                | Assertion::LeftWordBoundary
+                | Assertion::RightWordBoundary
+                | Assertion::LeftWordHalfBoundary
+                | Assertion::RightWordHalfBoundary),
+            ) => Ok(Self::Boundary(match assertion {
+                Assertion::WordBoundary => WordBoundary::Both,
+                Assertion::NotWordBoundary => WordBoundary::Neither,
+                Assertion::LeftWordBoundary => WordBoundary::Start,
+                Assertion::RightWordBoundary => WordBoundary::End,
+                Assertion::LeftWordHalfBoundary => WordBoundary::StartHalf,
+                Assertion::RightWordHalfBoundary => WordBoundary::EndHalf,
+                _ => unreachable!(),
+            })),
             Expr::LookAround(child, kind) => Ok(Self::Look {
                 child: Box::new(Self::from_expr(child)?),
                 behind: matches!(kind, LookAround::LookBehind | LookAround::LookBehindNeg),
@@ -167,35 +217,43 @@ impl Pattern {
         }
     }
 
-    pub(super) fn is_match(&self, text: &str) -> bool {
+    /// None means evaluation could not finish, never a negative match.
+    pub(super) fn is_match(&self, text: &str) -> Option<bool> {
         if let Self::Dfa(dfa) = self {
             return dfa
                 .native
                 .try_search_fwd(&Input::new(text))
-                .is_ok_and(|found| found.is_some());
+                .ok()
+                .map(|found| found.is_some());
         }
-        let mut budget = 1_000_000;
+        let mut budget = Some(1_000_000);
         for start in text
             .char_indices()
             .map(|(index, _)| index)
             .chain(std::iter::once(text.len()))
         {
-            if !self.ends(text, start, &mut budget).is_empty() {
-                return true;
-            }
-            if budget == 0 {
-                return false;
+            let matched = !self.ends(text, start, &mut budget).is_empty();
+            budget?;
+            if matched {
+                return Some(true);
             }
         }
-        false
+        Some(false)
     }
 
-    fn ends(&self, text: &str, start: usize, budget: &mut usize) -> Vec<usize> {
+    fn ends(&self, text: &str, start: usize, budget: &mut Option<usize>) -> Vec<usize> {
         if !spend(budget) {
             return Vec::new();
         }
         match self {
             Self::Dfa(dfa) => dfa.ends(text, start, budget),
+            Self::Boundary(boundary) => {
+                if boundary.is_match(text, start) {
+                    vec![start]
+                } else {
+                    Vec::new()
+                }
+            }
             Self::Sequence(children) => {
                 let mut positions = vec![start];
                 for child in children {
@@ -229,7 +287,7 @@ impl Pattern {
                 } else {
                     !child.ends(text, start, budget).is_empty()
                 };
-                if matched != *negative && *budget != 0 {
+                if matched != *negative && budget.is_some() {
                     vec![start]
                 } else {
                     Vec::new()
@@ -275,13 +333,9 @@ impl Pattern {
     }
 }
 
-fn spend(budget: &mut usize) -> bool {
-    if *budget == 0 {
-        false
-    } else {
-        *budget -= 1;
-        true
-    }
+fn spend(budget: &mut Option<usize>) -> bool {
+    *budget = budget.and_then(|remaining| remaining.checked_sub(1));
+    budget.is_some()
 }
 
 /// Match the existing validator's ECMA escape translation. In particular, its

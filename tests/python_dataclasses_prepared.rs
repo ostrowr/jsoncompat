@@ -71,6 +71,27 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
             {"type":"string","minLength":1}, {"type":"string","minLength":1}, {"type":"integer"}
         ]}),
     ));
+    for (name, pattern) in [
+        ("word_boundary", r"\bcat\b"),
+        ("non_boundary", r"\Bcat\B"),
+        ("boundary_start", r"\b{start}cat"),
+        ("boundary_end", r"cat\b{end}"),
+        ("boundary_start_half", r"\b{start-half}cat"),
+        ("boundary_end_half", r"cat\b{end-half}"),
+        ("boundary_look", r"(?<=\b)cat(?=\b)"),
+    ] {
+        schemas.push((name, json!({"type":"string", "pattern":pattern})));
+    }
+    let costly_pattern = "(?=a+$)a+$";
+    schemas.push((
+        "budget_not",
+        json!({"type":"string", "not":{"pattern":costly_pattern}}),
+    ));
+    schemas.push((
+        "budget_if",
+        json!({"type":"string", "if":{"pattern":costly_pattern}, "then":false}),
+    ));
+    schemas.push(("budget_keys", json!({"type":"object", "patternProperties":{costly_pattern:false}, "additionalProperties":true})));
     schemas.push(("wide", record_schema(1000)));
     schemas.push((
         "unicode_text",

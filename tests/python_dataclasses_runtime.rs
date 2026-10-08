@@ -728,6 +728,7 @@ fn native_unavailable_missing_singleton_is_unforgeable_and_reload_stable() {
     let mut command = python_env::python_command();
     command
         .env_remove("JSONCOMPAT_NATIVE_PROFILE")
+        .env_remove("CARGO_TARGET_DIR")
         .env("PYTHONPATH", &package_root)
         .current_dir(&package_root)
         .arg("-B")

@@ -429,6 +429,40 @@ class PreparedTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     instance.to_value()
 
+    def test_word_boundaries_match_the_general_validator(self):
+        values = ["", "cat", " cat!", "wildcat", "catfish", "écat", "caté", "_cat_", "猫 cat 猫", "cat\n", "🐲cat🐲"]
+        for name in ("word_boundary", "non_boundary", "boundary_look", "boundary_start", "boundary_end", "boundary_start_half", "boundary_end_half"):
+            model = self.modules[name].JSONCOMPAT_MODEL
+            validator = jsoncompat.validator_for(model.__jsoncompat_schema__)
+            for value in values:
+                with self.subTest(pattern=name, value=value):
+                    expected = validator.is_valid_value(value)
+                    self.assertEqual(outcome(model, value)[0] == "accepted", expected)
+                    trusted = model.from_value(value, skip_validation=True)
+                    if expected:
+                        self.assertEqual(json.loads(trusted.serialize()), value)
+                    else:
+                        with self.assertRaises(ValueError):
+                            trusted.serialize()
+
+    def test_regex_budget_exhaustion_cannot_accept_invalid_values(self):
+        text = "a" * 600_000
+        for name, value in (("budget_not", text), ("budget_if", text), ("budget_keys", {text: 1})):
+            model = self.modules[name].JSONCOMPAT_MODEL
+            validator = jsoncompat.validator_for(model.__jsoncompat_schema__)
+            self.assertFalse(validator.is_valid_value(value), name)
+            with self.subTest(schema=name):
+                with self.assertRaises(ValueError):
+                    model.deserialize(json.dumps(value))
+                with self.assertRaises(ValueError):
+                    model.from_value(value)
+                trusted = model.from_value(value, skip_validation=True)
+                with self.assertRaises(ValueError):
+                    trusted.serialize()
+                with self.assertRaises(ValueError):
+                    trusted.to_value()
+                self.assertEqual(json.loads(trusted.serialize(skip_validation=True)), value)
+
     def test_corrupt_shared_guards_are_rejected_at_import(self):
         for case in ("reference", "original", "owner", "field", "rule", "length"):
             with self.subTest(case=case):

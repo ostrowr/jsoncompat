@@ -24,7 +24,11 @@ impl PreparedSchema {
         active: &mut Vec<usize>,
         include_unevaluated: bool,
     ) -> bool {
-        if depth >= MAX_DEPTH || active.contains(&id.0) {
+        if depth >= MAX_DEPTH {
+            context.incomplete = true;
+            return false;
+        }
+        if active.contains(&id.0) {
             return false;
         }
         active.push(id.0);
@@ -81,7 +85,7 @@ impl PreparedSchema {
                             .is_ok()
                         || patterns
                             .iter()
-                            .any(|(pattern, _)| self.patterns[pattern.0].is_match(key))
+                            .any(|(pattern, _)| self.pattern_matches(*pattern, key, context))
                 }
                 _ => false,
             },

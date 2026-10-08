@@ -6,6 +6,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -149,32 +150,19 @@ enum DiscriminatorKey {
     String(String),
 }
 
-struct ValidatedNativeSlot {
+// The interpreter ABI selects the storage at build time. Both forms retain
+// the exact owner and are constructed only after descriptor validation.
+struct ValidatedSlot {
     owner: Py<PyType>,
+    #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
     offset: NonZeroUsize,
-}
-
-enum SlotInspection {
-    Native(ValidatedNativeSlot),
     #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-    Portable(ValidatedPortableDescriptor),
-}
-
-#[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-struct ValidatedPortableDescriptor {
-    owner: Py<PyType>,
     descriptor: Py<PyAny>,
-}
-
-enum AttributeStorage {
-    NativeSlot(ValidatedNativeSlot),
-    #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-    PortableDescriptor(ValidatedPortableDescriptor),
 }
 
 struct ModelAttribute {
     name: Py<PyString>,
-    storage: AttributeStorage,
+    storage: ValidatedSlot,
 }
 
 impl ModelAttribute {
@@ -189,26 +177,15 @@ impl ModelAttribute {
         name: &Bound<'_, PyString>,
         descriptor: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let storage = match inspect_native_slot(model_type, name.to_str()?, descriptor)? {
-            SlotInspection::Native(slot) => AttributeStorage::NativeSlot(slot),
-            #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-            SlotInspection::Portable(descriptor) => {
-                AttributeStorage::PortableDescriptor(descriptor)
-            }
-        };
         Ok(Self {
             name: name.clone().unbind(),
-            storage,
+            storage: inspect_native_slot(model_type, name.to_str()?, descriptor)?,
         })
     }
 
     #[inline(always)]
     fn owner(&self) -> &Py<PyType> {
-        match &self.storage {
-            AttributeStorage::NativeSlot(slot) => &slot.owner,
-            #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-            AttributeStorage::PortableDescriptor(descriptor) => &descriptor.owner,
-        }
+        &self.storage.owner
     }
 
     #[inline(always)]
@@ -222,23 +199,18 @@ impl ModelAttribute {
         }
     }
 
+    #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
     #[inline(always)]
     fn native_slot_ptr(
         &self,
         py: Python<'_>,
         object: *mut ffi::PyObject,
     ) -> Option<*mut *mut ffi::PyObject> {
-        #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
-        let AttributeStorage::NativeSlot(slot) = &self.storage;
-        #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-        let slot = match &self.storage {
-            AttributeStorage::NativeSlot(slot) => slot,
-            AttributeStorage::PortableDescriptor(_) => return None,
-        };
+        let slot = &self.storage;
         if unsafe { ffi::Py_TYPE(object) } != slot.owner.bind(py).as_ptr().cast() {
             return None;
         }
-        // SAFETY: `ValidatedNativeSlot` is only created after proving that the
+        // SAFETY: `ValidatedSlot` is only created after proving that the
         // named member descriptor belongs to `owner` and identifies an
         // aligned object-pointer slot within the concrete allocation.
         Some(unsafe {
@@ -247,6 +219,16 @@ impl ModelAttribute {
                 .add(slot.offset.get())
                 .cast::<*mut ffi::PyObject>()
         })
+    }
+
+    #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
+    #[inline(always)]
+    fn native_slot_ptr(
+        &self,
+        _py: Python<'_>,
+        _object: *mut ffi::PyObject,
+    ) -> Option<*mut *mut ffi::PyObject> {
+        None
     }
 
     #[inline(always)]
@@ -271,12 +253,13 @@ impl ModelAttribute {
             return Ok(unsafe { Bound::from_borrowed_ptr(py, value) });
         }
         #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-        if let AttributeStorage::PortableDescriptor(descriptor) = &self.storage {
-            return descriptor
+        {
+            self.storage
                 .descriptor
                 .bind(py)
-                .call_method1("__get__", (instance, descriptor.owner.bind(py)));
+                .call_method1("__get__", (instance, self.owner().bind(py)))
         }
+        #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
         instance.getattr(self.name.bind(py))
     }
 
@@ -287,17 +270,19 @@ impl ModelAttribute {
             return Ok(!value.is_null());
         }
         #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-        if let AttributeStorage::PortableDescriptor(descriptor) = &self.storage {
-            return match descriptor
+        {
+            match self
+                .storage
                 .descriptor
                 .bind(py)
-                .call_method1("__get__", (instance, descriptor.owner.bind(py)))
+                .call_method1("__get__", (instance, self.owner().bind(py)))
             {
                 Ok(_) => Ok(true),
                 Err(error) if error.is_instance_of::<PyAttributeError>(py) => Ok(false),
                 Err(error) => Err(error),
-            };
+            }
         }
+        #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
         instance.hasattr(self.name.bind(py))
     }
 
@@ -318,13 +303,14 @@ impl ModelAttribute {
         }
 
         #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-        if let AttributeStorage::PortableDescriptor(descriptor) = &self.storage {
-            descriptor
+        {
+            self.storage
                 .descriptor
                 .bind(py)
                 .call_method1("__set__", (instance, value.bind(py)))?;
-            return Ok(());
+            Ok(())
         }
+        #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
         unreachable!("native slot storage returned no native slot")
     }
 
@@ -353,9 +339,7 @@ impl ModelAttribute {
         visit.call(&self.name)?;
         visit.call(self.owner())?;
         #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-        if let AttributeStorage::PortableDescriptor(descriptor) = &self.storage {
-            visit.call(&descriptor.descriptor)?;
-        }
+        visit.call(&self.storage.descriptor)?;
         Ok(())
     }
 }
@@ -4598,7 +4582,7 @@ fn inspect_native_slot(
     model_type: &Bound<'_, PyType>,
     name: &str,
     descriptor: &Bound<'_, PyAny>,
-) -> PyResult<SlotInspection> {
+) -> PyResult<ValidatedSlot> {
     // SAFETY: exact member descriptors use the public CPython
     // PyMemberDescrObject/PyMemberDef layout. We validate that the descriptor
     // belongs to this concrete layout, names the requested member, and covers
@@ -4655,14 +4639,14 @@ fn inspect_native_slot(
                 "generated attribute {name:?} has an invalid slot offset"
             )));
         }
-        Ok(SlotInspection::Native(ValidatedNativeSlot {
+        Ok(ValidatedSlot {
             owner: model_type.clone().unbind(),
             offset: NonZeroUsize::new(offset).ok_or_else(|| {
                 PyErr::new::<PyTypeError, _>(format!(
                     "generated attribute {name:?} has a zero slot offset"
                 ))
             })?,
-        }))
+        })
     }
 }
 
@@ -4671,7 +4655,7 @@ fn inspect_native_slot(
     model_type: &Bound<'_, PyType>,
     name: &str,
     descriptor: &Bound<'_, PyAny>,
-) -> PyResult<SlotInspection> {
+) -> PyResult<ValidatedSlot> {
     let member_descriptor_type = PyModule::import(model_type.py(), "types")?
         .getattr("MemberDescriptorType")?
         .cast_into::<PyType>()?;
@@ -4687,10 +4671,10 @@ fn inspect_native_slot(
             "generated attribute {name:?} must be an owned data descriptor"
         )));
     }
-    Ok(SlotInspection::Portable(ValidatedPortableDescriptor {
+    Ok(ValidatedSlot {
         owner: model_type.clone().unbind(),
         descriptor: descriptor.clone().unbind(),
-    }))
+    })
 }
 
 fn parse_node(

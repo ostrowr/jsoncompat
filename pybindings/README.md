@@ -148,8 +148,10 @@ ambiguous unions retain schema-based selection. Ordinary self-referential and
 mutually recursive models using local `$ref` are supported, with a runtime depth
 guard. The specialized `$dynamicRef` and `$recursiveRef` keywords, nonlocal
 reference resolution, custom vocabularies, and regex backreferences/atomic
-groups/subroutine calls currently fail during generation. Complex regex
-compositions have an execution budget. Unsupported features fail explicitly;
+groups/subroutine calls currently fail during generation. Unicode word boundaries
+and lookarounds use prebuilt operations. Complex regex compositions have an
+execution budget; exhausting it rejects validation, including inside negation,
+conditionals, or property patterns. Unsupported features fail explicitly;
 constraints are never silently dropped or compiled later.
 
 Benchmark the build cost, fully checked round trips, and fresh-process startup

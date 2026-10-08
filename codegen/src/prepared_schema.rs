@@ -251,15 +251,18 @@ fn multiple_of(value: InstanceRef<'_>, divisor: f64) -> bool {
 }
 
 impl Rule {
-    fn edges(&self) -> Vec<NodeId> {
+    fn edges_valid(&self, node_count: usize) -> bool {
+        let valid = |node: NodeId| node.0 < node_count;
         match self {
             Self::Ref(node)
             | Self::Not(node)
             | Self::PropertyNames(node)
             | Self::Contains { node, .. }
             | Self::UnevaluatedProperties(node)
-            | Self::UnevaluatedItems(node) => vec![*node],
-            Self::All(nodes) | Self::Any(nodes) | Self::One(nodes) => nodes.clone(),
+            | Self::UnevaluatedItems(node) => valid(*node),
+            Self::All(nodes) | Self::Any(nodes) | Self::One(nodes) => {
+                nodes.iter().copied().all(valid)
+            }
             Self::If {
                 condition,
                 then_node,
@@ -267,7 +270,7 @@ impl Rule {
             } => std::iter::once(*condition)
                 .chain(*then_node)
                 .chain(*else_node)
-                .collect(),
+                .all(valid),
             Self::Object {
                 properties,
                 patterns,
@@ -278,10 +281,10 @@ impl Rule {
                 .map(|(_, node)| *node)
                 .chain(patterns.iter().map(|(_, node)| *node))
                 .chain(*additional)
-                .collect(),
-            Self::DependentSchemas(entries) => entries.iter().map(|(_, node)| *node).collect(),
-            Self::Array { prefix, items } => prefix.iter().copied().chain(*items).collect(),
-            _ => Vec::new(),
+                .all(valid),
+            Self::DependentSchemas(entries) => entries.iter().all(|(_, node)| valid(*node)),
+            Self::Array { prefix, items } => prefix.iter().copied().chain(*items).all(valid),
+            _ => true,
         }
     }
 }
@@ -348,19 +351,17 @@ impl PreparedSchema {
         }
         for node in &program.nodes {
             for rule in &node.rules {
-                if rule
-                    .edges()
-                    .iter()
-                    .any(|edge| edge.0 >= program.nodes.len())
-                {
+                if !rule.edges_valid(program.nodes.len()) {
                     return Err("prepared schema contains an invalid node reference".into());
                 }
-                let pattern_ids = match rule {
-                    Rule::Pattern(id) => vec![*id],
-                    Rule::Object { patterns, .. } => patterns.iter().map(|(id, _)| *id).collect(),
-                    _ => Vec::new(),
+                let patterns_valid = match rule {
+                    Rule::Pattern(id) => id.0 < program.patterns.len(),
+                    Rule::Object { patterns, .. } => {
+                        patterns.iter().all(|(id, _)| id.0 < program.patterns.len())
+                    }
+                    _ => true,
                 };
-                if pattern_ids.iter().any(|id| id.0 >= program.patterns.len()) {
+                if !patterns_valid {
                     return Err("prepared schema contains an invalid pattern reference".into());
                 }
                 if let Rule::Object { properties, .. } = rule
@@ -378,7 +379,21 @@ impl PreparedSchema {
     }
 
     pub fn is_valid_instance_assuming_json(&self, value: InstanceRef<'_>) -> bool {
-        self.accepts(NodeId(0), value, 0, &mut Evaluation::default())
+        let mut context = Evaluation::default();
+        let valid = self.accepts(NodeId(0), value, 0, &mut context);
+        valid && !context.incomplete
+    }
+
+    fn pattern_matches(&self, id: PatternId, text: &str, context: &mut Evaluation) -> bool {
+        match self.patterns[id.0].is_match(text) {
+            Some(matched) => matched,
+            None => {
+                // A resource limit must not turn into a successful negation,
+                // conditional branch, or additional-property fallback.
+                context.incomplete = true;
+                false
+            }
+        }
     }
 
     fn accepts(
@@ -393,6 +408,7 @@ impl PreparedSchema {
             return true;
         }
         if depth >= MAX_DEPTH {
+            context.incomplete = true;
             return false;
         }
         let node = &self.nodes[id.0];
@@ -531,7 +547,7 @@ impl PreparedSchema {
                         }
                     }
                     for (pattern, node) in patterns {
-                        if self.patterns[pattern.0].is_match(name) {
+                        if self.pattern_matches(*pattern, name, context) {
                             matched = true;
                             if !self.accepts_child(*node, value, depth, context) {
                                 return false;
@@ -545,7 +561,7 @@ impl PreparedSchema {
             }
             Rule::Pattern(id) => value
                 .as_str()
-                .is_none_or(|value| self.patterns[id.0].is_match(value)),
+                .is_none_or(|value| self.pattern_matches(*id, value, context)),
             Rule::PropertyNames(node) => value.as_object().is_none_or(|object| {
                 object.keys().all(|key| {
                     self.accepts_child(
@@ -631,6 +647,7 @@ impl PreparedSchema {
 struct Evaluation {
     active: Vec<(usize, usize)>,
     instance_depth: usize,
+    incomplete: bool,
 }
 
 fn string_length_valid(value: &str, min: u64, max: Option<u64>) -> bool {
@@ -830,7 +847,7 @@ impl Builder<'_> {
             ) || (key == "$id" && path != "#")
             {
                 return Err(format!(
-                    "{path}/{key}: not supported by the ahead-of-time validator yet; use the original generated module"
+                    "{path}/{key}: not supported by generated dataclasses"
                 ));
             }
         }
@@ -1091,4 +1108,61 @@ fn count(value: Option<&Value>) -> Result<Option<u64>, String> {
                 .ok_or_else(|| "count bound cannot be represented as u64".into())
         })
         .transpose()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_depth_cannot_accept_negations_or_conditionals() {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                // Every reference resolves to true, so both enclosing schemas
+                // reject null whether the reference chain fits the budget or not.
+                for length in [4, MAX_DEPTH + 4] {
+                    let nodes: Vec<_> = (0..=length)
+                        .map(|index| Node {
+                            types: None,
+                            choices: None,
+                            rules: if index < length {
+                                vec![Rule::Ref(NodeId(index + 1))]
+                            } else {
+                                Vec::new()
+                            },
+                        })
+                        .chain(std::iter::once(Node {
+                            types: None,
+                            choices: None,
+                            rules: vec![Rule::False],
+                        }))
+                        .collect();
+                    let mut program = PreparedSchema {
+                        version: VERSION,
+                        nodes,
+                        patterns: Vec::new(),
+                        exact_json_numbers: false,
+                    };
+                    for rule in [
+                        Rule::Not(NodeId(1)),
+                        Rule::If {
+                            condition: NodeId(1),
+                            then_node: Some(NodeId(length + 1)),
+                            else_node: None,
+                        },
+                    ] {
+                        program.nodes[0].rules = vec![rule];
+                        assert!(
+                            !program.is_valid_instance_assuming_json(InstanceRef::from_serde(
+                                &Value::Null
+                            ))
+                        );
+                    }
+                }
+            })
+            .expect("start schema-depth regression")
+            .join()
+            .expect("schema-depth regression");
+    }
 }
