@@ -1453,7 +1453,7 @@ fn parse_explicit_scalar_type_annotation(
             if !type_names.is_empty()
                 && type_names
                     .iter()
-                    .all(|type_name| type_name.as_str().is_some_and(&is_scalar)) =>
+                    .all(|type_name| type_name.as_str().is_some_and(is_scalar)) =>
         {
             parse_type_annotation(obj, pointer)
         }

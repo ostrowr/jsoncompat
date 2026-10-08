@@ -12,6 +12,18 @@ just check
 
 That is the full local validation gate. It runs the Rust checks and tests, the web checks, and the production website build.
 
+Use the pnpm version declared in `package.json` when updating JavaScript
+dependencies. Keep routine dependency refreshes within compatible version
+ranges, preserve the exact Python benchmark pins, and commit the Cargo, pnpm,
+and uv lockfiles. After a refresh, run `just check` plus the interactive
+presentation's tests and build (`pnpm --filter jsoncompat-interactive test`
+and `pnpm --filter jsoncompat-interactive build`).
+
+The deck pins Slidev 52.14.1 and overrides its UnoCSS dependency to 66.6.7
+because newer releases produced invalid CSS in the production build. Its
+explicit Markdown 14 dependency satisfies the Markdown plugin's peer range.
+Revisit these constraints only after the deck builds without CSS syntax warnings.
+
 Useful related commands:
 
 ```bash
@@ -184,3 +196,9 @@ entrypoints.
 `just release` dry-runs the patch-release flow.
 
 PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. Merging to `main` deploys the website.
+
+The Python wheel release jobs target CPython 3.12–3.15, including the
+free-threaded 3.14t builds, on Linux (manylinux and musllinux), Windows, and
+macOS. Linux and macOS also build 3.15t wheels. Windows installs a real 3.15
+interpreter and its import library; 3.15t wheels are deferred because the
+import-library generator currently supports only through 3.14.
