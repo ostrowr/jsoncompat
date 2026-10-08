@@ -53,16 +53,16 @@ function CliTab() {
     <>
       <section className="space-y-4">
         <p>Cargo (recommended)</p>
-        <CodeBlock>cargo install jsoncompat --version 0.4.3</CodeBlock>
+        <CodeBlock>cargo install jsoncompat</CodeBlock>
       </section>
       <section className="space-y-4">
         <p>
           or install directly from the{" "}
           <a
             className="text-blue-600 hover:underline"
-            href="https://github.com/ostrowr/jsoncompat/releases/tag/v0.4.3"
+            href="https://github.com/ostrowr/jsoncompat/releases"
           >
-            0.4.3 GitHub release
+            GitHub releases page
           </a>
         </p>
       </section>
@@ -92,7 +92,7 @@ function PythonTab() {
   return (
     <section className="space-y-4">
       <p>Install from PyPI:</p>
-      <CodeBlock>pip install jsoncompat==0.4.3</CodeBlock>
+      <CodeBlock>pip install jsoncompat</CodeBlock>
       <CodeBlock>{`import jsoncompat as jsc
 
 old_schema = '{"type": "string"}'
@@ -119,7 +119,7 @@ function JsTab() {
   return (
     <section className="space-y-4">
       <p>Browser / Node via WebAssembly:</p>
-      <CodeBlock>npm i jsoncompat@0.4.3</CodeBlock>
+      <CodeBlock>npm i jsoncompat</CodeBlock>
       <CodeBlock>{`import init, { check_compat } from "jsoncompat";
 
 await init(); // or init(wasmUrl) with Vite bundlers

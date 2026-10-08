@@ -14,7 +14,7 @@ Releases also provide a source distribution for platforms without a matching
 wheel. To request a source build explicitly:
 
 ```bash
-pip install --no-binary=jsoncompat jsoncompat==0.4.3
+pip install --no-binary=jsoncompat jsoncompat
 ```
 
 Source builds require Python 3.12 or newer, a current stable Rust toolchain,
@@ -63,8 +63,8 @@ print(example)
 Generated dataclasses use `from_value(...)` / `to_value(...)` for Python JSON
 values and `deserialize(...)` / `serialize(...)` for encoded JSON, YAML, and
 MessagePack. JSON is the default format. Install optional codecs with
-`jsoncompat[yaml]==0.4.3` or `jsoncompat[msgpack]==0.4.3`. All direct constructors
-and conversion methods accept keyword-only `skip_validation=True` when the caller
+`jsoncompat[yaml]` or `jsoncompat[msgpack]`. All direct constructors and
+conversion methods accept keyword-only `skip_validation=True` when the caller
 already guarantees schema validity. It skips only the attached JSON Schema
 check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
