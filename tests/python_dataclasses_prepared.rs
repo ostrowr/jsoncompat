@@ -1,0 +1,110 @@
+use jsoncompat_codegen::generate_dataclass_models;
+use serde_json::json;
+use std::fs;
+
+#[path = "support/python_env.rs"]
+mod python_env;
+
+#[test]
+fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "jsoncompat-prepared-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).expect("create prepared test directory");
+    let mut schemas = vec![
+        (
+            "constrained",
+            json!({
+                "title": "Constrained", "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "count": {"type": "integer", "minimum": 0},
+                    "optional": {"type": ["string", "null"]}
+                },
+                "required": ["name", "count"], "additionalProperties": false
+            }),
+        ),
+        (
+            "extras",
+            json!({
+                "title": "Extras", "type": "object",
+                "properties": {"name": {"type": "string", "minLength": 1}},
+                "required": ["name"], "additionalProperties": {"type": "string"}
+            }),
+        ),
+        (
+            "regex",
+            json!({"title": "Pattern", "type": "string", "pattern": "^(?=x+$)x{1,3}$"}),
+        ),
+        (
+            "ambiguous",
+            json!({
+                "title": "Ambiguous", "oneOf": [
+                    {"type": "object", "properties": {"value": {"type": "integer", "minimum": 0}}, "required": ["value"], "additionalProperties": false},
+                    {"type": "object", "properties": {"value": {"type": "integer", "maximum": -1}}, "required": ["value"], "additionalProperties": false}
+                ]
+            }),
+        ),
+        (
+            "nested_regex",
+            json!({"title": "Patterns", "type": "object", "patternProperties": {"^x": {"type": "string", "pattern": "^[a-z]+$"}}, "additionalProperties": false}),
+        ),
+        (
+            "escaped",
+            json!({"type": "object", "properties": {"a\"b\\c\n🐲": {"type": "integer"}}, "required": ["a\"b\\c\n🐲"], "additionalProperties": false}),
+        ),
+    ];
+    schemas.push(("wide", record_schema(1000)));
+    let sections: serde_json::Map<String, serde_json::Value> = (0..200)
+        .map(|index| (format!("section{index:04}"), record_schema(12)))
+        .collect();
+    schemas.push((
+        "many",
+        json!({
+            "type": "object", "required": sections.keys().collect::<Vec<_>>(),
+            "properties": sections, "additionalProperties": false,
+        }),
+    ));
+    schemas.push((
+        "records",
+        json!({"type": "array", "items": record_schema(12)}),
+    ));
+    for (name, schema) in schemas {
+        let source = generate_dataclass_models(&schema).expect("generate test models");
+        fs::write(directory.join(format!("{name}.py")), source).expect("write models");
+    }
+    let output = python_env::python_command()
+        .arg("tests/support/python_prepared.py")
+        .arg(&directory)
+        .output()
+        .expect("run prepared model tests");
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    assert!(
+        output.status.success(),
+        "prepared dataclass tests failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::remove_dir_all(directory).expect("remove prepared test directory");
+}
+
+fn record_schema(width: usize) -> serde_json::Value {
+    let properties: serde_json::Map<String, serde_json::Value> = (0..width)
+        .map(|index| {
+            (
+                format!("field{index:04}"),
+                if index % 2 == 0 {
+                    json!({"type": "string", "minLength": 1})
+                } else {
+                    json!({"type": "integer", "minimum": 0})
+                },
+            )
+        })
+        .collect();
+    json!({"type": "object", "required": properties.keys().collect::<Vec<_>>(), "properties": properties, "additionalProperties": false})
+}

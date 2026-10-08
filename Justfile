@@ -92,6 +92,15 @@ _python-bench-fixtures-limited iterations repeats limit profile: _verify-datacla
 # Benchmark the representative small generated-model graph.
 python-bench iterations="10000" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-runtime iterations repeats "manual")
 
+# Compare optional build artifacts, fully checked round trips, and cold startup.
+python-bench-prepared: _build-python-release (_python-bench-provenance "prepared")
+  {{python_bench_command}} pybindings/bench_dataclasses_prepared.py --assert-target
+
+# Stress wide schemas, hundreds of generated classes, and multi-megabyte values.
+python-bench-prepared-large: _build-python-release (_python-bench-provenance "prepared-large")
+  cargo build --bin jsoncompat --locked
+  {{python_bench_command}} pybindings/bench_dataclasses_prepared_large.py --assert-target
+
 # Benchmark fresh-interpreter import and first-use costs.
 python-bench-startup repeats="25": _build-python-release (_python-bench-provenance "startup") (_python-bench-startup repeats "startup")
 

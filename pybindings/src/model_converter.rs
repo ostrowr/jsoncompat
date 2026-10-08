@@ -4,11 +4,11 @@
 //! Python runtime's existing type checks, missing-field factories, union
 //! selection, and frozen-slot construction semantics.
 
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::rc::Rc;
+use std::sync::{Arc, OnceLock};
 
 use jiter::JsonValue as JiterJsonValue;
 use jsonschema::{
@@ -16,9 +16,7 @@ use jsonschema::{
     PythonInstanceProvider,
 };
 use pyo3::Borrowed;
-#[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-use pyo3::exceptions::PyAttributeError;
-use pyo3::exceptions::{PyIndexError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyAttributeError, PyIndexError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::pyclass::{PyTraverseError, PyVisit};
@@ -29,7 +27,10 @@ use pyo3::types::{
     PyTuple, PyType,
 };
 
-use super::PythonSchema;
+use super::prepared_schema::PreparedSchema;
+
+mod prepared;
+mod streaming;
 
 // Keep recursive conversion comfortably inside the smallest native thread
 // stacks used by supported platforms. In particular, Windows debug builds can
@@ -317,6 +318,27 @@ impl ModelAttribute {
         unreachable!("native slot storage returned no native slot")
     }
 
+    #[inline]
+    fn set_owned(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+        value: Py<PyAny>,
+    ) -> PyResult<()> {
+        self.ensure_owner(py, instance.as_ptr())?;
+        if let Some(slot) = self.native_slot_ptr(py, instance.as_ptr()) {
+            // SAFETY: the validated slot belongs to this exact instance, as
+            // in `set`. Transfer the owned reference instead of retaining it
+            // only to release the caller's reference immediately afterward.
+            unsafe {
+                let previous = std::ptr::replace(slot, value.into_ptr());
+                ffi::Py_XDECREF(previous);
+            }
+            return Ok(());
+        }
+        self.set(py, instance, &value)
+    }
+
     fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
         visit.call(&self.name)?;
         visit.call(self.owner())?;
@@ -330,6 +352,7 @@ impl ModelAttribute {
 
 struct FieldPlan {
     json_name: String,
+    json_prefix: Vec<u8>,
     attribute: ModelAttribute,
     value_node: NodeId,
     presence: FieldPresence,
@@ -641,24 +664,56 @@ enum JsonShape {
 }
 
 struct BranchSchema {
-    raw: serde_json::Value,
-    compiled: OnceCell<PythonSchema>,
+    source: SchemaSource,
+    compiled: OnceLock<jsonschema::Validator>,
+}
+
+enum SchemaSource {
+    Raw(serde_json::Value),
+    Prepared(PreparedSchema),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SchemaValidatorRef<'a> {
+    Native(&'a jsonschema::Validator),
+    Prepared(&'a PreparedSchema),
+}
+
+impl SchemaValidatorRef<'_> {
+    fn is_valid_instance(self, value: JsonInstanceRef<'_>) -> bool {
+        match self {
+            Self::Native(validator) => validator.is_valid_instance(value),
+            Self::Prepared(validator) => validator.is_valid_instance(value),
+        }
+    }
+
+    fn is_valid_instance_assuming_json(self, value: JsonInstanceRef<'_>) -> bool {
+        match self {
+            Self::Native(validator) => validator.is_valid_instance_assuming_json(value),
+            Self::Prepared(validator) => validator.is_valid_instance_assuming_json(value),
+        }
+    }
 }
 
 impl BranchSchema {
-    fn compiled(&self) -> PyResult<&PythonSchema> {
+    fn compiled(&self) -> PyResult<SchemaValidatorRef<'_>> {
+        let raw = match &self.source {
+            SchemaSource::Prepared(program) => return Ok(SchemaValidatorRef::Prepared(program)),
+            SchemaSource::Raw(raw) => raw,
+        };
         if self.compiled.get().is_none() {
-            let compiled = super::validated_python_schema(&self.raw).map_err(|error| {
+            let compiled = super::validated_python_schema(raw).map_err(|error| {
                 PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
             })?;
-            self.compiled.set(compiled).map_err(|_| {
-                PyErr::new::<PyValueError, _>("generated model schema initialized recursively")
-            })?;
+            // Concurrent first calls may both prepare an equivalent validator.
+            // Only the installed validator is retained by the shared plan.
+            let _ = self.compiled.set(compiled.validator);
         }
-        Ok(self
-            .compiled
-            .get()
-            .expect("branch schema was initialized immediately above"))
+        Ok(SchemaValidatorRef::Native(
+            self.compiled
+                .get()
+                .expect("branch schema was initialized immediately above"),
+        ))
     }
 
     fn is_valid_instance(&self, instance: JsonInstanceRef<'_>) -> PyResult<bool> {
@@ -671,7 +726,7 @@ impl BranchSchema {
 }
 
 pub(crate) fn validate_python_value(
-    schema: &PythonSchema,
+    schema: SchemaValidatorRef<'_>,
     py: Python<'_>,
     value: &Bound<'_, PyAny>,
     assume_json: bool,
@@ -720,6 +775,9 @@ enum ConversionNode {
 
 pub(crate) struct ModelConverterPlan {
     nodes: Vec<ConversionNode>,
+    conversion_validates: Vec<bool>,
+    leaf_guards: Vec<Option<super::prepared_schema::Node>>,
+    prepared_plan: Option<prepared::PreparedPlan>,
     object_new: Py<PyAny>,
     missing_sentinel: MissingSentinel,
     frozen_list_type: Py<PyType>,
@@ -728,15 +786,17 @@ pub(crate) struct ModelConverterPlan {
 }
 
 pub(crate) struct ModelConverterPy {
-    plan: Rc<ModelConverterPlan>,
+    plan: Arc<ModelConverterPlan>,
     root: RootNode,
+    output_overrides: Cell<bool>,
+    checked_output: Cell<bool>,
 }
 
 #[derive(Clone, Copy)]
 struct RootNode(NodeId);
 
 pub(crate) struct RootedModelConverterPlan {
-    plan: std::rc::Weak<ModelConverterPlan>,
+    plan: std::sync::Weak<ModelConverterPlan>,
     root: RootNode,
 }
 
@@ -754,7 +814,9 @@ impl PythonCandidate<'_> {
         py: Python<'_>,
         value: &Bound<'_, PyAny>,
     ) -> PyResult<Option<Py<PyAny>>> {
-        if !validate_python_value(self.converter.schema()?, py, value, true)? {
+        if !self.converter.conversion_validates[self.converter.root.0.0]
+            && !validate_python_value(self.converter.schema()?, py, value, true)?
+        {
             return Ok(None);
         }
         Ok(Some(self.model.finish()))
@@ -1039,12 +1101,35 @@ impl RootedModelConverterPlan {
         self.plan.upgrade().map(|plan| ModelConverterPy {
             plan,
             root: self.root,
+            output_overrides: Cell::new(false),
+            checked_output: Cell::new(false),
         })
     }
 }
 
 impl ModelConverterPy {
-    pub(crate) fn schema(&self) -> PyResult<&PythonSchema> {
+    pub(crate) fn has_prepared_schema(&self) -> bool {
+        match self.node(self.root.0) {
+            ConversionNode::Model { branch_schema, .. }
+            | ConversionNode::Root { branch_schema, .. } => {
+                matches!(branch_schema.source, SchemaSource::Prepared(_))
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn validate_emitted_json(&self, payload: &str) -> PyResult<bool> {
+        if self.conversion_validates[self.root.0.0] && !self.output_overrides.get() {
+            return Ok(true);
+        }
+        let parsed = JiterJsonValue::parse(payload.as_bytes(), false)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        Ok(self
+            .schema()?
+            .is_valid_instance_assuming_json(JsonInstanceRef::from_jiter(&parsed)))
+    }
+
+    pub(crate) fn schema(&self) -> PyResult<SchemaValidatorRef<'_>> {
         match self.node(self.root.0) {
             ConversionNode::Model { branch_schema, .. }
             | ConversionNode::Root { branch_schema, .. } => branch_schema.compiled(),
@@ -1147,6 +1232,18 @@ impl ModelConverterPy {
         py: Python<'_>,
         value: &JiterJsonValue<'_>,
     ) -> PyResult<Option<Py<PyAny>>> {
+        if self.conversion_validates[self.root.0.0] {
+            return match self.convert_jiter(
+                py,
+                self.root.0,
+                value,
+                UnionSelection::ValidateAmbiguousBranches,
+            ) {
+                Ok(instance) => Ok(Some(instance)),
+                Err(ConversionFailure::Mismatch(_)) => Ok(None),
+                Err(ConversionFailure::Raised(error)) => Err(error),
+            };
+        }
         let is_valid = self
             .schema()?
             .is_valid_instance_assuming_json(JsonInstanceRef::from_jiter(value));
@@ -1171,11 +1268,19 @@ impl ModelConverterPy {
     ) -> PyResult<String> {
         let mut output = Vec::with_capacity(256);
         write_serializable_json_value(&mut output, value.0.bind(py), MAX_MODEL_DEPTH)?;
-        String::from_utf8(output).map_err(|error| {
-            PyErr::new::<PyValueError, _>(format!(
-                "JSON serialization produced invalid UTF-8: {error}"
-            ))
-        })
+        // SAFETY: the writer only appends ASCII JSON punctuation/numbers,
+        // serde_json string output, and complete Rust str slices. Every write
+        // therefore preserves UTF-8.
+        Ok(unsafe { String::from_utf8_unchecked(output) })
+    }
+
+    pub(crate) fn serialize_model_checked(
+        &self,
+        py: Python<'_>,
+        value: &Bound<'_, PyAny>,
+    ) -> PyResult<String> {
+        self.checked_output.set(true);
+        self.serialize_model_trusted(py, value)
     }
 
     pub(crate) fn serialize_model_trusted(
@@ -1192,11 +1297,11 @@ impl ModelConverterPy {
             ActiveContainers::default(),
             &mut output,
         )?;
-        String::from_utf8(output).map_err(|error| {
-            PyErr::new::<PyValueError, _>(format!(
-                "JSON serialization produced invalid UTF-8: {error}"
-            ))
-        })
+        // SAFETY: the writer only appends ASCII JSON punctuation/numbers,
+        // serde_json string output, and complete Rust str slices. Prepared
+        // field prefixes are parsed as JSON strings when loaded. Every write
+        // therefore preserves UTF-8, including rollback after a union miss.
+        Ok(unsafe { String::from_utf8_unchecked(output) })
     }
 
     pub(crate) fn materialize_json_value(
@@ -1227,6 +1332,16 @@ impl ModelConverterPy {
             return Err(ConversionFailure::Mismatch(ConversionMismatch::Depth));
         }
         let node = self.node(node_id);
+        if union_selection != UnionSelection::FirstRepresentable
+            && let Some(guard) = &self.leaf_guards[node_id.0]
+        {
+            let normalized = self
+                .normalize_output_leaf(py, node, value)?
+                .expect("leaf guard has a scalar converter");
+            if !guard.accepts_leaf(JsonInstanceRef::from_python(normalized.bind(py))) {
+                return Err(ConversionFailure::Mismatch(ConversionMismatch::Literal));
+            }
+        }
         if matches!(
             node,
             ConversionNode::List { .. }
@@ -2336,6 +2451,12 @@ impl ModelConverterPy {
         union_selection: UnionSelection,
     ) -> ConversionResult<Py<PyAny>> {
         let node = self.node(node_id);
+        if union_selection != UnionSelection::FirstRepresentable
+            && let Some(guard) = &self.leaf_guards[node_id.0]
+            && !guard.accepts_jiter_leaf(value)
+        {
+            return Err(ConversionFailure::Mismatch(ConversionMismatch::Literal));
+        }
         match node {
             ConversionNode::Scalar { kind, .. } => {
                 if matches!(kind, ScalarKind::Any) {
@@ -2736,20 +2857,27 @@ impl ModelConverterPy {
         else {
             return Ok(());
         };
+        self.output_overrides.set(true);
 
         // Materialization proves values before assigning them into a Python
         // dict, so a later canonical-key collision cannot hide an invalid
         // earlier value. Preserve that invariant without taxing the unique-key
         // path: only displaced values are written to a throwaway buffer.
         let mut scratch = Vec::new();
-        self.write_json_node(
+        // Schema constraints apply to the final emitted object. A displaced
+        // field still needs structural checks, but its scalar constraints no
+        // longer describe the value that will be serialized under this key.
+        let checked_output = self.checked_output.replace(false);
+        let result = self.write_json_node(
             py,
             displaced_node,
             &displaced_value,
             remaining_depth,
             active_containers,
             &mut scratch,
-        )
+        );
+        self.checked_output.set(checked_output);
+        result
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2855,6 +2983,41 @@ impl ModelConverterPy {
             ));
         }
         let node = self.node(node_id);
+        // Exact builtins already have canonical JSON representations.
+        // Check their constraints on the borrowed scalar and emit it
+        // without constructing another owned Python reference.
+        if let ConversionNode::Scalar { kind } = node {
+            let guard = self
+                .checked_output
+                .get()
+                .then(|| self.leaf_guards[node_id.0].as_ref())
+                .flatten();
+            if matches!(kind, ScalarKind::String)
+                && let Ok(text) = value.cast_exact::<PyString>()
+            {
+                let text = text.to_str()?;
+                let scalar = JiterJsonValue::Str(std::borrow::Cow::Borrowed(text));
+                if guard.is_some_and(|guard| !guard.accepts_jiter_leaf(&scalar)) {
+                    return Err(PyValueError::new_err(
+                        "Instance does not conform to the JSON schema",
+                    ));
+                }
+                return write_json_string(output, text);
+            }
+            if matches!(kind, ScalarKind::Integer | ScalarKind::Number)
+                && value.is_exact_instance_of::<PyInt>()
+                && let Ok(number) = value.extract::<i64>()
+            {
+                let scalar = JiterJsonValue::Int(number);
+                if guard.is_some_and(|guard| !guard.accepts_jiter_leaf(&scalar)) {
+                    return Err(PyValueError::new_err(
+                        "Instance does not conform to the JSON schema",
+                    ));
+                }
+                return serde_json::to_writer(&mut *output, &number)
+                    .map_err(json_serialization_error);
+            }
+        }
         if matches!(
             node,
             ConversionNode::Scalar {
@@ -2910,6 +3073,23 @@ impl ModelConverterPy {
                 output,
             ),
             ConversionNode::Scalar { .. } | ConversionNode::Literal { .. } => {
+                if self.checked_output.get()
+                    && let Some(guard) = &self.leaf_guards[node_id.0]
+                {
+                    let normalized = self
+                        .normalize_output_leaf(py, node, value)?
+                        .expect("guarded leaf");
+                    if !guard.accepts_leaf(JsonInstanceRef::from_python(normalized.bind(py))) {
+                        return Err(PyValueError::new_err(
+                            "Instance does not conform to the JSON schema",
+                        ));
+                    }
+                    return write_serializable_json_value(
+                        output,
+                        normalized.bind(py),
+                        remaining_depth,
+                    );
+                }
                 self.write_output_leaf(py, node, value, remaining_depth, output)
             }
             ConversionNode::List { item } => {
@@ -3022,8 +3202,7 @@ impl ModelConverterPy {
                         } else {
                             output.push(b',');
                         }
-                        write_json_string(output, &field.json_name)?;
-                        output.push(b':');
+                        output.extend_from_slice(&field.json_prefix);
                         self.write_json_node(
                             py,
                             field.value_node,
@@ -4165,7 +4344,39 @@ fn write_serializable_json_value(
 }
 
 fn write_json_string(output: &mut Vec<u8>, value: &str) -> PyResult<()> {
-    serde_json::to_writer(&mut *output, value).map_err(json_serialization_error)
+    if needs_json_escape(value.as_bytes()) {
+        return serde_json::to_writer(&mut *output, value).map_err(json_serialization_error);
+    }
+    output.reserve(value.len() + 2);
+    output.push(b'"');
+    output.extend_from_slice(value.as_bytes());
+    output.push(b'"');
+    Ok(())
+}
+
+/// Test eight bytes at a time for quotes, backslashes, or ASCII controls. The
+/// subtraction may flag an extra byte after a match, but can never miss one.
+/// Escaped strings retain serde_json's established escaping implementation.
+fn needs_json_escape(bytes: &[u8]) -> bool {
+    const LOW: u64 = 0x0101_0101_0101_0101;
+    const HIGH: u64 = 0x8080_8080_8080_8080;
+    let (chunks, remainder) = bytes.as_chunks::<8>();
+    for chunk in chunks {
+        let word = u64::from_ne_bytes(*chunk);
+        let quote = word ^ (LOW * u64::from(b'"'));
+        let slash = word ^ (LOW * u64::from(b'\\'));
+        if ((quote.wrapping_sub(LOW) & !quote)
+            | (slash.wrapping_sub(LOW) & !slash)
+            | (word.wrapping_sub(LOW * 0x20) & !word))
+            & HIGH
+            != 0
+        {
+            return true;
+        }
+    }
+    remainder
+        .iter()
+        .any(|byte| *byte < 0x20 || matches!(byte, b'"' | b'\\'))
 }
 
 fn borrowed_python_string<'a>(value: Borrowed<'a, 'a, PyAny>) -> Option<&'a str> {
@@ -4368,7 +4579,8 @@ pub(crate) fn compile_model_converter_plan(
     frozen_list_type: &Bound<'_, PyType>,
     frozen_dict_type: &Bound<'_, PyType>,
     missing_sentinel: Py<PyAny>,
-) -> PyResult<Rc<ModelConverterPlan>> {
+    prepared_plan: Option<&[u8]>,
+) -> PyResult<Arc<ModelConverterPlan>> {
     if !frozen_list_type.is_subclass_of::<PyTuple>()? {
         return Err(PyErr::new::<PyTypeError, _>(
             "generated immutable sequence type must be a tuple subclass",
@@ -4379,20 +4591,46 @@ pub(crate) fn compile_model_converter_plan(
     for descriptor in descriptors {
         nodes.push(parse_node(py, &descriptor, node_count)?);
     }
+    // A union of literal alternatives has one acceptance test. Keeping a
+    // separate conversion branch for each alternative needlessly allocates a
+    // Python scalar for every unsuccessful attempt during JSON decoding.
+    for index in 0..nodes.len() {
+        if let ConversionNode::Union(union) = &nodes[index]
+            && union
+                .iter()
+                .all(|id| matches!(nodes[id.0], ConversionNode::Literal { .. }))
+        {
+            let values = union
+                .iter()
+                .flat_map(|id| {
+                    let ConversionNode::Literal { values } = &nodes[id.0] else {
+                        unreachable!()
+                    };
+                    values.iter().map(|value| value.clone_ref(py))
+                })
+                .collect();
+            nodes[index] = ConversionNode::Literal { values };
+        }
+    }
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
-    Ok(Rc::new(ModelConverterPlan {
+    let mut plan = ModelConverterPlan {
+        conversion_validates: vec![false; nodes.len()],
+        leaf_guards: vec![None; nodes.len()],
+        prepared_plan: None,
         nodes,
         object_new,
         missing_sentinel: MissingSentinel(missing_sentinel),
         frozen_list_type: frozen_list_type.clone().unbind(),
         frozen_dict_type: frozen_dict_type.clone().unbind(),
         frozen_dict_items_attribute: ModelAttribute::compile(py, frozen_dict_type, "_items")?,
-    }))
+    };
+    plan.install_prepared_plan(py, prepared_plan)?;
+    Ok(Arc::new(plan))
 }
 
 pub(crate) fn root_model_converter_plan(
     py: Python<'_>,
-    plan: &Rc<ModelConverterPlan>,
+    plan: &Arc<ModelConverterPlan>,
     model_type: &Bound<'_, PyType>,
     root: usize,
 ) -> PyResult<RootedModelConverterPlan> {
@@ -4414,7 +4652,7 @@ pub(crate) fn root_model_converter_plan(
         )));
     }
     Ok(RootedModelConverterPlan {
-        plan: Rc::downgrade(plan),
+        plan: Arc::downgrade(plan),
         root: RootNode(root),
     })
 }
@@ -4736,6 +4974,7 @@ fn parse_model_node(
         fields.push((
             FieldPlan {
                 json_name,
+                json_prefix: Vec::new(),
                 attribute: ModelAttribute::compile(py, &model_type, &py_name)?,
                 value_node: NodeId::parse(field.get_item(2)?.extract()?, node_count)?,
                 presence: if omittable.extract::<bool>()? {
@@ -4771,6 +5010,19 @@ fn parse_model_node(
 }
 
 fn schema_for_model(model_type: &Bound<'_, PyType>) -> PyResult<BranchSchema> {
+    let prepared = match model_type.getattr("__jsoncompat_prepared_schema__") {
+        Ok(value) => Some(value),
+        Err(error) if error.is_instance_of::<PyAttributeError>(model_type.py()) => None,
+        Err(error) => return Err(error),
+    };
+    if let Some(prepared) = prepared {
+        let bytes = prepared.cast::<PyBytes>()?;
+        let program = PreparedSchema::load(bytes.as_bytes()).map_err(PyValueError::new_err)?;
+        return Ok(BranchSchema {
+            source: SchemaSource::Prepared(program),
+            compiled: OnceLock::new(),
+        });
+    }
     let schema = model_type
         .getattr("__jsoncompat_schema__")?
         .extract::<String>()?;
@@ -4778,7 +5030,7 @@ fn schema_for_model(model_type: &Bound<'_, PyType>) -> PyResult<BranchSchema> {
         PyErr::new::<PyValueError, _>(format!("generated model schema is not valid JSON: {error}"))
     })?;
     Ok(BranchSchema {
-        raw: schema,
-        compiled: OnceCell::new(),
+        source: SchemaSource::Raw(schema),
+        compiled: OnceLock::new(),
     })
 }

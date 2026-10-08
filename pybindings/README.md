@@ -78,6 +78,10 @@ is no custom-subclass or Python-constructor fallback. Custom construction hooks
 and Python defaults/default factories are therefore intentionally outside the
 model-definition surface.
 
+The conversion plan is shared across threads. Ordinary modules still initialize
+it lazily; the optional model build below removes model-specific compilation
+from both import and first use.
+
 Generated array and object fields accept ordinary lists and dictionaries at
 construction boundaries, then store them as deeply immutable values exposed as
 `Sequence[...]` and `Mapping[...]`. Use `to_value()` when a mutable JSON-value
@@ -87,6 +91,101 @@ See the [canonical plain-schema example](../examples/dataclasses/demo.py) for an
 ordinary generated model that both serializes and deserializes. The
 [canonical stamped-schema example](../examples/stamp/demo.py) covers versioned
 writer/reader envelopes and historical schemas.
+
+## Optional model build
+
+Prepare generated modules in a packaging or deployment step:
+
+```bash
+jsoncompat codegen --target dataclasses schema.json > models.py
+python -m jsoncompat.codegen.build models.py --output build/models.py
+```
+
+Applications import the prepared `build/models.py` as their model module. The
+source `models.py` remains usable independently. Build input is trusted Python
+code and is imported during preparation. Output must have a different path;
+the source is never overwritten, and the destination source is replaced
+atomically only after preparation succeeds. The build also writes ordinary
+Python bytecode for its interpreter. When packaging for another Python version,
+let wheel installation or `python -m compileall build` regenerate that cache.
+
+Preparation performs annotation resolution, conversion-graph analysis,
+dataclass method generation, schema validation/compilation, and regex
+compilation. It stores portable validation instructions, precompiled automata
+in both byte orders, and conversion optimizations in a self-contained Python
+module. At import, the runtime checks the artifact format and graph references,
+loads programs, and binds the actual Python classes and slot offsets. First use
+does not compile or inspect anything. Python interpreter startup, native-library
+loading, and allocation of classes/runtime objects still happen in the process.
+
+Prepared classes retain frozen/slotted dataclass behavior, field metadata,
+constructor signatures, equality, hashing, repr, pickle support, and
+`dataclasses.replace`. Their JSON/YAML/MessagePack APIs and writer/reader
+restrictions are unchanged. Checked serialization validates current state,
+including models constructed with `skip_validation=True` or subsequently
+modified through `object.__setattr__`.
+
+For schemas whose conversion checks imply validation, scalar constraints are
+checked during parsing and output; the runtime can construct model fields
+directly without allocating a complete intermediate JSON tree or doing a
+second schema walk. Field keys are escaped during the build. Other schemas use
+the prepared validator, including combined applicator
+annotations for `unevaluatedProperties` and `unevaluatedItems`. Ambiguous unions
+retain schema-based selection. The builder rejects features it cannot prepare
+rather than deferring compilation or dropping constraints. In particular,
+dynamic/recursive references, nonlocal reference resolution, custom
+vocabularies, and regex backreferences/atomic groups/subroutine calls are not
+supported by this build format. Complex regex compositions have an execution
+budget, and recursive validation has a depth guard. Keep using the original
+generated module when preparation reports an unsupported schema. Rebuild
+artifacts when upgrading jsoncompat; incompatible formats fail at import.
+
+Benchmark the build cost, fully checked round trips, and fresh-process startup
+against the same strict Pydantic peers used by the existing benchmarks:
+
+```bash
+just python-bench-prepared
+just python-bench-prepared-large
+```
+
+The report at `target/python-aot/benchmark.json` records all timing samples,
+versions, payload sizes, build time, and startup boundaries. Execution order
+rotates between implementations. `--assert-target` on
+`pybindings/bench_dataclasses_prepared.py` requires prepared elapsed time to be
+at most 70% of Pydantic on **both** the small model and the recursive tree.
+The large profile writes `target/python-aot/large/benchmark.json` and enforces
+the same target independently for a 1,000-field model, a schema generating 201
+classes, and 12,000 records (about 9.6 MB of JSON, including non-ASCII strings).
+It also measures model import and the first round trip separately with the
+runtime already imported. Both implementations enforce the emitted length,
+numeric, required-property, and additional-property constraints; invalid
+values at the end of each large payload are checked before timing.
+To increase recursive depth, run the standard script with `--depth 7 --fanout 4
+--tree-iterations 10 --output target/python-aot/deep/benchmark.json`.
+Pydantic validates input; jsoncompat also validates output. These are measured
+workloads, not a speed guarantee for every schema or machine. The test suite
+differentially checks the prepared implementation against the ordinary runtime
+across every generated fixture, supplied examples, and deterministic mutations.
+
+Measured on macOS 26.6.2 arm64 with Python 3.12.2, Pydantic 2.13.4, and the
+release extension (2026-10-08; median of nine rotating-order samples):
+
+| Workload | JSON bytes | Prepared (µs) | Pydantic (µs) | Less elapsed time |
+| --- | ---: | ---: | ---: | ---: |
+| Small nested model | 228 | 2.437 | 3.924 | 37.9% |
+| 1,365-node recursive tree | 268,847 | 2,107 | 3,366 | 37.4% |
+| 21,845-node recursive tree | 4,350,138 | 36,039 | 63,408 | 43.2% |
+| 1,000-field model | 65,391 | 269 | 390 | 31.0% |
+| 201 generated classes | 159,352 | 661 | 1,074 | 38.4% |
+| 12,000 records with Unicode strings | 9,622,824 | 47,000 | 70,116 | 33.0% |
+
+With runtimes preloaded, model import for the 201-class schema took 10.8 ms
+prepared, 96.8 ms with ordinary generated dataclasses, and 110.2 ms with
+Pydantic. Preparation took 2.04 seconds out of band. On the small model,
+preparation took 12.0 ms, model import took 0.39 ms, and its first round trip
+took 47 µs (ordinary generated dataclasses: 1.22 ms import and 2.69 ms first
+round trip). The standard report also includes full fresh-process timings so
+interpreter and runtime startup are not hidden.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 

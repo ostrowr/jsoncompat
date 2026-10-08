@@ -124,6 +124,24 @@ class NativeModule(Protocol):
         frozen_dict_type: type[Mapping[Any, Any]],
     ) -> list[ModelRuntime]: ...
 
+    def prepare_model_schema(self, schema_json: str) -> bytes: ...
+
+    def prepare_model_plan(
+        self,
+        descriptors: list[tuple[Any, ...]],
+        frozen_list_type: type[tuple[Any, ...]],
+        frozen_dict_type: type[Mapping[Any, Any]],
+    ) -> bytes: ...
+
+    def bind_prepared_model_runtimes(
+        self,
+        model_roots: list[tuple[type[Any], int]],
+        descriptors: list[tuple[Any, ...]],
+        frozen_list_type: type[tuple[Any, ...]],
+        frozen_dict_type: type[Mapping[Any, Any]],
+        prepared_plan: bytes,
+    ) -> list[ModelRuntime]: ...
+
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
 
 
@@ -431,122 +449,52 @@ def serialize_json_value(value: JsonValue) -> str:
     return serialize_json_native(value)
 
 
-class _ThreadLocalModelRuntimeGroup:
-    __slots__ = (
-        "_descriptors",
-        "_frozen_dict_type",
-        "_frozen_list_type",
-        "_local",
-        "_model_roots",
-    )
-
-    def __init__(
-        self,
-        model_roots: list[tuple[type[Any], int]],
-        descriptors: list[tuple[Any, ...]],
-        frozen_list_type: type[tuple[Any, ...]],
-        frozen_dict_type: type[Mapping[Any, Any]],
-    ) -> None:
-        self._model_roots = tuple(model_roots)
-        self._descriptors = tuple(descriptors)
-        self._frozen_list_type = frozen_list_type
-        self._frozen_dict_type = frozen_dict_type
-        self._local = threading.local()
-        self._local.runtimes = self._compile()
-
-    def _compile(self) -> tuple[ModelRuntime, ...]:
-        return tuple(
-            _compile_model_runtimes_native(
-                list(self._model_roots),
-                list(self._descriptors),
-                self._frozen_list_type,
-                self._frozen_dict_type,
-            )
-        )
-
-    def runtime(self, index: int) -> ModelRuntime:
-        runtimes = getattr(self._local, "runtimes", None)
-        if runtimes is None:
-            runtimes = self._compile()
-            self._local.runtimes = runtimes
-        return cast(tuple[ModelRuntime, ...], runtimes)[index]
-
-
-class _ThreadLocalModelRuntime:
-    __slots__ = ("_group", "_index")
-
-    def __init__(self, group: _ThreadLocalModelRuntimeGroup, index: int) -> None:
-        self._group = group
-        self._index = index
-
-    def _native(self) -> ModelRuntime:
-        return self._group.runtime(self._index)
-
-    def construct_kwargs(
-        self,
-        kwargs: dict[str, Any],
-        *,
-        skip_validation: bool = False,
-    ) -> Any:
-        return self._native().construct_kwargs(
-            kwargs,
-            skip_validation=skip_validation,
-        )
-
-    def from_value(
-        self,
-        value: JsonValue,
-        *,
-        skip_validation: bool = False,
-    ) -> Any:
-        return self._native().from_value(value, skip_validation=skip_validation)
-
-    def deserialize(
-        self,
-        payload: str | bytes,
-        *,
-        skip_validation: bool = False,
-    ) -> Any:
-        return self._native().deserialize(payload, skip_validation=skip_validation)
-
-    def to_value(
-        self,
-        instance: Any,
-        *,
-        skip_validation: bool = False,
-    ) -> JsonValue:
-        return self._native().to_value(
-            instance,
-            skip_validation=skip_validation,
-        )
-
-    def serialize(
-        self,
-        instance: Any,
-        *,
-        skip_validation: bool = False,
-    ) -> str:
-        return self._native().serialize(
-            instance,
-            skip_validation=skip_validation,
-        )
-
-
 def compile_model_runtimes(
     model_roots: list[tuple[type[Any], int]],
     descriptors: list[tuple[Any, ...]],
     frozen_list_type: type[tuple[Any, ...]],
     frozen_dict_type: type[Mapping[Any, Any]],
 ) -> list[ModelRuntime]:
-    group = _ThreadLocalModelRuntimeGroup(
-        model_roots,
-        descriptors,
-        frozen_list_type,
-        frozen_dict_type,
+    return _compile_model_runtimes_native(
+        model_roots, descriptors, frozen_list_type, frozen_dict_type
     )
-    return [
-        _ThreadLocalModelRuntime(group, index) for index in range(len(model_roots))
-    ]
+
+
+def prepare_model_schema(schema_json: str) -> bytes:
+    """Compile a generated model's schema for an ahead-of-time build artifact."""
+    if _native_symbols is None:
+        raise ModuleNotFoundError("jsoncompat._native is required to prepare models")
+    return _native_symbols.prepare_model_schema(schema_json)
+
+
+def prepare_model_plan(
+    descriptors: list[tuple[Any, ...]],
+    frozen_list_type: type[tuple[Any, ...]],
+    frozen_dict_type: type[Mapping[Any, Any]],
+) -> bytes:
+    """Resolve portable native conversion decisions during model preparation."""
+    if _native_symbols is None:
+        raise ModuleNotFoundError("jsoncompat._native is required to prepare models")
+    return _native_symbols.prepare_model_plan(
+        descriptors, frozen_list_type, frozen_dict_type
+    )
+
+
+def bind_prepared_model_runtimes(
+    model_roots: list[tuple[type[Any], int]],
+    descriptors: list[tuple[Any, ...]],
+    frozen_list_type: type[tuple[Any, ...]],
+    frozen_dict_type: type[Mapping[Any, Any]],
+    prepared_plan: bytes,
+) -> list[ModelRuntime]:
+    """Load a prepared graph and bind its Python objects without compiling it."""
+    if _native_symbols is None:
+        raise ModuleNotFoundError(
+            "jsoncompat._native is required to load prepared models"
+        )
+    return _native_symbols.bind_prepared_model_runtimes(
+        model_roots, descriptors, frozen_list_type, frozen_dict_type, prepared_plan
+    )
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:

@@ -28,7 +28,6 @@ from jsoncompat import (
 
 from .serialization import SerializationFormat, deserialize_value, serialize_value
 
-
 __all__ = [
     "DataclassAdditionalModel",
     "DataclassModel",
@@ -263,7 +262,11 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> JSONCOMPAT_MODEL_T:
-        selected_format = SerializationFormat(format)
+        selected_format = (
+            format
+            if format is SerializationFormat.JSON
+            else SerializationFormat(format)
+        )
         if selected_format is SerializationFormat.JSON:
             return cast(
                 JSONCOMPAT_MODEL_T,
@@ -321,7 +324,11 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         format: SerializationFormat = SerializationFormat.JSON,
         skip_validation: bool = False,
     ) -> str | bytes:
-        selected_format = SerializationFormat(format)
+        selected_format = (
+            format
+            if format is SerializationFormat.JSON
+            else SerializationFormat(format)
+        )
         if selected_format is SerializationFormat.JSON:
             return _jsoncompat_runtime_for(type(self)).serialize(
                 self,
@@ -838,8 +845,7 @@ def _branch_is_object_like(annotation: Any) -> bool:
     if isinstance(annotation, type) and issubclass(annotation, DataclassModel):
         return True
     return (
-        isinstance(annotation, types.GenericAlias)
-        and get_origin(annotation) is Mapping
+        isinstance(annotation, types.GenericAlias) and get_origin(annotation) is Mapping
     )
 
 

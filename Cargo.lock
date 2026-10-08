@@ -955,14 +955,23 @@ name = "jsoncompat_py"
 version = "0.4.3"
 dependencies = [
  "anyhow",
+ "fancy-regex 0.17.0",
+ "fraction",
  "jiter",
  "json_schema_ast",
  "json_schema_fuzz",
  "jsoncompat",
  "jsonschema 0.45.0",
+ "num-bigint",
+ "num-cmp",
+ "num-traits",
+ "percent-encoding",
  "pyo3",
  "pyo3-build-config",
  "rand",
+ "regex-automata",
+ "regex-syntax",
+ "serde",
  "serde_json",
 ]
 

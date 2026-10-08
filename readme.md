@@ -120,6 +120,20 @@ carry the original input schema in `__jsoncompat_schema__` and expose:
 jsoncompat codegen --target dataclasses schema.json > models.py
 ```
 
+For applications sensitive to import and first-use latency, an optional build
+prepares dataclass methods, conversion plans, schema programs, and regexes
+before deployment:
+
+```bash
+python -m jsoncompat.codegen.build models.py --output build/models.py
+```
+
+Deploy the prepared module in place of `models.py`. Import loads its programs
+and binds Python classes and slots; neither import nor first use compiles
+schemas or reflects on annotations. The original module remains usable without
+this step. See [preparing Python models](pybindings/README.md#optional-model-build)
+for the build contract, limitations, and reproducible benchmarks.
+
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;
 - `deserialize(...)` / `serialize(...)` for JSON, YAML, and MessagePack wire
