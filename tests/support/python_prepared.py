@@ -576,7 +576,7 @@ class PreparedTests(unittest.TestCase):
                         fixture = json.loads((REPO / "tests/fixtures" / relative.parent).with_suffix(".json").read_text())
                         case = fixture[int(relative.stem)] if isinstance(fixture, list) else fixture
                         cases.extend(test["data"] for test in case.get("tests", []))
-                    sample = samples.get(str(relative.with_suffix("")))
+                    sample = samples.get(relative.with_suffix("").as_posix())
                     if sample is not None:
                         value = sample["value"]
                         cases.append(value)
