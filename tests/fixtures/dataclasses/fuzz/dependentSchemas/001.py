@@ -44,16 +44,16 @@ def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"dependentSchemas\": {\n    \"bar\": false,\n    \"foo\": true\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"dependent_schemas":[["bar",1],["foo",2]]}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"dependentSchemas\": {\n    \"bar\": false,\n    \"foo\": true\n  },\n  \"minProperties\": 0,\n  \"properties\": {},\n  \"type\": \"object\"\n}", b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"dependent_schemas":[["bar",1],["foo",2]]},{"object_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaItem, _jsoncompat_init_2, "true", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda-\xccA\x12@0\x0c\x05\xd0\xbdSt:\x96\x08]\xba\x86\x13\x94\xa6\x8c\xa15M\xac\x8c\xbb\x0b\xb5\xfc/\xf9\xff*\x94\xd2%M\x0b\xeeV\xf7J/\xcc\x07\xf5\x00+\xc5Pgnb\x9a\xc1%\xeb\x19Lk\xda\xba3\xf0\xffWo\xd9\xe1\x81\xc1a\xe0\xe1C\x92\x95K\\.\xa3M\x12\xbc\xdd\x08\xab,>F\x11N\'J\xbe\x8b\xfb\x01\x8f&%Q', _namespace)
+    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xdaM\xce1\x0e\xc3 \x0c\x05\xd0=\xa7\x88P\xc7\xa4P\xc6\x9c\xa2RO@\x82i\x125\x80\x8c;T(w\xaf\x81\x0e\x1d\xfd\xfc\xbf\xe5\xdc\xf5\xbd\xb8\xa4e\x85\xc3\x88\xa9\x17+QL\x93\x94{\x0a~l|\x0d\xf8\x94\x16\x8d#\xa9\x95V\xe3M\xcb_~(e\x0b\x11\xbc\x05O\x8f\x8a\x89\xafdv\xde\xcc\x06yp\xe6\x95`h\xe2B`!|\x03\xcfg\xad\x1f\x9b\xbfc\x88\x80\xb4A\xe9\xaa\xaa\xf1\x9frK\xd2\'By1\xcc;,$\xba\xf3\x0b\xe1,7\xf0', _namespace)
+    dc.install_model(GeneratedSchemaItem, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 5)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"dependent_schemas":[["bar",1],["foo",2]]}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (2, 4, 6, 7, 8, 9, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (), 3),
+        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"dependent_schemas":[["bar",1],["foo",2]]},{"object_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
         ('list', 5),
-        ('root', GeneratedSchemaItem, 3),
+        ('root', GeneratedSchemaItem, 3, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
         ("str",),
         ('literal', (False,)),

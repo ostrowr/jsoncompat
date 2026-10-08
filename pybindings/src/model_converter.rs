@@ -4717,9 +4717,9 @@ fn parse_node(
         "union" => parse_union_node(descriptor, node_count),
         "model" => parse_model_node(py, descriptor, node_count),
         "root" => {
-            require_arity(descriptor, 3, "root model node")?;
+            require_arity(descriptor, 4, "root model node")?;
             let model_type = descriptor.get_item(1)?.cast_into::<PyType>()?.unbind();
-            let branch_schema = schema_for_model(model_type.bind(py))?;
+            let branch_schema = load_branch_schema(&descriptor.get_item(3)?)?;
             Ok(ConversionNode::Root {
                 branch_schema,
                 root_attribute: ModelAttribute::compile(py, model_type.bind(py), "root")?,
@@ -4864,9 +4864,9 @@ fn parse_model_node(
     descriptor: &Bound<'_, PyTuple>,
     node_count: usize,
 ) -> PyResult<ConversionNode> {
-    require_arity(descriptor, 4, "model node")?;
+    require_arity(descriptor, 5, "model node")?;
     let model_type = descriptor.get_item(1)?.cast_into::<PyType>()?;
-    let branch_schema = schema_for_model(&model_type)?;
+    let branch_schema = load_branch_schema(&descriptor.get_item(4)?)?;
     let field_descriptors = descriptor.get_item(2)?.cast_into::<PyTuple>()?;
     let mut fields = Vec::with_capacity(field_descriptors.len());
     for field in field_descriptors.iter() {
@@ -4923,8 +4923,7 @@ fn parse_model_node(
     })
 }
 
-fn schema_for_model(model_type: &Bound<'_, PyType>) -> PyResult<BranchSchema> {
-    let prepared = model_type.getattr("__jsoncompat_prepared_schema__")?;
+fn load_branch_schema(prepared: &Bound<'_, PyAny>) -> PyResult<BranchSchema> {
     let bytes = prepared.cast::<PyBytes>()?;
     let program = PreparedSchema::load(bytes.as_bytes()).map_err(PyValueError::new_err)?;
     Ok(BranchSchema { program })

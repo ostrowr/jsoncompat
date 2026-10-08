@@ -191,16 +191,25 @@ pub(super) fn module(classes: &[ClassSpec], root: &str) -> Result<DataclassModul
         tuple(classes.iter().map(|c| c.name.clone()))
     )
     .expect("string write");
+    let programs = classes
+        .iter()
+        .zip(&prepared.graph.schemas)
+        .map(|(class, schema)| {
+            schema
+                .to_bytes()
+                .map(|program| bytes(&program))
+                .map_err(|error| super::invalid_schema(class.name.clone(), error))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     for (index, class) in classes.iter().enumerate() {
-        let program = prepared.graph.schemas[index]
-            .to_bytes()
-            .map_err(|error| super::invalid_schema(class.name.clone(), error))?;
+        // The original source is only for explicit schema introspection. Keep
+        // it compressed; validation and errors use the prepared native program.
+        let source = miniz_oxide::deflate::compress_to_vec_zlib(class.schema_json.as_bytes(), 9);
         writeln!(
             implementation,
-            "    dc.install_model({}, _jsoncompat_init_{index}, {}, {}, _namespace)",
+            "    dc.install_model({}, _jsoncompat_init_{index}, {}, _namespace)",
             class.name,
-            python_string_literal(&class.schema_json),
-            bytes(&program)
+            bytes(&source)
         )
         .expect("string write");
     }
@@ -233,14 +242,17 @@ pub(super) fn module(classes: &[ClassSpec], root: &str) -> Result<DataclassModul
             ConversionNode::List { item } => format!("('list', {})", item.0),
             ConversionNode::Dict { value } => format!("('dict', {})", value.0),
             ConversionNode::Root { model, value } => {
-                format!("('root', {}, {})", classes[*model].name, value.0)
+                format!(
+                    "('root', {}, {}, {})",
+                    classes[*model].name, value.0, programs[*model]
+                )
             }
             ConversionNode::Model {
                 model,
                 fields,
                 extra,
             } => format!(
-                "('model', {}, {}, {})",
+                "('model', {}, {}, {}, {})",
                 classes[*model].name,
                 tuple(fields.iter().map(|f| format!(
                     "({}, {}, {}, {})",
@@ -256,7 +268,8 @@ pub(super) fn module(classes: &[ClassSpec], root: &str) -> Result<DataclassModul
                 extra
                     .as_ref()
                     .map(|e| e.value_node.0.to_string())
-                    .unwrap_or_else(|| "None".into())
+                    .unwrap_or_else(|| "None".into()),
+                programs[*model]
             ),
             ConversionNode::Union(union) => {
                 let (name, entries) = union

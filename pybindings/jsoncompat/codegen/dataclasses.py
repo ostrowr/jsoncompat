@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import dataclasses
 import inspect
 import types
@@ -146,7 +145,7 @@ class _DataclassModelMeta(type):
             (
                 base
                 for base in bases
-                if JSONCOMPAT_SCHEMA_FIELD in getattr(base, "__dict__", {})
+                if JSONCOMPAT_RUNTIME_FIELD in base.__dict__
             ),
             None,
         )
@@ -167,8 +166,7 @@ class _DataclassModelMeta(type):
                 field._field_type = getattr(dataclasses, "_FIELD")
                 field.kw_only = True
                 fields[field_name] = field
-        if fields:
-            namespace["__dataclass_fields__"] = fields
+        namespace["__dataclass_fields__"] = fields
         return cast(
             _DataclassModelMeta, super().__new__(mcls, name, bases, namespace, **kwargs)
         )
@@ -510,14 +508,38 @@ _MODEL_METHODS = {
 }
 
 
+# These methods and settings are identical across all generated classes.
+for _name, _method in _MODEL_METHODS.items():
+    setattr(DataclassModel, _name, _method)
+_params = getattr(DataclassModel, "__dataclass_params__")
+for _name, _value in (("slots", True), ("weakref_slot", False)):
+    if hasattr(_params, _name):
+        setattr(_params, _name, _value)
+
+
+class _SchemaSource:
+    """Expand the original schema only when a caller explicitly requests it."""
+
+    __slots__ = ("_compressed",)
+
+    def __init__(self, compressed: bytes) -> None:
+        self._compressed = compressed
+
+    def __get__(self, instance: object, owner: type[DataclassModel]) -> str:
+        import zlib
+
+        schema = zlib.decompress(self._compressed).decode("utf-8")
+        setattr(owner, JSONCOMPAT_SCHEMA_FIELD, schema)
+        return schema
+
+
 def install_model(
     model: type[DataclassModel],
     initializer: Callable[..., None],
-    schema: str,
-    program: bytes,
+    schema_source: bytes,
     namespace: dict[str, Any],
 ) -> None:
-    """Attach prebuilt methods and metadata to a generated class."""
+    """Bind the constructor namespace and retain compressed schema source."""
     if not isinstance(initializer, types.FunctionType):
         raise TypeError("Generated initializer must be a Python function")
     # A companion can bind several separately imported copies of the models.
@@ -526,18 +548,8 @@ def install_model(
         original = initializer
         initializer = types.FunctionType(original.__code__, namespace, original.__name__)
         initializer.__kwdefaults__ = original.__kwdefaults__
-    fields = dict(DataclassModel.__dataclass_fields__)
-    fields.update(model.__dict__.get("__dataclass_fields__", {}))
-    schema_field = copy.copy(fields[JSONCOMPAT_SCHEMA_FIELD])
-    schema_field.default = schema
-    fields[JSONCOMPAT_SCHEMA_FIELD] = schema_field
-    model.__dataclass_fields__ = fields
-    params = copy.copy(getattr(DataclassModel, "__dataclass_params__"))
-    for name, value in (("slots", True), ("weakref_slot", False)):
-        if hasattr(params, name):
-            setattr(params, name, value)
-    setattr(model, "__dataclass_params__", params)
-    initializer.__annotations__ = {name: fields[name].type for name in model.__slots__}
+    fields = model.__dataclass_fields__
+    initializer.__annotations__ = model.__annotations__.copy()
     initializer.__annotations__["skip_validation"] = bool
     initializer.__kwdefaults__ = {
         name: (
@@ -551,11 +563,7 @@ def install_model(
     initializer.__qualname__ = model.__qualname__ + ".__init__"
     initializer.__module__ = model.__module__
     setattr(model, "__init__", initializer)
-    setattr(model, "__match_args__", ())
-    for name, method in _MODEL_METHODS.items():
-        setattr(model, name, method)
-    setattr(model, JSONCOMPAT_SCHEMA_FIELD, schema)
-    setattr(model, "__jsoncompat_prepared_schema__", program)
+    setattr(model, JSONCOMPAT_SCHEMA_FIELD, _SchemaSource(schema_source))
 
 
 def bind_module(

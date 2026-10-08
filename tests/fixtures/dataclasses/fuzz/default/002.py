@@ -25,9 +25,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"properties\": {\n    \"alpha\": {\n      \"default\": 5,\n      \"maximum\": 3,\n      \"type\": \"number\"\n    }\n  },\n  \"type\": \"object\"\n}", b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["alpha",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[{"bound":{"value":3,"lower":false,"exclusive":false}}]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda=\xce\xc1\x0e\x83 \x0c\x06\xe0\xbbOA\xc8\x8e:\x1c\xcb.\xbeM\xd5:4"\x04J\xb2\xc5\xf0\xee\xabN\xbd4\xe9\xd7\xfei\xd7B\x08y\x8b\x9dA\x0b\xb2\x11\xd2\x10\xf9\xd8(5E\xb7T\x7f\xbe\xbb\xf0V}\x80\x81\x94\xaeu]=\xb4:\xf6\xcb-\xec\x83\xf3\x18h\xc4\xc8\xf9\x95\x85\x0dfo\xe0j\x19z\x1c \xcd\xc4\xf4*O\xb3\xf0\x19m\xb2l\xcf\xcb\xe8\xebq{cI\xb6\xc5 w\xce\\\xf3~\xea\x9c\xbav\xc2\x8ed\x91\x7fN\xb24\x0e', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (("alpha", "alpha", 1, True),), 2),
+        ('model', GeneratedSchema, (("alpha", "alpha", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["alpha",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[{"bound":{"value":3,"lower":false,"exclusive":false}}]}],"patterns":[]}'),
         ("float",),
         ("any",)
     ], b'{"version":1,"base_nodes":3,"guards":[{"owner":0,"field":0,"original":1,"guard":{"types":["number"],"choices":null,"rules":[{"bound":{"value":3,"lower":false,"exclusive":false}}]}}],"conversion_validates":[true,false,false,false],"json_keys":[[0,["\\"alpha\\":"]]]}')

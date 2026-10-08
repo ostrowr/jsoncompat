@@ -111,8 +111,9 @@ frozen, slotted Python dataclasses backed by one native construction and
 serialization runtime. Generation resolves model types and references, compiles
 validation programs and regexes, and computes conversion optimizations. Import
 creates classes and binds them to those prebuilt programs; first use performs
-no model compilation. Generated classes carry their input schema in
-`__jsoncompat_schema__`.
+no model compilation. `Model.__jsoncompat_schema__` exposes the input schema;
+the generated artifact stores it compressed and expands it only on explicit
+access. Validation and error reporting use the prebuilt native program.
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json > models.py

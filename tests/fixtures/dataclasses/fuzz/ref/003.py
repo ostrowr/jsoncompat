@@ -53,17 +53,17 @@ def _jsoncompat_init_3(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaPercentField, GeneratedSchemaSlashField, GeneratedSchemaTildeField,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$defs\": {\n    \"percent%field\": {\n      \"type\": \"integer\"\n    },\n    \"slash/field\": {\n      \"type\": \"integer\"\n    },\n    \"tilde~field\": {\n      \"type\": \"integer\"\n    }\n  },\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"properties\": {\n    \"percent\": {\n      \"$ref\": \"#/$defs/percent%25field\"\n    },\n    \"slash\": {\n      \"$ref\": \"#/$defs/slash~1field\"\n    },\n    \"tilde\": {\n      \"$ref\": \"#/$defs/tilde~0field\"\n    }\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["percent",1],["slash",3],["tilde",5]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":6}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaPercentField, _jsoncompat_init_1, "{\n  \"type\": \"integer\"\n}", b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaSlashField, _jsoncompat_init_2, "{\n  \"type\": \"integer\"\n}", b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaTildeField, _jsoncompat_init_3, "{\n  \"type\": \"integer\"\n}", b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x95\x90\xcd\x0e\x820\x10\x84\xef<\x05\xa9x\x13\x17\x9ax\xe1m\x08\xddB\x0dB\xd3\xee\xc5\x10xv\xfb\x83\x86\x04C\xf48\xd3\xf9\xd2\x9d\x99\x924e\x99@iY\x95NN8\xa9\xd148\xd0Y*\xec\xc5\xc7v\x0f\xf4\xd4\xe84S\x03a\x8b\x86\x05\x7f\xbeD\xca\xf6\xb5\xed\xe0?\x86T/p\xf9\x91IV\x8ee\xb6\xe9\xf0Q\xfbDG\xa4m\x05p\xb7\xe3\x90G\xfb:\x9a\x16\x84\xa9%\x01/x\x91\x97\x1c\xd6|\x80\xb5\x19]?R\xb8/\xbc=!3(\xfd\x07\'\x08\xe3\xc0{\x13~\x8b\xd7\xee\xab\x1f\xd1!\xb0\x94_\xd0\xb0\xc0\x11\x1a\'*\xb6\xa8\x1f"\x99_\xe3\x01vh', _namespace)
+    dc.install_model(GeneratedSchemaPercentField, _jsoncompat_init_1, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca\xcc+IMO-R\xe2\xaa\x05\x00N\x03\x06\xdf', _namespace)
+    dc.install_model(GeneratedSchemaSlashField, _jsoncompat_init_2, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca\xcc+IMO-R\xe2\xaa\x05\x00N\x03\x06\xdf', _namespace)
+    dc.install_model(GeneratedSchemaTildeField, _jsoncompat_init_3, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca\xcc+IMO-R\xe2\xaa\x05\x00N\x03\x06\xdf', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaPercentField, 2), (GeneratedSchemaSlashField, 4), (GeneratedSchemaTildeField, 5)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["percent",1],["slash",3],["tilde",5]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":6}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaPercentField, 3),
+        ('root', GeneratedSchemaPercentField, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("int",),
-        ('root', GeneratedSchemaSlashField, 3),
-        ('root', GeneratedSchemaTildeField, 3)
+        ('root', GeneratedSchemaSlashField, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaTildeField, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}')
     ], b'{"version":1,"base_nodes":6,"guards":[],"conversion_validates":[false,false,true,false,true,true],"json_keys":[]}')
 
 

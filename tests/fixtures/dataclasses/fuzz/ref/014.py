@@ -34,12 +34,12 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaAString,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$defs\": {\n    \"a_string\": {\n      \"type\": \"string\"\n    }\n  },\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"enum\": [\n    {\n      \"$ref\": \"#/$defs/a_string\"\n    }\n  ]\n}", b'{"version":1,"nodes":[{"types":null,"choices":[{"$ref":"#/$defs/a_string"}],"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaAString, _jsoncompat_init_1, "{\n  \"type\": \"string\"\n}", b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda=N\xcd\x0a\x830\x0c\xbe\xfb\x14\xa5\xf38\x17\xd7\xa3\xaf2\xc6(3\xd5\x0d\xac\xd2d\x87!}wc\x94^\x02\xdf\x97\xefo\xad\x8c\xb1u\x8f\x81lgV\x01\x02\xfd\x8b8}\xe2P\x18\xe1\xf8\xbf\xa0`{~\x94\xcer\xf3U\x03\xe8=\xe2\xe4w\xc1\xc8\xbcP\x07\xf0\xa596\x07}\x9b\xd3\x00}\xf2\x81\xc1\xb5\xaem\xee\x0eN\xbd\x9a1\xfe&q>4\xb3\x14\xd6\x09\xc3\x9ew\x01]\x07eT\xa9~Vy\x03\xe852d', _namespace)
+    dc.install_model(GeneratedSchemaAString, _jsoncompat_init_1, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP*.)\xca\xccKW\xe2\xaa\x05\x00G6\x06\x88', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaAString, 2)], [
-        ('model', GeneratedSchema, (), 1),
+        ('model', GeneratedSchema, (), 1, b'{"version":1,"nodes":[{"types":null,"choices":[{"$ref":"#/$defs/a_string"}],"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaAString, 3),
+        ('root', GeneratedSchemaAString, 3, b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",)
     ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[false,false,true,false],"json_keys":[[0,[]]]}')
 

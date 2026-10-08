@@ -35,11 +35,11 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaP,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"properties\": {\n    \"p\": false\n  },\n  \"type\": \"object\"\n}", b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["p",1]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaP, _jsoncompat_init_1, "false", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x15\xca\xb1\x09\x00 \x0cD\xd1\xde)Bj\'p\x1b\x95\x13\x14\xc1\xa0iD\xdc\xdd\xd8\xdd=\xfeqD,s\x08\xa6V,\x0etL\xbe\xd9,\xb1/\xd8\xbd\xfeW\xba\x05\x86<RCVv\xf7\x01\xfd\xdd\x10\xae', _namespace)
+    dc.install_model(GeneratedSchemaP, _jsoncompat_init_1, b'x\xdaKK\xcc)N\x05\x00\x06\x16\x02\x0c', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaP, 1)], [
-        ('model', GeneratedSchema, (("p", "p", 1, True),), 2),
-        ('root', GeneratedSchemaP, 2),
+        ('model', GeneratedSchema, (("p", "p", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["p",1]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('root', GeneratedSchemaP, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":3,"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,["\\"p\\":"]]]}')
 

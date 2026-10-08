@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"multipleOf\": 1.5,\n  \"type\": \"integer\"\n}", b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[{"multiple_of":1.5}]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\xab\xe6RPP\xca-\xcd)\xc9,\xc8I\xf5OS\xb2R0\xd43\xd5\x01\x09\x96T\x16\xa4\x02\xb9J\x99y%\xa9\xe9\xa9EJ\\\xb5\x00\x18\xc3\x0c\xa8', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[{"multiple_of":1.5}]}],"patterns":[]}'),
         ("int",)
     ], b'{"version":1,"base_nodes":2,"guards":[{"owner":0,"field":null,"original":1,"guard":{"types":["integer"],"choices":null,"rules":[{"multiple_of":1.5}]}}],"conversion_validates":[true,false,false],"json_keys":[]}')
 

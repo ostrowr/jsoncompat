@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"allOf\": [\n    {\n      \"prefixItems\": [\n        true,\n        {\n          \"type\": \"number\"\n        }\n      ]\n    }\n  ],\n  \"prefixItems\": [\n    {\n      \"type\": \"string\"\n    }\n  ],\n  \"unevaluatedItems\": false\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1]},{"array":{"prefix":[4],"items":null}},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"array":{"prefix":[2,3],"items":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdam\x8e\xc1\x0e\x820\x0c\x86\xef<\xc5\xb2x\x04\x87\x1cy\x03O>\x80\xe10\xa5\x03\xcc\x18\xcb\xd6\x19\xcd\xc2\xbb\xbb!\xdb\xc1\xd8C\xd3\xbf\xed\xd7\xbf\xbe \x84\x1e\xec}\x84\x99\xd3\x96\xd0\x11Q\xdb\x96\xb1\x87]T\xf5m\x1f\x173\xb0\xdep\x81\xac\xa9\x9b\xba:5l\xdf/#\xcc\xa5\xbc\x88\x80^\x83 \xc4o9\xb4\xb5\x011\xbd\xce\x08\xb3\xcd\xc3\x18h\x1c\x94Y\xf9\\\x05\x04\xdf\x1a\xe2\x0f\xca\xcd704\x8f\xd6\xbd\xea\x8a\xa4\xba\xcd\xf9\x9fE\xf6O\xc7,\x9aI\x0d\xf4\x07u\x0a\x9e\\:\x8e\xd0\'^pi\xa1X?\x09\xaeF9', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1]},{"array":{"prefix":[4],"items":null}},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"array":{"prefix":[2,3],"items":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 

@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"enum\": [\n    \"red\",\n    \"blue\"\n  ],\n  \"type\": \"string\"\n}", b'{"version":1,"nodes":[{"types":["string"],"choices":["red","blue"],"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x01=\x00\xc2\xff{\x0a  "enum": [\x0a    "red",\x0a    "blue"\x0a  ],\x0a  "type": "string"\x0a}\xb4\xfc\x0e\xfe', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["string"],"choices":["red","blue"],"rules":[]}],"patterns":[]}'),
         ('literal', ("blue", "red",)),
         ('literal', ("blue",)),
         ('literal', ("red",))

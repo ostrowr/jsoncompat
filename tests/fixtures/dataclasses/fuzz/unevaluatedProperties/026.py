@@ -24,9 +24,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"allOf\": [\n    {\n      \"properties\": {\n        \"foo\": {\n          \"type\": \"string\"\n        }\n      },\n      \"unevaluatedProperties\": false\n    }\n  ],\n  \"type\": \"object\",\n  \"unevaluatedProperties\": true\n}", b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"all":[1]},{"unevaluated_properties":4}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":3}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdau\x8e\xcb\x0e\xc2 \x10E\xf7\xfd\x0aB\\\xb6RY\xf6\'to\\`;\xf4\x11\x04\x02\x83\x89i\xf8w\xe9\x03\xa3\x0b7\x93\x993s\xef\xdc\xb9 \x84\x1e|;\xc0C\xd0\x86\xd0\x01\xd1\xfa\x86\xb1\xc9\x1b]m\xf8h\\\xcf:\'$2^\xf3\xba:q\xb6\xdf\x97\x8bX(u\x96IzM\x03!\xf3Z\x13\xb6\xceXp8\x82O\xbbL\x13\x97\xc6\xfc\x80\x84\xf0ea\xf9\xed\xd1\x8d\xba\xa7\x9fU\xdc\xbbXf\xd3\xa0\xe1)T\x10\x08\xdd\xe5\xdb_\x0a\xe5\xa1\xc8\x9a\xdb\x9a+\xbb\x9a\xfb\x04-nY\xff\xe9\xd1\x05(\xe2\x1b<\x1bJT', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (), 1),
+        ('model', GeneratedSchema, (), 1, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"all":[1]},{"unevaluated_properties":4}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":3}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[[0,[]]]}')
 

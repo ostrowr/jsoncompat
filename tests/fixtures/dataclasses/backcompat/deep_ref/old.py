@@ -43,14 +43,14 @@ def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaA, GeneratedSchemaB,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$ref\": \"#/definitions/A\",\n  \"definitions\": {\n    \"A\": {\n      \"$ref\": \"#/definitions/B\"\n    },\n    \"B\": {\n      \"type\": \"string\"\n    }\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaA, _jsoncompat_init_1, "{\n  \"$ref\": \"#/definitions/B\",\n  \"definitions\": {\n    \"A\": {\n      \"$ref\": \"#/definitions/B\"\n    },\n    \"B\": {\n      \"type\": \"string\"\n    }\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaB, _jsoncompat_init_2, "{\n  \"type\": \"string\"\n}", b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdau\x8b\xb1\x0e\x80 \x0cDw\xbe\x82TG\x12v7\xf8\x16\xc1t\xa9\x06\xba\x18\xc2\xbf\xdb\xaa1,\x0e\x97\\\xde\xddk\xc6Z\x98K\xca\xb0X\x98\xfc\x9a2\x122\xeeT}\x00\xa7\xe3\x80\xe4\xd3\x04\x09\x0c_\xfd\xd5#\xdc{w\x8f\x11G\x83\xcf#\xa9Q\xb9 m\xef\xd1h\xfa\x05\xbc+$T', _namespace)
+    dc.install_model(GeneratedSchemaA, _jsoncompat_init_1, b'x\xda}\x8b\xb1\x0e\x80 \x0cDw\xbe\x82TG\x12v7\xf9\x16\xc1t\xa9\x06\xba\x18\xc2\xbf\xdb\xaa1L\x0c\x97\\\xde\xdd\xab\xc6Z\x98sL\xb0X\x98\xfc\x16\x13\x122\x1eT|\x00\xa7c\x87\xe4S\x05\x09\\\xff:\xd0\x9f\xbd\xb9\xd7\x08\xbd\xc1\xd7\x19\xd5(\x9c\x91\xf6\xefh4\xed\x06\xbc\xa1$U', _namespace)
+    dc.install_model(GeneratedSchemaB, _jsoncompat_init_2, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP*.)\xca\xccKW\xe2\xaa\x05\x00G6\x06\x88', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaA, 1), (GeneratedSchemaB, 3)], [
-        ('root', GeneratedSchema, 1),
-        ('root', GeneratedSchemaA, 2),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaA, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",),
-        ('root', GeneratedSchemaB, 2)
+        ('root', GeneratedSchemaB, 2, b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
     ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
 
 

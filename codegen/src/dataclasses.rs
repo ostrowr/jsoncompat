@@ -2449,7 +2449,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_schema_literal_preserves_pretty_printed_raw_schema() {
+    fn generated_schema_source_stays_below_public_declarations() {
         let schema = json!({
             "title": "nullable name",
             "type": ["string", "null"]
@@ -2459,8 +2459,12 @@ mod tests {
 
         assert!(source.contains("root: (str | None) ="));
         let encoded = python_string_literal(&serde_json::to_string_pretty(&schema).unwrap());
-        assert!(source.contains(&encoded));
-        assert!(source.find("JSONCOMPAT_MODEL").unwrap() < source.find(&encoded).unwrap());
+        // The Python runtime tests verify lossless explicit schema access.
+        // Public declarations do not carry the expanded source schema.
+        assert!(!source.contains(&encoded));
+        assert!(
+            source.find("JSONCOMPAT_MODEL").unwrap() < source.find("dc.install_model").unwrap()
+        );
         assert!(!source.contains("\"anyOf\":"));
     }
 

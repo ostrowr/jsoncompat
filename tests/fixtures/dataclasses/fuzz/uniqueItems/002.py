@@ -34,12 +34,12 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaBranch2,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"items\": false,\n  \"prefixItems\": [\n    {\n      \"type\": \"boolean\"\n    },\n    {\n      \"type\": \"boolean\"\n    }\n  ],\n  \"uniqueItems\": true\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"array":{"prefix":[1,2],"items":3}},"unique"]},{"types":["boolean"],"choices":null,"rules":[]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"minProperties\": 0,\n  \"properties\": {},\n  \"type\": \"object\"\n}", b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x8d\x8dA\x0e\x820\x10E\xf7\x9c\xa2i\\\x82\x83]r\x03\xcf`\\T\x9dJ\x0d\xb4\xb53M4\x84\xbb[*\xec\xd9\xfc\xc5\xfb\xff\xe7M\x95\x10\xf2@\xf7\x1eG-;!{\xe6@\x1d\xc0\x8b\xbck\xfe\xf8\xe8\xe3\x13\x1eQ\x1b\x06\xd5\xaa\xb69)X\xf7\xf5r\xb6\x8c#\xe5\xab\xd1\x03a!!\xa2\xb1\x9f\xf3\xca/\x19\x091\x95\xcc%\x7f\x03.\xa2\x9b\xf7\x03j\'\x0b\x9f\xeb=\xa3\x9c\xd7"H\xce\xbe\x13n\x02\x8e\x09\xab\xf9\x07\xc2\xf87\xf4', _namespace)
+    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xdaM\xcd9\x0e\x80 \x10\x05\xd0\xdeS\x10b\xa9\x0eRz\x0a\xaf\xe02.$,\x81i\x0c\xe1\xee\x0aZ\xd8\xbe\xfc%V\x8c\xf1:,\x07\xea\x89\x0f\x8c\x1fD.\x0c\x00*X\xd3\xbe\xdcY\xbf\xc3\xea\xa7\x8d@\x0a)\xda^\xc2\x97orY\x9ff\xf4\xd6\xa1\xa7\x13\xc33!\x8a\xba?\xc5T\x8c.\x87\xf9\xc3\xce\x0a\x17\xe2U\xba\x01\x82\x9e&_', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"array":{"prefix":[1,2],"items":3}},"unique"]},{"types":["boolean"],"choices":null,"rules":[]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ('union', (2, 4, 8, 9, 6, 7, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (), 3),
+        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]}],"patterns":[]}'),
         ("any",),
         ('list', 5),
         ('literal', (False, True,)),

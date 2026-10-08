@@ -34,12 +34,12 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaItem,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"contains\": {\n    \"const\": 1\n  },\n  \"maxItems\": 2,\n  \"minContains\": 2,\n  \"type\": \"array\"\n}", b'{"version":1,"nodes":[{"types":["array"],"choices":null,"rules":[{"contains":{"node":1,"min":2,"max":null}},{"array_length":{"min":0,"max":2}}]},{"types":null,"choices":[1],"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaItem, _jsoncompat_init_1, "true", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdaE\x8e;\x0a\x800\x10\x05{O\x11\x82\xa5\xba\x9a\xd2\xd6\xcac,\x1a\x7f\x90D\xb2[(\xe2\xddM\x8c`\xf9\x86\x19xW&\x84\xcciX\xb4A\xd9\x0a\xb90\xef\xd4\x02l\xe4l\x99p\xe5\xfc\x0c\xa3\xc7\x89A\xd5\xaa.\x1b\x05\x9f_\xc4xp\x96q\xb5\x14\xea+\xecD\x88\xc3l\xc2\xbc_\xc7\xe0\xd1\xb36\xd1Q\x09\xac\xb6\xfb\xbb\xc4\xf8\xdcu\xbc\x80\xde\xe3)\xb3\xfb\x01\xea\x12,\x85', _namespace)
+    dc.install_model(GeneratedSchemaItem, _jsoncompat_init_1, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaItem, 2)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["array"],"choices":null,"rules":[{"contains":{"node":1,"min":2,"max":null}},{"array_length":{"min":0,"max":2}}]},{"types":null,"choices":[1],"rules":[]}],"patterns":[]}'),
         ('list', 2),
-        ('root', GeneratedSchemaItem, 3),
+        ('root', GeneratedSchemaItem, 3, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[false,false,true,false],"json_keys":[]}')
 

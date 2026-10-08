@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (ColorEnum,) = _models
-    dc.install_model(ColorEnum, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"enum\": [\n    \"red\",\n    \"blue\",\n    \"red\"\n  ],\n  \"title\": \"color enum\",\n  \"type\": \"string\"\n}", b'{"version":1,"nodes":[{"types":["string"],"choices":["red","blue","red"],"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(ColorEnum, _jsoncompat_init_0, b'x\xda5\x8d\xbb\x0e\x830\x0cEw\xbe"\x8a:\x96\x9af\xe4W\xaa\x0e<\xccK!A\x8e\x19\x10\xe2\xdfq\x02l\xc7\xc7\xbe\xbe{\xa6\x94~\x85f\xc0\xb9\xd2\xa5\xd2\x03\xf3\x12J\x80)x\x97_\xfa\xe3\xa9\x87\x96\xaa\x8e\xc1\x14\xa6\xc8\xbf\x06\xee\xfbw\x0c\xa3[gI\xfe\x84e"l\x93\x16\xac\xed\x8a\x0fG-\xf4O\x09\x1e\xd9b,k\xbc\xf5\xa4\xd2\x83k\xb1-\xc9\x07\xa6\xd1\xf5:;N\xd4W+\x8a', _namespace)
     dc.bind_module(1, [(ColorEnum, 0)], [
-        ('root', ColorEnum, 1),
+        ('root', ColorEnum, 1, b'{"version":1,"nodes":[{"types":["string"],"choices":["red","blue","red"],"rules":[]}],"patterns":[]}'),
         ('literal', ("blue", "red",)),
         ('literal', ("blue",)),
         ('literal', ("red",))

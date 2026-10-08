@@ -416,8 +416,6 @@ class Model:
         "value",
         "other",
     )
-    __jsoncompat_schema__ = "{}"
-    __jsoncompat_prepared_schema__ = b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'
 
 
 assert repr(JSONCOMPAT_MISSING) == "JSONCOMPAT_MISSING"
@@ -437,6 +435,13 @@ def compile_model_runtimes(roots, descriptors, frozen_list, frozen_dict):
             for i,node in enumerate(descriptors) if len(node) >= 3 and node[0] == "model"]
     plan = json.dumps({"version":1,"base_nodes":len(descriptors),"guards":[],
                        "conversion_validates":[False]*len(descriptors),"json_keys":keys}).encode()
+    # Keep descriptor examples compact; the program is a direct descriptor
+    # argument, with no schema attributes or metadata required on Model.
+    program = b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'
+    descriptors = [(*node, program) if node and
+                   ((node[0] == "root" and len(node) == 3) or
+                    (node[0] == "model" and len(node) == 4)) else node
+                   for node in descriptors]
     return bind_prepared_model_runtimes(roots, descriptors, frozen_list, frozen_dict, plan)
 
 
@@ -468,7 +473,11 @@ cases = (
         "external additional-property value",
         [("model", Model, (), 1)],
     ),
-    ("long root", [("str",), ("root", Model, 0, "trailing")]),
+    ("wrong root program type", [("str",), ("root", Model, 0, "trailing")]),
+    ("long root", [("str",), ("root", Model, 0, b"{}", "trailing")]),
+    ("invalid root program", [("str",), ("root", Model, 0, b"{}")]),
+    ("wrong model program type", [("model", Model, (), None, None)]),
+    ("invalid model program", [("model", Model, (), None, b"{}")]),
     ("empty literal", [("literal", ())]),
     ("unsupported literal object", [("literal", (object(),))]),
     ("empty union", [("union", (), None, None)]),

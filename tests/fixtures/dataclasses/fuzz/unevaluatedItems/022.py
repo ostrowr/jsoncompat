@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"allOf\": [\n    {\n      \"contains\": {\n        \"multipleOf\": 2\n      }\n    },\n    {\n      \"contains\": {\n        \"multipleOf\": 3\n      }\n    }\n  ],\n  \"unevaluatedItems\": {\n    \"multipleOf\": 5\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,3]},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"contains":{"node":2,"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"multiple_of":2.0}]},{"types":null,"choices":null,"rules":[{"contains":{"node":4,"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"multiple_of":3.0}]},{"types":null,"choices":null,"rules":[{"multiple_of":5.0}]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x95\x8e=\x0e\x830\x0cFwN\x11E\x1d\xa1\xa1\xa9\xbap\x83N=@\xd5\xc1\x82P\xa8\xf2\x83\x88\xd3\x05\xe5\xee5)\x081\xb2\xd8\xf2\xb3\xdf\'O\x19c\xfc\xe4\xebN\x19\xe0\x15\xe3\x1d\xe2\xe0+!>\xde\xd9\xe2\x8f\xcfn|\x8bf\x84\x16\x85,eY\\\xa4X\xee\xf3Y\x06\xad\x1f-\xa9O\x1a\x18\x9bR%\\;\x8b\xd0[O\x9b\x95\x115Ac?h\x95\x0c\xb9\xf0\x98z\xcc\x0f\x07\\\xf7\x01T_\xe9\xa5`\xd5\x17t\x00T\xcd\x1d\x95\xd9"\xf6\xfa-\x9b\xa5\xf8\x03\x12\xf9C\x85', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,3]},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"contains":{"node":2,"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"multiple_of":2.0}]},{"types":null,"choices":null,"rules":[{"contains":{"node":4,"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"multiple_of":3.0}]},{"types":null,"choices":null,"rules":[{"multiple_of":5.0}]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 

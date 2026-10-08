@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"dependencies\": {\n    \"bar\": {\n      \"properties\": {\n        \"bar\": {\n          \"type\": \"integer\"\n        },\n        \"foo\": {\n          \"type\": \"integer\"\n        }\n      }\n    }\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"dependent_schemas":[["bar",1]]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2],["foo",3]],"patterns":[],"required":[],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x8d\x8e\xbd\x0e\xc20\x0c\x84\xf7<E\x141\xb6\xa4d\xec\xdb\x84\xc6\xfdA"\xb6\x1c/\xa8\xca\xbb\x93\x00*\x1d:t\xb1u\x9f\xef\xac[\x95\xd6\xe6\x92\x86\x19\x9e\xde\xf4\xda\xcc"\x94zk\x1f\x09c\xfb\xc5W\xe4\xc9\x06\xf6\xa3X\xd7\xb9\xae\xbd9\xfb\xf375\x1c\x80 \x06\x88\xc3\x02\xa9|X\x0b+\xf4\xeey\x13E\x12#\x01\xcb\xder`\xfb y\x11\xd4&K\x14\x98\x80\xcdv\xcb\xcd?7"\x9e\xcf\xa9\xfd\xae3\xab\xfc\x06\xe7\xa4>\x04', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"dependent_schemas":[["bar",1]]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2],["foo",3]],"patterns":[],"required":[],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 

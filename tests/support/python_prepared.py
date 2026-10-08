@@ -13,6 +13,7 @@ import pickle
 import sys
 import unittest
 import weakref
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -70,12 +71,14 @@ class PreparedTests(unittest.TestCase):
             dataclasses, "dataclass", forbidden
         ), patch.object(inspect, "get_annotations", forbidden), patch.object(
             jsoncompat, "validator_for", forbidden
-        ):
+        ), patch.object(zlib, "decompress", forbidden):
             module = _load(destination)
             self.assertEqual(
                 module.Constrained.deserialize('{"name":"x","count":1}').serialize(),
                 '{"count":1,"name":"x"}',
             )
+            with self.assertRaises(ValueError):
+                module.Constrained.deserialize('{"name":"","count":-1}')
             with ThreadPoolExecutor(max_workers=4) as pool:
                 self.assertEqual(
                     list(
@@ -91,6 +94,12 @@ class PreparedTests(unittest.TestCase):
         model = self.modules["constrained"].Constrained
         self.assertTrue(dataclasses.is_dataclass(model))
         self.assertTrue(model.__dataclass_params__.frozen)
+        self.assertIs(model.__dataclass_params__, dc.DataclassModel.__dataclass_params__)
+        for name in ("__repr__", "__eq__", "__hash__", "__setattr__", "__delattr__",
+                     "__getstate__", "__setstate__", "__match_args__", "__dataclass_params__"):
+            self.assertNotIn(name, model.__dict__)
+        self.assertEqual(set(model.__dataclass_fields__), set(model.__slots__))
+        self.assertNotIn("__jsoncompat_prepared_schema__", model.__dict__)
         signature = inspect.signature(model)
         self.assertEqual(signature.parameters["name"].kind, inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(signature.parameters["optional"].default, dc.JSONCOMPAT_MISSING)
@@ -115,6 +124,44 @@ class PreparedTests(unittest.TestCase):
             model(name="hello", count=2, optional=None).to_value()["optional"], None
         )
         self.assertNotIn("optional", item.to_value())
+
+    def test_empty_dataclass_and_replace_preserve_constructor_options(self):
+        empty = self.modules["empty"].Empty
+        self.assertEqual(dataclasses.fields(empty), ())
+        self.assertEqual(dataclasses.asdict(empty()), {})
+        self.assertEqual(dataclasses.replace(empty()), empty())
+        self.assertEqual(repr(empty()), "Empty()")
+        self.assertEqual(hash(empty()), hash(()))
+        self.assertEqual(empty().serialize(), "{}")
+        model = self.modules["constrained"].Constrained
+        item = model(name="valid", count=1)
+        with self.assertRaises(ValueError):
+            dataclasses.replace(item, count=-1)
+        trusted = dataclasses.replace(item, count=-1, skip_validation=True)
+        self.assertEqual(trusted.count, -1)
+        with self.assertRaises(ValueError):
+            trusted.serialize()
+
+    def test_original_schema_is_only_expanded_on_explicit_access(self):
+        destination = WORK / "schema_introspection.py"
+        destination.write_bytes((WORK / "constrained.py").read_bytes())
+        module = _load(destination)
+        model = module.Constrained
+        source = model.__dict__["__jsoncompat_schema__"]
+        self.assertNotIsInstance(source, str)
+        item = model(name="hello", count=1)
+        with patch.object(zlib, "decompress", wraps=zlib.decompress) as decompress:
+            schema = item.__jsoncompat_schema__
+            self.assertIs(schema, model.__jsoncompat_schema__)
+            self.assertIs(schema, item.__jsoncompat_schema__)
+            self.assertEqual(decompress.call_count, 1)
+        self.assertEqual(json.loads(schema)["title"], "Constrained")
+        self.assertTrue(schema.startswith("{\n"))
+        self.assertLess(len(source._compressed), len(schema.encode()))
+        self.assertEqual(jsoncompat.validator_for(schema).is_valid_value(item.to_value()), True)
+        # Source inspection must not affect equality, pickle, or field metadata.
+        self.assertEqual(item, pickle.loads(pickle.dumps(item)))
+        self.assertNotIn("__jsoncompat_schema__", model.__dataclass_fields__)
 
     def test_current_state_is_validated_even_after_trusted_construction(self):
         model = self.modules["constrained"].Constrained
@@ -286,11 +333,13 @@ class PreparedTests(unittest.TestCase):
         tree = ast.parse(destination.read_text())
         changed = False
         for call in ast.walk(tree):
-            if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "install_model":
-                program = json.loads(ast.literal_eval(call.args[3]))
-                program["nodes"][0]["rules"].append({"ref": 999999})
-                call.args[3] = ast.Constant(json.dumps(program).encode())
-                changed = True
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "bind_module":
+                for node in call.args[2].elts:
+                    if ast.literal_eval(node.elts[0]) in ("model", "root"):
+                        program = json.loads(ast.literal_eval(node.elts[-1]))
+                        program["nodes"][0]["rules"].append({"ref": 999999})
+                        node.elts[-1] = ast.Constant(json.dumps(program).encode())
+                        changed = True
         self.assertTrue(changed)
         destination.write_text(ast.unparse(tree))
         with self.assertRaisesRegex(ValueError, "invalid node reference"):

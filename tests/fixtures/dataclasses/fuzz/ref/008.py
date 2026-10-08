@@ -33,12 +33,12 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaIsString,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$defs\": {\n    \"is-string\": {\n      \"type\": \"string\"\n    }\n  },\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"properties\": {\n    \"$ref\": {\n      \"$ref\": \"#/$defs/is-string\"\n    }\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["$ref",1]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaIsString, _jsoncompat_init_1, "{\n  \"type\": \"string\"\n}", b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdaM\x8e=\x0e\xc20\x0cF\xf7\x9e"\x0a\x1d\x09.\x19{\x9b\x8a:m\x90h"\xdb\x0b\xaarwL\x88h\x17K\xdf\xf3\xdf\xdb;cl?c`;\x9a]\x83\xc6\xc8\x8e\x85\xe2\xb6\xfc\x91Byg\xd4l[\xa7\xe2\xa2\xb5\\\xeb\x05~\xac\xf8\x9a\xbe\x03\xabH\xe6\x11\xe0\xc9is?|K\xb4\xc0LS\x10\xf0\x83\x1f\xdc\xddC\x9b\xaf\xcb\x99RF\x92\x88\'\x87\x9e0\x9c\xdf\xb7l/Pe\xe1p<L\xba\xf2\x01\x8e\x0f7\xcd', _namespace)
+    dc.install_model(GeneratedSchemaIsString, _jsoncompat_init_1, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP*.)\xca\xccKW\xe2\xaa\x05\x00G6\x06\x88', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaIsString, 2)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["$ref",1]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaIsString, 3),
+        ('root', GeneratedSchemaIsString, 3, b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",)
     ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[false,false,true,false],"json_keys":[]}')
 

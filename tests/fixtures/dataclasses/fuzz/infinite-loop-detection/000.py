@@ -33,12 +33,12 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaInt,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$defs\": {\n    \"int\": {\n      \"type\": \"integer\"\n    }\n  },\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"allOf\": [\n    {\n      \"properties\": {\n        \"foo\": {\n          \"$ref\": \"#/$defs/int\"\n        }\n      }\n    },\n    {\n      \"additionalProperties\": {\n        \"$ref\": \"#/$defs/int\"\n      }\n    }\n  ]\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,4]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":5}}]},{"types":null,"choices":null,"rules":[{"ref":3}]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaInt, _jsoncompat_init_1, "{\n  \"type\": \"integer\"\n}", b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda}P\xbd\x0e\xc2 \x10\xde\xfb\x14\x0d:Z\xafv\xecK\xe8n\x1c\x88\x1c-\xa6\x16\x02\xb7\x98\x86w\xf7@C\xea`\x17\xc8\xf7q\xdf\x0f\xb7Tu-\xf6\x0au\x10}\xbd0`hf*\x80!\xbd\x1c2N4\x0e\xe8E\xe6#\x9f\xf1\x90\xc5\xe1>\xe2S\xa6\x89\x91\xc8\x85\x1e\xe0\x11\xec\xdc|\xe8\xa3\xf5\x03(/5A\xd7vms\xea\xe0;\x9f\xc5r\x9a\xce\x9a\xa5\xd7lZ"\x9d\xb7\x0e=\x19\x0c\xab"\xcckk\x7f\x88\x14\xef1\x19\x88\x1d\xe4_@*_\xdec\xb5\xbes\xdfU\x8aT\xca\x90\xb1\xb3\x9c.\x7f\xf26\xcccY\xc3\xad\x8ao\xc2\x06PH', _namespace)
+    dc.install_model(GeneratedSchemaInt, _jsoncompat_init_1, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca\xcc+IMO-R\xe2\xaa\x05\x00N\x03\x06\xdf', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaInt, 2)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,4]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":5}}]},{"types":null,"choices":null,"rules":[{"ref":3}]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaInt, 3),
+        ('root', GeneratedSchemaInt, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("int",)
     ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[false,false,true,false],"json_keys":[]}')
 

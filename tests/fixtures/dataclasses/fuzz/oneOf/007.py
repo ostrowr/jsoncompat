@@ -33,12 +33,12 @@ def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaBranch1,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"oneOf\": [\n    {\n      \"type\": \"number\"\n    },\n    {}\n  ]\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2]}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaBranch1, _jsoncompat_init_1, "{}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda-\x8c9\x0e\x80 \x14D{O\xf1C,\xd5\xaf\x94^\xc2\x03\x18\x0b\x17\x94\x98\xb0\x04\xb00\x84\xbb\xcbb3\x93y\x99\x19_\x01\x90\xda\xee\x9c\x89\x95\x8c@\xb8s\xda\x8e\x88\xb7U\xb2-\xb8S\xe6\xc2\xc3\xac\xa7C\xda\xd3\xbe\x1d(\xfe\xfd&\x8d\x95d\xd3\x19\xa7s\x0c\x00>k\xc4\xee\xd5,\x1d\xcaGl\xcc\x90\x8cCS:!\xdaR\x85\x0f\xc7\xa1!~', _namespace)
+    dc.install_model(GeneratedSchemaBranch1, _jsoncompat_init_1, b'x\xda\xab\xae\x05\x00\x01u\x00\xf9', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch1, 2)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2]}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (2, 4,), None, None),
-        ('root', GeneratedSchemaBranch1, 3),
+        ('root', GeneratedSchemaBranch1, 3, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
         ("float",)
     ], b'{"version":1,"base_nodes":5,"guards":[],"conversion_validates":[false,false,true,false,false],"json_keys":[]}')

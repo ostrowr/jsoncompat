@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"additionalProperties\": {\n    \"type\": \"boolean\"\n  },\n  \"allOf\": [\n    {\n      \"properties\": {\n        \"foo\": {}\n      }\n    }\n  ]\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1]},{"object":{"properties":[],"patterns":[],"required":[],"additional":3}}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["boolean"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdae\x8c1\x0e\x02!\x10E\xfb=\x05!\x96\xae\xac\x94{\x09\xed\x8d\x05\xca\xe0b\x90!0\x8d\xd9pw\x87e;\x9b\x99\xe4\xfd\xff\xdf:\x08!\x0f\xe5\xb9\xc0\xc7\xc8Y\xc8\x85(\x95Y\xa9w\xc18v|\xc2\xfcR6\x1bGJOz\x1a\xcfZ\xed\xfdc\x1b\x1bk=y\x8c&\\3&\xc8\xe4\xa1\xb0i\xe5\x8cS\xfa&h\xde\x07b\x00\x13%\xd3\xdag!\\\x1c\'\xb7\xad\xd7\xdb\x8c\xd3\xbfc\xe3\x0e\xb1\x81\xba\x93\xfe\xdb\xbd\x0f\xf5\x07eD5\xd5', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1]},{"object":{"properties":[],"patterns":[],"required":[],"additional":3}}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["boolean"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 

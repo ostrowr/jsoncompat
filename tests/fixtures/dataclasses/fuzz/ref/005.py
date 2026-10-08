@@ -44,14 +44,14 @@ def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaReffedItem, GeneratedSchemaReffed,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$defs\": {\n    \"reffed\": {\n      \"type\": \"array\"\n    }\n  },\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"properties\": {\n    \"foo\": {\n      \"$ref\": \"#/$defs/reffed\",\n      \"maxItems\": 2\n    }\n  }\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",1]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2},{"array_length":{"min":0,"max":2}}]},{"types":["array"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaReffedItem, _jsoncompat_init_1, "true", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
-    dc.install_model(GeneratedSchemaReffed, _jsoncompat_init_2, "{\n  \"type\": \"array\"\n}", b'{"version":1,"nodes":[{"types":["array"],"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdaMNK\x0e\x820\x10\xdds\x0aRY\x82\x83]r\x03\x8f\xd1\xd8\xa9hR\xdbLg!!\xbd\xbb\xd3\x8a\xc2f\x92\xf7\xde\xbc\xcf\xda\xb4\xad\xea,\xba\xa4\xa6v\x15 \x90\xd09\xb4\x7f,\x0c/\x11\x05+Cd\x16U\xd9,7\xf7\xd5\x9dn3zS\xf4\x999\xa6\x09\xe0\x99\xc2k\xf8\xd2\xe7@w\xb0d\x1c\x83\x1e\xf58\\4l\xff\xd5\x1c)D$~\xe0\xa1\xdf\x85p,\xefdO\x09?A\xdd\x09\xdb\xbc\xfe\xa7{\xf3\xbe2\xfa\x12\xa0\xf7iM\xfe\x00\x07\xba9\xde', _namespace)
+    dc.install_model(GeneratedSchemaReffedItem, _jsoncompat_init_1, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
+    dc.install_model(GeneratedSchemaReffed, _jsoncompat_init_2, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RPJ,*J\xacT\xe2\xaa\x05\x00?\x88\x06\x10', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaReffedItem, 2), (GeneratedSchemaReffed, 3)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",1]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2},{"array_length":{"min":0,"max":2}}]},{"types":["array"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaReffedItem, 1),
-        ('root', GeneratedSchemaReffed, 4),
+        ('root', GeneratedSchemaReffedItem, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaReffed, 4, b'{"version":1,"nodes":[{"types":["array"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('list', 2)
     ], b'{"version":1,"base_nodes":5,"guards":[],"conversion_validates":[false,false,true,true,false],"json_keys":[]}')
 

@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"enum\": [\n    1\n  ],\n  \"items\": true\n}", b'{"version":1,"nodes":[{"types":null,"choices":[1],"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\xab\xe6RPPJ\xcd+\xcdU\xb2R\x88\x06\xb2\x15\x14\x0c\x81d\xac\x0eH8\xb3$5\xb7\x18(^RT\x9a\xcaU\x0b\x00\xcc!\x0aS', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":[1],"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ('literal', (1,))
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 

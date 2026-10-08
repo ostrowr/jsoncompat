@@ -31,6 +31,10 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
             }),
         ),
         (
+            "empty",
+            json!({"title":"Empty", "type":"object", "additionalProperties":false}),
+        ),
+        (
             "extras",
             json!({
                 "title": "Extras", "type": "object",

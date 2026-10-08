@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"oneOf\": [\n    true,\n    true,\n    true\n  ]\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2,3]}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdam\x8b1\x0e\x80 \x10\x04{^q!\x96\xe0!%\x9f\xf0\x01\xc6\x82(HL\x04\x03ge\xfc\xbb\x18-\xedf73\'\x03\xe0M\x99\x82\xdb,7\xc0\x03\xd1^\x0c\xe2ZR\x94\xef\xdd\xa6\xbc\xe0\x9c\xad\'\xd4J+\xd9i\xfc|\xf1\xc4)\xba\xde\xd7t\xa8\x03\x80\xf2\xe1\xc4\x0fU\x18\xd9u\x03\x17?\x1f\x03', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2,3]}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 

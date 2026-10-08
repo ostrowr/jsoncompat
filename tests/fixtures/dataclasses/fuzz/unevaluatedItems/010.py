@@ -23,9 +23,9 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, "{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n  \"allOf\": [\n    {\n      \"prefixItems\": [\n        {\n          \"type\": \"string\"\n        }\n      ]\n    },\n    {\n      \"unevaluatedItems\": true\n    }\n  ],\n  \"unevaluatedItems\": false\n}", b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,3]},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"array":{"prefix":[2],"items":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"unevaluated_items":4}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdamNK\x0e\x820\x10\xdd\xf7\x14M\xe3\x12,v\xc9\x0d\\y\x00\xc3\xa2\x91)`Ji\xda\xa9\xd1\x90\xde\xddR\x81h\xe2f>\xef73\x13J\xd9\xc1\xdfz\x18%\xab)\xeb\x11\xad\xaf9\xbf\xfb\xc9\x94\x1f\xf88\xb9\x8e\xb7N*\xe4\xa2\x12Uy\x12|\xd5\x17\x8bYj}Q\xc9zM\x0b\xa5s\xae\x09\xb6\x0e\xd4\xf0<#\x8c~\'\xbf\x05Y\x84/\x0b\xcbU\x8fn0\x1d\xdb\xa9\xb8NM\xee\xb1\xf8\x8d\x0e\x06\x1eR\x07\x89\xd0n\xf9\xe8\x02\x90\xcd\xd9\xe4\xbf\xfe\xa8\x94\xd4\x1eH|\x03\x03\x13@\x9a', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,3]},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"array":{"prefix":[2],"items":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"unevaluated_items":4}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("any",)
     ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 
