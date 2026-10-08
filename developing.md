@@ -184,3 +184,8 @@ entrypoints.
 `just release` dry-runs the patch-release flow.
 
 PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. Merging to `main` deploys the website.
+
+The Python wheel release jobs target CPython 3.12–3.15, including the
+free-threaded 3.14t and 3.15t builds, on Linux (manylinux and musllinux),
+Windows, and macOS. Python 3.16 is not included yet because it is not
+available in the GitHub Actions Python manifest or the manylinux images.
