@@ -154,11 +154,20 @@ jobs:
             target: x86
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Python 3.15 and its Windows import library
+        id: python315
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.15'
+          architecture: ${{ matrix.platform.target }}
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist -i '3.12 3.13 3.14 3.14t 3.15 3.15t'
+          # The import-library generator supports only through 3.14. Use the
+          # installed 3.15 interpreter and defer Windows 3.15t wheels.
+          args: --release --out dist -i '3.12 3.13 3.14 3.14t' '${{ steps.python315.outputs.python-path }}'
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           working-directory: pybindings
       - name: Upload wheels

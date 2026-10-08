@@ -198,5 +198,7 @@ entrypoints.
 PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. Merging to `main` deploys the website.
 
 The Python wheel release jobs target CPython 3.12–3.15, including the
-free-threaded 3.14t and 3.15t builds, on Linux (manylinux and musllinux),
-Windows, and macOS.
+free-threaded 3.14t builds, on Linux (manylinux and musllinux), Windows, and
+macOS. Linux and macOS also build 3.15t wheels. Windows installs a real 3.15
+interpreter and its import library; 3.15t wheels are deferred because the
+import-library generator currently supports only through 3.14.
