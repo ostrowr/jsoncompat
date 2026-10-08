@@ -20,12 +20,12 @@ use pyo3::exceptions::{PyIndexError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::pyclass::{PyTraverseError, PyVisit};
-#[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-use pyo3::types::PyModule;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PySequence, PyString,
     PyTuple, PyType,
 };
+#[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
+use pyo3::{exceptions::PyAttributeError, types::PyModule};
 
 use super::prepared_schema::PreparedSchema;
 
