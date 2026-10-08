@@ -24,7 +24,7 @@ If a schema declares `$schema`, it must use Draft 2020-12 or the OpenAPI 3.1 Sch
 Install the CLI with Cargo:
 
 ```bash
-cargo install jsoncompat
+cargo install jsoncompat --version 0.4.3
 ```
 
 Python and JavaScript/WebAssembly packages are documented separately:
@@ -153,7 +153,8 @@ hooks, inheritance between generated models, and Python default factories are
 not supported model-definition APIs. JSON Schema `default` remains an
 annotation and does not manufacture a Python value for a missing property.
 
-Install optional codecs with `jsoncompat[yaml]` and `jsoncompat[msgpack]`.
+Install optional codecs with `jsoncompat[yaml]==0.4.3` and
+`jsoncompat[msgpack]==0.4.3`.
 Every decoded format is restricted to JSON-compatible values before model
 construction; format-specific values such as YAML timestamps or MessagePack
 binary/extension values are rejected.

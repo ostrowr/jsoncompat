@@ -76,8 +76,8 @@ importers:
         specifier: ^1.168.42
         version: 1.168.42(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(esbuild@0.28.2)(rolldown@1.2.12)(rollup@4.64.1)(vite@7.3.7(@types/node@25.9.9)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.9.1))
       jsoncompat:
-        specifier: 0.3.1
-        version: 0.3.1
+        specifier: 0.4.3
+        version: 0.4.3
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -3731,8 +3731,8 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  jsoncompat@0.3.1:
-    resolution: {integrity: sha512-QZ+qQMQnhj14DY56G3+KVTDMcRe2XICSS//wYWSdJPLW6LtGzITBTgKVBYD9VJwDKo6CWl9laGwIuHbt6M3ykA==}
+  jsoncompat@0.4.3:
+    resolution: {integrity: sha512-7qtNWR6/oFaE2Zaaptcll4UnQFiWQKbugmj2ETBKJ6oYZltS7QFUAw8X55JSUZe6Ji756KsFzJu1+4eJ2vJumg==}
 
   jszip@3.10.2:
     resolution: {integrity: sha512-3l+rb15IOWtUhU0H5MFqES/T6Kh7abYwjosBey/vD6hDt8zoEffkSC5Ws5SGtgVw3gBx2NEbhTeSW1+kWkpyTQ==}
@@ -8882,7 +8882,7 @@ snapshots:
 
   json5@2.2.3: {}
 
-  jsoncompat@0.3.1: {}
+  jsoncompat@0.4.3: {}
 
   jszip@3.10.2:
     dependencies:

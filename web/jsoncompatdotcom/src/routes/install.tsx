@@ -53,16 +53,16 @@ function CliTab() {
     <>
       <section className="space-y-4">
         <p>Cargo (recommended)</p>
-        <CodeBlock>cargo install jsoncompat</CodeBlock>
+        <CodeBlock>cargo install jsoncompat --version 0.4.3</CodeBlock>
       </section>
       <section className="space-y-4">
         <p>
           or install directly from the{" "}
           <a
             className="text-blue-600 hover:underline"
-            href="https://github.com/ostrowr/jsoncompat/releases"
+            href="https://github.com/ostrowr/jsoncompat/releases/tag/v0.4.3"
           >
-            GitHub releases page
+            0.4.3 GitHub release
           </a>
         </p>
       </section>
@@ -76,7 +76,7 @@ function RustTab() {
       <p>
         Add the crate to your <code className="font-mono">Cargo.toml</code>
       </p>
-      <CodeBlock>[dependencies] jsoncompat = "0.3.1"</CodeBlock>
+      <CodeBlock>[dependencies] jsoncompat = "0.4.3"</CodeBlock>
       <CodeBlock>{`use jsoncompat::{Role, SchemaDocument, check_compat};
 use serde_json::json;
 
@@ -92,7 +92,7 @@ function PythonTab() {
   return (
     <section className="space-y-4">
       <p>Install from PyPI:</p>
-      <CodeBlock>pip install jsoncompat</CodeBlock>
+      <CodeBlock>pip install jsoncompat==0.4.3</CodeBlock>
       <CodeBlock>{`import jsoncompat as jsc
 
 old_schema = '{"type": "string"}'
@@ -119,7 +119,7 @@ function JsTab() {
   return (
     <section className="space-y-4">
       <p>Browser / Node via WebAssembly:</p>
-      <CodeBlock>npm i jsoncompat</CodeBlock>
+      <CodeBlock>npm i jsoncompat@0.4.3</CodeBlock>
       <CodeBlock>{`import init, { check_compat } from "jsoncompat";
 
 await init(); // or init(wasmUrl) with Vite bundlers
