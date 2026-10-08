@@ -1,4 +1,4 @@
-"""Compare optional build artifacts, ordinary models, and strict Pydantic peers.
+"""Compare generated models and strict Pydantic peers, including codegen and startup.
 
 Run after building the release extension. Each timed round trip validates JSON
 input and emits JSON with omitted fields preserved. Jsoncompat also validates
@@ -9,6 +9,7 @@ from steady state. Rotating execution order reduces systematic timing bias.
 from __future__ import annotations
 
 import argparse
+import ast
 import gc
 import json
 import os
@@ -25,9 +26,32 @@ import bench_dataclasses_scaling as large
 import pydantic
 from bench_dataclasses_startup import PYDANTIC_PEER_SOURCE
 from benchmark_generated_models import MODEL_ROOT, load_generated_path
-from jsoncompat.codegen.build import prepare_module
+import py_compile
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def build_models(cli: Path, schema: Path, destination: Path) -> dict[str, float | int]:
+    """Time the production split-file build, including ordinary Python bytecode."""
+    start = time.perf_counter_ns()
+    subprocess.run([
+        str(cli.resolve()), "codegen", "--target", "dataclasses", str(schema),
+        "--output", str(destination),
+    ], check=True, capture_output=True, text=True)
+    source = destination.read_text()
+    companion_name = next(
+        node.module for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom)
+        and any(alias.name == "bind_models" for alias in node.names)
+    )
+    companion = destination.with_name(companion_name + ".py")
+    for path in (destination, companion):
+        py_compile.compile(str(path), doraise=True)
+    return {
+        "build_ms": (time.perf_counter_ns() - start) / 1_000_000,
+        "public_source_bytes": destination.stat().st_size,
+        "implementation_source_bytes": companion.stat().st_size,
+    }
 
 
 def measure(
@@ -65,9 +89,7 @@ def startup(prepared: Path, repeats: int) -> dict[str, Any]:
     cases = {
         "baseline": "pass",
         "runtime_import": "import jsoncompat.codegen.dataclasses",
-        "ordinary_import": "import representative",
         "prepared_import": "import prepared_representative",
-        "ordinary_first_roundtrip": f"import representative\nrepresentative.JSONCOMPAT_MODEL.deserialize({payload!r}).serialize()",
         "prepared_first_roundtrip": f"import prepared_representative\nprepared_representative.JSONCOMPAT_MODEL.deserialize({payload!r}).serialize()",
         "pydantic_import": PYDANTIC_PEER_SOURCE,
         "pydantic_first_roundtrip": PYDANTIC_PEER_SOURCE
@@ -101,18 +123,13 @@ def model_startup(prepared: Path, repeats: int) -> dict[str, Any]:
     """Separate model loading and the first round trip after runtime import."""
     payload = json.dumps(small.PAYLOAD, separators=(",", ":"))
     cases = {
-        "ordinary": (
-            "import jsoncompat.codegen.dataclasses",
-            "import representative",
-            f"representative.JSONCOMPAT_MODEL.deserialize({payload!r}).serialize()",
-        ),
         "prepared": (
             "import jsoncompat.codegen.dataclasses",
             "import prepared_representative",
             f"prepared_representative.JSONCOMPAT_MODEL.deserialize({payload!r}).serialize()",
         ),
         "pydantic": (
-            "import pydantic",
+            "from pydantic import BaseModel\nclass Warmup(BaseModel):\n    value: int",
             PYDANTIC_PEER_SOURCE,
             f"PydanticEvent.model_validate_json({payload!r}).model_dump_json(exclude_unset=True)",
         ),
@@ -158,6 +175,7 @@ print(json.dumps(dict(import_us=(loaded-start)/1000, first_roundtrip_us=(used-lo
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cli", type=Path, default=REPO / "target/release/jsoncompat")
     parser.add_argument("--iterations", type=int, default=10000)
     parser.add_argument("--tree-iterations", type=int, default=200)
     parser.add_argument("--repeats", type=int, default=9)
@@ -165,7 +183,7 @@ def main() -> None:
     parser.add_argument("--depth", type=int, default=5)
     parser.add_argument("--fanout", type=int, default=4)
     parser.add_argument(
-        "--output", type=Path, default=REPO / "target/python-aot/benchmark.json"
+        "--output", type=Path, default=REPO / "target/python-codegen/benchmark.json"
     )
     parser.add_argument(
         "--assert-target",
@@ -202,31 +220,27 @@ def main() -> None:
         "cases": {},
     }
     met_target = True
-    for name, ordinary, peer, value, iterations in [
+    for name, peer, value, iterations in [
         (
             "representative",
-            small.BenchEvent,
             small.PydanticEvent,
             small.PAYLOAD,
             args.iterations,
         ),
         (
             "scaling",
-            large.ScaleTree,
             large.PydanticTree,
             large.build_payload(args.depth, args.fanout),
             args.tree_iterations,
         ),
     ]:
         destination = output_dir / f"prepared_{name}.py"
-        start = time.perf_counter_ns()
-        prepare_module(MODEL_ROOT / f"{name}.py", destination)
-        build_ms = (time.perf_counter_ns() - start) / 1_000_000
+        build = build_models(args.cli, REPO / "pybindings/benchmark_schemas" / f"{name}.json", destination)
+        build_ms = build["build_ms"]
         prepared = load_generated_path(destination).JSONCOMPAT_MODEL
         payload = json.dumps(value, separators=(",", ":"), sort_keys=True)
         callbacks = {
             "prepared_checked": lambda: prepared.deserialize(payload).serialize(),
-            "ordinary_checked": lambda: ordinary.deserialize(payload).serialize(),
             "pydantic": lambda: peer.model_validate_json(payload).model_dump_json(
                 exclude_unset=True
             ),
@@ -238,8 +252,7 @@ def main() -> None:
             timings["prepared_checked"]["median_us"] / timings["pydantic"]["median_us"]
         )
         report["cases"][name] = {
-            "build_ms": build_ms,
-            "source_bytes": destination.stat().st_size,
+            **build,
             "payload_bytes": len(payload.encode()),
             "iterations": iterations,
             "repeats": args.repeats,

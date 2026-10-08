@@ -1,4 +1,6 @@
-use jsoncompat_codegen::generate_dataclass_models;
+#[path = "support/generated_snapshot.rs"]
+mod generated_snapshot;
+use generated_snapshot::assert_split_snapshot;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -11,20 +13,11 @@ fn read_json(path: impl AsRef<Path>) -> Value {
     serde_json::from_slice(&bytes).expect("parse json file")
 }
 
-fn read_text(path: impl AsRef<Path>) -> String {
-    fs::read_to_string(path).expect("read text file")
-}
-
 #[test]
 fn plain_schema_example_snapshot_is_up_to_date() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/dataclasses");
     let schema = read_json(root.join("schema.json"));
-    let generated = generate_dataclass_models(&schema).unwrap();
-
-    assert_eq!(
-        normalized_newlines(&generated),
-        normalized_newlines(&read_text(root.join("models.py")))
-    );
+    assert_split_snapshot(&schema, &root.join("models.py"));
 
     assert_python_compiles(&root.join("models.py"));
     assert_python_compiles(&root.join("demo.py"));

@@ -70,17 +70,11 @@ check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
 
 Only classes emitted by `jsoncompat codegen --target dataclasses` implement
-this runtime contract. Generated modules contain only dataclass declarations;
-the first constructor or conversion call derives and caches one shared native
-plan from their field metadata. Checked use then compiles the relevant JSON
-Schema validator once, while `skip_validation=True` leaves it uncompiled. There
-is no custom-subclass or Python-constructor fallback. Custom construction hooks
-and Python defaults/default factories are therefore intentionally outside the
-model-definition surface.
-
-The conversion plan is shared across threads. Ordinary modules still initialize
-it lazily; the optional model build below removes model-specific compilation
-from both import and first use.
+this runtime contract. The generator builds the shared conversion plan and
+validation programs ahead of time. Import binds the plan to the generated
+classes, and it is then shared across threads. Custom subclasses, construction
+hooks, and Python defaults/default factories are outside the model-definition
+surface.
 
 Generated array and object fields accept ordinary lists and dictionaries at
 construction boundaries, then store them as deeply immutable values exposed as
@@ -92,68 +86,78 @@ ordinary generated model that both serializes and deserializes. The
 [canonical stamped-schema example](../examples/stamp/demo.py) covers versioned
 writer/reader envelopes and historical schemas.
 
-## Optional model build
+## Generated model artifacts
 
-Prepare generated modules in a packaging or deployment step:
+Generation produces models ready to import. The Rust generator resolves model
+references and types, compiles schema programs and regexes, and computes
+conversion optimizations in the same command that emits Python:
+
+```bash
+jsoncompat codegen --target dataclasses schema.json --output models.py
+```
+
+The public `models.py` starts with the root model and readable field declarations.
+It imports a private `_models_generated_<digest>.py` companion containing
+constructor signatures, schemas, and precomputed runtime programs. Deploy both
+files. The digest identifies the implementation, so replacing the public file
+atomically cannot bind old model declarations to a new program. Regeneration may
+leave an older companion behind; package only files from the current generation
+or use a clean build directory.
+
+Without `--output`, the same generator writes a self-contained module to stdout:
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json > models.py
-python -m jsoncompat.codegen.build models.py --output build/models.py
 ```
 
-Applications import the prepared `build/models.py` as their model module. The
-source `models.py` remains usable independently. Build input is trusted Python
-code and is imported during preparation. Output must have a different path;
-the source is never overwritten, and the destination source is replaced
-atomically only after preparation succeeds. The build also writes ordinary
-Python bytecode for its interpreter. When packaging for another Python version,
-let wheel installation or `python -m compileall build` regenerate that cache.
+Its public declarations appear first and implementation follows a marked divider.
+These are two packaging layouts of one generated format, with identical behavior.
+There is no unprepared model format, runtime fallback compiler, or separate Python
+preparation command. Regenerate models produced by older jsoncompat versions.
+The generator does not require a Python interpreter. Python's ordinary `.pyc`
+cache is still interpreter-specific: wheel installation normally builds it;
+source-only deployments should precompile it during packaging when cold import
+latency matters.
 
-Preparation performs annotation resolution, conversion-graph analysis,
-dataclass method generation, schema validation/compilation, and regex
-compilation. It stores portable validation instructions, precompiled automata
-in both byte orders, and conversion optimizations in a self-contained Python
-module. At import, the runtime checks the artifact format and graph references,
-loads programs, and binds the actual Python classes and slot offsets. First use
-does not compile or inspect anything. Python interpreter startup, native-library
-loading, and allocation of classes/runtime objects still happen in the process.
+At import, the runtime creates Python classes and dataclass metadata, loads the
+precomputed programs, checks their format, and binds actual class/slot addresses.
+Generated-model import and first use do not resolve type annotations or compile schemas,
+regexes, or dataclass methods. Interpreter startup and native-library loading
+remain normal process startup costs.
 
-Prepared classes retain frozen/slotted dataclass behavior, field metadata,
+Generated classes retain frozen/slotted dataclass behavior, field metadata,
 constructor signatures, equality, hashing, repr, pickle support, and
-`dataclasses.replace`. Their JSON/YAML/MessagePack APIs and writer/reader
-restrictions are unchanged. Checked serialization validates current state,
-including models constructed with `skip_validation=True` or subsequently
+`dataclasses.replace`. Common frozen-dataclass methods are shared across classes
+to reduce generated code and per-model memory. JSON/YAML/MessagePack APIs and
+writer/reader restrictions are unchanged. Checked serialization validates current
+state, including models constructed with `skip_validation=True` or subsequently
 modified through `object.__setattr__`.
 
-For schemas whose conversion checks imply validation, scalar constraints are
-checked during parsing and output; the runtime can construct model fields
-directly without allocating a complete intermediate JSON tree or doing a
-second schema walk. Field keys are escaped during the build. Other schemas use
-the prepared validator, including combined applicator
-annotations for `unevaluatedProperties` and `unevaluatedItems`. Ambiguous unions
-retain schema-based selection. The builder rejects features it cannot prepare
-rather than deferring compilation or dropping constraints. In particular,
-dynamic/recursive references, nonlocal reference resolution, custom
-vocabularies, and regex backreferences/atomic groups/subroutine calls are not
-supported by this build format. Complex regex compositions have an execution
-budget, and recursive validation has a depth guard. Keep using the original
-generated module when preparation reports an unsupported schema. Rebuild
-artifacts when upgrading jsoncompat; incompatible formats fail at import.
+Where conversion proves the schema constraints, parsing and serialization check
+scalar constraints directly and avoid a complete intermediate JSON tree or a
+second schema walk. Other schemas use the same precompiled general validator;
+ambiguous unions retain schema-based selection. Ordinary self-referential and
+mutually recursive models using local `$ref` are supported, with a runtime depth
+guard. The specialized `$dynamicRef` and `$recursiveRef` keywords, nonlocal
+reference resolution, custom vocabularies, and regex backreferences/atomic
+groups/subroutine calls currently fail during generation. Complex regex
+compositions have an execution budget. Unsupported features fail explicitly;
+constraints are never silently dropped or compiled later.
 
 Benchmark the build cost, fully checked round trips, and fresh-process startup
 against the same strict Pydantic peers used by the existing benchmarks:
 
 ```bash
-just python-bench-prepared
-just python-bench-prepared-large
+just python-bench-codegen
+just python-bench-codegen-large
 ```
 
-The report at `target/python-aot/benchmark.json` records all timing samples,
+The report at `target/python-codegen/benchmark.json` records all timing samples,
 versions, payload sizes, build time, and startup boundaries. Execution order
 rotates between implementations. `--assert-target` on
-`pybindings/bench_dataclasses_prepared.py` requires prepared elapsed time to be
+`pybindings/bench_dataclasses_codegen.py` requires generated-model elapsed time to be
 at most 70% of Pydantic on **both** the small model and the recursive tree.
-The large profile writes `target/python-aot/large/benchmark.json` and enforces
+The large profile writes `target/python-codegen/large/benchmark.json` and enforces
 the same target independently for a 1,000-field model, a schema generating 201
 classes, and 12,000 records (about 9.6 MB of JSON, including non-ASCII strings).
 It also measures model import and the first round trip separately with the
@@ -161,31 +165,65 @@ runtime already imported. Both implementations enforce the emitted length,
 numeric, required-property, and additional-property constraints; invalid
 values at the end of each large payload are checked before timing.
 To increase recursive depth, run the standard script with `--depth 7 --fanout 4
---tree-iterations 10 --output target/python-aot/deep/benchmark.json`.
+--tree-iterations 10 --output target/python-codegen/deep/benchmark.json`.
 Pydantic validates input; jsoncompat also validates output. These are measured
 workloads, not a speed guarantee for every schema or machine. The test suite
-differentially checks the prepared implementation against the ordinary runtime
+checks generated models against the general schema validator
 across every generated fixture, supplied examples, and deterministic mutations.
 
 Measured on macOS 26.6.2 arm64 with Python 3.12.2, Pydantic 2.13.4, and the
-release extension (2026-10-08; median of nine rotating-order samples):
+release extension (2026-10-08; median of nine rotating-order samples). These
+measurements use the split public/private artifacts:
 
-| Workload | JSON bytes | Prepared (µs) | Pydantic (µs) | Less elapsed time |
+| Workload | JSON bytes | Generated (µs) | Pydantic (µs) | Less elapsed time |
 | --- | ---: | ---: | ---: | ---: |
-| Small nested model | 228 | 2.437 | 3.924 | 37.9% |
-| 1,365-node recursive tree | 268,847 | 2,107 | 3,366 | 37.4% |
-| 21,845-node recursive tree | 4,350,138 | 36,039 | 63,408 | 43.2% |
-| 1,000-field model | 65,391 | 269 | 390 | 31.0% |
-| 201 generated classes | 159,352 | 661 | 1,074 | 38.4% |
-| 12,000 records with Unicode strings | 9,622,824 | 47,000 | 70,116 | 33.0% |
+| Small nested model | 228 | 2.449 | 3.915 | 37.4% |
+| 1,365-node recursive tree | 268,847 | 2,114 | 3,366 | 37.2% |
+| 21,845-node recursive tree | 4,350,138 | 36,250 | 62,012 | 41.5% |
+| 1,000-field model | 65,391 | 264 | 383 | 31.1% |
+| 201 generated classes | 159,352 | 655 | 1,058 | 38.1% |
+| 12,000 records with Unicode strings | 9,622,824 | 47,913 | 69,473 | 31.0% |
 
-With runtimes preloaded, model import for the 201-class schema took 10.8 ms
-prepared, 96.8 ms with ordinary generated dataclasses, and 110.2 ms with
-Pydantic. Preparation took 2.04 seconds out of band. On the small model,
-preparation took 12.0 ms, model import took 0.39 ms, and its first round trip
-took 47 µs (ordinary generated dataclasses: 1.22 ms import and 2.69 ms first
-round trip). The standard report also includes full fresh-process timings so
-interpreter and runtime startup are not hidden.
+With runtimes preloaded, the 201-class schema imports in 10.9 ms versus
+108.5 ms for Pydantic. Its one-step generation and Python bytecode build takes
+215 ms. The small model imports in 0.45 ms versus 0.90 ms for Pydantic; the first
+round trip takes 46 µs versus 47 µs. Pydantic's common model machinery is warmed
+before timing model import, just as the jsoncompat runtime is preloaded. Full
+fresh-process import plus first round trip is 33.7 ms versus 85.7 ms.
+
+To measure independent-class imports with a retained-memory budget:
+
+```bash
+just python-bench-imports 5 6000
+just python-bench-imports 20 2048
+just python-bench-imports 200 2048
+```
+
+This benchmark builds 100-class shards, then imports distinct retained model
+classes until it reaches 200,000 classes or the memory/time budget. Bytecode is
+built beforehand. It reuses cached shard files under distinct module names,
+so it measures class setup and retained memory, excluding unique-file I/O and
+a real package's dependency graph. Results and build costs are written to
+`target/python-codegen/imports/`. Wider models may reach the default 2 GiB
+budget before 200,000 classes; reports mark that boundary explicitly.
+
+A single bounded run on the same machine produced the following results. All
+model identities remain alive, and garbage collection stays enabled:
+
+| Fields/class | Implementation | Classes retained | Import seconds | Peak GiB |
+| ---: | --- | ---: | ---: | ---: |
+| 5 | Generated | 200,000 | 8.36 | 2.79 |
+| 5 | Pydantic | 200,000 | 58.46 | 4.19 |
+| 20 | Generated | 46,100 | 4.33 | 2.00 |
+| 20 | Pydantic | 31,000 | 26.13 | 2.00 |
+| 200 | Generated | 5,000 | 3.57 | 2.01 |
+| 200 | Pydantic | 3,600 | 26.17 | 2.05 |
+
+The 5-field case actually reaches 200,000 classes: generated models use 85.7%
+less import time. The 20- and 200-field cases stop at the 2 GiB budget;
+those rows are measured partial runs, not 200,000-class projections. Cached
+private companion constants are shared across copies of each generated shard,
+so these memory figures do not predict the size of arbitrary unique schemas.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 

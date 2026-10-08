@@ -108,31 +108,32 @@ jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 `jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
 canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
 frozen, slotted Python dataclasses backed by one native construction and
-serialization runtime. Importing a generated module only defines ordinary
-dataclasses. The first constructor or conversion call derives one shared native
-plan from their field metadata and caches it on every generated class in the
-module; there is never a reflective per-value or Python-constructor fallback.
-The JSON Schema validator is compiled separately on the first checked use, so
-`skip_validation=True` does not pay validator startup cost. Generated classes
-carry the original input schema in `__jsoncompat_schema__` and expose:
+serialization runtime. Generation resolves model types and references, compiles
+validation programs and regexes, and computes conversion optimizations. Import
+creates classes and binds them to those prebuilt programs; first use performs
+no model compilation. Generated classes carry their input schema in
+`__jsoncompat_schema__`.
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json > models.py
 ```
 
-For applications sensitive to import and first-use latency, an optional build
-prepares dataclass methods, conversion plans, schema programs, and regexes
-before deployment:
+Code generation also prepares dataclass methods, conversion plans, validation
+programs, and regexes. There is no separate model build command and no deferred
+schema compilation at import or first use.
+
+To keep the public API easy to read, write a model module and its private companion:
 
 ```bash
-python -m jsoncompat.codegen.build models.py --output build/models.py
+jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-Deploy the prepared module in place of `models.py`. Import loads its programs
-and binds Python classes and slots; neither import nor first use compiles
-schemas or reflects on annotations. The original module remains usable without
-this step. See [preparing Python models](pybindings/README.md#optional-model-build)
-for the build contract, limitations, and reproducible benchmarks.
+`models.py` starts with the root model, its fields, and the other public classes.
+The generated implementation lives in `_models_generated_<digest>.py`; deploy
+both files together. Output to stdout remains self-contained, with the generated
+implementation below the public declarations. Both layouts use the same prepared
+runtime. See [generated Python models](pybindings/README.md#generated-model-artifacts)
+for the build contract and benchmarks.
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;

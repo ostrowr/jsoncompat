@@ -1,0 +1,1 @@
+invalid schema at 'GeneratedSchema': unsupported reference 'urn:example:weather?=op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z': only local JSON Pointer $ref targets of the form '#/...'

@@ -33,11 +33,14 @@ def load_generated_path(path: Path) -> ModuleType:
         raise RuntimeError(f"could not import generated benchmark model {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
+    sys.path.insert(0, str(path.parent))
     try:
         spec.loader.exec_module(module)
     except BaseException:
         sys.modules.pop(module_name, None)
         raise
+    finally:
+        sys.path.pop(0)
     return module
 
 

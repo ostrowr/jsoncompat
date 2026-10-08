@@ -21,30 +21,32 @@ const VERSION: u32 = 1;
 const MAX_DEPTH: usize = 512;
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
-pub(crate) struct NodeId(pub(crate) usize);
+pub struct NodeId(pub usize);
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
-pub(crate) struct PatternId(usize);
+pub struct PatternId(usize);
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PreparedSchema {
+pub struct PreparedSchema {
     version: u32,
     nodes: Vec<Node>,
     patterns: Vec<Pattern>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    exact_json_numbers: bool,
 }
 
 #[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Node {
-    pub(crate) types: Option<Vec<JsonType>>,
-    pub(crate) choices: Option<Vec<Value>>,
-    pub(crate) rules: Vec<Rule>,
+pub struct Node {
+    pub types: Option<Vec<JsonType>>,
+    pub choices: Option<Vec<Value>>,
+    pub rules: Vec<Rule>,
 }
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum JsonType {
+pub enum JsonType {
     Null,
     Boolean,
     Integer,
@@ -55,7 +57,8 @@ pub(crate) enum JsonType {
 }
 
 impl JsonType {
-    pub(crate) fn accepts(self, value: InstanceRef<'_>) -> bool {
+    #[inline]
+    pub fn accepts(self, value: InstanceRef<'_>) -> bool {
         match self {
             Self::Null => value.is_null(),
             Self::Boolean => value.is_boolean(),
@@ -70,7 +73,7 @@ impl JsonType {
 
 #[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Rule {
+pub enum Rule {
     False,
     Ref(NodeId),
     All(Vec<NodeId>),
@@ -119,6 +122,8 @@ pub(crate) enum Rule {
     },
     Bound {
         value: Number,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exact: Option<fraction::BigFraction>,
         lower: bool,
         exclusive: bool,
     },
@@ -127,7 +132,8 @@ pub(crate) enum Rule {
 impl Node {
     /// The parser and writer already know the concrete scalar representation.
     /// Avoid re-dispatching through all supported instance backends per rule.
-    pub(crate) fn accepts_jiter_leaf(&self, value: &jiter::JsonValue<'_>) -> bool {
+    #[inline]
+    pub fn accepts_jiter_leaf(&self, value: &jiter::JsonValue<'_>) -> bool {
         match value {
             jiter::JsonValue::Str(text) => {
                 self.types
@@ -160,13 +166,20 @@ impl Node {
                     Rule::False => false,
                     Rule::Bound {
                         value,
+                        exact,
                         lower,
                         exclusive,
-                    } => compare_integer(*number, value).is_some_and(|order| match order {
-                        Ordering::Equal => !exclusive,
-                        Ordering::Greater => *lower,
-                        Ordering::Less => !lower,
-                    }),
+                    } => exact
+                        .as_ref()
+                        .map_or_else(
+                            || compare_integer(*number, value),
+                            |limit| fraction::BigFraction::from(*number).partial_cmp(limit),
+                        )
+                        .is_some_and(|order| match order {
+                            Ordering::Equal => !exclusive,
+                            Ordering::Greater => *lower,
+                            Ordering::Less => !lower,
+                        }),
                     Rule::MultipleOf(divisor) => {
                         multiple_of(InstanceRef::from_jiter(value), *divisor)
                     }
@@ -178,7 +191,7 @@ impl Node {
         }
     }
 
-    pub(crate) fn is_leaf(&self) -> bool {
+    pub fn is_leaf(&self) -> bool {
         self.rules.iter().all(|rule| {
             matches!(
                 rule,
@@ -187,7 +200,8 @@ impl Node {
         })
     }
 
-    pub(crate) fn accepts_leaf(&self, value: InstanceRef<'_>) -> bool {
+    #[inline]
+    pub fn accepts_leaf(&self, value: InstanceRef<'_>) -> bool {
         self.types
             .as_ref()
             .is_none_or(|types| types.iter().any(|kind| kind.accepts(value)))
@@ -202,10 +216,11 @@ impl Node {
                     .is_none_or(|value| string_length_valid(value, *min, *max)),
                 Rule::Bound {
                     value: limit,
+                    exact,
                     lower,
                     exclusive,
-                } => value.as_number().is_none_or(|number| {
-                    compare_number(number, limit).is_some_and(|order| match order {
+                } => value.as_number().is_none_or(|_| {
+                    compare_bound(value, limit, exact.as_ref()).is_some_and(|order| match order {
                         Ordering::Equal => !exclusive,
                         Ordering::Greater => *lower,
                         Ordering::Less => !lower,
@@ -272,12 +287,28 @@ impl Rule {
 }
 
 impl PreparedSchema {
-    pub(crate) fn node(&self, id: NodeId) -> &Node {
+    #[inline]
+    pub fn node(&self, id: NodeId) -> &Node {
         &self.nodes[id.0]
     }
-    pub(crate) fn compile(schema: &Value) -> Result<Self, String> {
+    /// Whether JSON must retain numeric lexemes until schema validation.
+    pub fn requires_exact_json_numbers(&self) -> bool {
+        self.exact_json_numbers
+    }
+
+    pub fn compile(schema: &Value) -> Result<Self, String> {
         // Validate at build time using the existing source-of-truth backend.
-        super::validated_python_schema(schema)?;
+        let document = json_schema_ast::SchemaDocument::from_json(schema)
+            .map_err(|error| error.to_string())?;
+        document.root().map_err(|error| error.to_string())?;
+        document
+            .validate_source_schema()
+            .map_err(|error| error.to_string())?;
+        jsonschema::draft202012::options()
+            .build(document.source_schema_json())
+            .map_err(|error| {
+                format!("schema failed Draft 2020-12 validator compilation: {error}")
+            })?;
         let mut builder = Builder {
             root: schema,
             nodes: Vec::new(),
@@ -286,18 +317,28 @@ impl PreparedSchema {
             pattern_ids: HashMap::new(),
         };
         builder.add(schema, "#")?;
+        let exact_json_numbers = builder.nodes.iter().any(|node| {
+            node.rules
+                .iter()
+                .any(|rule| matches!(rule, Rule::Bound { exact: Some(_), .. }))
+                || node
+                    .choices
+                    .as_ref()
+                    .is_some_and(|choices| choices.iter().any(needs_exact_json_number))
+        });
         Ok(Self {
             version: VERSION,
+            exact_json_numbers,
             nodes: builder.nodes,
             patterns: builder.patterns,
         })
     }
 
-    pub(crate) fn to_bytes(&self) -> Result<Vec<u8>, String> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
         serde_json::to_vec(self).map_err(|error| error.to_string())
     }
 
-    pub(crate) fn load(bytes: &[u8]) -> Result<Self, String> {
+    pub fn load(bytes: &[u8]) -> Result<Self, String> {
         let program: Self = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
         if program.version != VERSION || program.nodes.is_empty() {
             return Err(
@@ -331,11 +372,11 @@ impl PreparedSchema {
         Ok(program)
     }
 
-    pub(crate) fn is_valid_instance(&self, value: InstanceRef<'_>) -> bool {
+    pub fn is_valid_instance(&self, value: InstanceRef<'_>) -> bool {
         value.is_json() && self.is_valid_instance_assuming_json(value)
     }
 
-    pub(crate) fn is_valid_instance_assuming_json(&self, value: InstanceRef<'_>) -> bool {
+    pub fn is_valid_instance_assuming_json(&self, value: InstanceRef<'_>) -> bool {
         self.accepts(NodeId(0), value, 0, &mut Evaluation::default())
     }
 
@@ -566,10 +607,11 @@ impl PreparedSchema {
                 .is_none_or(|value| length_valid(value.len(), *min, *max)),
             Rule::Bound {
                 value: limit,
+                exact,
                 lower,
                 exclusive,
-            } => value.as_number().is_none_or(|number| {
-                let comparison = compare_number(number, limit);
+            } => value.as_number().is_none_or(|_| {
+                let comparison = compare_bound(value, limit, exact.as_ref());
                 comparison.is_some_and(|order| {
                     if order == Ordering::Equal {
                         !exclusive
@@ -600,6 +642,62 @@ fn string_length_valid(value: &str, min: u64, max: Option<u64>) -> bool {
 fn length_valid(length: usize, min: u64, max: Option<u64>) -> bool {
     let length = length as u64;
     length >= min && max.is_none_or(|max| length <= max)
+}
+
+fn needs_exact_json_number(value: &Value) -> bool {
+    match value {
+        Value::Number(number) => number.as_i64().is_none() && number.as_u64().is_none(),
+        Value::Array(values) => values.iter().any(needs_exact_json_number),
+        Value::Object(values) => values.values().any(needs_exact_json_number),
+        _ => false,
+    }
+}
+
+// Persist exact large/decimal boundaries in the build artifact. Ordinary
+// machine-sized integer constraints keep their allocation-free fast path.
+fn exact_decimal(text: &str) -> Option<fraction::BigFraction> {
+    if let Some((mantissa, exponent)) = text.split_once(['e', 'E']) {
+        let exponent: i32 = exponent.parse().ok()?;
+        if exponent.unsigned_abs() > 10_000 {
+            return None;
+        }
+        let mantissa: fraction::BigFraction = mantissa.parse().ok()?;
+        let power = fraction::BigFraction::from(
+            num_bigint::BigUint::from(10_u8).pow(exponent.unsigned_abs()),
+        );
+        Some(if exponent < 0 {
+            mantissa / power
+        } else {
+            mantissa * power
+        })
+    } else {
+        text.parse().ok()
+    }
+}
+
+fn compare_bound(
+    value: InstanceRef<'_>,
+    limit: &Number,
+    exact: Option<&fraction::BigFraction>,
+) -> Option<Ordering> {
+    let number = value.as_number()?;
+    let Some(exact) = exact else {
+        return compare_number(number, limit);
+    };
+    let number = if let Some(value) = number.as_i64() {
+        fraction::BigFraction::from(value)
+    } else if let Some(value) = number.as_u64() {
+        fraction::BigFraction::from(value)
+    } else {
+        match number {
+            NumberRef::BigInteger(value) => fraction::BigFraction::from(value.clone()),
+            NumberRef::Float(value) => fraction::BigFraction::from(value),
+            // Preserve arbitrary Python integers and serde decimal numbers;
+            // converting these through f64 loses bits at exclusive boundaries.
+            _ => exact_decimal(&value.to_owned().to_string())?,
+        }
+    };
+    number.partial_cmp(exact)
 }
 
 fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
@@ -956,6 +1054,11 @@ impl Builder<'_> {
             if let Some(Value::Number(value)) = object.get(key) {
                 node.rules.push(Rule::Bound {
                     value: value.clone(),
+                    exact: if value.as_i64().is_none() && value.as_u64().is_none() {
+                        exact_decimal(&value.to_string())
+                    } else {
+                        None
+                    },
                     lower,
                     exclusive,
                 });

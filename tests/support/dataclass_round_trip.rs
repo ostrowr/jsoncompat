@@ -294,10 +294,12 @@ for raw_line in sys.stdin:
     mode, raw_json = raw_line.split("\t", 1)
     candidate = json.loads(raw_json)
     try:
-        model = reader_model.from_value(candidate)
         if mode == "reject_invalid":
+            # Validate the original JSON, before Python rounds decimal literals.
+            reader_model.deserialize(raw_json)
             print("accepted", flush=True)
             continue
+        model = reader_model.from_value(candidate)
         emitted = model.to_value()
         candidate_json = json.dumps(candidate, separators=(",", ":"), sort_keys=True)
         emitted_json = json.dumps(emitted, separators=(",", ":"), sort_keys=True)

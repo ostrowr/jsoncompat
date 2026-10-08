@@ -1,4 +1,5 @@
-use jsoncompat_codegen::generate_dataclass_models;
+use json_schema_ast::SchemaDocument;
+use jsoncompat_codegen::{generate_dataclass_models, generate_dataclass_module_from_document};
 use serde_json::json;
 use std::fs;
 
@@ -60,6 +61,20 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
         ),
     ];
     schemas.push(("wide", record_schema(1000)));
+    schemas.push((
+        "reserved",
+        json!({"title":"Reserved", "type":"object", "properties": {
+        "dc":{"type":"string"}, "self":{"type":"integer"}, "dict":{"type":"string"},
+        "str":{"type":"string"}, "typing":{"type":"string"}
+    }, "required":["dc","self","dict","str","typing"]}),
+    ));
+    schemas.push((
+        "recursive",
+        json!({"title":"Node", "type":"object", "properties": {
+        "value":{"type":"integer","minimum":0},
+        "children":{"type":"array","items":{"$ref":"#"}}
+    }, "required":["value","children"], "additionalProperties":false}),
+    ));
     let sections: serde_json::Map<String, serde_json::Value> = (0..200)
         .map(|index| (format!("section{index:04}"), record_schema(12)))
         .collect();
@@ -70,11 +85,29 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
             "properties": sections, "additionalProperties": false,
         }),
     ));
+    schemas.push(("independent", json!({"title":"Independent", "type":"object", "properties":{"value":{"type":"integer"}}, "required":["value"], "additionalProperties":false,
+        "$defs": {"other":{"title":"Other", "type":"object", "properties":{"name":{"type":"string"}}, "required":["name"], "additionalProperties":false}}
+    })));
     schemas.push((
         "records",
         json!({"type": "array", "items": record_schema(12)}),
     ));
     for (name, schema) in schemas {
+        if name == "constrained" {
+            let document = SchemaDocument::from_json(&schema).expect("schema");
+            let module =
+                generate_dataclass_module_from_document(&document).expect("generate parts");
+            fs::write(
+                directory.join("constrained_public.py"),
+                module.public_file("_constrained_generated"),
+            )
+            .unwrap();
+            fs::write(
+                directory.join("_constrained_generated.py"),
+                module.private_file(),
+            )
+            .unwrap();
+        }
         let source = generate_dataclass_models(&schema).expect("generate test models");
         fs::write(directory.join(format!("{name}.py")), source).expect("write models");
     }

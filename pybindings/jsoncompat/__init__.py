@@ -35,15 +35,6 @@ GeneratorForFn = Callable[[str], "Generator"]
 ValidatorForFn = Callable[[str], "Validator"]
 DeserializeJsonFn = Callable[[str | bytes], "JsonValue"]
 SerializeJsonFn = Callable[["JsonValue"], str]
-CompileModelRuntimesFn = Callable[
-    [
-        list[tuple[type[Any], int]],
-        list[tuple[Any, ...]],
-        type[tuple[Any, ...]],
-        type[Mapping[Any, Any]],
-    ],
-    list["ModelRuntime"],
-]
 
 
 class Generator(Protocol):
@@ -115,23 +106,6 @@ class NativeModule(Protocol):
     def deserialize_json(self, payload: str | bytes) -> JsonValue: ...
 
     def serialize_json(self, value: JsonValue) -> str: ...
-
-    def compile_model_runtimes(
-        self,
-        model_roots: list[tuple[type[Any], int]],
-        descriptors: list[tuple[Any, ...]],
-        frozen_list_type: type[tuple[Any, ...]],
-        frozen_dict_type: type[Mapping[Any, Any]],
-    ) -> list[ModelRuntime]: ...
-
-    def prepare_model_schema(self, schema_json: str) -> bytes: ...
-
-    def prepare_model_plan(
-        self,
-        descriptors: list[tuple[Any, ...]],
-        frozen_list_type: type[tuple[Any, ...]],
-        frozen_dict_type: type[Mapping[Any, Any]],
-    ) -> bytes: ...
 
     def bind_prepared_model_runtimes(
         self,
@@ -211,19 +185,6 @@ def _missing_serialize_json(value: JsonValue) -> NoReturn:
     )
 
 
-def _missing_compile_model_runtimes(
-    model_roots: list[tuple[type[Any], int]],
-    descriptors: list[tuple[Any, ...]],
-    frozen_list_type: type[tuple[Any, ...]],
-    frozen_dict_type: type[Mapping[Any, Any]],
-) -> NoReturn:
-    _ = (model_roots, descriptors, frozen_list_type, frozen_dict_type)
-    raise ModuleNotFoundError(
-        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
-        "before constructing generated models."
-    )
-
-
 def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
@@ -278,7 +239,7 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "validator_for")
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
-        and hasattr(module, "compile_model_runtimes")
+        and hasattr(module, "bind_prepared_model_runtimes")
         and hasattr(module, "JSONCOMPAT_MISSING")
         and hasattr(module, "JsoncompatMissingType")
         and hasattr(validator, "is_valid_json")
@@ -319,9 +280,6 @@ except ModuleNotFoundError as error:
         _validator_for_native: ValidatorForFn = _missing_validator_for
         _deserialize_json_native: DeserializeJsonFn = _missing_deserialize_json
         _serialize_json_native: SerializeJsonFn = _missing_serialize_json
-        _compile_model_runtimes_native: CompileModelRuntimesFn = (
-            _missing_compile_model_runtimes
-        )
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _native_symbols = _repo_native
@@ -331,7 +289,6 @@ except ModuleNotFoundError as error:
         _validator_for_native = _repo_native.validator_for
         _deserialize_json_native = _repo_native.deserialize_json
         _serialize_json_native = _repo_native.serialize_json
-        _compile_model_runtimes_native = _repo_native.compile_model_runtimes
         _is_valid_native = _repo_native.is_valid
 else:
     if not _force_repo_native and not _has_reusable_schema_api(_native_module):
@@ -343,7 +300,6 @@ else:
     _validator_for_native = _native_module.validator_for
     _deserialize_json_native = _native_module.deserialize_json
     _serialize_json_native = _native_module.serialize_json
-    _compile_model_runtimes_native = _native_module.compile_model_runtimes
     _is_valid_native = _native_module.is_valid
 
 
@@ -447,37 +403,6 @@ def deserialize_json_value(payload: str | bytes) -> JsonValue:
 def serialize_json_value(value: JsonValue) -> str:
     serialize_json_native = _serialize_json_native
     return serialize_json_native(value)
-
-
-def compile_model_runtimes(
-    model_roots: list[tuple[type[Any], int]],
-    descriptors: list[tuple[Any, ...]],
-    frozen_list_type: type[tuple[Any, ...]],
-    frozen_dict_type: type[Mapping[Any, Any]],
-) -> list[ModelRuntime]:
-    return _compile_model_runtimes_native(
-        model_roots, descriptors, frozen_list_type, frozen_dict_type
-    )
-
-
-def prepare_model_schema(schema_json: str) -> bytes:
-    """Compile a generated model's schema for an ahead-of-time build artifact."""
-    if _native_symbols is None:
-        raise ModuleNotFoundError("jsoncompat._native is required to prepare models")
-    return _native_symbols.prepare_model_schema(schema_json)
-
-
-def prepare_model_plan(
-    descriptors: list[tuple[Any, ...]],
-    frozen_list_type: type[tuple[Any, ...]],
-    frozen_dict_type: type[Mapping[Any, Any]],
-) -> bytes:
-    """Resolve portable native conversion decisions during model preparation."""
-    if _native_symbols is None:
-        raise ModuleNotFoundError("jsoncompat._native is required to prepare models")
-    return _native_symbols.prepare_model_plan(
-        descriptors, frozen_list_type, frozen_dict_type
-    )
 
 
 def bind_prepared_model_runtimes(

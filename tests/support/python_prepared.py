@@ -1,6 +1,9 @@
 """Prepared-model regressions, invoked by the Rust integration test."""
 
 import ast
+import hashlib
+import importlib.util
+import py_compile
 import builtins
 import dataclasses
 import gc
@@ -17,11 +20,23 @@ from unittest.mock import patch
 import jsoncompat
 from jsoncompat.codegen import SerializationFormat
 from jsoncompat.codegen import dataclasses as dc
-from jsoncompat.codegen.build import _load, prepare_module
 
 WORK = Path(sys.argv.pop(1))
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests/fixtures/dataclasses"
+
+
+def _load(path):
+    name = "_generated_test_" + hashlib.sha256(str(path).encode()).hexdigest()
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
+    return module
 
 
 def outcome(model, value):
@@ -37,16 +52,16 @@ class PreparedTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.modules = {}
-        cls.sources = {}
+        sys.path.insert(0, str(WORK))
         for source in WORK.glob("*.py"):
-            destination = WORK / "prepared" / source.name
-            prepare_module(source, destination)
-            cls.modules[source.stem] = _load(destination)
-            cls.sources[source.stem] = _load(source)
+            py_compile.compile(str(source), doraise=True)
+            if not source.name.startswith("_"):
+                cls.modules[source.stem] = _load(source)
 
     def test_no_compiler_or_reflection_at_import_or_first_use(self):
         destination = WORK / "no_compile.py"
-        prepare_module(WORK / "constrained.py", destination)
+        destination.write_bytes((WORK / "constrained.py").read_bytes())
+        py_compile.compile(str(destination), doraise=True)
 
         def forbidden(*args, **kwargs):
             raise AssertionError("prepared startup invoked a compiler/reflection")
@@ -54,13 +69,7 @@ class PreparedTests(unittest.TestCase):
         with patch.object(builtins, "compile", forbidden), patch.object(
             dataclasses, "dataclass", forbidden
         ), patch.object(inspect, "get_annotations", forbidden), patch.object(
-            dc, "_bind_generated_module", forbidden
-        ), patch.object(
-            dc, "compile_model_runtimes", forbidden
-        ), patch.object(
-            jsoncompat, "prepare_model_schema", forbidden
-        ), patch.object(
-            jsoncompat, "prepare_model_plan", forbidden
+            jsoncompat, "validator_for", forbidden
         ):
             module = _load(destination)
             self.assertEqual(
@@ -80,22 +89,15 @@ class PreparedTests(unittest.TestCase):
 
     def test_dataclass_protocol_and_formats(self):
         model = self.modules["constrained"].Constrained
-        original = self.sources["constrained"].Constrained
         self.assertTrue(dataclasses.is_dataclass(model))
-        self.assertEqual(inspect.signature(model), inspect.signature(original))
-        self.assertEqual(model.__doc__, original.__doc__)
-        self.assertEqual(
-            str(model.__dataclass_params__), str(original.__dataclass_params__)
-        )
-        for actual, expected in zip(
-            dataclasses.fields(model), dataclasses.fields(original), strict=True
-        ):
-            self.assertEqual(
-                (actual.name, actual.type, actual.metadata, actual.kw_only),
-                (expected.name, expected.type, expected.metadata, expected.kw_only),
-            )
+        self.assertTrue(model.__dataclass_params__.frozen)
+        signature = inspect.signature(model)
+        self.assertEqual(signature.parameters["name"].kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertEqual(signature.parameters["optional"].default, dc.JSONCOMPAT_MISSING)
+        self.assertTrue(all(field.kw_only for field in dataclasses.fields(model)))
+        self.assertEqual([field.name for field in dataclasses.fields(model)], ["count", "name", "optional"])
         item = model(name="hello", count=2)
-        self.assertEqual(repr(item), repr(original(name="hello", count=2)))
+        self.assertIn("name='hello'", repr(item))
         self.assertEqual(item, pickle.loads(pickle.dumps(item)))
         self.assertEqual(hash(item), hash(model(name="hello", count=2)))
         self.assertEqual(dataclasses.replace(item, count=3).count, 3)
@@ -226,22 +228,14 @@ class PreparedTests(unittest.TestCase):
             for value in values:
                 self.assertEqual(
                     outcome(self.modules[name].JSONCOMPAT_MODEL, value),
-                    outcome(self.sources[name].JSONCOMPAT_MODEL, value),
+                    ("accepted", value, value),
                 )
         with self.assertRaises(ValueError):
             self.modules["nested_regex"].JSONCOMPAT_MODEL.deserialize('{"xx":"A"}')
 
-    def test_build_is_atomic_and_loaded_plans_are_collectable(self):
-        destination = WORK / "atomic.py"
-        prepare_module(WORK / "constrained.py", destination)
-        expected = destination.read_bytes()
-        bad_source = WORK / "bad.py"
-        bad_source.write_text("JSONCOMPAT_MODEL = None\n")
-        with self.assertRaises(ValueError):
-            prepare_module(bad_source, destination)
-        self.assertEqual(destination.read_bytes(), expected)
-        with self.assertRaises(ValueError):
-            prepare_module(destination, destination)
+    def test_loaded_plans_are_collectable(self):
+        destination = WORK / "collectable.py"
+        destination.write_bytes((WORK / "constrained.py").read_bytes())
         module = _load(destination)
         ref = weakref.ref(module.Constrained)
         module.Constrained(name="x", count=1)
@@ -287,98 +281,110 @@ class PreparedTests(unittest.TestCase):
 
     def test_corrupt_programs_are_rejected_when_loaded(self):
         destination = WORK / "corrupt.py"
-        prepare_module(WORK / "constrained.py", destination)
+        destination.write_bytes((WORK / "constrained.py").read_bytes())
+        py_compile.compile(str(destination), doraise=True)
         tree = ast.parse(destination.read_text())
         changed = False
-        for statement in tree.body:
-            if isinstance(statement, ast.Expr) and isinstance(
-                statement.value, ast.Call
-            ):
-                call = statement.value
-                if (
-                    isinstance(call.func, ast.Name)
-                    and call.func.id == "setattr"
-                    and ast.literal_eval(call.args[1])
-                    == "__jsoncompat_prepared_schema__"
-                ):
-                    program = json.loads(ast.literal_eval(call.args[2]))
-                    program["nodes"][0]["rules"].append({"ref": 999999})
-                    call.args[2] = ast.Constant(json.dumps(program).encode())
-                    changed = True
+        for call in ast.walk(tree):
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "install_model":
+                program = json.loads(ast.literal_eval(call.args[3]))
+                program["nodes"][0]["rules"].append({"ref": 999999})
+                call.args[3] = ast.Constant(json.dumps(program).encode())
+                changed = True
         self.assertTrue(changed)
         destination.write_text(ast.unparse(tree))
         with self.assertRaisesRegex(ValueError, "invalid node reference"):
             _load(destination)
 
+    def test_split_module_is_readable_and_equivalent(self):
+        source = (WORK / "constrained_public.py").read_text()
+        self.assertNotIn("dc.install_model", source)
+        self.assertNotIn("__jsoncompat_schema__", source)
+        self.assertNotIn("def _jsoncompat_init", source)
+        self.assertLess(len(source), 2000)
+        model = self.modules["constrained_public"].Constrained
+        item = model(name="x", count=2)
+        self.assertEqual(item.serialize(), '{"count":2,"name":"x"}')
+        self.assertEqual(item, pickle.loads(pickle.dumps(item)))
+
+    def test_independent_models_do_not_copy_unrelated_definitions(self):
+        module = self.modules["independent"]
+        self.assertNotIn("$defs", json.loads(module.Other.__jsoncompat_schema__))
+        self.assertEqual(module.Other(name="x").serialize(), '{"name":"x"}')
+        self.assertEqual(module.Independent(value=1).serialize(), '{"value":1}')
+
+    def test_fields_cannot_shadow_generated_helpers(self):
+        model = self.modules["reserved"].JSONCOMPAT_MODEL
+        value = {"dc":"module", "self":1, "dict":"mapping", "str":"text", "typing":"annotations"}
+        instance = model.deserialize(json.dumps(value))
+        self.assertEqual(json.loads(instance.serialize()), value)
+        self.assertEqual(instance.dc_, "module")
+        self.assertEqual(instance.self_, 1)
+        self.assertEqual(instance.dict_, "mapping")
+        self.assertEqual(instance.str_, "text")
+
+    def test_recursive_models(self):
+        model = self.modules["recursive"].JSONCOMPAT_MODEL
+        value = {"value": 1, "children": [{"value": 2, "children": []}]}
+        instance = model.deserialize(json.dumps(value))
+        self.assertIs(type(instance.children[0]), model)
+        self.assertEqual(json.loads(instance.serialize()), value)
+        with self.assertRaises(ValueError):
+            model.deserialize('{"value":1,"children":[{"value":-1,"children":[]}]}')
+
+    def test_decimal_json_boundaries_are_checked_before_float_conversion(self):
+        module = _load(FIXTURES / "fuzz/optional/bignum/004.py")
+        model = module.JSONCOMPAT_MODEL
+        invalid = "972783798187987123879878123.188781371"
+        valid = "972783798187987123879878122.18878137"
+        for wire in (invalid, invalid.encode()):
+            with self.assertRaises(ValueError):
+                model.deserialize(wire)
+        model.deserialize(valid).serialize()
+        # A Python float has already lost the original lexeme. Its actual
+        # value is below the boundary and the Python-value API accepts it.
+        rounded = json.loads(invalid)
+        self.assertTrue(jsoncompat.validator_for(model.__jsoncompat_schema__).is_valid_value(rounded))
+        self.assertEqual(model.from_value(rounded).root, rounded)
+
     def test_entire_generated_fixture_corpus(self):
-        samples = json.loads(
-            (REPO / "pybindings/bench_fixture_samples.json").read_text()
-        )
-        checked_modules = checked_examples = existing_limitations = 0
+        samples = json.loads((REPO / "pybindings/bench_fixture_samples.json").read_text())
+        checked_modules = checked_examples = 0
         for source in sorted(FIXTURES.rglob("*.py")):
             relative = source.relative_to(FIXTURES)
-            destination = WORK / "corpus" / relative
             with self.subTest(fixture=str(relative)):
-                original = _load(source)
+                module = _load(source)
                 try:
-                    try:
-                        prepare_module(source, destination)
-                    except ValueError:
-                        # Some codegen snapshots retain unresolved URI refs;
-                        # the original runtime rejects these schemas too.
-                        with self.assertRaises(ValueError):
-                            jsoncompat.validator_for(
-                                original.JSONCOMPAT_MODEL.__jsoncompat_schema__
-                            ).is_valid_value(None)
-                        existing_limitations += 1
+                    model = module.JSONCOMPAT_MODEL
+                    # Writer/reader direction restrictions have dedicated tests.
+                    if issubclass(model, (dc.WriterDataclassModel, dc.ReaderDataclassModel, dc.ReaderDataclassRootModel)):
                         continue
-                    prepared = _load(destination)
-                    try:
-                        cases = [None, False, True, 0, 1, 1.5, "", "abc", [], {}]
-                        if relative.parts[0] == "fuzz":
-                            fixture = json.loads(
-                                (REPO / "tests/fixtures" / relative.parent)
-                                .with_suffix(".json")
-                                .read_text()
-                            )
-                            case = (
-                                fixture[int(relative.stem)]
-                                if isinstance(fixture, list)
-                                else fixture
-                            )
-                            cases.extend(test["data"] for test in case.get("tests", []))
-                        sample = samples.get(str(relative.with_suffix("")))
-                        if sample is not None:
-                            value = sample["value"]
-                            cases.append(value)
-                            if isinstance(value, dict):
-                                cases.extend(
-                                    {k: v for k, v in value.items() if k != missing}
-                                    for missing in value
-                                )
-                                cases.extend(
-                                    dict(value, **{key: bad})
-                                    for key in value
-                                    for bad in [None, False, 0, "", [], {}]
-                                )
-                        for value in cases:
-                            self.assertEqual(
-                                outcome(prepared.JSONCOMPAT_MODEL, value),
-                                outcome(original.JSONCOMPAT_MODEL, value),
-                                (relative, value),
-                            )
-                            checked_examples += 1
-                        checked_modules += 1
-                    finally:
-                        sys.modules.pop(prepared.__name__, None)
+                    validator = jsoncompat.validator_for(model.__jsoncompat_schema__)
+                    cases = [None, False, True, 0, 1, 1.5, "", "abc", [], {}]
+                    if relative.parts[0] == "fuzz":
+                        fixture = json.loads((REPO / "tests/fixtures" / relative.parent).with_suffix(".json").read_text())
+                        case = fixture[int(relative.stem)] if isinstance(fixture, list) else fixture
+                        cases.extend(test["data"] for test in case.get("tests", []))
+                    sample = samples.get(str(relative.with_suffix("")))
+                    if sample is not None:
+                        value = sample["value"]
+                        cases.append(value)
+                        if isinstance(value, dict):
+                            cases.extend({k: v for k,v in value.items() if k != missing} for missing in value)
+                            cases.extend(dict(value, **{key: bad}) for key in value for bad in [None,False,0,"",[],{}])
+                    for value in cases:
+                        actual = outcome(model, value)
+                        expected = validator.is_valid_value(value)
+                        self.assertEqual(actual[0] == "accepted", expected, (relative, value, actual))
+                        if expected:
+                            self.assertEqual(actual[1:], (value, value), (relative, value))
+                        checked_examples += 1
+                    checked_modules += 1
                 finally:
-                    sys.modules.pop(original.__name__, None)
-        self.assertEqual(
-            checked_modules + existing_limitations, len(list(FIXTURES.rglob("*.py")))
-        )
-        print(
-            f"Prepared corpus: {checked_modules} modules, {checked_examples} differential cases, {existing_limitations} existing reference limitations"
-        )
+                    sys.modules.pop(module.__name__, None)
+        self.assertGreater(checked_modules, 500)
+        self.assertGreater(checked_examples, 8000)
+        print(f"Generated corpus: {checked_modules} modules, {checked_examples} validator comparisons")
 
 
 if __name__ == "__main__":

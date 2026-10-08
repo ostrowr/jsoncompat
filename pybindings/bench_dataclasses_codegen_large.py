@@ -20,9 +20,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pydantic
-from bench_dataclasses_prepared import measure
+from bench_dataclasses_codegen import build_models, measure
 from benchmark_generated_models import load_generated_path
-from jsoncompat.codegen.build import prepare_module
 from pydantic import ConfigDict, Field, RootModel, create_model
 
 REPO = Path(__file__).resolve().parents[1]
@@ -148,11 +147,11 @@ def probe(schema_path: Path, model_path: str, payload_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cli", type=Path, default=REPO / "target/debug/jsoncompat")
+    parser.add_argument("--cli", type=Path, default=REPO / "target/release/jsoncompat")
     parser.add_argument("--repeats", type=int, default=9)
     parser.add_argument("--startup-repeats", type=int, default=5)
     parser.add_argument(
-        "--output", type=Path, default=REPO / "target/python-aot/large/benchmark.json"
+        "--output", type=Path, default=REPO / "target/python-codegen/large/benchmark.json"
     )
     parser.add_argument("--assert-target", action="store_true")
     parser.add_argument("--probe", nargs=3, metavar=("SCHEMA", "MODEL", "PAYLOAD"))
@@ -180,28 +179,12 @@ def main() -> None:
     for name, schema, value, invalid_path, iterations in workloads():
         schema_path = directory / f"{name}.json"
         payload_path = directory / f"{name}_payload.json"
-        source = directory / f"{name}.py"
         destination = directory / f"prepared_{name}.py"
         schema_path.write_text(json.dumps(schema))
         payload = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
         payload_path.write_text(payload)
-        process = subprocess.run(
-            [
-                str(args.cli.resolve()),
-                "codegen",
-                "--target",
-                "dataclasses",
-                str(schema_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        source.write_text(process.stdout)
-        start = time.perf_counter_ns()
-        prepare_module(source, destination)
-        build_ms = (time.perf_counter_ns() - start) / 1e6
-        ordinary = load_generated_path(source).JSONCOMPAT_MODEL
+        build = build_models(args.cli, schema_path, destination)
+        build_ms = build["build_ms"]
         prepared = load_generated_path(destination).JSONCOMPAT_MODEL
         peer = pydantic_model(schema)
         # Invalid input at the last field checks complete traversal, not just
@@ -214,7 +197,6 @@ def main() -> None:
         for bad in (invalid, None, {}):
             wire = json.dumps(bad)
             for decode in (
-                ordinary.deserialize,
                 prepared.deserialize,
                 peer.model_validate_json,
             ):
@@ -226,7 +208,6 @@ def main() -> None:
                     raise AssertionError(f"{name} accepted invalid input")
         callbacks = {
             "prepared_checked": lambda: prepared.deserialize(payload).serialize(),
-            "ordinary_checked": lambda: ordinary.deserialize(payload).serialize(),
             "pydantic": lambda: peer.model_validate_json(payload).model_dump_json(
                 exclude_unset=True
             ),
@@ -238,10 +219,9 @@ def main() -> None:
             timings["prepared_checked"]["median_us"] / timings["pydantic"]["median_us"]
         )
         startup: dict[str, list[dict[str, float]]] = {
-            key: [] for key in ("ordinary", "prepared", "pydantic")
+            key: [] for key in ("prepared", "pydantic")
         }
         models = {
-            "ordinary": str(source),
             "prepared": str(destination),
             "pydantic": "pydantic",
         }
@@ -266,9 +246,7 @@ def main() -> None:
         report["cases"][name] = {
             "schema_bytes": schema_path.stat().st_size,
             "payload_bytes": len(payload.encode()),
-            "generated_source_bytes": source.stat().st_size,
-            "prepared_source_bytes": destination.stat().st_size,
-            "build_ms": build_ms,
+            **build,
             "iterations": iterations,
             "repeats": args.repeats,
             "timings": timings,

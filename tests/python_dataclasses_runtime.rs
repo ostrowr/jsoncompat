@@ -302,20 +302,22 @@ class ForeignSlots:
     __slots__ = tuple(f"slot_{index}" for index in range(100))
 
 
-# Install a valid member descriptor whose offset belongs to a much larger,
-# unrelated allocation before the generated runtime compiles its slot plan.
-original_value_descriptor = module.SlotSafety.value
-module.SlotSafety.value = ForeignSlots.slot_99
+# Imported models have already bound their slots. Protect the class layout
+# immediately, rather than waiting for a later operation to discover mutation.
 for _ in range(2):
     try:
-        module.SlotSafety.from_value({"value": "safe"})
-    except TypeError:
-        pass
+        module.SlotSafety.value = ForeignSlots.slot_99
+    except TypeError as error:
+        assert "slot descriptors are immutable" in str(error)
     else:
-        raise AssertionError("foreign slot descriptor was used for native construction")
-
-module.SlotSafety.value = original_value_descriptor
-module.SlotSafety.from_value({"value": "safe"})
+        raise AssertionError("foreign slot descriptor replacement was accepted")
+assert module.SlotSafety.from_value({"value": "safe"}).value == "safe"
+try:
+    del module.SlotSafety.value
+except TypeError:
+    pass
+else:
+    raise AssertionError("bound slot descriptor could be removed")
 
 try:
     class SlotSafetySubclass(module.SlotSafety):
@@ -370,11 +372,10 @@ def get_value(instance):
 def set_value(instance, value):
     setter_calls.append((instance, value))
 
-module.PropertyReplacement.value = property(get_value, set_value)
 try:
-    module.PropertyReplacement.from_value({"value": "unsafe"})
+    module.PropertyReplacement.value = property(get_value, set_value)
 except TypeError as error:
-    assert "must be an exact member descriptor" in str(error), str(error)
+    assert "slot descriptors are immutable" in str(error), str(error)
 else:
     raise AssertionError("a replacement property was accepted as generated storage")
 
@@ -397,7 +398,8 @@ fn native_plan_descriptor_protocol_rejects_unrepresentable_states() {
     let mut command = python_env::python_command();
     command.arg("-B").arg("-c").arg(
         r###"
-from jsoncompat import compile_model_runtimes
+import json
+from jsoncompat import bind_prepared_model_runtimes
 from jsoncompat.codegen import dataclasses as dc
 from jsoncompat.codegen.dataclasses import (
     JSONCOMPAT_MISSING,
@@ -415,6 +417,7 @@ class Model:
         "other",
     )
     __jsoncompat_schema__ = "{}"
+    __jsoncompat_prepared_schema__ = b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'
 
 
 assert repr(JSONCOMPAT_MISSING) == "JSONCOMPAT_MISSING"
@@ -427,6 +430,14 @@ for construct_missing in (lambda: object.__new__(JsoncompatMissingType),):
         pass
     else:
         raise AssertionError("constructed a second native missing sentinel")
+
+
+def compile_model_runtimes(roots, descriptors, frozen_list, frozen_dict):
+    keys = [(i, [json.dumps(f[0], ensure_ascii=False) + ":" for f in sorted(node[2])])
+            for i,node in enumerate(descriptors) if len(node) >= 3 and node[0] == "model"]
+    plan = json.dumps({"version":1,"base_nodes":len(descriptors),"guards":[],
+                       "conversion_validates":[False]*len(descriptors),"json_keys":keys}).encode()
+    return bind_prepared_model_runtimes(roots, descriptors, frozen_list, frozen_dict, plan)
 
 
 def compile(descriptors):
@@ -546,7 +557,7 @@ for label, descriptors in cases:
     rejects(label, descriptors)
 
 try:
-    compile_model_runtimes([], [], FrozenList, FrozenDict, False)
+    bind_prepared_model_runtimes([], [], FrozenList, FrozenDict, False)
 except TypeError:
     pass
 else:
@@ -848,11 +859,10 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-module.SlotAlias.left = module.SlotAlias.right
 try:
-    module.SlotAlias.from_value({"left": "L", "right": "R"})
+    module.SlotAlias.left = module.SlotAlias.right
 except TypeError as error:
-    assert "aliases member descriptor" in str(error), str(error)
+    assert "slot descriptors are immutable" in str(error), str(error)
 else:
     raise AssertionError("same-owner member descriptor alias was accepted")
 "###,
@@ -1778,7 +1788,7 @@ else:
 }
 
 #[test]
-fn generated_module_lazily_compiles_one_shared_plan_for_every_recursive_model_root() {
+fn generated_module_binds_one_prebuilt_plan_for_every_recursive_model_root() {
     let source = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "#/$defs/a",
@@ -1820,10 +1830,10 @@ from jsoncompat.codegen import dataclasses as dc
 
 
 compile_calls = []
-native_compile = dc.compile_model_runtimes
+native_compile = dc.bind_prepared_model_runtimes
 
 
-def record_compile(model_roots, descriptors, frozen_list_type, frozen_dict_type):
+def record_compile(model_roots, descriptors, frozen_list_type, frozen_dict_type, prepared_plan):
     compile_calls.append(
         (tuple(model_type.__name__ for model_type, _ in model_roots), len(descriptors))
     )
@@ -1832,24 +1842,25 @@ def record_compile(model_roots, descriptors, frozen_list_type, frozen_dict_type)
         descriptors,
         frozen_list_type,
         frozen_dict_type,
+        prepared_plan,
     )
 
 
-dc.compile_model_runtimes = record_compile
+dc.bind_prepared_model_runtimes = record_compile
 try:
     spec = importlib.util.spec_from_file_location("shared_recursive_models", sys.argv[1])
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    assert compile_calls == []
+    assert len(compile_calls) == 1
     del sys.modules[spec.name]
     module.GeneratedSchema.from_value(
         {"next": {"next": None}},
         skip_validation=True,
     )
 finally:
-    dc.compile_model_runtimes = native_compile
+    dc.bind_prepared_model_runtimes = native_compile
 
 assert len(compile_calls) == 1
 root_names, descriptor_count = compile_calls[0]
@@ -1888,85 +1899,45 @@ for model_type, value in cases:
 }
 
 #[test]
-fn native_plan_only_represents_string_keyed_json_mappings() {
-    let mut command = python_env::python_command();
-    command.arg("-B").arg("-c").arg(
-        r###"
-from collections.abc import Mapping, Sequence
-import typing
-
-from jsoncompat.codegen import dataclasses as dc
-
-
-builder = dc._NativePlanBuilder({})
-assert builder.add(Mapping[str, int]) == 0
-assert builder.finish() == [("dict", 1), ("int",)]
-
-builder = dc._NativePlanBuilder({})
-assert builder.add(Sequence[int]) == 0
-assert builder.finish() == [("list", 1), ("int",)]
-
-builder = dc._NativePlanBuilder({})
-assert builder.add(int | str) == 0
-assert builder.finish() == [
-    ("union", (1, 2), None, None),
-    ("int",),
-    ("str",),
-]
-
-# Generated `Literal[...] | Literal[...]` source evaluates to typing.Union,
-# so this is part of the generated contract rather than a compatibility alias.
-builder = dc._NativePlanBuilder({})
-assert builder.add(typing.Literal["x"] | typing.Literal["y"]) == 0
-assert builder.finish()[0][0] == "union"
-
-for annotation, message in (
-    (Mapping[int, str], "JSON mappings must have string keys"),
-    (
-        dc.JsoncompatMissingType,
-        "JsoncompatMissingType is only valid in an omittable field",
-    ),
-):
-    try:
-        dc._NativePlanBuilder({}).add(annotation)
-    except dc._NativePlanUnsupported as error:
-        assert str(error) == message
-    else:
-        raise AssertionError(f"native plan accepted {annotation!r}")
-
-for annotation in (
-    list,
-    dict,
-    Sequence,
-    Mapping,
-    list[int],
-    dict[str, int],
-    typing.List[int],
-    typing.Dict[str, int],
-    typing.Sequence[int],
-    typing.Mapping[str, int],
-):
-    try:
-        dc._NativePlanBuilder({}).add(annotation)
-    except dc._NativePlanUnsupported:
-        pass
-    else:
-        raise AssertionError(f"native plan accepted fallback annotation {annotation!r}")
-"###,
-    );
-    let output = command
+fn generated_plan_represents_json_mapping_sequence_and_literal_union() {
+    let source = generate_dataclass_models(&json!({"type":"object","properties":{
+        "mapping":{"type":"object","additionalProperties":{"type":"integer"}},
+        "sequence":{"type":"array","items":{"type":"integer"}},
+        "choice":{"enum":["x","y"]}
+    },"required":["mapping","sequence","choice"],"additionalProperties":false}))
+    .unwrap();
+    let module_path = write_temp_module("portable_types", &source);
+    let output = python_env::python_command()
+        .arg("-c")
+        .arg(
+            r#"
+import importlib.util,sys
+spec=importlib.util.spec_from_file_location("portable_types",sys.argv[1])
+module=importlib.util.module_from_spec(spec)
+sys.modules[spec.name]=module
+spec.loader.exec_module(module)
+value={"mapping":{"a":1},"sequence":[1,2],"choice":"x"}
+model=module.JSONCOMPAT_MODEL
+assert model.deserialize(model.from_value(value).serialize()).to_value()==value
+for bad in [dict(value,mapping={1:2}),dict(value,sequence=["x"]),dict(value,choice="z")]:
+    try: model.from_value(bad)
+    except (ValueError,TypeError): pass
+    else: raise AssertionError(bad)
+"#,
+        )
+        .arg(module_path)
         .output()
-        .expect("run native plan JSON mapping invariant test");
+        .unwrap();
     assert!(
         output.status.success(),
-        "native plan JSON mapping invariant test failed: {}",
+        "{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
 
 #[test]
-fn trusted_generated_model_use_does_not_compile_its_schema() {
-    let source = generate_dataclass_models(&json!({
+fn unsupported_schemas_fail_during_generation() {
+    let error = generate_dataclass_models(&json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://test.json-schema.org/lazy-schema/root",
         "title": "LazySchema",
@@ -1979,44 +1950,8 @@ fn trusted_generated_model_use_does_not_compile_its_schema() {
             }
         }
     }))
-    .expect("generate a schema unsupported by the runtime validator");
-    let module_path = write_temp_module("lazy_schema", &source);
-
-    let mut command = python_env::python_command();
-    command.arg("-B").arg("-c").arg(
-        r###"
-import importlib.util
-import sys
-
-
-spec = importlib.util.spec_from_file_location("lazy_schema_models", sys.argv[1])
-module = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
-
-model_type = module.JSONCOMPAT_MODEL
-assert "__jsoncompat_runtime__" not in model_type.__dict__
-trusted = model_type.from_value(["first", "second"], skip_validation=True)
-assert trusted.to_value(skip_validation=True) == ["first", "second"]
-
-try:
-    model_type.from_value(["first", "second"])
-except ValueError as error:
-    assert "unsupported reference" in str(error)
-else:
-    raise AssertionError("checked use did not compile the unsupported schema")
-"###,
-    );
-    command.arg(module_path);
-    let output = command
-        .output()
-        .expect("run lazy generated schema compilation test");
-    assert!(
-        output.status.success(),
-        "lazy generated schema compilation test failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    .expect_err("unsupported references must fail before publishing models");
+    assert!(error.to_string().contains("unsupported reference"));
 }
 
 #[test]

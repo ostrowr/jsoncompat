@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use jiter::JsonValue as JiterJsonValue;
 use jsonschema::{
@@ -16,7 +16,7 @@ use jsonschema::{
     PythonInstanceProvider,
 };
 use pyo3::Borrowed;
-use pyo3::exceptions::{PyAttributeError, PyIndexError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::pyclass::{PyTraverseError, PyVisit};
@@ -664,64 +664,17 @@ enum JsonShape {
 }
 
 struct BranchSchema {
-    source: SchemaSource,
-    compiled: OnceLock<jsonschema::Validator>,
+    program: PreparedSchema,
 }
 
-enum SchemaSource {
-    Raw(serde_json::Value),
-    Prepared(PreparedSchema),
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum SchemaValidatorRef<'a> {
-    Native(&'a jsonschema::Validator),
-    Prepared(&'a PreparedSchema),
-}
-
-impl SchemaValidatorRef<'_> {
-    fn is_valid_instance(self, value: JsonInstanceRef<'_>) -> bool {
-        match self {
-            Self::Native(validator) => validator.is_valid_instance(value),
-            Self::Prepared(validator) => validator.is_valid_instance(value),
-        }
-    }
-
-    fn is_valid_instance_assuming_json(self, value: JsonInstanceRef<'_>) -> bool {
-        match self {
-            Self::Native(validator) => validator.is_valid_instance_assuming_json(value),
-            Self::Prepared(validator) => validator.is_valid_instance_assuming_json(value),
-        }
-    }
-}
+type SchemaValidatorRef<'a> = &'a PreparedSchema;
 
 impl BranchSchema {
-    fn compiled(&self) -> PyResult<SchemaValidatorRef<'_>> {
-        let raw = match &self.source {
-            SchemaSource::Prepared(program) => return Ok(SchemaValidatorRef::Prepared(program)),
-            SchemaSource::Raw(raw) => raw,
-        };
-        if self.compiled.get().is_none() {
-            let compiled = super::validated_python_schema(raw).map_err(|error| {
-                PyErr::new::<PyValueError, _>(format!("Invalid schema: {error}"))
-            })?;
-            // Concurrent first calls may both prepare an equivalent validator.
-            // Only the installed validator is retained by the shared plan.
-            let _ = self.compiled.set(compiled.validator);
-        }
-        Ok(SchemaValidatorRef::Native(
-            self.compiled
-                .get()
-                .expect("branch schema was initialized immediately above"),
-        ))
-    }
-
     fn is_valid_instance(&self, instance: JsonInstanceRef<'_>) -> PyResult<bool> {
-        Ok(self.compiled()?.is_valid_instance(instance))
+        Ok(self.program.is_valid_instance(instance))
     }
-
     fn is_valid_python_value(&self, py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
-        validate_python_value(self.compiled()?, py, value, false)
+        validate_python_value(&self.program, py, value, false)
     }
 }
 
@@ -777,7 +730,6 @@ pub(crate) struct ModelConverterPlan {
     nodes: Vec<ConversionNode>,
     conversion_validates: Vec<bool>,
     leaf_guards: Vec<Option<super::prepared_schema::Node>>,
-    prepared_plan: Option<prepared::PreparedPlan>,
     object_new: Py<PyAny>,
     missing_sentinel: MissingSentinel,
     frozen_list_type: Py<PyType>,
@@ -1108,17 +1060,14 @@ impl RootedModelConverterPlan {
 }
 
 impl ModelConverterPy {
-    pub(crate) fn has_prepared_schema(&self) -> bool {
-        match self.node(self.root.0) {
-            ConversionNode::Model { branch_schema, .. }
-            | ConversionNode::Root { branch_schema, .. } => {
-                matches!(branch_schema.source, SchemaSource::Prepared(_))
-            }
-            _ => false,
-        }
-    }
-
     pub(crate) fn validate_emitted_json(&self, payload: &str) -> PyResult<bool> {
+        if self.schema()?.requires_exact_json_numbers() {
+            let exact: serde_json::Value = serde_json::from_str(payload)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?;
+            return Ok(self
+                .schema()?
+                .is_valid_instance_assuming_json(JsonInstanceRef::from_serde(&exact)));
+        }
         if self.conversion_validates[self.root.0.0] && !self.output_overrides.get() {
             return Ok(true);
         }
@@ -1132,7 +1081,7 @@ impl ModelConverterPy {
     pub(crate) fn schema(&self) -> PyResult<SchemaValidatorRef<'_>> {
         match self.node(self.root.0) {
             ConversionNode::Model { branch_schema, .. }
-            | ConversionNode::Root { branch_schema, .. } => branch_schema.compiled(),
+            | ConversionNode::Root { branch_schema, .. } => Ok(&branch_schema.program),
             _ => unreachable!("rooted model converter must have a generated model root"),
         }
     }
@@ -1259,19 +1208,6 @@ impl ModelConverterPy {
             )
             .map_err(ConversionFailure::into_pyerr)?;
         Ok(Some(UnvalidatedModel(instance).finish()))
-    }
-
-    pub(crate) fn serialize_json_value(
-        &self,
-        py: Python<'_>,
-        value: &MaterializedJsonValue,
-    ) -> PyResult<String> {
-        let mut output = Vec::with_capacity(256);
-        write_serializable_json_value(&mut output, value.0.bind(py), MAX_MODEL_DEPTH)?;
-        // SAFETY: the writer only appends ASCII JSON punctuation/numbers,
-        // serde_json string output, and complete Rust str slices. Every write
-        // therefore preserves UTF-8.
-        Ok(unsafe { String::from_utf8_unchecked(output) })
     }
 
     pub(crate) fn serialize_model_checked(
@@ -4579,7 +4515,7 @@ pub(crate) fn compile_model_converter_plan(
     frozen_list_type: &Bound<'_, PyType>,
     frozen_dict_type: &Bound<'_, PyType>,
     missing_sentinel: Py<PyAny>,
-    prepared_plan: Option<&[u8]>,
+    prepared_plan: &[u8],
 ) -> PyResult<Arc<ModelConverterPlan>> {
     if !frozen_list_type.is_subclass_of::<PyTuple>()? {
         return Err(PyErr::new::<PyTypeError, _>(
@@ -4591,32 +4527,10 @@ pub(crate) fn compile_model_converter_plan(
     for descriptor in descriptors {
         nodes.push(parse_node(py, &descriptor, node_count)?);
     }
-    // A union of literal alternatives has one acceptance test. Keeping a
-    // separate conversion branch for each alternative needlessly allocates a
-    // Python scalar for every unsuccessful attempt during JSON decoding.
-    for index in 0..nodes.len() {
-        if let ConversionNode::Union(union) = &nodes[index]
-            && union
-                .iter()
-                .all(|id| matches!(nodes[id.0], ConversionNode::Literal { .. }))
-        {
-            let values = union
-                .iter()
-                .flat_map(|id| {
-                    let ConversionNode::Literal { values } = &nodes[id.0] else {
-                        unreachable!()
-                    };
-                    values.iter().map(|value| value.clone_ref(py))
-                })
-                .collect();
-            nodes[index] = ConversionNode::Literal { values };
-        }
-    }
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
     let mut plan = ModelConverterPlan {
         conversion_validates: vec![false; nodes.len()],
         leaf_guards: vec![None; nodes.len()],
-        prepared_plan: None,
         nodes,
         object_new,
         missing_sentinel: MissingSentinel(missing_sentinel),
@@ -4624,7 +4538,7 @@ pub(crate) fn compile_model_converter_plan(
         frozen_dict_type: frozen_dict_type.clone().unbind(),
         frozen_dict_items_attribute: ModelAttribute::compile(py, frozen_dict_type, "_items")?,
     };
-    plan.install_prepared_plan(py, prepared_plan)?;
+    plan.install_prepared_plan(prepared_plan)?;
     Ok(Arc::new(plan))
 }
 
@@ -5010,27 +4924,8 @@ fn parse_model_node(
 }
 
 fn schema_for_model(model_type: &Bound<'_, PyType>) -> PyResult<BranchSchema> {
-    let prepared = match model_type.getattr("__jsoncompat_prepared_schema__") {
-        Ok(value) => Some(value),
-        Err(error) if error.is_instance_of::<PyAttributeError>(model_type.py()) => None,
-        Err(error) => return Err(error),
-    };
-    if let Some(prepared) = prepared {
-        let bytes = prepared.cast::<PyBytes>()?;
-        let program = PreparedSchema::load(bytes.as_bytes()).map_err(PyValueError::new_err)?;
-        return Ok(BranchSchema {
-            source: SchemaSource::Prepared(program),
-            compiled: OnceLock::new(),
-        });
-    }
-    let schema = model_type
-        .getattr("__jsoncompat_schema__")?
-        .extract::<String>()?;
-    let schema = serde_json::from_str::<serde_json::Value>(&schema).map_err(|error| {
-        PyErr::new::<PyValueError, _>(format!("generated model schema is not valid JSON: {error}"))
-    })?;
-    Ok(BranchSchema {
-        source: SchemaSource::Raw(schema),
-        compiled: OnceLock::new(),
-    })
+    let prepared = model_type.getattr("__jsoncompat_prepared_schema__")?;
+    let bytes = prepared.cast::<PyBytes>()?;
+    let program = PreparedSchema::load(bytes.as_bytes()).map_err(PyValueError::new_err)?;
+    Ok(BranchSchema { program })
 }
