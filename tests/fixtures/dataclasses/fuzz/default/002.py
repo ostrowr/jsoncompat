@@ -20,7 +20,9 @@ __all__ = ("GeneratedSchema", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, alpha: typing.Any = dc.JSONCOMPAT_MISSING, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, alpha: typing.Any = _jsoncompat_missing, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
@@ -30,7 +32,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('model', GeneratedSchema, (("alpha", "alpha", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["alpha",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[{"bound":{"value":3,"lower":false,"exclusive":false}}]}],"patterns":[]}'),
         ("float",),
         ("any",)
-    ], b'{"version":1,"base_nodes":3,"guards":[{"owner":0,"field":0,"original":1,"guard":{"types":["number"],"choices":null,"rules":[{"bound":{"value":3,"lower":false,"exclusive":false}}]}}],"conversion_validates":[true,false,false,false],"json_keys":[[0,["\\"alpha\\":"]]]}')
+    ], b'{"version":2,"base_nodes":3,"guard_nodes":[{"original":1,"guard":{"types":["number"],"choices":null,"rules":[{"bound":{"value":3,"lower":false,"exclusive":false}}]}}],"guards":[{"owner":0,"field":0,"guard":0}],"conversion_validates":[true,false,false,false],"json_keys":[[0,["\\"alpha\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

@@ -26,9 +26,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x95\x8f\xb1\x0e\x830\x0cDw\xbe"\x8a:BC\x19\xf9\x89v\xaf:\x18pJQJ\xa2\xc4TB\x88\x7f\xafi@\xaa\xd8XN\xf2\xf3\x9dO\x9e\x12!\xe4)\xd4-\xbeA\x96B\xb6D.\x94Ju\xc1\xf6Y\xc4g\xeb\x9f\xaa\xf1\xa0I\x15y\x91g\x97B\xad\xfet\x09\x831W\xcd\xd1;\x0fBL?e\xec\xbcu\xe8\xe9\x85\x81w\x1be\xae\xade@~\xc0\x95\xcd\xe9\x16\x19z\xfc\x80\x19\x80\xb0\xb9\xfd\xa75\x98\x10\xdd3\xeb#\xb6\xf6\xe3\x91\xd6\x0a\xfc\xaeuw\x8fF\x87\xcb\xff\xb6\xea\xb0&\x99\xcc_u\x10J!', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (), 1, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"all":[1]},{"any":[4]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":3}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",5]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (), 1, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"all":[1]},{"any":[4]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":3}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2]],"patterns":[],"required":[],"additional":null}}]}],"patterns":[]}'),
         ("any",)
-    ], b'{"version":1,"base_nodes":2,"guards":[],"conversion_validates":[false,false],"json_keys":[[0,[]]]}')
+    ], b'{"version":2,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[[0,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

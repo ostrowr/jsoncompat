@@ -47,7 +47,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ("int",),
         ("str",),
         ("any",)
-    ], b'{"version":1,"base_nodes":6,"guards":[{"owner":2,"field":0,"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}},{"owner":2,"field":2,"original":4,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]}}],"conversion_validates":[true,false,true,false,false,false,false,false],"json_keys":[[0,["\\"data\\":","\\"version\\":"]],[2,["\\"age\\":","\\"interests\\":","\\"name\\":"]]]}')
+    ], b'{"version":2,"base_nodes":6,"guard_nodes":[{"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}},{"original":4,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]}}],"guards":[{"owner":2,"field":0,"guard":0},{"owner":2,"field":2,"guard":1}],"conversion_validates":[true,false,true,false,false,false,false,false],"json_keys":[[0,["\\"data\\":","\\"version\\":"]],[2,["\\"age\\":","\\"interests\\":","\\"name\\":"]]]}')
 
 
 _jsoncompat_bind((ExamplesStampUserProfileWriter, ExamplesStampUserProfileV2,), globals())

@@ -50,7 +50,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 5)], [
         ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]}],"patterns":[]}'),
         ('union', (2, 4, 3, 7, 8, 9, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2},{"object_length":{"min":0,"max":null}}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4,5,6,8,9]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":7}},{"array_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2},{"object_length":{"min":0,"max":null}}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4,5,6,8,1]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":7}},{"array_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]}],"patterns":[]}'),
         ("float",),
         ('list', 5),
         ('root', GeneratedSchemaItem, 6, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
@@ -59,7 +59,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":11,"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
+    ], b'{"version":2,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

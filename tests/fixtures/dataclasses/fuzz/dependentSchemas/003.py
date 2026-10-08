@@ -41,13 +41,15 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaBranch2Foo", "GeneratedSchemaBranc
 
 # --- Generated implementation: regenerate this file to change it. ---
 
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
 def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
-def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False, foo: typing.Any = dc.JSONCOMPAT_MISSING, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
+def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False, foo: typing.Any = _jsoncompat_missing, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_init_3(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
@@ -60,9 +62,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_2, b'x\xda\x95\x92\xb1n\x840\x0c\x86\xf7{\x0a\x14u\xe4\x0ae\xbc7\xa8T\xa9\x95:V\x1d\xc2\xc5@N\x90D\x8e\x19\x10\xe2\xdd\x9bp)"\x94\x0a\x1d\x13\xfe\x7f\xfb\x8bcg<%\x09{\xb2\xd7\x06:\xce.\x09k\x88\x8c\xbdd\xd9\xcdju\xbe\xcb\xcf\x1a\xebL \xaf(+\xf2"?\xbf\x14Y\xc8O}\xb1\x00\x03J\x80\xa2\xcfY\xb4\x8e2:\xdd9\x95\xd6K\xe0B\xae\x86\xf7\xca\x09_AH\x16k\xb6A\xf5]\xe4\xfaO\xf5m\xbb\x12\xbe\x97\xff)}\x80R\xf1\xd6B\x1aI\x84=<\x04\xe6BH\x92Z\xf1\xf6\x03\xb5\x01$\x09\xfe\xaa\x7f\xd0\xac\x93*\xca\xc8#\xd7\xac\xad1j\x89\x95\x1c\x9d\xb8\xe9l\x8a\xcai0\xe0\xd7\xa4\xcb\x1b\\\x89\x1dv-\x09:\x1b\xa0\xdb._\x83\x97\xef\x9e\xc0\x11\xf9p|\x80\xe3\xbc\x81\xaa\xa9\xf9\x17d\x09\xa5\xaa\x8fI\xbf\xf9n\x81%\xe0*\xff\xb4^\x91\x8ff\xc2\xfe\x9c\xf7\xe6\x1b\xdea\x98\xeb\xbdx;\xc7\xe9\x07\xb3\xfb\xb1\xdf', _namespace)
     dc.install_model(GeneratedSchemaItem, _jsoncompat_init_3, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2Foo, 3), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 6)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",1]],"patterns":[],"required":[],"additional":null}},{"dependent_schemas":[["foo",2]]}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",3]],"patterns":[],"required":[],"additional":4}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",1]],"patterns":[],"required":[],"additional":null}},{"dependent_schemas":[["foo",2]]}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",1]],"patterns":[],"required":[],"additional":3}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ('union', (2, 5, 7, 8, 9, 10, 11,), None, None),
-        ('model', GeneratedSchemaBranch2, (("foo", "foo", 3, True),), 4, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["foo",1]],"patterns":[],"required":[],"additional":null}},{"dependent_schemas":[["foo",2]]},{"object_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4,5,8,10,11]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["bar",6]],"patterns":[],"required":[],"additional":7}},{"object_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":9}},{"array_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (("foo", "foo", 3, True),), 4, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["foo",1]],"patterns":[],"required":[],"additional":null}},{"dependent_schemas":[["foo",2]]},{"object_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4,5,7,8,9]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["bar",1]],"patterns":[],"required":[],"additional":6}},{"object_length":{"min":0,"max":null}}]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}},{"array_length":{"min":0,"max":null}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('root', GeneratedSchemaBranch2Foo, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
         ('list', 6),
@@ -72,7 +74,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":12,"guards":[],"conversion_validates":[false,false,false,true,false,false,true,false,false,false,false,false],"json_keys":[[2,["\\"foo\\":"]]]}')
+    ], b'{"version":2,"base_nodes":12,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,true,false,false,true,false,false,false,false,false],"json_keys":[[2,["\\"foo\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2Foo, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

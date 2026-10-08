@@ -97,20 +97,25 @@ impl ModelConverterPlan {
                         Rule::Any(ids) => ids
                             .iter()
                             .any(|id| self.implies_prepared_schema(node_id, schema, *id, active)),
-                        Rule::One(ids) => ids.iter().any(|selected| {
-                            self.implies_prepared_schema(node_id, schema, *selected, active)
-                                && ids
-                                    .iter()
-                                    .filter(|other| other.0 != selected.0)
-                                    .all(|other| {
-                                        self.excludes_prepared_schema(
-                                            node_id,
-                                            schema,
-                                            *other,
-                                            &mut HashSet::new(),
-                                        )
-                                    })
-                        }),
+                        // Equal checks may share a node, but oneOf counts
+                        // branch occurrences, including repeated schemas.
+                        Rule::One(ids) => {
+                            ids.iter().enumerate().any(|(selected_index, selected)| {
+                                self.implies_prepared_schema(node_id, schema, *selected, active)
+                                    && ids
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(index, _)| *index != selected_index)
+                                        .all(|(_, other)| {
+                                            self.excludes_prepared_schema(
+                                                node_id,
+                                                schema,
+                                                *other,
+                                                &mut HashSet::new(),
+                                            )
+                                        })
+                            })
+                        }
                         Rule::Object {
                             properties,
                             patterns,

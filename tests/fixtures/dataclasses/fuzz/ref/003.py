@@ -58,13 +58,13 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaSlashField, _jsoncompat_init_2, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca\xcc+IMO-R\xe2\xaa\x05\x00N\x03\x06\xdf', _namespace)
     dc.install_model(GeneratedSchemaTildeField, _jsoncompat_init_3, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca\xcc+IMO-R\xe2\xaa\x05\x00N\x03\x06\xdf', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaPercentField, 2), (GeneratedSchemaSlashField, 4), (GeneratedSchemaTildeField, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["percent",1],["slash",3],["tilde",5]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":6}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["percent",1],["slash",3],["tilde",4]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":2}]}],"patterns":[]}'),
         ("any",),
         ('root', GeneratedSchemaPercentField, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("int",),
         ('root', GeneratedSchemaSlashField, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('root', GeneratedSchemaTildeField, 3, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":1,"base_nodes":6,"guards":[],"conversion_validates":[false,false,true,false,true,true],"json_keys":[]}')
+    ], b'{"version":2,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,true,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaPercentField, GeneratedSchemaSlashField, GeneratedSchemaTildeField,), globals())

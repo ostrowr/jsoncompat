@@ -34,10 +34,12 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaBranch2", "GeneratedSchemaItem", "
 
 # --- Generated implementation: regenerate this file to change it. ---
 
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
 def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
-def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, _ref: typing.Any = dc.JSONCOMPAT_MISSING, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
+def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, _ref: typing.Any = _jsoncompat_missing, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
@@ -60,7 +62,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":11,"guards":[{"owner":2,"field":0,"original":3,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}}],"conversion_validates":[false,false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,["\\"$ref\\":"]]]}')
+    ], b'{"version":2,"base_nodes":11,"guard_nodes":[{"original":3,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}}],"guards":[{"owner":2,"field":0,"guard":0}],"conversion_validates":[false,false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,["\\"$ref\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

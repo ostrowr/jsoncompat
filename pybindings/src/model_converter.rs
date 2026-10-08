@@ -179,7 +179,17 @@ struct ModelAttribute {
 
 impl ModelAttribute {
     fn compile(py: Python<'_>, model_type: &Bound<'_, PyType>, name: &str) -> PyResult<Self> {
-        let storage = match inspect_native_slot(model_type, name)? {
+        let name = PyString::new(py, name);
+        let descriptor = model_type.getattr("__dict__")?.get_item(&name)?;
+        Self::compile_descriptor(model_type, &name, &descriptor)
+    }
+
+    fn compile_descriptor(
+        model_type: &Bound<'_, PyType>,
+        name: &Bound<'_, PyString>,
+        descriptor: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let storage = match inspect_native_slot(model_type, name.to_str()?, descriptor)? {
             SlotInspection::Native(slot) => AttributeStorage::NativeSlot(slot),
             #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
             SlotInspection::Portable(descriptor) => {
@@ -187,7 +197,7 @@ impl ModelAttribute {
             }
         };
         Ok(Self {
-            name: PyString::new(py, name).unbind(),
+            name: name.clone().unbind(),
             storage,
         })
     }
@@ -376,16 +386,22 @@ struct FieldId(usize);
 struct ModelFields {
     serialized: Vec<FieldPlan>,
     by_json_name: HashMap<String, FieldId>,
-    by_py_name: HashMap<String, FieldId>,
+    by_py_name: Option<HashMap<String, FieldId>>,
     omittable: Vec<FieldId>,
 }
 
 impl ModelFields {
-    fn new(mut fields: Vec<(FieldPlan, String)>) -> PyResult<Self> {
+    fn new(mut fields: Vec<(FieldPlan, Option<String>)>) -> PyResult<Self> {
         fields.sort_unstable_by(|(left, _), (right, _)| left.json_name.cmp(&right.json_name));
         let mut serialized = Vec::with_capacity(fields.len());
         let mut by_json_name = HashMap::with_capacity(fields.len());
-        let mut by_py_name = HashMap::with_capacity(fields.len());
+        // Most generated names are already valid Python identifiers. In that
+        // case the JSON index is also the keyword index, with no extra strings
+        // or hash table needed. Aliased models retain a separate full index.
+        let mut by_py_name = fields
+            .iter()
+            .any(|(_, name)| name.is_some())
+            .then(|| HashMap::with_capacity(fields.len()));
         let mut omittable = Vec::new();
         for (field, py_name) in fields {
             let id = FieldId(serialized.len());
@@ -395,10 +411,13 @@ impl ModelFields {
                     field.json_name
                 )));
             }
-            if by_py_name.insert(py_name.clone(), id).is_some() {
-                return Err(PyErr::new::<PyValueError, _>(format!(
-                    "duplicate generated Python field name {py_name:?}"
-                )));
+            if let Some(index) = &mut by_py_name {
+                let py_name = py_name.unwrap_or_else(|| field.json_name.clone());
+                if index.insert(py_name, id).is_some() {
+                    return Err(PyErr::new::<PyValueError, _>(
+                        "duplicate generated Python field name",
+                    ));
+                }
             }
             if field.presence.is_omittable() {
                 omittable.push(id);
@@ -423,6 +442,8 @@ impl ModelFields {
     #[inline]
     fn by_py_name(&self, name: &str) -> Option<&FieldPlan> {
         self.by_py_name
+            .as_ref()
+            .unwrap_or(&self.by_json_name)
             .get(name)
             .map(|field| &self.serialized[field.0])
     }
@@ -664,7 +685,7 @@ enum JsonShape {
 }
 
 struct BranchSchema {
-    program: PreparedSchema,
+    program: Arc<PreparedSchema>,
 }
 
 type SchemaValidatorRef<'a> = &'a PreparedSchema;
@@ -4524,8 +4545,9 @@ pub(crate) fn compile_model_converter_plan(
     }
     let mut nodes = Vec::with_capacity(descriptors.len());
     let node_count = descriptors.len();
+    let mut schemas = HashMap::new();
     for descriptor in descriptors {
-        nodes.push(parse_node(py, &descriptor, node_count)?);
+        nodes.push(parse_node(py, &descriptor, node_count, &mut schemas)?);
     }
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
     let mut plan = ModelConverterPlan {
@@ -4572,8 +4594,11 @@ pub(crate) fn root_model_converter_plan(
 }
 
 #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
-fn inspect_native_slot(model_type: &Bound<'_, PyType>, name: &str) -> PyResult<SlotInspection> {
-    let descriptor = model_type.getattr(name)?;
+fn inspect_native_slot(
+    model_type: &Bound<'_, PyType>,
+    name: &str,
+    descriptor: &Bound<'_, PyAny>,
+) -> PyResult<SlotInspection> {
     // SAFETY: exact member descriptors use the public CPython
     // PyMemberDescrObject/PyMemberDef layout. We validate that the descriptor
     // belongs to this concrete layout, names the requested member, and covers
@@ -4642,8 +4667,11 @@ fn inspect_native_slot(model_type: &Bound<'_, PyType>, name: &str) -> PyResult<S
 }
 
 #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
-fn inspect_native_slot(model_type: &Bound<'_, PyType>, name: &str) -> PyResult<SlotInspection> {
-    let descriptor = model_type.getattr("__dict__")?.get_item(name)?;
+fn inspect_native_slot(
+    model_type: &Bound<'_, PyType>,
+    name: &str,
+    descriptor: &Bound<'_, PyAny>,
+) -> PyResult<SlotInspection> {
     let member_descriptor_type = PyModule::import(model_type.py(), "types")?
         .getattr("MemberDescriptorType")?
         .cast_into::<PyType>()?;
@@ -4661,7 +4689,7 @@ fn inspect_native_slot(model_type: &Bound<'_, PyType>, name: &str) -> PyResult<S
     }
     Ok(SlotInspection::Portable(ValidatedPortableDescriptor {
         owner: model_type.clone().unbind(),
-        descriptor: descriptor.unbind(),
+        descriptor: descriptor.clone().unbind(),
     }))
 }
 
@@ -4669,6 +4697,7 @@ fn parse_node(
     py: Python<'_>,
     descriptor: &Bound<'_, PyAny>,
     node_count: usize,
+    schemas: &mut HashMap<Vec<u8>, Arc<PreparedSchema>>,
 ) -> PyResult<ConversionNode> {
     let descriptor = descriptor.cast::<PyTuple>()?;
     if descriptor.is_empty() {
@@ -4715,11 +4744,11 @@ fn parse_node(
             Ok(ConversionNode::Literal { values })
         }
         "union" => parse_union_node(descriptor, node_count),
-        "model" => parse_model_node(py, descriptor, node_count),
+        "model" => parse_model_node(py, descriptor, node_count, schemas),
         "root" => {
             require_arity(descriptor, 4, "root model node")?;
             let model_type = descriptor.get_item(1)?.cast_into::<PyType>()?.unbind();
-            let branch_schema = load_branch_schema(&descriptor.get_item(3)?)?;
+            let branch_schema = load_branch_schema(&descriptor.get_item(3)?, schemas)?;
             Ok(ConversionNode::Root {
                 branch_schema,
                 root_attribute: ModelAttribute::compile(py, model_type.bind(py), "root")?,
@@ -4863,17 +4892,20 @@ fn parse_model_node(
     py: Python<'_>,
     descriptor: &Bound<'_, PyTuple>,
     node_count: usize,
+    schemas: &mut HashMap<Vec<u8>, Arc<PreparedSchema>>,
 ) -> PyResult<ConversionNode> {
     require_arity(descriptor, 5, "model node")?;
     let model_type = descriptor.get_item(1)?.cast_into::<PyType>()?;
-    let branch_schema = load_branch_schema(&descriptor.get_item(4)?)?;
+    let branch_schema = load_branch_schema(&descriptor.get_item(4)?, schemas)?;
+    let namespace = model_type.getattr("__dict__")?;
     let field_descriptors = descriptor.get_item(2)?.cast_into::<PyTuple>()?;
     let mut fields = Vec::with_capacity(field_descriptors.len());
     for field in field_descriptors.iter() {
         let field = field.cast_into::<PyTuple>()?;
         require_arity(&field, 4, "model field")?;
         let json_name = field.get_item(0)?.extract::<String>()?;
-        let py_name = field.get_item(1)?.extract::<String>()?;
+        let py_name_object = field.get_item(1)?.cast_into::<PyString>()?;
+        let py_name = py_name_object.to_str()?;
         if py_name == "__jsoncompat_extra__" {
             return Err(PyErr::new::<PyValueError, _>(format!(
                 "generated Python field name {py_name:?} is reserved by the model runtime"
@@ -4885,11 +4917,17 @@ fn parse_model_node(
                 "model field omittable flag must be bool",
             ));
         }
+        let alias = (py_name != json_name).then(|| py_name.to_owned());
+        let attribute = ModelAttribute::compile_descriptor(
+            &model_type,
+            &py_name_object,
+            &namespace.get_item(&py_name_object)?,
+        )?;
         fields.push((
             FieldPlan {
                 json_name,
                 json_prefix: Vec::new(),
-                attribute: ModelAttribute::compile(py, &model_type, &py_name)?,
+                attribute,
                 value_node: NodeId::parse(field.get_item(2)?.extract()?, node_count)?,
                 presence: if omittable.extract::<bool>()? {
                     FieldPresence::Omittable
@@ -4897,7 +4935,7 @@ fn parse_model_node(
                     FieldPresence::Required
                 },
             },
-            py_name,
+            alias,
         ));
     }
     let extra_value = descriptor.get_item(3)?;
@@ -4923,8 +4961,17 @@ fn parse_model_node(
     })
 }
 
-fn load_branch_schema(prepared: &Bound<'_, PyAny>) -> PyResult<BranchSchema> {
+fn load_branch_schema(
+    prepared: &Bound<'_, PyAny>,
+    schemas: &mut HashMap<Vec<u8>, Arc<PreparedSchema>>,
+) -> PyResult<BranchSchema> {
     let bytes = prepared.cast::<PyBytes>()?;
-    let program = PreparedSchema::load(bytes.as_bytes()).map_err(PyValueError::new_err)?;
+    if let Some(program) = schemas.get(bytes.as_bytes()) {
+        return Ok(BranchSchema {
+            program: Arc::clone(program),
+        });
+    }
+    let program = Arc::new(PreparedSchema::load(bytes.as_bytes()).map_err(PyValueError::new_err)?);
+    schemas.insert(bytes.as_bytes().to_vec(), Arc::clone(&program));
     Ok(BranchSchema { program })
 }

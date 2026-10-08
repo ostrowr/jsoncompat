@@ -64,7 +64,18 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
             json!({"type": "object", "properties": {"a\"b\\c\n🐲": {"type": "integer"}}, "required": ["a\"b\\c\n🐲"], "additionalProperties": false}),
         ),
     ];
+    schemas.push(("duplicate_oneof", json!({"oneOf":[true,true,true]})));
+    schemas.push((
+        "duplicate_leaf_oneof",
+        json!({"oneOf":[
+            {"type":"string","minLength":1}, {"type":"string","minLength":1}, {"type":"integer"}
+        ]}),
+    ));
     schemas.push(("wide", record_schema(1000)));
+    schemas.push((
+        "unicode_text",
+        json!({"type":"string", "minLength":1, "maxLength":2_000_000}),
+    ));
     schemas.push((
         "reserved",
         json!({"title":"Reserved", "type":"object", "properties": {

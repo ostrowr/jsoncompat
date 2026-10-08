@@ -2,12 +2,12 @@
 
 use super::{Annotation, ClassKind, ClassSpec, DataclassError, invalid_schema, types::Kind};
 use crate::{
-    model_plan::{GuardPatch, PreparedPlan},
+    model_plan::{GuardPatch, PreparedGuard, PreparedPlan},
     prepared_schema::{Node, NodeId as SchemaNodeId, PreparedSchema, Rule},
 };
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::Deref,
 };
 
@@ -92,6 +92,13 @@ pub(super) struct ModelConverterPlan {
     pub schemas: Vec<PreparedSchema>,
     pub leaf_guards: Vec<Option<Node>>,
 }
+struct GuardCandidate {
+    owner: usize,
+    field: Option<usize>,
+    original: usize,
+    guard: Node,
+}
+
 impl ModelConverterPlan {
     pub fn node(&self, id: NodeId) -> &ConversionNode {
         &self.nodes[id.0]
@@ -104,7 +111,7 @@ impl ModelConverterPlan {
             _ => None,
         }
     }
-    fn guard_patches(&self) -> Vec<GuardPatch> {
+    fn guard_patches(&self) -> Vec<GuardCandidate> {
         let mut patches = Vec::new();
         for (owner, node) in self.nodes.iter().enumerate() {
             let Some(schema) = self.schema(node) else {
@@ -141,7 +148,7 @@ impl ModelConverterPlan {
                     && !guard.rules.is_empty()
                     && matches!(self.node(original),ConversionNode::Scalar {kind} if !matches!(kind,ScalarKind::Any))
                 {
-                    patches.push(GuardPatch {
+                    patches.push(GuardCandidate {
                         owner,
                         field,
                         original: original.0,
@@ -154,7 +161,33 @@ impl ModelConverterPlan {
     }
     fn prepare(&mut self) -> PreparedPlan {
         let base_nodes = self.nodes.len();
-        let guards = self.guard_patches();
+        // Intern equivalent checks during generation. A thousand constrained
+        // fields may need only two scalar nodes, not a thousand copies.
+        let mut guard_ids = HashMap::new();
+        let mut guard_nodes = Vec::new();
+        let guards = self
+            .guard_patches()
+            .into_iter()
+            .map(|candidate| {
+                let key = (
+                    candidate.original,
+                    serde_json::to_vec(&candidate.guard).expect("scalar guard"),
+                );
+                let id = *guard_ids.entry(key).or_insert_with(|| {
+                    let id = guard_nodes.len();
+                    guard_nodes.push(PreparedGuard {
+                        original: candidate.original,
+                        guard: candidate.guard,
+                    });
+                    id
+                });
+                GuardPatch {
+                    owner: candidate.owner,
+                    field: candidate.field,
+                    guard: id,
+                }
+            })
+            .collect::<Vec<_>>();
         let json_keys = self
             .nodes
             .iter()
@@ -174,11 +207,15 @@ impl ModelConverterPlan {
                 ))
             })
             .collect();
-        for patch in &guards {
-            let ConversionNode::Scalar { kind } = self.nodes[patch.original] else {
+        for guard in &guard_nodes {
+            let ConversionNode::Scalar { kind } = self.nodes[guard.original] else {
                 unreachable!()
             };
-            let id = NodeId(self.nodes.len());
+            self.nodes.push(ConversionNode::Scalar { kind });
+            self.leaf_guards.push(Some(guard.guard.clone()));
+        }
+        for patch in &guards {
+            let id = NodeId(base_nodes + patch.guard);
             match &mut self.nodes[patch.owner] {
                 ConversionNode::Model { fields, .. } => {
                     fields.0[patch.field.expect("field patch")].value_node = id
@@ -186,8 +223,6 @@ impl ModelConverterPlan {
                 ConversionNode::Root { value, .. } => *value = id,
                 _ => unreachable!(),
             }
-            self.nodes.push(ConversionNode::Scalar { kind });
-            self.leaf_guards.push(Some(patch.guard.clone()));
         }
         let conversion_validates = self
             .nodes
@@ -208,16 +243,20 @@ impl ModelConverterPlan {
         for patch in &guards {
             match &mut self.nodes[patch.owner] {
                 ConversionNode::Model { fields, .. } => {
-                    fields.0[patch.field.expect("field patch")].value_node = NodeId(patch.original)
+                    fields.0[patch.field.expect("field patch")].value_node =
+                        NodeId(guard_nodes[patch.guard].original)
                 }
-                ConversionNode::Root { value, .. } => *value = NodeId(patch.original),
+                ConversionNode::Root { value, .. } => {
+                    *value = NodeId(guard_nodes[patch.guard].original)
+                }
                 _ => unreachable!(),
             }
         }
         self.nodes.truncate(base_nodes);
         PreparedPlan {
-            version: 1,
+            version: 2,
             base_nodes,
+            guard_nodes,
             guards,
             conversion_validates,
             json_keys,

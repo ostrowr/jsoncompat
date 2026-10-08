@@ -42,10 +42,12 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaBarBranch2", "GeneratedSchemaBarIt
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, foo: typing.Any = dc.JSONCOMPAT_MISSING, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, foo: typing.Any = _jsoncompat_missing, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
 
-def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, bar: typing.Any = dc.JSONCOMPAT_MISSING, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
+def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, bar: typing.Any = _jsoncompat_missing, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
@@ -61,7 +63,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBarItem, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.install_model(GeneratedSchemaBar, _jsoncompat_init_3, b'x\xda=\xc81\x0a\x00 \x08@\xd1\xbdS\x88\xc7\xe86\x05\x12-%\xe6\x12\xe2\xdd\xb3\x86\x86?\xfcg\x09\x00Y&\x93h\xa7\x85\x19,$\xac\x16\xf9\x13\xab\x9b)\x1e\x97J\x1f\x0d\x1f{\xba\xf9\x01fj\x11^', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBarBranch2, 3), (GeneratedSchemaBarItem, 4), (GeneratedSchemaBar, 5)], [
-        ('model', GeneratedSchema, (("foo", "foo", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"ref":1},{"object":{"properties":[["foo",3]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":4}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2]],"patterns":[],"required":[],"additional":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("foo", "foo", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"ref":1},{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":3}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2]],"patterns":[],"required":[],"additional":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("str",),
         ("any",),
         ('model', GeneratedSchemaBarBranch2, (("bar", "bar", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["bar",1]],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}],"patterns":[]}'),
@@ -73,7 +75,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":12,"guards":[{"owner":3,"field":0,"original":1,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}}],"conversion_validates":[false,false,false,false,true,false,false,false,false,false,false,false,false],"json_keys":[[0,["\\"foo\\":"]],[3,["\\"bar\\":"]]]}')
+    ], b'{"version":2,"base_nodes":12,"guard_nodes":[{"original":1,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}}],"guards":[{"owner":3,"field":0,"guard":0}],"conversion_validates":[false,false,false,false,true,false,false,false,false,false,false,false,false],"json_keys":[[0,["\\"foo\\":"]],[3,["\\"bar\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBarBranch2, GeneratedSchemaBarItem, GeneratedSchemaBar,), globals())

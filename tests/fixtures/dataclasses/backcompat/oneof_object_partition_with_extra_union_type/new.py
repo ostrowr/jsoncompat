@@ -54,7 +54,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ("any",),
         ('model', GeneratedSchemaBranch02, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object_length":{"min":1,"max":null}}]}],"patterns":[]}'),
         ("str",)
-    ], b'{"version":1,"base_nodes":6,"guards":[],"conversion_validates":[false,false,true,false,false,false],"json_keys":[[2,[]],[4,[]]]}')
+    ], b'{"version":2,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,false,false],"json_keys":[[2,[]],[4,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch0, GeneratedSchemaBranch02,), globals())

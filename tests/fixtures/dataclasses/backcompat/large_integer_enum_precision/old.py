@@ -29,7 +29,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (9007199254740993, 9007199254740995,)),
         ('literal', (9007199254740993,)),
         ('literal', (9007199254740995,))
-    ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[false,false,false,false],"json_keys":[]}')
+    ], b'{"version":2,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

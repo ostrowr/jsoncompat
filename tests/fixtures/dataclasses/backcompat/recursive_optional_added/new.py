@@ -21,7 +21,9 @@ __all__ = ("GeneratedSchema", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, children: typing.Any = dc.JSONCOMPAT_MISSING, metadata: typing.Any = dc.JSONCOMPAT_MISSING, value: typing.Any) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, children: typing.Any = _jsoncompat_missing, metadata: typing.Any = _jsoncompat_missing, value: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
@@ -32,7 +34,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('list', 0),
         ("str",),
         ("int",)
-    ], b'{"version":1,"base_nodes":4,"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[[0,["\\"children\\":","\\"metadata\\":","\\"value\\":"]]]}')
+    ], b'{"version":2,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[[0,["\\"children\\":","\\"metadata\\":","\\"value\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import types
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, ValuesView
 from reprlib import recursive_repr
 from typing import (
     Any,
@@ -133,6 +133,95 @@ class FrozenDict[K, V](Mapping[K, V]):
     __hash__ = None  # type: ignore[assignment]
 
 
+_DATACLASS_FIELD = getattr(dataclasses, "_FIELD")
+
+
+class _FieldSpec:
+    """Compact generated metadata; no dataclasses.Field is needed for JSON I/O."""
+
+    __slots__ = ("json_name", "omittable", "factory", "annotation")
+
+    def __init__(
+        self,
+        json_name: str | None = None,
+        omittable: bool = False,
+        factory: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
+        self.json_name = json_name
+        self.omittable = omittable
+        self.factory = factory
+        self.annotation: Any = None
+
+    def materialize(self, name: str) -> dataclasses.Field[Any]:
+        # The stdlib stub types field() as its eventual attribute value, while
+        # the factory actually returns a Field object for dataclass processing.
+        if self.factory is not None:
+            result = cast(
+                dataclasses.Field[Any],
+                dataclasses.field(
+                    default_factory=self.factory,
+                    metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_EXTRA_FIELD},
+                    repr=False,
+                    kw_only=True,
+                ),
+            )
+        elif self.json_name is not None:
+            result = cast(
+                dataclasses.Field[Any],
+                dataclasses.field(
+                    default=_NATIVE_MISSING if self.omittable else dataclasses.MISSING,
+                    metadata={
+                        JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
+                        JSONCOMPAT_JSON_NAME_METADATA: self.json_name,
+                        JSONCOMPAT_MISSING_METADATA: self.omittable,
+                    },
+                    kw_only=True,
+                ),
+            )
+        else:
+            result = cast(
+                dataclasses.Field[Any],
+                dataclasses.field(
+                    metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_ROOT_FIELD},
+                    kw_only=True,
+                ),
+            )
+        result.name = name
+        result.type = self.annotation
+        result._field_type = _DATACLASS_FIELD
+        return result
+
+
+class _DataclassFields(Mapping[str, dataclasses.Field[Any]]):
+    """Dataclass reflection is optional; ordinary model use needs only slots."""
+
+    __slots__ = ("_specs", "_materialized")
+
+    def __init__(self, specs: dict[str, _FieldSpec]) -> None:
+        self._specs = specs
+        self._materialized: dict[str, dataclasses.Field[Any]] | None = None
+
+    def _fields(self) -> dict[str, dataclasses.Field[Any]]:
+        fields = self._materialized
+        if fields is None:
+            fields = {name: spec.materialize(name) for name, spec in self._specs.items()}
+            # Publish only complete metadata, including with concurrent readers.
+            self._materialized = fields
+        return fields
+
+    def __getitem__(self, name: str) -> dataclasses.Field[Any]:
+        return self._fields()[name]
+
+    def values(self) -> ValuesView[dataclasses.Field[Any]]:
+        return self._fields().values()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._specs)
+
+    def __len__(self) -> int:
+        return len(self._specs)
+
+
 class _DataclassModelMeta(type):
     def __new__(
         mcls,
@@ -153,20 +242,18 @@ class _DataclassModelMeta(type):
             raise TypeError(
                 f"generated model {inherited_generated.__name__} cannot be subclassed"
             )
-        # Slot names are emitted by codegen. Loading attaches existing Field
-        # objects and shared methods; it never resolves annotations or compiles.
+        # Slot names and field descriptions are emitted by codegen. Preserve
+        # their annotations without creating reflection objects or compiling.
         names = namespace.get("__slots__", ())
-        fields: dict[str, dataclasses.Field[Any]] = {}
+        fields: dict[str, _FieldSpec] = {}
+        annotations = namespace.get("__annotations__", {})
         for field_name in names:
             raw = namespace.get(field_name)
-            if isinstance(raw, dataclasses.Field):
-                field = cast(dataclasses.Field[Any], namespace.pop(field_name))
-                field.name = field_name
-                field.type = namespace["__annotations__"][field_name]
-                field._field_type = getattr(dataclasses, "_FIELD")
-                field.kw_only = True
-                fields[field_name] = field
-        namespace["__dataclass_fields__"] = fields
+            if isinstance(raw, _FieldSpec):
+                namespace.pop(field_name)
+                raw.annotation = annotations[field_name]
+                fields[field_name] = raw
+        namespace["__dataclass_fields__"] = _DataclassFields(fields)
         return cast(
             _DataclassModelMeta, super().__new__(mcls, name, bases, namespace, **kwargs)
         )
@@ -221,31 +308,15 @@ def field(json_name: str, *, default: JsoncompatMissingType) -> Any: ...
 
 
 def field(json_name: str, *, default: Any = dataclasses.MISSING) -> Any:
-    metadata = {
-        JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
-        JSONCOMPAT_JSON_NAME_METADATA: json_name,
-        JSONCOMPAT_MISSING_METADATA: default is not dataclasses.MISSING,
-    }
-    return dataclasses.field(
-        default=(
-            _NATIVE_MISSING if default is not dataclasses.MISSING else dataclasses.MISSING
-        ),
-        metadata=metadata,
-    )
+    return _FieldSpec(json_name, default is not dataclasses.MISSING)
 
 
 def extra_field(*, default_factory: Callable[[], dict[str, Any]]) -> Any:
-    return dataclasses.field(
-        default_factory=default_factory,
-        metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_EXTRA_FIELD},
-        repr=False,
-    )
+    return _FieldSpec(factory=default_factory)
 
 
 def root_field() -> Any:
-    return dataclasses.field(
-        metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_ROOT_FIELD}
-    )
+    return _FieldSpec()
 
 
 @dataclass_transform(
@@ -461,9 +532,9 @@ EXTRA_DEFAULT = getattr(dataclasses, "_HAS_DEFAULT_FACTORY")
 @recursive_repr()
 def _model_repr(self: DataclassModel) -> str:
     shown = ", ".join(
-        f"{field.name}={getattr(self, field.name)!r}"
-        for field in dataclasses.fields(self)
-        if field.repr
+        f"{name}={getattr(self, name)!r}"
+        for name in self.__slots__
+        if name != JSONCOMPAT_EXTRA_FIELD
     )
     return self.__class__.__qualname__ + "(" + shown + ")"
 
@@ -548,17 +619,9 @@ def install_model(
         original = initializer
         initializer = types.FunctionType(original.__code__, namespace, original.__name__)
         initializer.__kwdefaults__ = original.__kwdefaults__
-    fields = model.__dataclass_fields__
     initializer.__annotations__ = model.__annotations__.copy()
     initializer.__annotations__["skip_validation"] = bool
-    initializer.__kwdefaults__ = {
-        name: (
-            _NATIVE_MISSING
-            if name in fields and fields[name].metadata.get(JSONCOMPAT_MISSING_METADATA)
-            else value
-        )
-        for name, value in (initializer.__kwdefaults__ or {}).items()
-    }
+    initializer.__kwdefaults__ = (initializer.__kwdefaults__ or {}).copy()
     initializer.__annotations__["return"] = None
     initializer.__qualname__ = model.__qualname__ + ".__init__"
     initializer.__module__ = model.__module__

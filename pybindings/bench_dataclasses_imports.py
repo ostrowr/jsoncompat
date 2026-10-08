@@ -42,9 +42,19 @@ def build(args) -> None:
     args.directory.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(args.directory))
     names = [f"Record{index:04}" for index in range(args.shard_size)]
-    schema = dict(record_schema(args.fields), title=names[0])
+    def independent_schema(index: int) -> dict:
+        schema = dict(record_schema(args.fields), title=names[index])
+        if args.distinct_constraints:
+            for field in schema["properties"].values():
+                if field["type"] == "integer":
+                    field["minimum"] = index
+                else:
+                    field["minLength"] = 1 + index % 32
+        return schema
+
+    schema = independent_schema(0)
     schema["$defs"] = {
-        name: dict(record_schema(args.fields), title=name) for name in names[1:]
+        name: independent_schema(index) for index, name in enumerate(names) if index
     }
     source = args.directory / f"schema_{args.fields}.json"
     source.write_text(json.dumps(schema))
@@ -52,10 +62,12 @@ def build(args) -> None:
     metadata = build_models(args.cli, source, generated)
     peer = args.directory / f"pydantic_{args.fields}.py"
     lines = ["from pydantic import BaseModel, ConfigDict, Field"]
-    for name in names:
+    for model_index, name in enumerate(names):
         lines += [f"class {name}(BaseModel):", '    model_config = ConfigDict(frozen=True, strict=True, extra="forbid")']
         for index in range(args.fields):
-            annotation, constraint = ("str", "min_length=1") if index % 2 == 0 else ("int", "ge=0")
+            minimum = model_index if args.distinct_constraints else 0
+            minimum_length = 1 + model_index % 32 if args.distinct_constraints else 1
+            annotation, constraint = ("str", f"min_length={minimum_length}") if index % 2 == 0 else ("int", f"ge={minimum}")
             lines.append(f"    field{index:04}: {annotation} = Field({constraint})")
     lines += [f"__all__ = {tuple(names)!r}"]
     peer.write_text("\n".join(lines) + "\n")
@@ -66,18 +78,24 @@ def build(args) -> None:
         assert len(models) == args.shard_size
         model = models[-1]
         decode = model.deserialize if kind == "generated" else model.model_validate_json
-        payload = record_value(args.fields)
+        payload = record_value(args.fields, args.shard_size - 1 if args.distinct_constraints else 0)
         instance = decode(json.dumps(payload))
         emitted = instance.serialize() if kind == "generated" else instance.model_dump_json()
         assert json.loads(emitted) == payload
-        for bad in ({}, dict(payload, field0000=""), dict(payload, unexpected=1)):
+        invalid = [{}, dict(payload, field0000=""), dict(payload, unexpected=1)]
+        if args.distinct_constraints and args.shard_size > 1:
+            if args.fields > 1:
+                invalid.append(dict(payload, field0001=args.shard_size - 2))
+            if (args.shard_size - 1) % 32:
+                invalid.append(dict(payload, field0000="x"))
+        for bad in invalid:
             try:
                 decode(json.dumps(bad))
             except (TypeError, ValueError):
                 pass
             else:
                 raise AssertionError(f"{kind} accepted invalid input")
-    metadata.update(fields=args.fields, classes_per_shard=args.shard_size, pydantic_source_bytes=peer.stat().st_size)
+    metadata.update(fields=args.fields, distinct_constraints=args.distinct_constraints, classes_per_shard=args.shard_size, pydantic_source_bytes=peer.stat().st_size)
     (args.directory / f"build_{args.fields}.json").write_text(json.dumps(metadata, indent=2) + "\n")
     print(json.dumps(metadata), flush=True)
 
@@ -93,7 +111,7 @@ def worker(args) -> None:
     sys.path.insert(0, str(args.directory))
     gc.collect()
     baseline = rss_mib()
-    print(json.dumps(dict(event="baseline", kind=args.mode, fields=args.fields,
+    print(json.dumps(dict(event="baseline", kind=args.mode, fields=args.fields, distinct_constraints=args.distinct_constraints,
                           peak_rss_mib=baseline, python=platform.python_version(),
                           pydantic=pydantic.__version__, platform=platform.platform(),
                           gc_enabled=gc.isenabled())), flush=True)
@@ -125,7 +143,7 @@ def worker(args) -> None:
     }
     assert len(identities) == loaded
     model = getattr(modules[-1], f"Record{args.shard_size-1:04}")
-    payload = json.dumps(record_value(args.fields))
+    payload = json.dumps(record_value(args.fields, args.shard_size - 1 if args.distinct_constraints else 0))
     begin = time.perf_counter()
     if args.mode == "pydantic":
         model.model_validate_json(payload).model_dump_json()
@@ -140,6 +158,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["build", "generated", "pydantic"])
     parser.add_argument("--fields", type=int, required=True)
+    parser.add_argument("--distinct-constraints", action="store_true", help="give each class distinct numeric/string bounds")
     parser.add_argument("--shard-size", type=int, default=100)
     parser.add_argument("--classes", type=int, default=200000)
     parser.add_argument("--memory-mib", type=int, default=2048)

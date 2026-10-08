@@ -88,6 +88,9 @@ impl ModelConverterPy {
                 {
                     return Err(ConversionFailure::Mismatch(ConversionMismatch::Literal));
                 }
+                if text.len() >= 64 {
+                    return Ok(crate::unicode::from_utf8(py, text)?.into_any().unbind());
+                }
                 Ok(jiter::cached_py_string(py, text).into_any().unbind())
             }
             ConversionNode::List { item } if peek == Peek::Array => {

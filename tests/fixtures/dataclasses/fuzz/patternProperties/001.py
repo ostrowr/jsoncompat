@@ -83,7 +83,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ("null",),
         ('model', GeneratedSchemaBranch2Branch2, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]}],"patterns":[]}'),
         ('root', GeneratedSchemaBranch2Item, 3, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":1,"base_nodes":13,"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false,false,true],"json_keys":[[2,[]],[11,[]]]}')
+    ], b'{"version":2,"base_nodes":13,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false,false,true],"json_keys":[[2,[]],[11,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2Branch2, GeneratedSchemaBranch2Item, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

@@ -433,7 +433,7 @@ for construct_missing in (lambda: object.__new__(JsoncompatMissingType),):
 def compile_model_runtimes(roots, descriptors, frozen_list, frozen_dict):
     keys = [(i, [json.dumps(f[0], ensure_ascii=False) + ":" for f in sorted(node[2])])
             for i,node in enumerate(descriptors) if len(node) >= 3 and node[0] == "model"]
-    plan = json.dumps({"version":1,"base_nodes":len(descriptors),"guards":[],
+    plan = json.dumps({"version":2,"base_nodes":len(descriptors),"guard_nodes":[],"guards":[],
                        "conversion_validates":[False]*len(descriptors),"json_keys":keys}).encode()
     # Keep descriptor examples compact; the program is a direct descriptor
     # argument, with no schema attributes or metadata required on Model.

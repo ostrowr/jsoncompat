@@ -48,7 +48,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBarBranch2, _jsoncompat_init_1, b'x\xdaM\xc8;\x0e\x00\x10\x0c\x00\xd0\xdd)\x9a\xce\x06\xb3S8\x03\xe9@\x82\x86."\xee\xee3\x19\xdf\x9b\x0a\x00s,\xaeU\xa6&\x91:Z0\xfa.\xff5\xd7;\x19LGX}\xa2 \xa8\xd6\x06}$\x13v', _namespace)
     dc.install_model(GeneratedSchemaBar, _jsoncompat_init_2, b'x\xda\x1d\x8aA\x0a\xc0 \x0c\x04\xef\xbeb\xc9\xb9/\xe8\x0f\xfa\x86\xd2c*\x1e\x14\x89\x11\x14\xf1\xef\x86\\\x86evV\x00\xa8\x0a\xffi<\xca\xb9\xd1\x8d\xd7\x14\xa0\xd2\xf9\xf2\xb5\x9c\x96\xe9\xacl?5\x95T"\xb9\xde\xc6/\xec\x03\xa7\x12\x12\x04', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBarBranch2, 3), (GeneratedSchemaBar, 1)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1},{"array":{"prefix":[4],"items":null}},{"unevaluated_items":5}]},{"types":null,"choices":null,"rules":[{"array":{"prefix":[2,3],"items":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1},{"array":{"prefix":[3],"items":null}},{"unevaluated_items":4}]},{"types":null,"choices":null,"rules":[{"array":{"prefix":[2,3],"items":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ('root', GeneratedSchemaBar, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"array":{"prefix":[1,2],"items":null}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (3, 5, 6, 7, 8, 9, 10,), None, None),
         ('model', GeneratedSchemaBarBranch2, (), 4, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":0,"max":null}}]}],"patterns":[]}'),
@@ -59,7 +59,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":11,"guards":[],"conversion_validates":[false,false,false,false,false,false,false,false,false,false,false],"json_keys":[[3,[]]]}')
+    ], b'{"version":2,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,false,false,false,false,false,false],"json_keys":[[3,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBarBranch2, GeneratedSchemaBar,), globals())

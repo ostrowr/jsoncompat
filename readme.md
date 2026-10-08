@@ -133,8 +133,11 @@ jsoncompat codegen --target dataclasses schema.json --output models.py
 model, its fields, and the other public classes. It binds the classes at the
 bottom. Regeneration replaces these same two files; deploy them together. Output to stdout remains self-contained, with the generated
 implementation below the public declarations. Both layouts use the same prepared
-runtime. See [generated Python models](pybindings/README.md#generated-model-artifacts)
-for the build contract and benchmarks.
+runtime. Import creates classes, loads precomputed programs, and binds slots;
+full dataclass reflection metadata is created only when explicitly requested.
+Constructors and JSON I/O need no further preparation. See
+[generated Python models](pybindings/README.md#generated-model-artifacts) for the
+build contract and benchmarks.
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;

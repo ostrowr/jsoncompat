@@ -87,7 +87,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":15,"guards":[{"owner":2,"field":0,"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"multiple_of":1.0}]}},{"owner":5,"field":0,"original":6,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}}],"conversion_validates":[false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false],"json_keys":[[2,["\\"bar\\":"]],[5,["\\"foo\\":"]]]}')
+    ], b'{"version":2,"base_nodes":15,"guard_nodes":[{"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"multiple_of":1.0}]}},{"original":6,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":null}}]}}],"guards":[{"owner":2,"field":0,"guard":0},{"owner":5,"field":0,"guard":1}],"conversion_validates":[false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false],"json_keys":[[2,["\\"bar\\":"]],[5,["\\"foo\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem, GeneratedSchemaBranch22, GeneratedSchemaItem2,), globals())

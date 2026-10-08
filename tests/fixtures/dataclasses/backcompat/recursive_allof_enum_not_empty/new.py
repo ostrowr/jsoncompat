@@ -37,9 +37,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaValue, _jsoncompat_init_1, b'x\xda}N\xcb\x0a\x80 \x10\xbc\xfb\x15b\x1d\x03\xef\xfdD\xb7.\xe1AH#\x90\x08\xb5C\x88\xff\xdej\xb6DH\xb7\x9d\xc7\xceL \x94\xb2vV\xda\xb1\x9e\x06\x00\x00Gi\x0e\x85\x10\x08i\xcc\xa0\x81\x98\x0aAQ\xcarkURY\xc3s\x10\xbf\xff\xd1\x11\xbb\xfa\x9b?\xf7\xd4\xc2\x9c\xb7\xeb\xb6\xbc\xfc\xe5\x12\xe4A9\xe1\xb3\x02\xc7\xfd\xb4\x97f\xb4\xd6\x1aS\xbe \xf1\x02\xf8T8\xaa', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaValue, 1)], [
         ('model', GeneratedSchema, (("value", "value", 1, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":[{"value":"leaf"}],"rules":[{"object":{"properties":[["value",1]],"patterns":[],"required":["value"],"additional":5}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"all":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
-        ('root', GeneratedSchemaValue, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,5]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"all":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaValue, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"all":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
-    ], b'{"version":1,"base_nodes":3,"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,["\\"value\\":"]]]}')
+    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,["\\"value\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaValue,), globals())

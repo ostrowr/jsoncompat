@@ -30,10 +30,12 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaNested", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, id: typing.Any, name: typing.Any, nested: typing.Any = dc.JSONCOMPAT_MISSING, tags: typing.Any = dc.JSONCOMPAT_MISSING) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, id: typing.Any, name: typing.Any, nested: typing.Any = _jsoncompat_missing, tags: typing.Any = _jsoncompat_missing) -> None:
     self.__post_init__(skip_validation)
 
-def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, count: typing.Any = dc.JSONCOMPAT_MISSING, flag: typing.Any) -> None:
+def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, count: typing.Any = _jsoncompat_missing, flag: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
@@ -41,7 +43,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x8d\x91An\xc3 \x10E\xf7>\x85\x85\xbat\x8a\xebeN\xd1}\xd5\xc5\xc4\x1e\x13"\x03.\x8c\x17Q\xe4\xbb\x17\x13\x9c`\x12)\xd9\xc1\xe3\xcf\xe7\xcf\xcc\xa5(K\xf6\xe1\xda#*`\xfb\x92\x1d\x89F\xb7\xe7\xfc\xe4\x8c\xde]\xf1\xa7\xb1\x82w\x16z\xe2M\xdd\xd4\xbb\xaf\x86G}\xb5\x14C\xd7I\x92F\xc3\xf0m\xcd\x88\x96$:\xef\xd4\xc3\xe00\x08\xc6\x14_<\xf1Lv\xb7\xb3\xbf\xd1y\xc4\xe5sGVj\xc1\x02\x9e\xab\xabR\x83\xc2\xb7\xb5\xe8\x087\xce\xaf\xc2\x05\xd1\x93\x80\x81\xb7f\xd2\xb4A\x1e*\xa9\xa5\x9a\x94\xc7u\x95\xf25\x97\xd4\x84\x02-\xbb\xbd\xcdw\x19\xeb\x07\x10\xb9\xe1Zx0f@\xd0Ia\x91\x190\x8b\x7f\x93\xb4\xa1\xc3\x9f\xcc4^\x7f\xab|N\xe6p\xc2\x96\xb6s"\x10i\xabL\x12\xaa\xac\xf7gcN\xa3\xac\xef`-\x9c\xa3{\x11\x05\x8f9\x97}\xa7\xfb,b\xd2\x87\x94\xf3?\x86\x89\xa5\x1f', _namespace)
     dc.install_model(GeneratedSchemaNested, _jsoncompat_init_1, b'x\xdaM\x8c1\x0e\xc20\x0cE\xf7\x9c"\xf2\xdc\x81\x99S\xb0#\x86\xb4q+\xa3$\x0e\xa93\xa0\xaaw\xc7\x94\x06e\xb3\xdf\x7f\xffo\xc6Zp\xde\x93\x10\'\x17n\x853\x16!\\\xe1jg\x17V\x1c\xbeB\xee\xf1\xa6D\xd9\xc45\xc9\xffU\x10)Q\xacQ\xd1ehL\xde\x19\x15\x00%\xc1\x05\x0b\x1c|\xff\xc50\x07\xb7\xf4\x03M\x1e\x99\x03\xbat\xca\xe6,@\xc1W\xa5\x82^\x95{7\xa0\xe7\xe3\xc8[\x9d\xc7\'N\x02f\xff\x00\xb2\x01:\xfc', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaNested, 2)], [
-        ('model', GeneratedSchema, (("id", "id", 1, False), ("name", "name", 1, False), ("nested", "nested", 2, True), ("tags", "tags", 7, True),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",1],["name",2],["nested",3],["tags",7]],"patterns":[],"required":["id","name"],"additional":9}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["count",4],["flag",5]],"patterns":[],"required":["flag"],"additional":6}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":8}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("id", "id", 1, False), ("name", "name", 1, False), ("nested", "nested", 2, True), ("tags", "tags", 7, True),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",1],["name",1],["nested",2],["tags",6]],"patterns":[],"required":["id","name"],"additional":5}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["count",3],["flag",4]],"patterns":[],"required":["flag"],"additional":5}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]}],"patterns":[]}'),
         ("str",),
         ('model', GeneratedSchemaNested, (("count", "count", 3, True), ("flag", "flag", 4, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["count",1],["flag",2]],"patterns":[],"required":["flag"],"additional":3}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("int",),
@@ -49,7 +51,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ('list', 1)
-    ], b'{"version":1,"base_nodes":8,"guards":[{"owner":2,"field":0,"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}}],"conversion_validates":[true,false,true,false,false,false,false,false,false],"json_keys":[[0,["\\"id\\":","\\"name\\":","\\"nested\\":","\\"tags\\":"]],[2,["\\"count\\":","\\"flag\\":"]]]}')
+    ], b'{"version":2,"base_nodes":8,"guard_nodes":[{"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}}],"guards":[{"owner":2,"field":0,"guard":0}],"conversion_validates":[true,false,true,false,false,false,false,false,false],"json_keys":[[0,["\\"id\\":","\\"name\\":","\\"nested\\":","\\"tags\\":"]],[2,["\\"count\\":","\\"flag\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaNested,), globals())

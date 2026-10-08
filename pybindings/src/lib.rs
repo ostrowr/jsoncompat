@@ -6,6 +6,7 @@
 //! `ValueError`.
 
 mod model_converter;
+mod unicode;
 use jsoncompat_codegen::prepared_schema;
 
 use std::collections::HashSet;
@@ -513,17 +514,19 @@ impl ModelRuntimePy {
         py: Python<'_>,
         instance: &Bound<'_, PyAny>,
         skip_validation: bool,
-    ) -> PyResult<String> {
+    ) -> PyResult<Py<PyString>> {
         let converter = self.converter(py)?;
         Self::ensure_model_instance(&converter, py, instance)?;
-        if skip_validation {
-            return converter.serialize_model_trusted(py, instance);
-        }
-        let payload = converter.serialize_model_checked(py, instance)?;
-        if !converter.validate_emitted_json(&payload)? {
-            return Self::require_valid(&converter, py, None);
-        }
-        Ok(payload)
+        let payload = if skip_validation {
+            converter.serialize_model_trusted(py, instance)?
+        } else {
+            let payload = converter.serialize_model_checked(py, instance)?;
+            if !converter.validate_emitted_json(&payload)? {
+                return Self::require_valid(&converter, py, None);
+            }
+            payload
+        };
+        Ok(unicode::from_utf8(py, &payload)?.unbind())
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {

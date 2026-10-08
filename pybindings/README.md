@@ -121,8 +121,10 @@ cache is still interpreter-specific: wheel installation normally builds it;
 source-only deployments should precompile it during packaging when cold import
 latency matters.
 
-At import, the runtime creates Python classes and dataclass metadata, loads the
-precomputed programs, checks their format, and binds actual class/slot addresses.
+At import, the runtime creates Python classes and compact field descriptions,
+loads distinct precomputed programs once per module, checks their format, and
+binds actual class/slot addresses. Repeated validation checks and scalar guards
+are shared by the generated programs; unaliased fields reuse one name index.
 Generated-model import and first use do not resolve type annotations or compile schemas,
 regexes, or dataclass methods. Interpreter startup and native-library loading
 remain normal process startup costs.
@@ -130,8 +132,12 @@ remain normal process startup costs.
 Generated classes retain frozen/slotted dataclass behavior, field metadata,
 constructor signatures, equality, hashing, repr, pickle support, and
 `dataclasses.replace`. Common frozen-dataclass methods are shared across classes
-to reduce generated code and per-model memory. JSON/YAML/MessagePack APIs and
-writer/reader restrictions are unchanged. Checked serialization validates current
+to reduce generated code and per-model memory. Full `dataclasses.Field` objects
+and their metadata are created and cached only when explicitly requested by
+reflection or utilities such as `dataclasses.fields`, `asdict`, or `replace`.
+Construction, repr, equality, hashing, and JSON I/O do not trigger that work.
+The private `__dataclass_fields__` attribute is a mapping rather than a plain
+dict. JSON/YAML/MessagePack APIs and writer/reader restrictions are unchanged. Checked serialization validates current
 state, including models constructed with `skip_validation=True` or subsequently
 modified through `object.__setattr__`.
 
@@ -174,31 +180,39 @@ checks generated models against the general schema validator
 across every generated fixture, supplied examples, and deterministic mutations.
 
 Measured on macOS 26.6.2 arm64 with Python 3.12.2, Pydantic 2.13.4, and the
-release extension (2026-10-08). The small/tree cases use nine rotating-order
-samples; large-schema/value cases use 21. The deepest-tree row is the earlier
-reference run before installation was streamlined. These measurements use the
-split public/private artifacts:
+release extension (2026-10-08). Every round-trip case uses nine rotating-order
+samples and the split public/private artifacts:
 
 | Workload | JSON bytes | Generated (µs) | Pydantic (µs) | Less elapsed time |
 | --- | ---: | ---: | ---: | ---: |
-| Small nested model | 228 | 2.464 | 4.098 | 39.9% |
-| 1,365-node recursive tree | 268,847 | 2,296 | 3,741 | 38.6% |
-| 21,845-node recursive tree | 4,350,138 | 36,250 | 62,012 | 41.5% |
-| 1,000-field model | 65,391 | 271 | 397 | 31.9% |
-| 201 generated classes | 159,352 | 682 | 1,126 | 39.4% |
-| 12,000 records with Unicode strings | 9,622,824 | 52,175 | 74,307 | 29.8% |
+| Small nested model | 228 | 2.503 | 4.068 | 38.5% |
+| 1,365-node recursive tree | 268,847 | 2,290 | 3,803 | 39.8% |
+| 21,845-node recursive tree | 4,350,138 | 37,093 | 64,904 | 42.8% |
+| 1,000-field model | 65,391 | 237 | 398 | 40.4% |
+| 201 generated classes | 159,352 | 603 | 1,122 | 46.2% |
+| 12,000 records with Unicode strings | 9,622,824 | 44,701 | 74,811 | 40.2% |
 
-The largest payload is close to the 30% goal but currently falls short: the
-nine-sample run gave 29.9%, and the longer 21-sample run gave 29.8%. Accordingly,
-`python-bench-codegen-large --assert-target` fails for that case. An earlier
-reference run reached 31.0%; the target is not consistently met on every case.
+Both benchmark suites pass `--assert-target`, including the deeper recursive
+tree. All six comparison cases take at least 30% less elapsed time than Pydantic.
+The native CPython path probes a bounded prefix of long strings. When it
+encounters non-ASCII text there, it allocates the final character width and
+length once, avoiding repeated widening and resizing. Other strings and Python
+runtimes retain the standard constructors. Validation remains enabled.
 
-With runtimes preloaded, the 201-class schema imports in 10.24 ms versus
-119.81 ms for Pydantic. Its one-step generation and Python bytecode build takes
-225 ms. The small model imports in 0.46 ms versus 1.00 ms for Pydantic; the first
-round trip takes 60 µs versus 65 µs. Pydantic's common model machinery is warmed
-before timing model import, just as the jsoncompat runtime is preloaded. Full
-fresh-process import plus first round trip is 42.0 ms versus 102.5 ms.
+In a separate alternating before/after comparison, the 9.6 MB round trip fell
+from 46.61 ms to 40.55 ms during this optimization pass. Three-sample controls
+using the same records with different string contents put the final ASCII-only
+round trip within 1% of the previous runtime (14.18 versus 14.29 ms); Latin-1
+and BMP controls take 8.9% and 18.0% less time, respectively.
+
+With runtimes preloaded, the 201-class schema imports in
+4.71 ms versus 109.79 ms for Pydantic. Its one-step generation and Python
+bytecode build takes 217 ms. The small model imports in 0.42 ms versus
+1.09 ms; its first round trip takes 68 µs versus 63 µs. Pydantic's common model
+machinery is warmed before timing model import, just as the jsoncompat runtime
+is preloaded. Full fresh-process import plus first round trip is
+42.1 ms versus 103.7 ms. First-call measurements include ordinary allocation and cache
+warming, but no deferred schema or model compilation.
 
 To measure independent-class imports with a retained-memory budget:
 
@@ -216,55 +230,72 @@ a real package's dependency graph. Results and build costs are written to
 `target/python-codegen/imports/`. Wider models may reach the default 2 GiB
 budget before 200,000 classes; reports mark that boundary explicitly.
 
-Bounded runs on the same machine produced the following results. Generated
-rows were remeasured after installation was streamlined; Pydantic rows are the
-earlier baseline. All model identities remain alive, and garbage collection
-stays enabled:
+Remeasured after this optimization pass, with all model identities kept alive
+and garbage collection enabled:
 
 | Fields/class | Implementation | Classes retained | Import seconds | Peak GiB |
 | ---: | --- | ---: | ---: | ---: |
-| 5 | Generated | 200,000 | 7.00 | 2.67 |
-| 5 | Pydantic | 200,000 | 58.46 | 4.19 |
-| 20 | Generated | 46,700 | 4.13 | 2.00 |
-| 20 | Pydantic | 31,000 | 26.13 | 2.00 |
-| 200 | Generated | 5,100 | 3.66 | 2.03 |
-| 200 | Pydantic | 3,600 | 26.17 | 2.05 |
+| 5 | Generated | 200,000 | 3.80 | 1.13 |
+| 5 | Pydantic | 200,000 | 61.51 | 4.15 |
+| 20 | Generated | 161,800 | 6.40 | 2.00 |
+| 20 | Pydantic | 31,100 | 27.21 | 2.01 |
+| 200 | Generated | 18,800 | 4.98 | 2.01 |
+| 200 | Pydantic | 3,600 | 27.00 | 2.05 |
 
-The 5-field case actually reaches 200,000 classes: generated models use 88.0%
-less import time than the Pydantic baseline. Before installation was streamlined,
-this case took 8.36 seconds and 2.79 GiB. The 20- and 200-field cases stop at the 2 GiB budget;
-those rows are measured partial runs, not 200,000-class projections. Cached
-private companion constants are shared across copies of each generated shard,
-so these memory figures do not predict the size of arbitrary unique schemas.
+The 5-field case actually reaches 200,000 classes: generated models take
+93.8% less import time than Pydantic. The previous generated implementation took
+7.00 seconds and 2.67 GiB; this pass reduces that to 3.80 seconds and
+1.13 GiB. The 20- and 200-field cases stop at the 2 GiB budget; those are
+measured partial runs, not 200,000-class projections. Cached private companion
+constants are shared across copies of each shard. Within a shard, identical
+validation programs also share native storage. These memory figures do not
+predict the size of arbitrary unique schemas.
 
-Import still performs per-class setup. Profiling `install_model` with 100-class
-shards, precompiled Python bytecode, and the runtime preloaded (nine fresh-process
-samples, same environment) gives these median costs:
+A separate import profile alternates the preserved release `abd47c27` from
+before this pass with the new implementation (nine fresh-process samples per version,
+precompiled bytecode, runtime preloaded). Each shard contains 100 classes:
 
-| Fields/class | Previous install/class | Current install/class | Previous 100-class import | Current 100-class import |
+| Fields/class | Before: 100-class import | After: 100-class import | Less elapsed time | Current install/class |
 | ---: | ---: | ---: | ---: | ---: |
-| 5 | 8.4 µs | 1.4 µs | 3.47 ms | 2.78 ms |
-| 20 | 9.5 µs | 1.8 µs | 7.23 ms | 6.84 ms |
-| 200 | 20.1 µs | 3.5 µs | 53.75 ms | 53.30 ms |
+| 5 | 2.31 ms | 1.51 ms | 34.7% | 1.20 µs |
+| 20 | 6.12 ms | 2.76 ms | 54.9% | 1.35 µs |
+| 200 | 49.43 ms | 18.98 ms | 61.6% | 2.24 µs |
 
-`install_model` binds the constructor signature and stores compressed schema
-source for introspection. Identical frozen methods and dataclass settings are
-inherited from the shared base; each model retains only its own field metadata.
-Validation programs go directly to the native binder instead of being stored
-on Python classes. `Model.__jsoncompat_schema__` decompresses and caches the
-original schema only on explicit access; neither import, first round trip, nor
-validation errors expand it. Across these 100-class shards, source-schema data
-shrinks by 85%, 93%, and 96%, respectively; this measures schema payload bytes,
-not total artifact size or process memory.
+`install_model` attaches constructor signatures and compressed schema sources.
+Class creation and native binding happen separately. Compact field descriptions
+avoid constructing full reflection metadata; the native binder reuses field
+names and identical validation programs. Generation interns repeated scalar
+checks and guards. Even the 1,000-field workload needs only two distinct scalar
+guards, while every field still enforces its own constraints.
 
-Class creation and field metadata construction happen before `install_model`;
-loading native validation programs and binding class/slot references happen
-separately. All three contribute to import time. Installation itself takes
-81–83% less time, but wide-model import is dominated by the remaining work.
-A linear extrapolation of installation alone is about 0.28–0.71 seconds for
-200,000 classes, not a measurement of total import time for wider schemas.
-Generation removes compilation from startup; creating and connecting runtime
-objects still costs time and memory.
+To verify that improvements also apply when native programs cannot be shared,
+`--distinct-constraints` gives each class in a shard different numeric/string
+bounds. The same alternating import profile gives:
+
+| Fields/class | Before: distinct constraints | After: distinct constraints | Less elapsed time |
+| ---: | ---: | ---: | ---: |
+| 5 | 2.38 ms | 1.85 ms | 22.0% |
+| 20 | 6.14 ms | 3.38 ms | 45.0% |
+| 200 | 50.68 ms | 21.65 ms | 57.3% |
+
+With distinct constraints in each shard, the retained-class experiment imports
+200,000 five-field classes in 4.23 seconds and 1.76 GiB. Under the 2 GiB budget,
+it retains 113,900 twenty-field classes or 15,500 two-hundred-field classes.
+The cached-file/shared-constant caveat still applies.
+
+Reproduce the distinct-constraint build and retained-class run with a separate
+artifact directory (the release extension and CLI must already be built):
+
+```bash
+PYTHONPATH=pybindings JSONCOMPAT_NATIVE_PROFILE=release uv run --project pybindings python pybindings/bench_dataclasses_imports.py build --fields 20 --distinct-constraints --directory target/python-codegen/imports-distinct
+PYTHONPATH=pybindings JSONCOMPAT_NATIVE_PROFILE=release uv run --project pybindings python pybindings/bench_dataclasses_imports.py generated --fields 20 --distinct-constraints --directory target/python-codegen/imports-distinct
+```
+
+`Model.__jsoncompat_schema__` decompresses and caches the original source only
+on explicit access; imports, first round trips, and validation errors do not
+expand it. Dataclass reflection similarly materializes full field metadata only
+when requested. Generation removes compilation from startup; creating and
+connecting runtime objects still costs time and memory.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 

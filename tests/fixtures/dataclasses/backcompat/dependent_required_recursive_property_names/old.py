@@ -39,8 +39,8 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaName, 2)], [
         ('model', GeneratedSchema, (), 1, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"property_names":1},{"dependencies":[["x",["y"]]]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"all":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaName, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,5]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"all":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":1,"base_nodes":3,"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,[]]]}')
+        ('root', GeneratedSchemaName, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"all":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaName,), globals())

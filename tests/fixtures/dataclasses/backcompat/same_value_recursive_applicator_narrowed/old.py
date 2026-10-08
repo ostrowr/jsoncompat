@@ -25,7 +25,9 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaValue", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, value: typing.Any = dc.JSONCOMPAT_MISSING) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, value: typing.Any = _jsoncompat_missing) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
@@ -37,9 +39,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaValue, _jsoncompat_init_1, b'x\xda}N\xbb\x0a\x80 \x14\xdd\xfd\x0a1\xc7\xc0\xbd\x9fhk\x09\x07!\x8d $\xd4\x06\x11\xff=5\xbbDH\xdb=\x8f{\xce\x09\x08cB\x17\xa9,\x19pH \xc1I\xec\xa7\x04\x98\x08\xa1\xfd\xa8\x121W\x02\x83TdjdVI\xc7J\x10\xbb\xff\xc1\x11\xfb\xf6\x9b\xf3Gn!\xd6\x99M\xaf/\x7f\xbd8zPI\xf8\xac\x80q?\xed\xb5\x19\xac\xad\xc6\x9c\xcfQ\xbc\x00\x0a\xeb8\xc8', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaValue, 1)], [
         ('model', GeneratedSchema, (("value", "value", 1, True),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["value",1]],"patterns":[],"required":[],"additional":5}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"any":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
-        ('root', GeneratedSchemaValue, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"any":[1,5]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"any":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaValue, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"any":[1,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"any":[3,4]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
-    ], b'{"version":1,"base_nodes":3,"guards":[],"conversion_validates":[true,true,false],"json_keys":[[0,["\\"value\\":"]]]}')
+    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false],"json_keys":[[0,["\\"value\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaValue,), globals())

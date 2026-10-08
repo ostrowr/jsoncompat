@@ -71,8 +71,18 @@ class PreparedTests(unittest.TestCase):
             dataclasses, "dataclass", forbidden
         ), patch.object(inspect, "get_annotations", forbidden), patch.object(
             jsoncompat, "validator_for", forbidden
-        ), patch.object(zlib, "decompress", forbidden):
+        ), patch.object(zlib, "decompress", forbidden), patch.object(
+            dataclasses, "field", forbidden
+        ):
+
             module = _load(destination)
+            item = module.Constrained(name="x", count=1)
+            self.assertTrue(dataclasses.is_dataclass(item))
+            self.assertIn("name='x'", repr(item))
+            self.assertEqual(item, module.Constrained(name="x", count=1))
+            self.assertEqual(hash(item), hash(module.Constrained(name="x", count=1)))
+            self.assertIs(module.Constrained.__init__.__kwdefaults__["optional"], dc.JSONCOMPAT_MISSING)
+            self.assertIsNone(module.Constrained.__dataclass_fields__._materialized)
             self.assertEqual(
                 module.Constrained.deserialize('{"name":"x","count":1}').serialize(),
                 '{"count":1,"name":"x"}',
@@ -141,6 +151,34 @@ class PreparedTests(unittest.TestCase):
         self.assertEqual(trusted.count, -1)
         with self.assertRaises(ValueError):
             trusted.serialize()
+
+    def test_dataclass_reflection_is_cached_and_preserves_metadata(self):
+        destination = WORK / "reflection.py"
+        destination.write_bytes((WORK / "constrained.py").read_bytes())
+        model = _load(destination).Constrained
+        metadata = model.__dataclass_fields__
+        self.assertIsNone(metadata._materialized)
+        self.assertTrue(dataclasses.is_dataclass(model))
+        self.assertIsNone(metadata._materialized)
+        fields = dataclasses.fields(model)
+        self.assertIsNotNone(metadata._materialized)
+        self.assertTrue(all(a is b for a, b in zip(fields, dataclasses.fields(model))))
+        self.assertEqual([field.type for field in fields], [model.__annotations__[field.name] for field in fields])
+        optional = next(field for field in fields if field.name == "optional")
+        self.assertIs(optional.default, dc.JSONCOMPAT_MISSING)
+        self.assertEqual(dict(optional.metadata), {
+            dc.JSONCOMPAT_FIELD_KIND_METADATA: "property",
+            dc.JSONCOMPAT_JSON_NAME_METADATA: "optional",
+            dc.JSONCOMPAT_MISSING_METADATA: True,
+        })
+        with self.assertRaises(TypeError):
+            optional.metadata["changed"] = True
+        extras = self.modules["extras"].Extras
+        extra = next(field for field in dataclasses.fields(extras) if field.name == dc.JSONCOMPAT_EXTRA_FIELD)
+        self.assertFalse(extra.repr)
+        self.assertIs(extra.default_factory, dict)
+        self.assertNotIn(dc.JSONCOMPAT_EXTRA_FIELD, repr(extras(name="x")))
+        self.assertEqual(dataclasses.asdict(model(name="x", count=1))["name"], "x")
 
     def test_original_schema_is_only_expanded_on_explicit_access(self):
         destination = WORK / "schema_introspection.py"
@@ -240,6 +278,71 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             model.deserialize(json.dumps(value))
 
+    def test_unicode_allocations_preserve_all_character_widths(self):
+        model = self.modules["unicode_text"].JSONCOMPAT_MODEL
+        values = [
+            "a" * length + last
+            for length in (0, 1, 31, 63, 64, 127, 1024)
+            for last in ("a", "\x00", "é", "ÿ", "Ā", "\uffff", "🐲", "\U0010ffff")
+        ]
+        values += ["é" * 1000, "Ā" * 1000, "🐲" * 1000, "e\u0301" * 1000]
+        # Sweep every Unicode scalar, including width boundaries, noncharacters,
+        # and embedded ASCII controls. Surrogates are not valid UTF-8 scalars.
+        values.append("".join(chr(c) for c in range(0x110000) if not 0xD800 <= c < 0xE000))
+        for value in values:
+            wire = json.dumps(value, ensure_ascii=False)
+            for trusted in (False, True):
+                instance = model.deserialize(wire, skip_validation=trusted)
+                self.assertEqual(instance.root, value)
+                self.assertEqual(hash(instance.root), hash(value))
+                self.assertEqual(instance.root.encode(), value.encode())
+                emitted = instance.serialize(skip_validation=trusted)
+                self.assertIs(type(emitted), str)
+                self.assertEqual(json.loads(emitted), value)
+                self.assertEqual(json.loads(emitted.encode()), value)
+                self.assertEqual(emitted, str(emitted))
+
+    def test_shared_nodes_preserve_oneof_branch_multiplicity(self):
+        impossible = self.modules["duplicate_oneof"].JSONCOMPAT_MODEL
+        for value in (None, False, True, 0, 1, "foo", [], {}, {"x": "y"}):
+            with self.assertRaises(ValueError):
+                impossible.deserialize(json.dumps(value))
+            with self.assertRaises(ValueError):
+                impossible.from_value(value)
+            trusted = impossible.from_value(value, skip_validation=True)
+            with self.assertRaises(ValueError):
+                trusted.serialize()
+            self.assertEqual(json.loads(trusted.serialize(skip_validation=True)), value)
+        model = self.modules["duplicate_leaf_oneof"].JSONCOMPAT_MODEL
+        self.assertEqual(json.loads(model.deserialize("123").serialize()), 123)
+        for value in ("x", "long enough", ""):
+            with self.assertRaises(ValueError):
+                model.deserialize(json.dumps(value))
+            with self.assertRaises(ValueError):
+                model.from_value(value, skip_validation=True).serialize()
+
+    def test_repeated_constraints_share_checks_without_losing_field_validation(self):
+        source = ast.parse((WORK / "wide.py").read_text())
+        call = next(node for node in ast.walk(source) if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute) and node.func.attr == "bind_module")
+        plan = json.loads(ast.literal_eval(call.args[3]))
+        descriptors = call.args[2].elts
+        program = json.loads(ast.literal_eval(next(node for node in descriptors if ast.literal_eval(node.elts[0]) == "model").elts[-1]))
+        self.assertLess(len(program["nodes"]), 10)
+        self.assertEqual(len(plan["guards"]), 1000)
+        self.assertEqual(len(plan["guard_nodes"]), 2)
+        self.assertEqual(len(plan["conversion_validates"]), plan["base_nodes"] + 2)
+        # Both shared constraints remain attached to every field, including
+        # fields far from the first occurrence of each constraint.
+        model = self.modules["wide"].JSONCOMPAT_MODEL
+        valid = {f"field{i:04}": "x" if i % 2 == 0 else i for i in range(1000)}
+        for index in (0, 1, 498, 499, 998, 999):
+            bad = dict(valid, **{f"field{index:04}": "" if index % 2 == 0 else -1})
+            with self.assertRaises(ValueError):
+                model.deserialize(json.dumps(bad))
+            with self.assertRaises(ValueError):
+                model.from_value(bad, skip_validation=True).serialize()
+
     def test_extra_properties_and_subclasses_use_emitted_values(self):
         model = self.modules["extras"].Extras
         item = model(name="valid")
@@ -325,6 +428,31 @@ class PreparedTests(unittest.TestCase):
                     instance.serialize()
                 with self.assertRaises(ValueError):
                     instance.to_value()
+
+    def test_corrupt_shared_guards_are_rejected_at_import(self):
+        for case in ("reference", "original", "owner", "field", "rule", "length"):
+            with self.subTest(case=case):
+                tree = ast.parse((WORK / "constrained.py").read_text())
+                call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                            and isinstance(node.func, ast.Attribute) and node.func.attr == "bind_module")
+                plan = json.loads(ast.literal_eval(call.args[3]))
+                if case == "reference":
+                    plan["guards"][0]["guard"] = len(plan["guard_nodes"])
+                elif case == "original":
+                    plan["guard_nodes"][0]["original"] = plan["base_nodes"]
+                elif case == "owner":
+                    plan["guards"][0]["owner"] = 999999
+                elif case == "field":
+                    plan["guards"][0]["field"] = 999999
+                elif case == "rule":
+                    plan["guard_nodes"][0]["guard"]["rules"] = [{"ref": 0}]
+                else:
+                    plan["conversion_validates"].pop()
+                call.args[3] = ast.Constant(json.dumps(plan).encode())
+                destination = WORK / f"corrupt_guard_{case}.py"
+                destination.write_text(ast.unparse(tree))
+                with self.assertRaises(ValueError):
+                    _load(destination)
 
     def test_corrupt_programs_are_rejected_when_loaded(self):
         destination = WORK / "corrupt.py"

@@ -31,10 +31,12 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaNested", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, description: typing.Any = dc.JSONCOMPAT_MISSING, id: typing.Any, name: typing.Any, nested: typing.Any = dc.JSONCOMPAT_MISSING, tags: typing.Any = dc.JSONCOMPAT_MISSING) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, description: typing.Any = _jsoncompat_missing, id: typing.Any, name: typing.Any, nested: typing.Any = _jsoncompat_missing, tags: typing.Any = _jsoncompat_missing) -> None:
     self.__post_init__(skip_validation)
 
-def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, count: typing.Any = dc.JSONCOMPAT_MISSING, flag: typing.Any) -> None:
+def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, count: typing.Any = _jsoncompat_missing, flag: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
@@ -42,7 +44,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x8d\x91\xc1n\x830\x10D\xef|\x05\xb2z$\x85r\xccW\xf4^\xf5\xb0\x81\x85l\x84m\xba^\x0eQ\xc4\xbf\xd7\x10H\x8c\x13)9\xfayv4\xb3{I\xd2T}\xb8\xea\x88\x1a\xd4>UG\x91\xde\xed\xf3\xfc\xe4\xac\xd9]\xf1\xa7\xe56\xaf\x19\x1a\xc9\xcb\xa2,v_e\xbe\xe8\xb3i\x18\xea\x9a\x84\xac\x81\xee\x9bm\x8f,\x84\xce;5\xd09\x9c\x05}\x88/\x9exV\xa3\xab\x98\xfai\xee\x06=\x96s\x8fS\x0a\'L\xa6U3\x1e\xb3\xeb\x08\xd5\xef*\x0dh|[\x8bNp\xe3\xfc\xaa\xcf,z\xd2i\xe6\x95\x1d\x8cl\x90\x87\x9a\x0c\xe9A{\\d!_s\x91\x11l\x91\xd5\xedo\xbc\xcbT\xd3A\x1b\x1b\xae\x83\x07k;\x04\x13\x0c&\x91\x81b\xfc\x1b\x88\xe7\x86?\x91\xe9\xf2\xfc\xcd\xe2=\xd9\xc3\x09+\xd9\xeeI\xa0\x0d\xab*\x12\xd4Q\xf7gk\x0e\xa3\xac\xff\xc0\x0c\xe7\xc5=Y\x04\x8f9\xa7{\x87\xf7L\x96\xa4\x0f)\xc7\x7f\xcf\x0e\xb2\x9e', _namespace)
     dc.install_model(GeneratedSchemaNested, _jsoncompat_init_1, b'x\xdaM\x8c1\x0e\xc20\x0cE\xf7\x9c"\xf2\xdc\x81\x99S\xb0#\x86\xb4q+\xa3$\x0e\xa93\xa0\xaaw\xc7\x94\x06e\xb3\xdf\x7f\xffo\xc6Zp\xde\x93\x10\'\x17n\x853\x16!\\\xe1jg\x17V\x1c\xbeB\xee\xf1\xa6D\xd9\xc45\xc9\xffU\x10)Q\xacQ\xd1ehL\xde\x19\x15\x00%\xc1\x05\x0b\x1c|\xff\xc50\x07\xb7\xf4\x03M\x1e\x99\x03\xbat\xca\xe6,@\xc1W\xa5\x82^\x95{7\xa0\xe7\xe3\xc8[\x9d\xc7\'N\x02f\xff\x00\xb2\x01:\xfc', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaNested, 2)], [
-        ('model', GeneratedSchema, (("description", "description", 1, True), ("id", "id", 1, False), ("name", "name", 1, False), ("nested", "nested", 2, True), ("tags", "tags", 7, True),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["description",1],["id",2],["name",3],["nested",4],["tags",8]],"patterns":[],"required":["id","name"],"additional":10}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["count",5],["flag",6]],"patterns":[],"required":["flag"],"additional":7}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":9}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("description", "description", 1, True), ("id", "id", 1, False), ("name", "name", 1, False), ("nested", "nested", 2, True), ("tags", "tags", 7, True),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["description",1],["id",1],["name",1],["nested",2],["tags",6]],"patterns":[],"required":["id","name"],"additional":5}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["count",3],["flag",4]],"patterns":[],"required":["flag"],"additional":5}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]}],"patterns":[]}'),
         ("str",),
         ('model', GeneratedSchemaNested, (("count", "count", 3, True), ("flag", "flag", 4, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["count",1],["flag",2]],"patterns":[],"required":["flag"],"additional":3}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["boolean"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("int",),
@@ -50,7 +52,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ('list', 1)
-    ], b'{"version":1,"base_nodes":8,"guards":[{"owner":2,"field":0,"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}}],"conversion_validates":[true,false,true,false,false,false,false,false,false],"json_keys":[[0,["\\"description\\":","\\"id\\":","\\"name\\":","\\"nested\\":","\\"tags\\":"]],[2,["\\"count\\":","\\"flag\\":"]]]}')
+    ], b'{"version":2,"base_nodes":8,"guard_nodes":[{"original":3,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}}],"guards":[{"owner":2,"field":0,"guard":0}],"conversion_validates":[true,false,true,false,false,false,false,false,false],"json_keys":[[0,["\\"description\\":","\\"id\\":","\\"name\\":","\\"nested\\":","\\"tags\\":"]],[2,["\\"count\\":","\\"flag\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaNested,), globals())

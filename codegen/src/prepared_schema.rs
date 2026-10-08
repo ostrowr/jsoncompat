@@ -313,6 +313,7 @@ impl PreparedSchema {
             root: schema,
             nodes: Vec::new(),
             paths: HashMap::new(),
+            leaves: HashMap::new(),
             patterns: Vec::new(),
             pattern_ids: HashMap::new(),
         };
@@ -751,6 +752,7 @@ struct Builder<'a> {
     root: &'a Value,
     nodes: Vec<Node>,
     paths: HashMap<String, NodeId>,
+    leaves: HashMap<Vec<u8>, NodeId>,
     patterns: Vec<Pattern>,
     pattern_ids: HashMap<String, PatternId>,
 }
@@ -781,6 +783,18 @@ impl Builder<'_> {
             rules: Vec::new(),
         });
         let node = self.node(schema, path)?;
+        // Leaf checks have no outgoing edges, so no recursive reference can
+        // have observed this provisional slot. Intern only completed leaves
+        // and only when no child allocations followed the placeholder.
+        if node.is_leaf() && id.0 + 1 == self.nodes.len() {
+            let key = serde_json::to_vec(&node).map_err(|error| error.to_string())?;
+            if let Some(existing) = self.leaves.get(&key).copied() {
+                self.nodes.pop();
+                self.paths.insert(path.to_owned(), existing);
+                return Ok(existing);
+            }
+            self.leaves.insert(key, id);
+        }
         self.nodes[id.0] = node;
         Ok(id)
     }

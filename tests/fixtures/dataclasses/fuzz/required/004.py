@@ -86,7 +86,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2Proto, 3), (GeneratedSchemaBranch2Constructor, 5), (GeneratedSchemaBranch2ToString, 6), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 8)], [
         ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":["__proto__","toString","constructor"],"additional":null}}]}],"patterns":[]}'),
         ('union', (2, 7, 9, 10, 11, 12, 13,), None, None),
-        ('model', GeneratedSchemaBranch2, (("__proto__", "field___proto__", 3, False), ("constructor", "constructor", 5, False), ("toString", "toString", 6, False),), 4, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["__proto__",1],["constructor",2],["toString",3]],"patterns":[],"required":["__proto__","constructor","toString"],"additional":null}},{"object_length":{"min":3,"max":null}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (("__proto__", "field___proto__", 3, False), ("constructor", "constructor", 5, False), ("toString", "toString", 6, False),), 4, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["__proto__",1],["constructor",1],["toString",1]],"patterns":[],"required":["__proto__","constructor","toString"],"additional":null}},{"object_length":{"min":3,"max":null}}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ('root', GeneratedSchemaBranch2Proto, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
         ('root', GeneratedSchemaBranch2Constructor, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
@@ -98,7 +98,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":1,"base_nodes":14,"guards":[],"conversion_validates":[false,false,false,true,false,true,true,false,true,false,false,false,false,false],"json_keys":[[2,["\\"__proto__\\":","\\"constructor\\":","\\"toString\\":"]]]}')
+    ], b'{"version":2,"base_nodes":14,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,true,false,true,true,false,true,false,false,false,false,false],"json_keys":[[2,["\\"__proto__\\":","\\"constructor\\":","\\"toString\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2Proto, GeneratedSchemaBranch2Constructor, GeneratedSchemaBranch2ToString, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

@@ -20,7 +20,9 @@ __all__ = ("GeneratedSchema", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, children: typing.Any = dc.JSONCOMPAT_MISSING, value: typing.Any) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, children: typing.Any = _jsoncompat_missing, value: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
@@ -30,7 +32,7 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
         ('model', GeneratedSchema, (("children", "children", 1, True), ("value", "value", 2, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["children",1],["value",3]],"patterns":[],"required":["value"],"additional":4}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":0}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ('list', 0),
         ("int",)
-    ], b'{"version":1,"base_nodes":3,"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"children\\":","\\"value\\":"]]]}')
+    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"children\\":","\\"value\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())
