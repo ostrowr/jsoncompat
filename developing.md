@@ -202,3 +202,17 @@ free-threaded 3.14t builds, on Linux (manylinux and musllinux), Windows, and
 macOS. Linux and macOS also build 3.15t wheels. Windows installs a real 3.15
 interpreter and its import library; 3.15t wheels are deferred because the
 import-library generator currently supports only through 3.14.
+
+The `python-sdist` job builds one source archive, installs it with pip in a
+temporary virtual environment, and exercises the native APIs, typing files,
+generated dataclasses, optional codecs, and stamped readers/writers. The test
+runs outside the checkout with isolated Python imports and fresh native build
+outputs. Only a tested archive is uploaded; the Python release job waits for
+it and attests and publishes it alongside the wheels.
+
+To run the same source-install check locally with Maturin installed:
+
+```bash
+maturin sdist --manifest-path pybindings/Cargo.toml --out target/sdist
+python3 pybindings/tests/check_sdist.py target/sdist/*.tar.gz
+```

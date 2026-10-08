@@ -202,11 +202,40 @@ jobs:
           path: pybindings/dist
           if-no-files-found: error
 
+  python-sdist:
+    name: Build and test Python sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
+        with:
+          toolchain: stable
+      - name: Build source distribution
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
+        with:
+          command: sdist
+          args: --out dist
+          manylinux: off
+          working-directory: pybindings
+      - name: Install and test source distribution
+        run: python pybindings/tests/check_sdist.py pybindings/dist/*.tar.gz
+      - name: Upload source distribution
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sdist
+          path: pybindings/dist/*.tar.gz
+          if-no-files-found: error
+
   python-release:
     name: Release
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [python-linux, python-musllinux, python-windows, python-macos]
+    needs: [python-linux, python-musllinux, python-windows, python-macos, python-sdist]
     permissions:
       # Use to sign the release artifacts
       id-token: write
@@ -219,13 +248,15 @@ jobs:
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: 'wheels-*/*'
+          subject-path: |
+            wheels-*/*
+            sdist/*.tar.gz
       - name: Publish to PyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1.50.1
         with:
           command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          args: --non-interactive --skip-existing wheels-*/* sdist/*.tar.gz
 
 # ---------------------------------------------------------------------------
 # Build WebAssembly / JavaScript packages -----------------------------------
