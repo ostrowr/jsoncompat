@@ -1,5 +1,7 @@
 use jsoncompat::{StampManifest, stamp_schema};
-use jsoncompat_codegen::generate_dataclass_models;
+#[path = "support/generated_snapshot.rs"]
+mod generated_snapshot;
+use generated_snapshot::assert_split_snapshot;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -10,10 +12,6 @@ mod python_env;
 fn read_json(path: impl AsRef<Path>) -> Value {
     let bytes = fs::read(path).expect("read json file");
     serde_json::from_slice(&bytes).expect("parse json file")
-}
-
-fn read_text(path: impl AsRef<Path>) -> String {
-    fs::read_to_string(path).expect("read text file")
 }
 
 #[test]
@@ -27,19 +25,10 @@ fn stamp_example_snapshots_are_up_to_date() {
 
     let manifest = serde_json::to_value(&second.manifest).unwrap();
     let bundle = serde_json::to_value(&second.bundle).unwrap();
-    let writer_dataclasses = generate_dataclass_models(&second.bundle.writer).unwrap();
-    let reader_dataclasses = generate_dataclass_models(&second.bundle.reader).unwrap();
-
     assert_eq!(manifest, read_json(root.join("manifest.json")));
     assert_eq!(bundle, read_json(root.join("bundle.json")));
-    assert_eq!(
-        normalized_newlines(&writer_dataclasses),
-        normalized_newlines(&read_text(root.join("writer_models.py")))
-    );
-    assert_eq!(
-        normalized_newlines(&reader_dataclasses),
-        normalized_newlines(&read_text(root.join("reader_models.py")))
-    );
+    assert_split_snapshot(&second.bundle.writer, &root.join("writer_models.py"));
+    assert_split_snapshot(&second.bundle.reader, &root.join("reader_models.py"));
 
     assert_python_compiles(&root.join("writer_models.py"));
     assert_python_compiles(&root.join("reader_models.py"));

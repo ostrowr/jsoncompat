@@ -1,9 +1,15 @@
+mod plan;
+mod plan_proof;
+mod render;
+mod types;
+pub use render::DataclassModule;
+use types::Annotation;
+
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
 use json_schema_ast::{SchemaBuildError, SchemaDocument, SchemaNodeKind};
 use serde_json::{Map, Value, json};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 
 const DATACLASS_ADDITIONAL_MODEL_CLASS: &str = "DataclassAdditionalModel";
 const DATACLASS_MODEL_CLASS: &str = "DataclassModel";
@@ -41,7 +47,7 @@ pub enum DataclassError {
 struct FieldSpec {
     json_name: String,
     py_name: String,
-    annotation: String,
+    annotation: Annotation,
     required: bool,
 }
 
@@ -49,10 +55,10 @@ struct FieldSpec {
 enum ClassKind {
     Object {
         fields: Vec<FieldSpec>,
-        extra_annotation: Option<String>,
+        extra_annotation: Option<Annotation>,
     },
     Root {
-        annotation: String,
+        annotation: Annotation,
     },
 }
 
@@ -117,6 +123,29 @@ impl<'a> DataclassModuleBuilder<'a> {
     }
 
     fn reserve_class_name(&mut self, name: &str, pointer: &str) -> Result<bool, DataclassError> {
+        if name.starts_with("_jsoncompat_")
+            || matches!(
+                name,
+                "typing"
+                    | "collections"
+                    | "JSONCOMPAT_MODEL"
+                    | "__all__"
+                    | "_models"
+                    | "_namespace"
+                    | "globals"
+                    | "dict"
+                    | "tuple"
+                    | "type"
+                    | "str"
+                    | "int"
+                    | "float"
+                    | "bool"
+            )
+        {
+            return Err(DataclassError::DuplicateDeclaration {
+                name: name.to_owned(),
+            });
+        }
         match self.class_names.entry(name.to_owned()) {
             Entry::Vacant(entry) => {
                 entry.insert(pointer.to_owned());
@@ -163,7 +192,7 @@ impl<'a> DataclassModuleBuilder<'a> {
                     schema_json: self.schema_json(schema, pointer)?,
                     base_class: DATACLASS_ROOT_MODEL_CLASS,
                     kind: ClassKind::Root {
-                        annotation: typing_symbol("Any"),
+                        annotation: Annotation::any(),
                     },
                 },
                 pointer,
@@ -231,20 +260,20 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
         hint_name: &str,
-    ) -> Result<String, DataclassError> {
+    ) -> Result<Annotation, DataclassError> {
         if let Some(name) = self.named_refs.get(pointer).cloned() {
             self.emit_declaration_class(&name, obj, pointer, DATACLASS_MODEL_CLASS)?;
-            return Ok(name);
+            return Ok(Annotation::model(name));
         }
         if let Some(name) = self.inline_names.get(pointer).cloned() {
-            return Ok(name);
+            return Ok(Annotation::model(name));
         }
 
         let candidate = self.next_inline_name(&format!("{scope_name}{}", pascal_case(hint_name)));
         self.emit_declaration_class(&candidate, obj, pointer, DATACLASS_MODEL_CLASS)?;
         self.inline_names
             .insert(pointer.to_owned(), candidate.clone());
-        Ok(candidate)
+        Ok(Annotation::model(candidate))
     }
 
     fn emit_inline_root_class(
@@ -253,20 +282,20 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
         hint_name: &str,
-    ) -> Result<String, DataclassError> {
+    ) -> Result<Annotation, DataclassError> {
         if let Some(name) = self.named_refs.get(pointer).cloned() {
             self.emit_declaration_schema_class(&name, schema, pointer, DATACLASS_MODEL_CLASS)?;
-            return Ok(name);
+            return Ok(Annotation::model(name));
         }
         if let Some(name) = self.inline_names.get(pointer).cloned() {
-            return Ok(name);
+            return Ok(Annotation::model(name));
         }
 
         let candidate = self.next_inline_name(&format!("{scope_name}{}", pascal_case(hint_name)));
         self.emit_declaration_schema_class(&candidate, schema, pointer, DATACLASS_MODEL_CLASS)?;
         self.inline_names
             .insert(pointer.to_owned(), candidate.clone());
-        Ok(candidate)
+        Ok(Annotation::model(candidate))
     }
 
     fn next_inline_name(&mut self, base_name: &str) -> String {
@@ -295,7 +324,9 @@ impl<'a> DataclassModuleBuilder<'a> {
             has_definition_entries(self.validation_root_defs),
             has_definition_entries(self.validation_root_legacy_defs),
         ) {
-            (Value::Object(obj), true, _) | (Value::Object(obj), _, true) => {
+            (Value::Object(obj), true, _) | (Value::Object(obj), _, true)
+                if contains_reference(&validation_schema) =>
+            {
                 Value::Object(schema_object_with_root_definition_maps(
                     obj,
                     self.validation_root_defs,
@@ -312,9 +343,9 @@ impl<'a> DataclassModuleBuilder<'a> {
         obj: &Map<String, Value>,
         pointer: &str,
         scope_name: &str,
-    ) -> Result<String, DataclassError> {
+    ) -> Result<Annotation, DataclassError> {
         if obj.get(CODEGEN_ANY_KEY).and_then(Value::as_bool) == Some(true) {
-            return Ok("dc.JsonValue".to_owned());
+            return Ok(Annotation::json());
         }
         if self.annotation_requires_full_schema_context(pointer, obj) {
             // A branch model validates its projected subschema independently.
@@ -323,7 +354,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             // can accept a property which the projected object branch rejects.
             // Keep the value generic and let the containing model's validator
             // enforce the complete schema instead.
-            return Ok("dc.JsonValue".to_owned());
+            return Ok(Annotation::json());
         }
         if let Some(ref_value) = obj.get("$ref") {
             let ref_value = ref_value.as_str().ok_or_else(|| {
@@ -364,17 +395,14 @@ impl<'a> DataclassModuleBuilder<'a> {
         {
             let item_annotation =
                 self.inline_annotation(items, &join_pointer(pointer, "items"), scope_name, "Item")?;
-            return Ok(format!(
-                "{}[{item_annotation}]",
-                collections_abc_symbol("Sequence")
-            ));
+            return Ok(Annotation::sequence(item_annotation));
         }
 
         if let Some(type_annotation) = parse_type_annotation(obj, pointer)? {
             return Ok(type_annotation);
         }
 
-        Ok(typing_symbol("Any"))
+        Ok(Annotation::any())
     }
 
     fn annotation_requires_full_schema_context(
@@ -494,13 +522,17 @@ impl<'a> DataclassModuleBuilder<'a> {
         false
     }
 
-    fn ref_annotation(&mut self, ref_value: &str, pointer: &str) -> Result<String, DataclassError> {
+    fn ref_annotation(
+        &mut self,
+        ref_value: &str,
+        pointer: &str,
+    ) -> Result<Annotation, DataclassError> {
         let declaration_name = resolve_local_ref_name(&self.named_refs, ref_value, pointer)?;
         let Some(target) = resolve_json_pointer(self.codegen_root, ref_value) else {
-            return Ok(declaration_name);
+            return Ok(Annotation::model(declaration_name));
         };
         let Value::Object(target_obj) = target else {
-            return Ok(declaration_name);
+            return Ok(Annotation::model(declaration_name));
         };
 
         if target_obj.contains_key("$ref")
@@ -509,7 +541,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             || is_object_schema(target_obj)
             || is_array_schema(target_obj)
         {
-            return Ok(declaration_name);
+            return Ok(Annotation::model(declaration_name));
         }
 
         if let Some(literal) = parse_literal_annotation(target_obj) {
@@ -520,7 +552,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             return Ok(type_annotation);
         }
 
-        Ok(declaration_name)
+        Ok(Annotation::model(declaration_name))
     }
 
     fn prefix_items_array_annotation(
@@ -528,7 +560,7 @@ impl<'a> DataclassModuleBuilder<'a> {
         obj: &Map<String, Value>,
         pointer: &str,
         scope_name: &str,
-    ) -> Result<String, DataclassError> {
+    ) -> Result<Annotation, DataclassError> {
         let prefix_items = obj
             .get("prefixItems")
             .and_then(Value::as_array)
@@ -555,20 +587,12 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         if has_unconstrained_prefix_item {
-            return Ok(format!(
-                "{}[{}]",
-                collections_abc_symbol("Sequence"),
-                typing_symbol("Any")
-            ));
+            return Ok(Annotation::sequence(Annotation::any()));
         }
 
         match obj.get("items") {
             None | Some(Value::Bool(true)) => {
-                return Ok(format!(
-                    "{}[{}]",
-                    collections_abc_symbol("Sequence"),
-                    typing_symbol("Any")
-                ));
+                return Ok(Annotation::sequence(Annotation::any()));
             }
             Some(Value::Bool(false)) => {}
             Some(items) => item_annotations.push(self.inline_annotation(
@@ -580,18 +604,10 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
 
         if item_annotations.is_empty() {
-            return Ok(format!(
-                "{}[{}]",
-                collections_abc_symbol("Sequence"),
-                typing_symbol("Any")
-            ));
+            return Ok(Annotation::sequence(Annotation::any()));
         }
 
-        Ok(format!(
-            "{}[{}]",
-            collections_abc_symbol("Sequence"),
-            union_annotation(&item_annotations)
-        ))
+        Ok(Annotation::sequence(union_annotation(&item_annotations)))
     }
 
     fn inline_annotation(
@@ -600,13 +616,13 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
         hint_name: &str,
-    ) -> Result<String, DataclassError> {
+    ) -> Result<Annotation, DataclassError> {
         match schema {
             Value::Bool(_) => self.emit_inline_root_class(schema, pointer, scope_name, hint_name),
             Value::Object(obj) => {
                 if let Some(name) = self.named_refs.get(pointer).cloned() {
                     self.emit_declaration_class(&name, obj, pointer, DATACLASS_MODEL_CLASS)?;
-                    return Ok(name);
+                    return Ok(Annotation::model(name));
                 }
                 if obj.contains_key("oneOf") || obj.contains_key("anyOf") {
                     return self.schema_annotation(obj, pointer, scope_name);
@@ -641,7 +657,7 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
         keyword: &str,
-    ) -> Result<String, DataclassError> {
+    ) -> Result<Annotation, DataclassError> {
         let branches = obj.get(keyword).and_then(Value::as_array).ok_or_else(|| {
             invalid_schema(
                 join_pointer(pointer, keyword),
@@ -660,7 +676,7 @@ impl<'a> DataclassModuleBuilder<'a> {
         for (index, branch) in branches.iter().enumerate() {
             let branch_pointer = join_pointer(&join_pointer(pointer, keyword), &index.to_string());
             if branch_is_direct_recursive_ref(branch, pointer) {
-                annotations.push(typing_symbol("Any"));
+                annotations.push(Annotation::any());
                 continue;
             }
             let merged_branch = merge_union_branch_schema(branch, &context, &branch_pointer)?;
@@ -681,10 +697,17 @@ pub fn generate_dataclass_models(schema: &Value) -> Result<String, DataclassErro
     generate_dataclass_models_from_document(&document)
 }
 
-/// Generate dataclass models while reusing an already-validated schema document.
+/// Generate a self-contained module with public models before its implementation.
 pub fn generate_dataclass_models_from_document(
     document: &SchemaDocument,
 ) -> Result<String, DataclassError> {
+    Ok(generate_dataclass_module_from_document(document)?.single_file())
+}
+
+/// Generate readable model declarations and a separate private implementation.
+pub fn generate_dataclass_module_from_document(
+    document: &SchemaDocument,
+) -> Result<DataclassModule, DataclassError> {
     let canonical = document.canonical_schema_json()?;
     if canonical_schema_is_unconstrained(canonical)
         || document.root().is_ok_and(|root| {
@@ -765,7 +788,7 @@ fn is_codegen_metadata_key(key: &str) -> bool {
 fn render_dataclass_module(
     schema: &Value,
     validation_schema: &Value,
-) -> Result<String, DataclassError> {
+) -> Result<DataclassModule, DataclassError> {
     let named_refs = collect_named_refs(schema)?;
     let root_name = named_refs.get("#").cloned().ok_or_else(|| {
         invalid_schema(
@@ -797,251 +820,132 @@ fn render_dataclass_module(
         }
     }
 
-    let mut output = String::new();
-
-    for class_spec in &builder.classes {
-        render_class_spec(&mut output, class_spec);
-        output.push('\n');
-    }
-
     if let Some(metadata) = &root_metadata {
         match metadata {
             JsoncompatMetadata::Writer { .. } => {
-                render_writer_class(
-                    &mut output,
+                builder.classes.push(writer_class(
                     expect_schema_object(schema, "#")?,
                     expect_schema_object(validation_schema, "#")?,
-                )?;
-                output.push('\n');
+                )?);
             }
             JsoncompatMetadata::Reader { .. } => {
-                render_reader_variants(
-                    &mut output,
-                    expect_schema_object(schema, "#")?,
-                    expect_schema_object(validation_schema, "#")?,
-                )?;
-                output.push('\n');
-                render_reader_root_class(
-                    &mut output,
-                    expect_schema_object(schema, "#")?,
-                    expect_schema_object(validation_schema, "#")?,
-                )?;
-                output.push('\n');
+                let reader = expect_schema_object(schema, "#")?;
+                let validation = expect_schema_object(validation_schema, "#")?;
+                builder.classes.extend(reader_variants(reader, validation)?);
+                builder.classes.push(reader_root_class(reader, validation)?);
             }
             JsoncompatMetadata::Declaration { .. } => {}
             JsoncompatMetadata::ReaderVariant { .. } => unreachable!(),
         }
     }
-
-    writeln!(&mut output, "JSONCOMPAT_MODEL = {root_name}").expect("writing to String cannot fail");
-
-    let collections_import = if output.contains("collections.abc.") {
-        "import collections.abc\n"
-    } else {
-        ""
-    };
-    Ok(format!(
-        "from __future__ import annotations\n\n{collections_import}from dataclasses import dataclass\nimport typing\n\nfrom jsoncompat.codegen import dataclasses as dc\n\n\n{output}"
-    ))
-}
-
-fn render_class_spec(output: &mut String, class_spec: &ClassSpec) {
-    writeln!(output, "@typing.final").expect("writing to String cannot fail");
-    writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
-        .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "class {}({}):",
-        class_spec.name,
-        render_class_base(class_spec),
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-        python_triple_quoted_string_literal(&class_spec.schema_json)
-    )
-    .expect("writing to String cannot fail");
-
-    match &class_spec.kind {
-        ClassKind::Object {
-            fields,
-            extra_annotation,
-        } => {
-            if fields.is_empty() && extra_annotation.is_none() {
-                writeln!(output, "    pass").expect("writing to String cannot fail");
-                return;
-            }
-            for field in fields {
-                let annotation = if field.required {
-                    field.annotation.clone()
-                } else {
-                    omittable_annotation(&field.annotation)
-                };
-                if field.required {
-                    writeln!(
-                        output,
-                        "    {}: {} = {}.field({})",
-                        field.py_name,
-                        annotation,
-                        DATACLASSES_RUNTIME_MODULE,
-                        python_string_literal(&field.json_name)
-                    )
-                    .expect("writing to String cannot fail");
-                } else {
-                    writeln!(
-                        output,
-                        "    {}: {} = {}.field({}, omittable=True)",
-                        field.py_name,
-                        annotation,
-                        DATACLASSES_RUNTIME_MODULE,
-                        python_string_literal(&field.json_name)
-                    )
-                    .expect("writing to String cannot fail");
-                }
-            }
-            if let Some(extra_annotation) = extra_annotation {
-                writeln!(
-                    output,
-                    "    {EXTRA_FIELD_NAME}: collections.abc.Mapping[str, {extra_annotation}] = {}.extra_field()",
-                    DATACLASSES_RUNTIME_MODULE,
-                )
-                .expect("writing to String cannot fail");
-            }
-        }
-        ClassKind::Root { annotation } => {
-            writeln!(
-                output,
-                "    root: {annotation} = {}.root_field()",
-                DATACLASSES_RUNTIME_MODULE,
-            )
-            .expect("writing to String cannot fail");
-        }
+    // Forward annotations allow the entry-point model to be the first declaration.
+    if let Some(index) = builder
+        .classes
+        .iter()
+        .position(|class| class.name == root_name)
+    {
+        let root = builder.classes.remove(index);
+        builder.classes.insert(0, root);
     }
+    render::module(&builder.classes, &root_name)
 }
 
-fn render_writer_class(
-    output: &mut String,
+fn envelope_class(
+    name: String,
+    version: u32,
+    payload_type: String,
+    schema: Value,
+    base_class: &'static str,
+) -> Result<ClassSpec, DataclassError> {
+    Ok(ClassSpec {
+        name,
+        schema_json: pretty_schema_literal(&schema)?,
+        base_class,
+        kind: ClassKind::Object {
+            fields: vec![
+                FieldSpec {
+                    json_name: "version".into(),
+                    py_name: "version".into(),
+                    annotation: Annotation::literal(json!(version)),
+                    required: true,
+                },
+                FieldSpec {
+                    json_name: "data".into(),
+                    py_name: "data".into(),
+                    annotation: Annotation::model(payload_type),
+                    required: true,
+                },
+            ],
+            extra_annotation: None,
+        },
+    })
+}
+fn writer_class(
     writer: &Map<String, Value>,
-    validation_writer: &Map<String, Value>,
-) -> Result<(), DataclassError> {
-    let metadata = parse_metadata(writer, "#")?;
+    validation: &Map<String, Value>,
+) -> Result<ClassSpec, DataclassError> {
     let JsoncompatMetadata::Writer {
         name,
         version,
         payload_ref,
         ..
-    } = metadata
+    } = parse_metadata(writer, "#")?
     else {
-        return Err(invalid_schema(
-            join_pointer("#", JSONCOMPAT_METADATA_KEY),
-            "writer schema must have writer metadata",
-        ));
+        unreachable!()
     };
-    let payload_type = resolve_schema_ref_name(writer, &payload_ref, "#")?;
-
-    writeln!(output, "@typing.final").expect("writing to String cannot fail");
-    writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
-        .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "class {name}({}):",
-        runtime_dataclass_symbol(WRITER_MODEL_CLASS),
+    envelope_class(
+        name,
+        version,
+        resolve_schema_ref_name(writer, &payload_ref, "#")?,
+        Value::Object(validation.clone()),
+        WRITER_MODEL_CLASS,
     )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-        python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
-            validation_writer.clone()
-        ))?)
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    version: typing.Literal[{version}] = {}.field(\"version\")",
-        DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    data: {payload_type} = {}.field(\"data\")",
-        DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    Ok(())
 }
-
-fn render_reader_variants(
-    output: &mut String,
+fn reader_variants(
     reader: &Map<String, Value>,
-    validation_reader: &Map<String, Value>,
-) -> Result<(), DataclassError> {
+    validation: &Map<String, Value>,
+) -> Result<Vec<ClassSpec>, DataclassError> {
     let branches = reader
         .get("oneOf")
         .and_then(Value::as_array)
-        .ok_or_else(|| invalid_schema("#/oneOf".to_owned(), "oneOf must be an array"))?;
-
-    for (index, branch) in branches.iter().enumerate() {
-        let pointer = format!("#/oneOf/{index}");
-        let branch = expect_schema_object(branch, &pointer)?;
-        let validation_branch = validation_reader
-            .get("oneOf")
-            .and_then(Value::as_array)
-            .and_then(|branches| branches.get(index))
-            .and_then(Value::as_object)
-            .unwrap_or(branch);
-        let metadata = parse_metadata(branch, &pointer)?;
-        let JsoncompatMetadata::ReaderVariant {
-            name,
-            version,
-            payload_ref,
-            ..
-        } = metadata
-        else {
-            return Err(invalid_schema(
-                join_pointer(&pointer, JSONCOMPAT_METADATA_KEY),
-                "reader branch must have reader_variant metadata",
-            ));
-        };
-        let payload_type = resolve_schema_ref_name(reader, &payload_ref, &pointer)?;
-
-        writeln!(output, "@typing.final").expect("writing to String cannot fail");
-        writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
-            .expect("writing to String cannot fail");
-        writeln!(
-            output,
-            "class {name}({}):",
-            runtime_dataclass_symbol(READER_MODEL_CLASS),
-        )
-        .expect("writing to String cannot fail");
-        writeln!(
-            output,
-            "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-            python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
-                schema_object_with_root_definition_maps(
+        .ok_or_else(|| invalid_schema("#/oneOf".into(), "oneOf must be an array"))?;
+    branches
+        .iter()
+        .enumerate()
+        .map(|(index, branch)| {
+            let pointer = format!("#/oneOf/{index}");
+            let branch = expect_schema_object(branch, &pointer)?;
+            let validation_branch = validation
+                .get("oneOf")
+                .and_then(Value::as_array)
+                .and_then(|b| b.get(index))
+                .and_then(Value::as_object)
+                .unwrap_or(branch);
+            let JsoncompatMetadata::ReaderVariant {
+                name,
+                version,
+                payload_ref,
+                ..
+            } = parse_metadata(branch, &pointer)?
+            else {
+                return Err(invalid_schema(
+                    join_pointer(&pointer, JSONCOMPAT_METADATA_KEY),
+                    "reader branch must have reader_variant metadata",
+                ));
+            };
+            envelope_class(
+                name,
+                version,
+                resolve_schema_ref_name(reader, &payload_ref, &pointer)?,
+                Value::Object(schema_object_with_root_definition_maps(
                     validation_branch,
-                    Some(root_defs(validation_reader)?),
+                    Some(root_defs(validation)?),
                     None,
-                )?
-            ))?)
-        )
-        .expect("writing to String cannot fail");
-        writeln!(
-            output,
-            "    version: typing.Literal[{version}] = {}.field(\"version\")",
-            DATACLASSES_RUNTIME_MODULE,
-        )
-        .expect("writing to String cannot fail");
-        writeln!(
-            output,
-            "    data: {payload_type} = {}.field(\"data\")\n",
-            DATACLASSES_RUNTIME_MODULE,
-        )
-        .expect("writing to String cannot fail");
-    }
-
-    Ok(())
+                )?),
+                READER_MODEL_CLASS,
+            )
+        })
+        .collect()
 }
 
 fn reserve_reader_variant_class_names(
@@ -1101,57 +1005,33 @@ fn has_definition_entries(definitions: Option<&Map<String, Value>>) -> bool {
     definitions.is_some_and(|defs| !defs.is_empty())
 }
 
-fn render_reader_root_class(
-    output: &mut String,
+fn reader_root_class(
     reader: &Map<String, Value>,
-    validation_reader: &Map<String, Value>,
-) -> Result<(), DataclassError> {
-    let metadata = parse_metadata(reader, "#")?;
-    let JsoncompatMetadata::Reader { name, .. } = metadata else {
-        return Err(invalid_schema(
-            join_pointer("#", JSONCOMPAT_METADATA_KEY),
-            "reader schema must have reader metadata",
-        ));
+    validation: &Map<String, Value>,
+) -> Result<ClassSpec, DataclassError> {
+    let JsoncompatMetadata::Reader { name, .. } = parse_metadata(reader, "#")? else {
+        unreachable!()
     };
-
     let branches = reader
         .get("oneOf")
         .and_then(Value::as_array)
-        .ok_or_else(|| invalid_schema("#/oneOf".to_owned(), "oneOf must be an array"))?;
-    let mut variant_names = Vec::new();
-    for (index, branch) in branches.iter().enumerate() {
-        let pointer = format!("#/oneOf/{index}");
-        variant_names.push(metadata_name(
-            expect_schema_object(branch, &pointer)?,
-            &pointer,
-        )?);
-    }
-
-    writeln!(output, "@typing.final").expect("writing to String cannot fail");
-    writeln!(output, "@dataclass(frozen=True, slots=True, kw_only=True)")
-        .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "class {name}({}):",
-        runtime_dataclass_symbol(READER_ROOT_MODEL_CLASS),
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    __jsoncompat_schema__: typing.ClassVar[str] = {}",
-        python_triple_quoted_string_literal(&pretty_schema_literal(&Value::Object(
-            validation_reader.clone()
-        ))?)
-    )
-    .expect("writing to String cannot fail");
-    let annotation = union_annotation(&variant_names);
-    writeln!(
-        output,
-        "    root: {} = {}.root_field()",
-        annotation, DATACLASSES_RUNTIME_MODULE,
-    )
-    .expect("writing to String cannot fail");
-    Ok(())
+        .ok_or_else(|| invalid_schema("#/oneOf".into(), "oneOf must be an array"))?;
+    let variants = branches
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let pointer = format!("#/oneOf/{i}");
+            metadata_name(expect_schema_object(b, &pointer)?, &pointer).map(Annotation::model)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ClassSpec {
+        name,
+        schema_json: pretty_schema_literal(&Value::Object(validation.clone()))?,
+        base_class: READER_ROOT_MODEL_CLASS,
+        kind: ClassKind::Root {
+            annotation: Annotation::union(&variants),
+        },
+    })
 }
 
 fn emit_nested_defs(
@@ -1266,11 +1146,11 @@ fn parse_extra_annotation(
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
-) -> Result<Option<String>, DataclassError> {
+) -> Result<Option<Annotation>, DataclassError> {
     let mut annotations = parse_pattern_property_annotations(builder, obj, pointer, scope_name)?;
 
     match obj.get("additionalProperties") {
-        None | Some(Value::Bool(true)) => Ok(Some(typing_symbol("Any"))),
+        None | Some(Value::Bool(true)) => Ok(Some(Annotation::any())),
         Some(Value::Bool(false)) => Ok(merge_extra_annotations(annotations)),
         Some(schema) => {
             annotations.push(builder.inline_annotation(
@@ -1289,7 +1169,7 @@ fn parse_pattern_property_annotations(
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
-) -> Result<Vec<String>, DataclassError> {
+) -> Result<Vec<Annotation>, DataclassError> {
     let Some(pattern_properties) = obj.get("patternProperties") else {
         return Ok(Vec::new());
     };
@@ -1304,7 +1184,7 @@ fn parse_pattern_property_annotations(
     for (pattern, schema) in pattern_properties {
         match schema {
             Value::Bool(false) => {}
-            Value::Bool(true) => annotations.push(typing_symbol("Any")),
+            Value::Bool(true) => annotations.push(Annotation::any()),
             _ => annotations.push(builder.inline_annotation(
                 schema,
                 &join_pointer(
@@ -1319,11 +1199,11 @@ fn parse_pattern_property_annotations(
     Ok(annotations)
 }
 
-fn merge_extra_annotations(annotations: Vec<String>) -> Option<String> {
+fn merge_extra_annotations(annotations: Vec<Annotation>) -> Option<Annotation> {
     if annotations.is_empty() {
         return None;
     }
-    let any_annotation = typing_symbol("Any");
+    let any_annotation = Annotation::any();
     if annotations
         .iter()
         .any(|annotation| annotation == &any_annotation)
@@ -1338,10 +1218,10 @@ fn required_property_fallback_annotation(
     obj: &Map<String, Value>,
     pointer: &str,
     scope_name: &str,
-) -> Result<String, DataclassError> {
+) -> Result<Annotation, DataclassError> {
     match obj.get("additionalProperties") {
-        None | Some(Value::Bool(true)) => Ok(typing_symbol("Any")),
-        Some(Value::Bool(false)) => Ok(typing_symbol("Any")),
+        None | Some(Value::Bool(true)) => Ok(Annotation::any()),
+        Some(Value::Bool(false)) => Ok(Annotation::any()),
         Some(schema) => builder.inline_annotation(
             schema,
             &join_pointer(pointer, "additionalProperties"),
@@ -1377,19 +1257,19 @@ fn parse_required_fields(
     Ok(result)
 }
 
-fn parse_literal_annotation(obj: &Map<String, Value>) -> Option<String> {
+fn parse_literal_annotation(obj: &Map<String, Value>) -> Option<Annotation> {
     if let Some(value) = obj.get("const") {
-        return Some(python_literal_annotation(value).unwrap_or_else(|| typing_symbol("Any")));
+        return Some(python_literal_annotation(value).unwrap_or_else(Annotation::any));
     }
     let values = obj.get("enum")?.as_array()?;
     if values.is_empty() {
-        return Some(typing_symbol("Any"));
+        return Some(Annotation::any());
     }
     if values
         .iter()
         .any(|value| python_literal_annotation(value).is_none())
     {
-        return Some(typing_symbol("Any"));
+        return Some(Annotation::any());
     }
     Some(union_annotation(
         values
@@ -1406,7 +1286,7 @@ fn parse_literal_annotation(obj: &Map<String, Value>) -> Option<String> {
 fn parse_type_annotation(
     obj: &Map<String, Value>,
     pointer: &str,
-) -> Result<Option<String>, DataclassError> {
+) -> Result<Option<Annotation>, DataclassError> {
     let Some(type_value) = obj.get("type") else {
         return Ok(None);
     };
@@ -1442,7 +1322,7 @@ fn parse_type_annotation(
 fn parse_explicit_scalar_type_annotation(
     obj: &Map<String, Value>,
     pointer: &str,
-) -> Result<Option<String>, DataclassError> {
+) -> Result<Option<Annotation>, DataclassError> {
     let Some(type_value) = obj.get("type") else {
         return Ok(None);
     };
@@ -1462,23 +1342,15 @@ fn parse_explicit_scalar_type_annotation(
     }
 }
 
-fn single_type_annotation(type_name: &str, pointer: &str) -> Result<String, DataclassError> {
+fn single_type_annotation(type_name: &str, pointer: &str) -> Result<Annotation, DataclassError> {
     match type_name {
-        "string" => Ok("str".to_owned()),
-        "integer" => Ok("int".to_owned()),
-        "number" => Ok("float".to_owned()),
-        "boolean" => Ok("bool".to_owned()),
-        "null" => Ok("None".to_owned()),
-        "array" => Ok(format!(
-            "{}[{}]",
-            collections_abc_symbol("Sequence"),
-            typing_symbol("Any")
-        )),
-        "object" => Ok(format!(
-            "{}[str, {}]",
-            collections_abc_symbol("Mapping"),
-            typing_symbol("Any")
-        )),
+        "string" => Ok(Annotation::string()),
+        "integer" => Ok(Annotation::integer()),
+        "number" => Ok(Annotation::number()),
+        "boolean" => Ok(Annotation::boolean()),
+        "null" => Ok(Annotation::null()),
+        "array" => Ok(Annotation::sequence(Annotation::any())),
+        "object" => Ok(Annotation::mapping(Annotation::any())),
         _ => Err(invalid_schema(
             join_pointer(pointer, "type"),
             format!("unsupported JSON Schema type '{type_name}'"),
@@ -1949,29 +1821,8 @@ fn is_array_schema(obj: &Map<String, Value>) -> bool {
         || schema_literal_values_are_exclusively(obj, Value::is_array)
 }
 
-fn union_annotation(annotations: &[String]) -> String {
-    let mut unique = annotations.to_vec();
-    unique.sort();
-    unique.dedup();
-    let any_annotation = typing_symbol("Any");
-    if unique
-        .iter()
-        .any(|annotation| annotation == &any_annotation)
-    {
-        return any_annotation;
-    }
-    unique.sort_by(
-        |left, right| match (left.as_str() == "None", right.as_str() == "None") {
-            (true, false) => std::cmp::Ordering::Greater,
-            (false, true) => std::cmp::Ordering::Less,
-            _ => left.cmp(right),
-        },
-    );
-    match unique.len() {
-        0 => typing_symbol("Any"),
-        1 => unique.pop().expect("len checked above"),
-        _ => format!("({})", unique.into_iter().collect::<Vec<_>>().join(" | ")),
-    }
+fn union_annotation(annotations: &[Annotation]) -> Annotation {
+    Annotation::union(annotations)
 }
 
 fn branch_is_direct_recursive_ref(branch: &Value, pointer: &str) -> bool {
@@ -2006,8 +1857,9 @@ fn render_class_base(class_spec: &ClassSpec) -> String {
             },
             DATACLASS_MODEL_CLASS,
         ) => format!(
-            "{}[{extra_annotation}]",
+            "{}[{}]",
             runtime_dataclass_symbol(DATACLASS_ADDITIONAL_MODEL_CLASS),
+            python_string_literal(&extra_annotation.to_string()),
         ),
         _ => runtime_dataclass_symbol(class_spec.base_class),
     }
@@ -2021,21 +1873,8 @@ fn typing_symbol(name: &str) -> String {
     format!("typing.{name}")
 }
 
-fn collections_abc_symbol(name: &str) -> String {
-    format!("collections.abc.{name}")
-}
-
 fn python_string_literal(value: &str) -> String {
     serde_json::to_string(value).expect("Python string literal source is valid JSON")
-}
-
-fn python_triple_quoted_string_literal(value: &str) -> String {
-    format!(
-        "\"\"\"{}\"\"\"",
-        value
-            .replace('\\', "\\\\")
-            .replace("\"\"\"", "\\\"\\\"\\\"")
-    )
 }
 
 fn python_json_literal(value: &Value) -> String {
@@ -2049,15 +1888,13 @@ fn python_json_literal(value: &Value) -> String {
     }
 }
 
-fn python_literal_annotation(value: &Value) -> Option<String> {
+fn python_literal_annotation(value: &Value) -> Option<Annotation> {
     match value {
-        Value::Null => Some("None".to_owned()),
-        Value::Bool(_) | Value::String(_) => {
-            Some(format!("typing.Literal[{}]", python_json_literal(value)))
-        }
-        Value::Number(number) if number.is_f64() => Some("float".to_owned()),
-        Value::Number(number) if number.to_string().starts_with('-') => Some("int".to_owned()),
-        Value::Number(_) => Some(format!("typing.Literal[{}]", python_json_literal(value))),
+        Value::Null => Some(Annotation::null()),
+        Value::Bool(_) | Value::String(_) => Some(Annotation::literal(value.clone())),
+        Value::Number(number) if number.is_f64() => Some(Annotation::number()),
+        Value::Number(number) if number.to_string().starts_with('-') => Some(Annotation::integer()),
+        Value::Number(_) => Some(Annotation::literal(value.clone())),
         Value::Array(_) | Value::Object(_) => None,
     }
 }
@@ -2083,6 +1920,19 @@ fn python_field_name(json_name: &str) -> String {
         output.push('_');
     }
     output
+}
+
+// Independent models need no copy of the entire module's definitions. Keeping
+// those copies would make artifact size and import memory quadratic in classes.
+fn contains_reference(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => object.iter().any(|(key, value)| {
+            matches!(key.as_str(), "$ref" | "$dynamicRef" | "$recursiveRef")
+                || contains_reference(value)
+        }),
+        Value::Array(values) => values.iter().any(contains_reference),
+        _ => false,
+    }
 }
 
 fn python_keyword_or_reserved(name: &str) -> bool {
@@ -2123,10 +1973,19 @@ fn python_keyword_or_reserved(name: &str) -> bool {
             | "while"
             | "with"
             | "yield"
+            | "dc"
+            | "dict"
+            | "str"
+            | "int"
+            | "float"
+            | "bool"
+            | "typing"
+            | "collections"
             | "deserialize"
             | "from_value"
             | "get_additional_property"
             | "serialize"
+            | "self"
             | "skip_validation"
             | "to_value"
             | "root"
@@ -2228,9 +2087,12 @@ mod tests {
         assert!(source.contains("class UserProfile(dc.DataclassModel):"));
         assert!(source.contains("name: str = dc.field(\"name\")"));
         assert!(source.contains("JSONCOMPAT_MODEL = UserProfile"));
-        assert!(!source.contains("import collections.abc"));
+        assert!(source.contains("__slots__ ="));
         assert!(!source.contains("bind_generated_models"));
-        assert!(source.ends_with("JSONCOMPAT_MODEL = UserProfile\n"));
+        assert!(
+            source.find("JSONCOMPAT_MODEL = UserProfile").unwrap()
+                < source.find("def _jsoncompat_init").unwrap()
+        );
     }
 
     #[test]
@@ -2246,10 +2108,12 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[str]):"));
-        assert!(source.contains("count: dc.Omittable[int] = dc.field(\"count\", omittable=True)"));
+        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[\"str\"]):"));
         assert!(source.contains(
-            "__jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field()"
+            "count: dc.Omittable[int] = dc.field(\"count\", default=dc.JSONCOMPAT_MISSING)"
+        ));
+        assert!(source.contains(
+            "__jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field(default_factory=dict)"
         ));
         assert!(!source.contains("bind_generated_models"));
     }
@@ -2264,9 +2128,9 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("class NullExtras(dc.DataclassAdditionalModel[None]):"));
+        assert!(source.contains("class NullExtras(dc.DataclassAdditionalModel[\"None\"]):"));
         assert!(source.contains(
-            "__jsoncompat_extra__: collections.abc.Mapping[str, None] = dc.extra_field()"
+            "__jsoncompat_extra__: collections.abc.Mapping[str, None] = dc.extra_field(default_factory=dict)"
         ));
         assert!(!source.contains("bind_generated_models"));
     }
@@ -2585,7 +2449,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_schema_literal_preserves_pretty_printed_raw_schema() {
+    fn generated_schema_source_stays_below_public_declarations() {
         let schema = json!({
             "title": "nullable name",
             "type": ["string", "null"]
@@ -2594,9 +2458,13 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("root: (str | None) ="));
-        assert!(source.contains(
-            "    __jsoncompat_schema__: typing.ClassVar[str] = \"\"\"{\n  \"title\": \"nullable name\",\n  \"type\": [\n    \"string\",\n    \"null\"\n  ]\n}\"\"\""
-        ));
+        let encoded = python_string_literal(&serde_json::to_string_pretty(&schema).unwrap());
+        // The Python runtime tests verify lossless explicit schema access.
+        // Public declarations do not carry the expanded source schema.
+        assert!(!source.contains(&encoded));
+        assert!(
+            source.find("JSONCOMPAT_MODEL").unwrap() < source.find("dc.install_model").unwrap()
+        );
         assert!(!source.contains("\"anyOf\":"));
     }
 
@@ -2614,7 +2482,7 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains(
-            "nickname: dc.Omittable[str | None] = dc.field(\"nickname\", omittable=True)"
+            "nickname: dc.Omittable[str | None] = dc.field(\"nickname\", default=dc.JSONCOMPAT_MISSING)"
         ));
         assert!(!source.contains("__jsoncompat_object_spec__"));
         assert!(!source.contains("dc.object_spec("));
@@ -2788,9 +2656,9 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[int]):"));
+        assert!(source.contains("class Labels(dc.DataclassAdditionalModel[\"int\"]):"));
         assert!(source.contains(
-            "__jsoncompat_extra__: collections.abc.Mapping[str, int] = dc.extra_field()"
+            "__jsoncompat_extra__: collections.abc.Mapping[str, int] = dc.extra_field(default_factory=dict)"
         ));
     }
 

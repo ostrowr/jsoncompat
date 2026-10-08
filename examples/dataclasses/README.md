@@ -7,7 +7,7 @@ writer models.
 Regenerate the importable model module:
 
 ```bash
-jsoncompat codegen --target dataclasses examples/dataclasses/schema.json > examples/dataclasses/models.py
+jsoncompat codegen --target dataclasses examples/dataclasses/schema.json --output examples/dataclasses/models.py
 ```
 
 Run the end-to-end example:

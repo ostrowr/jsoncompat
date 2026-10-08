@@ -1,0 +1,1 @@
+invalid schema at 'GeneratedSchema': unsupported reference 'urn:example:1/406/47452/2': only local JSON Pointer $ref targets of the form '#/...'

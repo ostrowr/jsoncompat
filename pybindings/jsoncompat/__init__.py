@@ -35,15 +35,6 @@ GeneratorForFn = Callable[[str], "Generator"]
 ValidatorForFn = Callable[[str], "Validator"]
 DeserializeJsonFn = Callable[[str | bytes], "JsonValue"]
 SerializeJsonFn = Callable[["JsonValue"], str]
-CompileModelRuntimesFn = Callable[
-    [
-        list[tuple[type[Any], int]],
-        list[tuple[Any, ...]],
-        type[tuple[Any, ...]],
-        type[Mapping[Any, Any]],
-    ],
-    list["ModelRuntime"],
-]
 
 
 class Generator(Protocol):
@@ -116,12 +107,13 @@ class NativeModule(Protocol):
 
     def serialize_json(self, value: JsonValue) -> str: ...
 
-    def compile_model_runtimes(
+    def bind_prepared_model_runtimes(
         self,
         model_roots: list[tuple[type[Any], int]],
         descriptors: list[tuple[Any, ...]],
         frozen_list_type: type[tuple[Any, ...]],
         frozen_dict_type: type[Mapping[Any, Any]],
+        prepared_plan: bytes,
     ) -> list[ModelRuntime]: ...
 
     def is_valid(self, schema_json: str, instance_json: str) -> bool: ...
@@ -193,19 +185,6 @@ def _missing_serialize_json(value: JsonValue) -> NoReturn:
     )
 
 
-def _missing_compile_model_runtimes(
-    model_roots: list[tuple[type[Any], int]],
-    descriptors: list[tuple[Any, ...]],
-    frozen_list_type: type[tuple[Any, ...]],
-    frozen_dict_type: type[Mapping[Any, Any]],
-) -> NoReturn:
-    _ = (model_roots, descriptors, frozen_list_type, frozen_dict_type)
-    raise ModuleNotFoundError(
-        "jsoncompat._native is unavailable. Install the built jsoncompat wheel "
-        "before constructing generated models."
-    )
-
-
 def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
@@ -260,7 +239,7 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "validator_for")
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
-        and hasattr(module, "compile_model_runtimes")
+        and hasattr(module, "bind_prepared_model_runtimes")
         and hasattr(module, "JSONCOMPAT_MISSING")
         and hasattr(module, "JsoncompatMissingType")
         and hasattr(validator, "is_valid_json")
@@ -301,9 +280,6 @@ except ModuleNotFoundError as error:
         _validator_for_native: ValidatorForFn = _missing_validator_for
         _deserialize_json_native: DeserializeJsonFn = _missing_deserialize_json
         _serialize_json_native: SerializeJsonFn = _missing_serialize_json
-        _compile_model_runtimes_native: CompileModelRuntimesFn = (
-            _missing_compile_model_runtimes
-        )
         _is_valid_native: IsValidFn = _missing_is_valid
     else:
         _native_symbols = _repo_native
@@ -313,7 +289,6 @@ except ModuleNotFoundError as error:
         _validator_for_native = _repo_native.validator_for
         _deserialize_json_native = _repo_native.deserialize_json
         _serialize_json_native = _repo_native.serialize_json
-        _compile_model_runtimes_native = _repo_native.compile_model_runtimes
         _is_valid_native = _repo_native.is_valid
 else:
     if not _force_repo_native and not _has_reusable_schema_api(_native_module):
@@ -325,7 +300,6 @@ else:
     _validator_for_native = _native_module.validator_for
     _deserialize_json_native = _native_module.deserialize_json
     _serialize_json_native = _native_module.serialize_json
-    _compile_model_runtimes_native = _native_module.compile_model_runtimes
     _is_valid_native = _native_module.is_valid
 
 
@@ -431,122 +405,21 @@ def serialize_json_value(value: JsonValue) -> str:
     return serialize_json_native(value)
 
 
-class _ThreadLocalModelRuntimeGroup:
-    __slots__ = (
-        "_descriptors",
-        "_frozen_dict_type",
-        "_frozen_list_type",
-        "_local",
-        "_model_roots",
-    )
-
-    def __init__(
-        self,
-        model_roots: list[tuple[type[Any], int]],
-        descriptors: list[tuple[Any, ...]],
-        frozen_list_type: type[tuple[Any, ...]],
-        frozen_dict_type: type[Mapping[Any, Any]],
-    ) -> None:
-        self._model_roots = tuple(model_roots)
-        self._descriptors = tuple(descriptors)
-        self._frozen_list_type = frozen_list_type
-        self._frozen_dict_type = frozen_dict_type
-        self._local = threading.local()
-        self._local.runtimes = self._compile()
-
-    def _compile(self) -> tuple[ModelRuntime, ...]:
-        return tuple(
-            _compile_model_runtimes_native(
-                list(self._model_roots),
-                list(self._descriptors),
-                self._frozen_list_type,
-                self._frozen_dict_type,
-            )
-        )
-
-    def runtime(self, index: int) -> ModelRuntime:
-        runtimes = getattr(self._local, "runtimes", None)
-        if runtimes is None:
-            runtimes = self._compile()
-            self._local.runtimes = runtimes
-        return cast(tuple[ModelRuntime, ...], runtimes)[index]
-
-
-class _ThreadLocalModelRuntime:
-    __slots__ = ("_group", "_index")
-
-    def __init__(self, group: _ThreadLocalModelRuntimeGroup, index: int) -> None:
-        self._group = group
-        self._index = index
-
-    def _native(self) -> ModelRuntime:
-        return self._group.runtime(self._index)
-
-    def construct_kwargs(
-        self,
-        kwargs: dict[str, Any],
-        *,
-        skip_validation: bool = False,
-    ) -> Any:
-        return self._native().construct_kwargs(
-            kwargs,
-            skip_validation=skip_validation,
-        )
-
-    def from_value(
-        self,
-        value: JsonValue,
-        *,
-        skip_validation: bool = False,
-    ) -> Any:
-        return self._native().from_value(value, skip_validation=skip_validation)
-
-    def deserialize(
-        self,
-        payload: str | bytes,
-        *,
-        skip_validation: bool = False,
-    ) -> Any:
-        return self._native().deserialize(payload, skip_validation=skip_validation)
-
-    def to_value(
-        self,
-        instance: Any,
-        *,
-        skip_validation: bool = False,
-    ) -> JsonValue:
-        return self._native().to_value(
-            instance,
-            skip_validation=skip_validation,
-        )
-
-    def serialize(
-        self,
-        instance: Any,
-        *,
-        skip_validation: bool = False,
-    ) -> str:
-        return self._native().serialize(
-            instance,
-            skip_validation=skip_validation,
-        )
-
-
-def compile_model_runtimes(
+def bind_prepared_model_runtimes(
     model_roots: list[tuple[type[Any], int]],
     descriptors: list[tuple[Any, ...]],
     frozen_list_type: type[tuple[Any, ...]],
     frozen_dict_type: type[Mapping[Any, Any]],
+    prepared_plan: bytes,
 ) -> list[ModelRuntime]:
-    group = _ThreadLocalModelRuntimeGroup(
-        model_roots,
-        descriptors,
-        frozen_list_type,
-        frozen_dict_type,
+    """Load a prepared graph and bind its Python objects without compiling it."""
+    if _native_symbols is None:
+        raise ModuleNotFoundError(
+            "jsoncompat._native is required to load prepared models"
+        )
+    return _native_symbols.bind_prepared_model_runtimes(
+        model_roots, descriptors, frozen_list_type, frozen_dict_type, prepared_plan
     )
-    return [
-        _ThreadLocalModelRuntime(group, index) for index in range(len(model_roots))
-    ]
 
 
 def is_valid(schema_json: str, instance_json: str) -> bool:

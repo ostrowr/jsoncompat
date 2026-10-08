@@ -45,8 +45,13 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
 
+      - name: Set up Python for integration tests
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
       - name: Install uv
-        run: cargo install uv --locked
+        run: python -m pip install uv
 
       - name: Cache cargo registry and build outputs
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -89,6 +94,25 @@ jobs:
         # The Python cdylib has no Rust benchmarks and enables PyO3's
         # extension-module linker mode, so keep it out of ordinary binaries.
         run: cargo bench --workspace --exclude jsoncompat_py --all-features --bench '*' --locked -- --test
+
+      - name: Set up free-threaded Python
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        id: free-threaded-python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.14t'
+
+      - name: Test generated models without the GIL
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        env:
+          PYO3_PYTHON: ${{ steps.free-threaded-python.outputs.python-path }}
+          UV_PYTHON: ${{ steps.free-threaded-python.outputs.python-path }}
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/jsoncompat-free-threaded
+          PYTHON_GIL: '0'
+        run: |
+          uv sync --project pybindings --all-extras --locked --no-install-project
+          cargo build -p jsoncompat_py --locked
+          UV_NO_SYNC=1 cargo test --locked --test python_dataclasses_prepared --test python_dataclasses_runtime --test codegen_cli
 
   python-linux:
     runs-on: ${{ matrix.platform.runner }}

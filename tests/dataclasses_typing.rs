@@ -1,7 +1,8 @@
 #[path = "support/python_env.rs"]
 mod python_env;
 
-use jsoncompat_codegen::generate_dataclass_models;
+use json_schema_ast::SchemaDocument;
+use jsoncompat_codegen::{generate_dataclass_models, generate_dataclass_module_from_document};
 use serde_json::json;
 use std::error::Error;
 use std::fs;
@@ -48,7 +49,11 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
             }
         }
     });
-    let source = generate_dataclass_models(&schema)?;
+    let module = generate_dataclass_module_from_document(&SchemaDocument::from_json(&schema)?)?;
+    let source = format!(
+        "# pyright: strict\n{}",
+        module.public_file("_generated_impl")
+    );
     let work_dir = write_typecheck_files(
         &source,
         r#"
@@ -90,6 +95,9 @@ assert_type(
     float | JsoncompatMissingType,
 )
 assert_type(JsoncompatMissingType(), JsoncompatMissingType)
+
+minimal = InventoryItem(sku="minimal", metadata=InventoryItemMetadata(warehouse="east"))
+assert_type(minimal, InventoryItem)
 
 item_from_constructor = InventoryItem(
     sku="sku-456",
@@ -154,6 +162,13 @@ InventoryItem(
 "#,
     )?;
 
+    fs::write(work_dir.join("_generated_impl.py"), module.private_file())?;
+    let generated_output = run_pyright(&work_dir, "generated_models.py")?;
+    assert!(
+        generated_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated_output.stdout)
+    );
     let valid_output = run_pyright(&work_dir, "valid_usage.py")?;
     assert!(
         valid_output.status.success(),

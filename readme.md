@@ -108,17 +108,36 @@ jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 `jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
 canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
 frozen, slotted Python dataclasses backed by one native construction and
-serialization runtime. Importing a generated module only defines ordinary
-dataclasses. The first constructor or conversion call derives one shared native
-plan from their field metadata and caches it on every generated class in the
-module; there is never a reflective per-value or Python-constructor fallback.
-The JSON Schema validator is compiled separately on the first checked use, so
-`skip_validation=True` does not pay validator startup cost. Generated classes
-carry the original input schema in `__jsoncompat_schema__` and expose:
+serialization runtime. Generation resolves model types and references, compiles
+validation programs and regexes, and computes conversion optimizations. Import
+creates classes and binds them to those prebuilt programs; first use performs
+no model compilation. `Model.__jsoncompat_schema__` exposes the input schema;
+the generated artifact stores it compressed and expands it only on explicit
+access. Validation and error reporting use the prebuilt native program.
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json > models.py
 ```
+
+Code generation also prepares dataclass methods, conversion plans, validation
+programs, and regexes. There is no separate model build command and no deferred
+schema compilation at import or first use.
+
+To keep the public API easy to read, write a model module and its private companion:
+
+```bash
+jsoncompat codegen --target dataclasses schema.json --output models.py
+```
+
+`models.py` imports `_models_generated.py` at the top, then declares the root
+model, its fields, and the other public classes. It binds the classes at the
+bottom. Regeneration replaces these same two files; deploy them together. Output to stdout remains self-contained, with the generated
+implementation below the public declarations. Both layouts use the same prepared
+runtime. Import creates classes, loads precomputed programs, and binds slots;
+full dataclass reflection metadata is created only when explicitly requested.
+Constructors and JSON I/O need no further preparation. See
+[generated Python models](pybindings/README.md#generated-model-artifacts) for the
+build contract and benchmarks.
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;

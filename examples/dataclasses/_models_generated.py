@@ -1,0 +1,40 @@
+# Generated implementation. Import the public model module instead.
+from __future__ import annotations
+
+import typing
+from jsoncompat.codegen import dataclasses as dc
+
+__all__ = ("bind_models",)
+
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, customer: typing.Any, id: typing.Any, items: typing.Any, note: typing.Any = _jsoncompat_missing, status: typing.Any) -> None:
+    self.__post_init__(skip_validation)
+
+def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, email: typing.Any, name: typing.Any) -> None:
+    self.__post_init__(skip_validation)
+
+def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False, quantity: typing.Any, sku: typing.Any, unitPriceCents: typing.Any) -> None:
+    self.__post_init__(skip_validation)
+
+def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
+    (Order, Customer, OrderItem,) = _models
+    dc.install_model(Order, _jsoncompat_init_0, b'x\xda\xadT\xbbn\xc20\x14\xdd\xf3\x15\xc8e\x0c\x0d\xd0\x8d\x95\x09\xa9R\xd9\xab\x0en|\x13L\x13\'\xd8\xd7\x03B\xfc{\x9d\'v\xe2\x00\x03\xa3\xef\xf3\xf8\x9cc_\x82\xd9\x8c\xcc\x19$\x8alf\x17s0\xc7X+,r\x90}\xc4\xc4(c\x1cy!h\xb6\x97E\x09\x129T\x1d\x09\xcd\x14\x84]Qi\xa7\xbaV\x13\x87\x9c\xf2\xcc\x09\x99`\xce\xc5\'\x88\x14\x0f&\xf1\x11\xda\x19<\x97`\x82D\xa1\xe4"%}\xeaz\xab"\x82\xe6po\xe2\xea\xb9\x89\xc1`2\x91p\xd2\\\x023\xd5\xdf\x83m\xe1\xf0B\xed\xf9\xa7oF\x8eY\xbdg\xdb1xK\xb5\x08\x8a\xdf#\xc4\xd8\xb4\xb6[\x09G\xc8_\xc6\xf5ISap\x9c=\xe4\xf0\\\xe7\x93\xd4p\x81\x90\x1a\xc4^\xb6\xd5\x9f~\x01\xd9\xd6@-8\xee%\x8fa\x0b\x02\xd54\xd6\xe5\x93X\x9f\xd4\xb1\xbaG\xe8\xe1j\x1a\xd9\xb4\xc6_\x92\x81\xdcU\xd2\xdd\x179ha\x91\xb9\x8a\x0f\xc68U\xc1\x01\xb1T\x9b(:\xaaB,\x9a\xf0{!\xd3\x88I\x9a`\xb4^\xae\x97\x8b\xd5:j\xeb\xeb\xe6G\x9e\xf0\xf9\xc1\xfb\x90\xe7\x12\x92\x0a\xc2[T\xbf\xfa\xa8\xafq-\xc9\xec\x1e\xaf\xd6^\x9dmK\xdb\xb2\x8e\x02\x1e$\xf53\x18\x09iv\xef\xda\xde\xf1j*%=\xbb\x9bE\x81\xf6\xc7\xd0\x95\xda&h\xf0\xda\x9f\x89\xcen\xaf\xd9\x99\xa6\x90\xa2v.\x02\xa26\xa65\xaf\x04\xc1\x06\x03Kj\x08t\x07\xf66\x189\xb3";\x1c\x08\xe6\xd0\xe8b\x09Z7\x0e\x9c\xd8\xd8d\xe8\xc0\xeb?\xb3\x0dp#', _namespace)
+    dc.install_model(Customer, _jsoncompat_init_1, b'x\xda}\xce\xbb\x0e\xc20\x0c\x05\xd0\xbd_\x11y\xce\x82\xd8XY\x19\xd8\x11C \xa6\x18\xe5E\xe2\x0e\xa8\xea\xbfc\xd2\x82\xb2\xd0-9\xbe\xba\xf6\xd8)\x05\xc6Zb\x8a\xc1\xb8c\x8e\x093\x13\x16\xd8\xa9\x9bq\x05\xf5\'\x90Z\x1eE\xc4\xd0\x1br\xbf\xaf\x80\xa7p\xc0\xd0\xf3]p\xab\xbf\xca\xaf\x84\x02P8S\xe8\xa1\xf24O!\x18\x8f\xff\x1a6\xeb\x0d\xdd\xd2\x02\x19\x9f\x03e\xb4\x9285\xad\xba=R\xde\xe7\x1afbW\xbb\xf6C\xe1\xe81\xc3\xcc\xcb\x86xy\xe0\x95\xa1\x9b\xde\x99\xb2J/', _namespace)
+    dc.install_model(OrderItem, _jsoncompat_init_2, b'x\xda\x85\xcf=\x0f\x82@\x0c\x06\xe0\x9d_Anf\xd0\xd5\xd5\xc9\xc4Dv\xe3\x80\\\xc5*W\xa0\xd7\x1b\x08\xe1\xbf[\x01\xbf\x08\x89\xebs\xbd\xb7o\xbb(\x8eMf-\x0aV\x94\x95)W5\xb0 x\xb3\x89/Y\xe9!y\x0e\xd4\xdf\xdc\xa9\xa85!#Ai\xdf\xa2\xe6\x90\xd0\x05\xa7\xb4N^&m\x0d\x0a\x06I\xa0\x006\x83\xf7\xe3\xb3\xf1\xf70\xfb\xbf\x07*\xe4\xba\x98\xe0\x85\x91\x8a\xdf\x80@()c\x0e[ \xf1\xcb]V\x7f\xbaDS\x9cah\x022X\x1d9~\xfa%\xb3{\x977+\x9e\x86\x10\x9d)\x87%\x07\xb6\xc0;\x01gF\x9fvW\xe7\x1b\xe4b\xa2\xfe\x0101f\xb1', _namespace)
+    dc.bind_module(1, [(Order, 0), (Customer, 1), (OrderItem, 4)], [
+        ('model', Order, (("customer", "customer", 1, False), ("id", "id", 2, False), ("items", "items", 3, False), ("note", "note", 6, True), ("status", "status", 8, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["customer",1],["id",4],["items",6],["note",11],["status",12]],"patterns":[],"required":["id","customer","items","status"],"additional":5}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["email",3],["name",4]],"patterns":[],"required":["name","email"],"additional":5}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":3,"max":null}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":7}},{"array_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"ref":8}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["quantity",9],["sku",4],["unitPriceCents",10]],"patterns":[],"required":["sku","quantity","unitPriceCents"],"additional":5}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":1,"lower":true,"exclusive":false}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["string","null"],"choices":null,"rules":[]},{"types":null,"choices":["pending","paid"],"rules":[]}],"patterns":[]}'),
+        ('model', Customer, (("email", "email", 2, False), ("name", "name", 2, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["email",1],["name",2]],"patterns":[],"required":["name","email"],"additional":3}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":3,"max":null}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ("str",),
+        ('list', 4),
+        ('model', OrderItem, (("quantity", "quantity", 5, False), ("sku", "sku", 2, False), ("unitPriceCents", "unitPriceCents", 5, False),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["quantity",1],["sku",2],["unitPriceCents",3]],"patterns":[],"required":["sku","quantity","unitPriceCents"],"additional":4}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":1,"lower":true,"exclusive":false}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ("int",),
+        ('union', (2, 7,), None, None),
+        ("null",),
+        ('literal', ("paid", "pending",)),
+        ('literal', ("paid",)),
+        ('literal', ("pending",))
+    ], b'{"version":2,"base_nodes":11,"guard_nodes":[{"original":2,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]}},{"original":2,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":3,"max":null}}]}},{"original":5,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":1,"lower":true,"exclusive":false}}]}},{"original":5,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}}],"guards":[{"owner":0,"field":1,"guard":0},{"owner":1,"field":0,"guard":1},{"owner":1,"field":1,"guard":0},{"owner":4,"field":0,"guard":2},{"owner":4,"field":1,"guard":0},{"owner":4,"field":2,"guard":3}],"conversion_validates":[false,true,false,false,true,false,false,false,false,false,false,false,false,false,false],"json_keys":[[0,["\\"customer\\":","\\"id\\":","\\"items\\":","\\"note\\":","\\"status\\":"]],[1,["\\"email\\":","\\"name\\":"]],[4,["\\"quantity\\":","\\"sku\\":","\\"unitPriceCents\\":"]]]}')
+
+
+bind_models = _jsoncompat_bind

@@ -6,9 +6,12 @@
 //! `ValueError`.
 
 mod model_converter;
+mod unicode;
+use jsoncompat_codegen::prepared_schema;
 
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use jiter::{JsonValue as JiterJsonValue, PythonParse, StringCacheMode, map_json_error};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
@@ -300,9 +303,9 @@ fn jsoncompat_missing(py: Python<'_>) -> PyResult<Py<PyAny>> {
     typed_jsoncompat_missing(py).map(Py::into_any)
 }
 
-#[pyclass(name = "_ModelPlan", module = "jsoncompat._native", unsendable)]
+#[pyclass(name = "_ModelPlan", module = "jsoncompat._native")]
 struct ModelPlanPy {
-    plan: Option<Rc<ModelConverterPlan>>,
+    plan: Option<Arc<ModelConverterPlan>>,
 }
 
 enum ModelRuntimeState {
@@ -313,7 +316,7 @@ enum ModelRuntimeState {
     Cleared,
 }
 
-#[pyclass(name = "ModelRuntime", module = "jsoncompat._native", unsendable)]
+#[pyclass(name = "ModelRuntime", module = "jsoncompat._native")]
 struct ModelRuntimePy {
     state: ModelRuntimeState,
 }
@@ -511,17 +514,19 @@ impl ModelRuntimePy {
         py: Python<'_>,
         instance: &Bound<'_, PyAny>,
         skip_validation: bool,
-    ) -> PyResult<String> {
+    ) -> PyResult<Py<PyString>> {
         let converter = self.converter(py)?;
         Self::ensure_model_instance(&converter, py, instance)?;
-        if skip_validation {
-            return converter.serialize_model_trusted(py, instance);
-        }
-        let value = model_to_value(py, instance, &converter)?;
-        if !converter.validate_json_value(py, &value)? {
-            return Self::require_valid(&converter, py, None);
-        }
-        serialize_model(py, &value, &converter)
+        let payload = if skip_validation {
+            converter.serialize_model_trusted(py, instance)?
+        } else {
+            let payload = converter.serialize_model_checked(py, instance)?;
+            if !converter.validate_emitted_json(&payload)? {
+                return Self::require_valid(&converter, py, None);
+            }
+            payload
+        };
+        Ok(unicode::from_utf8(py, &payload)?.unbind())
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
@@ -614,22 +619,12 @@ fn model_to_value(
     converter.materialize_json_value(py, instance)
 }
 
-fn serialize_model(
-    py: Python<'_>,
-    value: &MaterializedJsonValue,
-    converter: &ModelConverterPy,
-) -> PyResult<String> {
-    converter.serialize_json_value(py, value)
-}
-
 fn construct_model_json_bytes_unchecked(
     py: Python<'_>,
     payload: &[u8],
     converter: &ModelConverterPy,
 ) -> PyResult<Option<Py<PyAny>>> {
-    let parsed =
-        JiterJsonValue::parse(payload, false).map_err(|error| map_json_error(payload, &error))?;
-    converter.construct_jiter_unchecked(py, &parsed).map(Some)
+    converter.construct_stream(py, payload, false)
 }
 
 fn construct_model_json_bytes_checked(
@@ -637,6 +632,21 @@ fn construct_model_json_bytes_checked(
     payload: &[u8],
     converter: &ModelConverterPy,
 ) -> PyResult<Option<Py<PyAny>>> {
+    // Retain arbitrary-precision JSON numbers for schemas with exact bounds.
+    // This decision is built into the artifact, never discovered on first use.
+    if converter.schema()?.requires_exact_json_numbers() {
+        let exact: JsonValue = serde_json::from_slice(payload)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        if !converter
+            .schema()?
+            .is_valid_instance_assuming_json(JSONInstanceRef::from_serde(&exact))
+        {
+            return Ok(None);
+        }
+    }
+    if converter.can_validate_while_parsing() {
+        return converter.construct_stream(py, payload, true);
+    }
     let parsed =
         JiterJsonValue::parse(payload, false).map_err(|error| map_json_error(payload, &error))?;
     // Jiter has already enforced JSON scalar syntax and finite numbers; the
@@ -898,18 +908,32 @@ fn validator_for_py(schema_json: &str) -> PyResult<ValidatorPy> {
     validator_for_schema(schema_json)
 }
 
-/// Compile one shared conversion plan and a rooted runtime for every generated dataclass.
-#[pyfunction]
-#[pyo3(
-    signature = (model_roots, descriptors, frozen_list_type, frozen_dict_type),
-    name = "compile_model_runtimes"
-)]
-fn compile_model_runtimes_py(
+#[pyfunction(name = "bind_prepared_model_runtimes")]
+fn bind_prepared_model_runtimes_py(
     py: Python<'_>,
     model_roots: &Bound<'_, PyList>,
     descriptors: &Bound<'_, PyList>,
     frozen_list_type: &Bound<'_, PyType>,
     frozen_dict_type: &Bound<'_, PyType>,
+    prepared_plan: &[u8],
+) -> PyResult<Vec<Py<ModelRuntimePy>>> {
+    bind_model_runtimes(
+        py,
+        model_roots,
+        descriptors,
+        frozen_list_type,
+        frozen_dict_type,
+        prepared_plan,
+    )
+}
+
+fn bind_model_runtimes(
+    py: Python<'_>,
+    model_roots: &Bound<'_, PyList>,
+    descriptors: &Bound<'_, PyList>,
+    frozen_list_type: &Bound<'_, PyType>,
+    frozen_dict_type: &Bound<'_, PyType>,
+    prepared_plan: &[u8],
 ) -> PyResult<Vec<Py<ModelRuntimePy>>> {
     let missing_sentinel = jsoncompat_missing(py)?;
     let plan = compile_model_converter_plan(
@@ -918,11 +942,12 @@ fn compile_model_runtimes_py(
         frozen_list_type,
         frozen_dict_type,
         missing_sentinel,
+        prepared_plan,
     )?;
     let plan_owner = Py::new(
         py,
         ModelPlanPy {
-            plan: Some(Rc::clone(&plan)),
+            plan: Some(Arc::clone(&plan)),
         },
     )?;
     let mut runtimes = Vec::with_capacity(model_roots.len());
@@ -994,7 +1019,7 @@ fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
     m.add_function(wrap_pyfunction!(generator_for_py, m)?)?;
     m.add_function(wrap_pyfunction!(validator_for_py, m)?)?;
-    m.add_function(wrap_pyfunction!(compile_model_runtimes_py, m)?)?;
+    m.add_function(wrap_pyfunction!(bind_prepared_model_runtimes_py, m)?)?;
     m.add_function(wrap_pyfunction!(deserialize_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(serialize_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_valid_py, m)?)?;

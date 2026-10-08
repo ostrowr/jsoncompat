@@ -1,0 +1,1 @@
+invalid schema at 'GeneratedSchema': unsupported reference 'http://localhost:1234/draft2020-12/strict-extendible-allof-ref-first.json': only local JSON Pointer $ref targets of the form '#/...'

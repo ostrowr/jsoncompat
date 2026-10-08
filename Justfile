@@ -92,6 +92,24 @@ _python-bench-fixtures-limited iterations repeats limit profile: _verify-datacla
 # Benchmark the representative small generated-model graph.
 python-bench iterations="10000" repeats="5": _build-python-release (_python-bench-provenance "manual") (_python-bench-runtime iterations repeats "manual")
 
+# Compare generated models, fully checked round trips, and cold startup.
+python-bench-codegen: _build-python-release (_python-bench-provenance "codegen")
+  cargo build --release --bin jsoncompat --locked
+  {{python_bench_command}} pybindings/bench_dataclasses_codegen.py --assert-target
+
+# Stress wide schemas, hundreds of generated classes, and multi-megabyte values.
+python-bench-codegen-large: _build-python-release (_python-bench-provenance "codegen-large")
+  cargo build --release --bin jsoncompat --locked
+  {{python_bench_command}} pybindings/bench_dataclasses_codegen_large.py --assert-target
+
+# Retain up to 200,000 independent classes, stopping at the memory budget.
+python-bench-imports fields="5" memory_mib="2048": _build-python-release
+  cargo build --release --bin jsoncompat --locked
+  {{python_bench_command}} pybindings/bench_dataclasses_imports.py build --fields {{fields}}
+  {{python_bench_command}} pybindings/bench_dataclasses_imports.py generated --fields {{fields}} --memory-mib {{memory_mib}} > target/python-codegen/imports/generated_{{fields}}.jsonl
+  {{python_bench_command}} pybindings/bench_dataclasses_imports.py pydantic --fields {{fields}} --memory-mib {{memory_mib}} > target/python-codegen/imports/pydantic_{{fields}}.jsonl
+  @cat target/python-codegen/imports/generated_{{fields}}.jsonl target/python-codegen/imports/pydantic_{{fields}}.jsonl
+
 # Benchmark fresh-interpreter import and first-use costs.
 python-bench-startup repeats="25": _build-python-release (_python-bench-provenance "startup") (_python-bench-startup repeats "startup")
 

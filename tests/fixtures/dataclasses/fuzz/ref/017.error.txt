@@ -1,0 +1,1 @@
+invalid schema at 'GeneratedSchema': unsupported reference 'http://example.com/a.json': only local JSON Pointer $ref targets of the form '#/...'

@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -599,6 +605,8 @@ checksum = "e076045bb43dac435333ed5f04caf35c7463631d0dae2deb2638d94dd0a5b872"
 dependencies = [
  "lazy_static",
  "num",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
@@ -931,7 +939,18 @@ dependencies = [
 name = "jsoncompat_codegen"
 version = "0.4.3"
 dependencies = [
+ "fancy-regex 0.17.0",
+ "fraction",
+ "jiter",
  "json_schema_ast",
+ "jsonschema 0.45.0",
+ "miniz_oxide",
+ "num-bigint",
+ "num-cmp",
+ "num-traits",
+ "percent-encoding",
+ "regex-automata",
+ "regex-syntax",
  "serde",
  "serde_json",
  "thiserror",
@@ -959,6 +978,7 @@ dependencies = [
  "json_schema_ast",
  "json_schema_fuzz",
  "jsoncompat",
+ "jsoncompat_codegen",
  "jsonschema 0.45.0",
  "pyo3",
  "pyo3-build-config",
@@ -1152,6 +1172,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "miniz_oxide"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+dependencies = [
+ "adler2",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1182,6 +1211,7 @@ checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
 dependencies = [
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -1197,6 +1227,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -1227,6 +1258,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
