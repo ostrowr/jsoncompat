@@ -128,9 +128,9 @@ To keep the public API easy to read, write a model module and its private compan
 jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-`models.py` starts with the root model, its fields, and the other public classes.
-The generated implementation lives in `_models_generated_<digest>.py`; deploy
-both files together. Output to stdout remains self-contained, with the generated
+`models.py` imports `_models_generated.py` at the top, then declares the root
+model, its fields, and the other public classes. It binds the classes at the
+bottom. Regeneration replaces these same two files; deploy them together. Output to stdout remains self-contained, with the generated
 implementation below the public declarations. Both layouts use the same prepared
 runtime. See [generated Python models](pybindings/README.md#generated-model-artifacts)
 for the build contract and benchmarks.

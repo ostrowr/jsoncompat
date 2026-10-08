@@ -6,6 +6,11 @@ import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
+if __package__:
+    from ._reader_models_generated import bind_models as _jsoncompat_bind
+else:
+    from _reader_models_generated import bind_models as _jsoncompat_bind
+
 
 @typing.final
 class UserProfileReader(dc.ReaderDataclassRootModel):
@@ -52,10 +57,5 @@ JSONCOMPAT_MODEL = UserProfileReader
 
 __all__ = ("UserProfileReader", "UserProfileV1", "UserProfileV2", "UserProfileV2Reader", "UserProfileV1Reader", "JSONCOMPAT_MODEL",)
 
-# The private companion contains the prebuilt runtime programs.
-if __package__:
-    from ._reader_models_generated_d60c99163172fee8 import bind_models as _jsoncompat_bind
-else:
-    from _reader_models_generated_d60c99163172fee8 import bind_models as _jsoncompat_bind
 _jsoncompat_bind((UserProfileReader, UserProfileV1, UserProfileV2, UserProfileV2Reader, UserProfileV1Reader,), globals())
 del _jsoncompat_bind

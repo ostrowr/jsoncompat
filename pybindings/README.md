@@ -96,13 +96,15 @@ conversion optimizations in the same command that emits Python:
 jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-The public `models.py` starts with the root model and readable field declarations.
-It imports a private `_models_generated_<digest>.py` companion containing
-constructor signatures, schemas, and precomputed runtime programs. Deploy both
-files. The digest identifies the implementation, so replacing the public file
-atomically cannot bind old model declarations to a new program. Regeneration may
-leave an older companion behind; package only files from the current generation
-or use a clean build directory.
+The public `models.py` imports a private `_models_generated.py` companion at the
+top, followed by the root model and readable field declarations. A binding call
+after the classes connects them to the companion's constructor signatures,
+schemas, and precomputed runtime programs. Imports support both package and
+top-level modules.
+
+Regeneration replaces the same two filenames. Generate them during your build
+and deploy both files together; the pair is a single build artifact. Each file
+is replaced atomically, but the two-file update is not a live-reload protocol.
 
 Without `--output`, the same generator writes a self-contained module to stdout:
 
@@ -224,6 +226,25 @@ less import time. The 20- and 200-field cases stop at the 2 GiB budget;
 those rows are measured partial runs, not 200,000-class projections. Cached
 private companion constants are shared across copies of each generated shard,
 so these memory figures do not predict the size of arbitrary unique schemas.
+
+Import still performs per-class setup. Profiling `install_model` with 100-class
+shards, precompiled Python bytecode, and the runtime preloaded (nine fresh-process
+samples, same environment) gives these median costs:
+
+| Fields/class | `install_model` per class | Whole 100-class import |
+| ---: | ---: | ---: |
+| 5 | 8.4 µs | 3.47 ms |
+| 20 | 9.5 µs | 7.23 ms |
+| 200 | 20.1 µs | 53.75 ms |
+
+`install_model` attaches constructor annotations, dataclass metadata, and shared
+methods. Class creation and field metadata construction happen before it;
+loading native validation programs and binding class/slot references happen
+separately. All three contribute to import time. A linear extrapolation of
+`install_model` alone is about 1.7–4 seconds for 200,000 classes; that is not a
+measurement of total import time for the wider schemas. Generation removes
+compilation from startup, but creating and connecting runtime objects still
+costs time and memory.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 

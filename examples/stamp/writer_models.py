@@ -6,6 +6,11 @@ import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
+if __package__:
+    from ._writer_models_generated import bind_models as _jsoncompat_bind
+else:
+    from _writer_models_generated import bind_models as _jsoncompat_bind
+
 
 @typing.final
 class UserProfileWriter(dc.WriterDataclassModel):
@@ -28,10 +33,5 @@ JSONCOMPAT_MODEL = UserProfileWriter
 
 __all__ = ("UserProfileWriter", "UserProfileV2", "JSONCOMPAT_MODEL",)
 
-# The private companion contains the prebuilt runtime programs.
-if __package__:
-    from ._writer_models_generated_3d90f685cc592bb2 import bind_models as _jsoncompat_bind
-else:
-    from _writer_models_generated_3d90f685cc592bb2 import bind_models as _jsoncompat_bind
 _jsoncompat_bind((UserProfileWriter, UserProfileV2,), globals())
 del _jsoncompat_bind

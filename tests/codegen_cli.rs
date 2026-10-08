@@ -5,7 +5,7 @@ use std::{fs, process::Command};
 mod python_env;
 
 #[test]
-fn split_codegen_is_importable_recursive_and_atomically_replaced() {
+fn split_codegen_uses_stable_names_and_imports_before_models() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -44,7 +44,11 @@ fn split_codegen_is_importable_recursive_and_atomically_replaced() {
     );
     assert!(generated.stdout.is_empty());
     let source = fs::read_to_string(&output).unwrap();
-    assert!(source.contains("class Node("));
+    assert!(source.find("import bind_models").unwrap() < source.find("class Node(").unwrap());
+    assert!(source.find("class Node(").unwrap() < source.find("\n_jsoncompat_bind(").unwrap());
+    assert!(source.contains("from ._models_generated import bind_models"));
+    let companion = package.join("_models_generated.py");
+    let implementation = fs::read_to_string(&companion).unwrap();
     assert!(!source.contains("dc.install_model"));
     assert!(!source.contains("def _jsoncompat_init"));
     assert!(source.len() < 2000);
@@ -84,10 +88,59 @@ assert models.Node.__init__ is not other.Node.__init__
         String::from_utf8_lossy(&checked.stderr)
     );
 
+    // Schema changes replace the same companion without changing its import.
+    let mut revised: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&schema).unwrap()).unwrap();
+    revised["properties"]["value"]["minimum"] = json!(10);
+    fs::write(&schema, revised.to_string()).unwrap();
+    assert!(generate(&output).status.success());
+    assert_eq!(source, fs::read_to_string(&output).unwrap());
+    let revised_implementation = fs::read_to_string(&companion).unwrap();
+    assert_ne!(implementation, revised_implementation);
+    let companions = fs::read_dir(&package)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("_models_generated")
+        })
+        .count();
+    assert_eq!(companions, 1);
+    let checked = python_env::python_command()
+        .arg("-c")
+        .arg(
+            r#"
+import sys
+sys.path.insert(0, sys.argv[1])
+from models_package.models import Node
+assert Node(value=10, children=[]).serialize() == '{"children":[],"value":10}'
+try:
+    Node(value=1, children=[])
+except ValueError:
+    pass
+else:
+    raise AssertionError("regenerated models retained the old constraint")
+"#,
+        )
+        .arg(&directory)
+        .output()
+        .unwrap();
+    assert!(
+        checked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+
     assert!(!generate(&package.join("123invalid.py")).status.success());
     // Unsupported input must fail before changing either published artifact.
     fs::write(&schema, r##"{"$dynamicRef":"#node"}"##).unwrap();
     assert!(!generate(&output).status.success());
     assert_eq!(source, fs::read_to_string(&output).unwrap());
+    assert_eq!(
+        revised_implementation,
+        fs::read_to_string(&companion).unwrap()
+    );
     fs::remove_dir_all(directory).unwrap();
 }

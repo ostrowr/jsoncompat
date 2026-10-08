@@ -6,6 +6,11 @@ import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
+if __package__:
+    from ._models_generated import bind_models as _jsoncompat_bind
+else:
+    from _models_generated import bind_models as _jsoncompat_bind
+
 
 @typing.final
 class Order(dc.DataclassModel):
@@ -38,10 +43,5 @@ JSONCOMPAT_MODEL = Order
 
 __all__ = ("Order", "Customer", "OrderItem", "JSONCOMPAT_MODEL",)
 
-# The private companion contains the prebuilt runtime programs.
-if __package__:
-    from ._models_generated_a032ac3c69e4a511 import bind_models as _jsoncompat_bind
-else:
-    from _models_generated_a032ac3c69e4a511 import bind_models as _jsoncompat_bind
 _jsoncompat_bind((Order, Customer, OrderItem,), globals())
 del _jsoncompat_bind

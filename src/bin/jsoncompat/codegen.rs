@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 use crate::SchemaDoc;
@@ -53,10 +52,7 @@ pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
                     "Python output must end in .py"
                 );
                 let implementation = module.private_file();
-                // Content-address the companion so replacing the public file
-                // atomically cannot mix old declarations with a new program.
-                let digest = format!("{:x}", Sha256::digest(implementation.as_bytes()));
-                let companion = format!("_{stem}_generated_{}", &digest[..16]);
+                let companion = format!("_{stem}_generated");
                 write_atomic(
                     &output.with_file_name(format!("{companion}.py")),
                     &implementation,
