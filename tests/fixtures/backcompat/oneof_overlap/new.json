@@ -1,1 +1,13 @@
-{"oneOf":[{"type":"string"},{"type":"boolean"}]}
+{
+  "oneOf": [
+    {
+      "type": "string"
+    },
+    {
+      "type": "number"
+    },
+    {
+      "type": "integer"
+    }
+  ]
+}

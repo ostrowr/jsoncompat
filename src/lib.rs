@@ -203,7 +203,6 @@ const UNSUPPORTED_COMPATIBILITY_KEYWORDS: &[&str] = &[
     "contentMediaType",
     "contentSchema",
     "dependencies",
-    "dependentSchemas",
     "unevaluatedItems",
     "unevaluatedProperties",
 ];
@@ -617,14 +616,12 @@ mod tests {
                     "type": "object",
                     "properties": {
                         "payload": {
-                            "dependentSchemas": {
-                                "kind": { "required": ["detail"] }
-                            }
+                            "unevaluatedProperties": false
                         }
                     }
                 }),
-                "#/properties/payload/dependentSchemas",
-                "dependentSchemas",
+                "#/properties/payload/unevaluatedProperties",
+                "unevaluatedProperties",
             ),
             (
                 json!({
@@ -738,9 +735,7 @@ mod tests {
             "$defs": {
                 "Unused": {
                     "type": "object",
-                    "dependentSchemas": {
-                        "kind": { "required": ["detail"] }
-                    }
+                    "unevaluatedProperties": false
                 }
             },
             "type": "string"
@@ -751,8 +746,8 @@ mod tests {
         assert_eq!(
             warnings,
             vec![CompatibilityWarning::UnsupportedKeyword {
-                pointer: "#/$defs/Unused/dependentSchemas".to_owned(),
-                keyword: "dependentSchemas".to_owned(),
+                pointer: "#/$defs/Unused/unevaluatedProperties".to_owned(),
+                keyword: "unevaluatedProperties".to_owned(),
             }]
         );
     }
@@ -761,15 +756,11 @@ mod tests {
     fn check_compat_accepts_identical_schemas_with_unmodeled_keyword_warnings() {
         let old = schema(json!({
             "type": "object",
-            "dependentSchemas": {
-                "kind": { "required": ["detail"] }
-            }
+            "unevaluatedProperties": false
         }));
         let new = schema(json!({
             "type": "object",
-            "dependentSchemas": {
-                "kind": { "required": ["detail"] }
-            }
+            "unevaluatedProperties": false
         }));
 
         assert!(

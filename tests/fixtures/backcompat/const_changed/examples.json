@@ -1,0 +1,13 @@
+{
+  "old_only": [
+    {
+      "kind": "old"
+    }
+  ],
+  "new_only": [
+    {
+      "kind": "new"
+    }
+  ],
+  "both": []
+}

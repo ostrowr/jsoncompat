@@ -4193,7 +4193,7 @@ fn closed_object_property_capacity_must_respect_implicit_max_properties() {
 }
 
 #[test]
-fn unsupported_subset_pattern_properties_cannot_fall_back_to_additional_properties() {
+fn ecmascript_pattern_properties_use_additional_properties_for_nonmatching_names() {
     let old = resolve(json!({
         "type": "object",
         "properties": {
@@ -4209,13 +4209,8 @@ fn unsupported_subset_pattern_properties_cannot_fall_back_to_additional_properti
         "additionalProperties": false
     }));
 
-    assert!(!is_subschema_of(&new, &old));
-    assert_eq!(
-        explain_subschema_failure(&new, &old)
-            .expect("failure should be explainable")
-            .render("new", "old"),
-        "old schema #/properties/x: property 'x' can appear with values the comparison target rejects",
-    );
+    assert!(is_subschema_of(&new, &old));
+    assert!(explain_subschema_failure(&new, &old).is_none());
 }
 
 #[test]

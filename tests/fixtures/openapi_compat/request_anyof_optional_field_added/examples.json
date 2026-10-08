@@ -1,0 +1,36 @@
+[
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {
+          "kind": "beta"
+        }
+      },
+      "cookies": {},
+      "headers": {},
+      "path": {},
+      "query": {}
+    },
+    "method": "POST",
+    "new": true,
+    "old": true,
+    "path": "/events",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": null,
+      "headers": {},
+      "status": "204"
+    },
+    "method": "POST",
+    "new": true,
+    "old": true,
+    "path": "/events",
+    "surface": "Response"
+  }
+]

@@ -885,7 +885,6 @@ dependencies = [
 name = "json_schema_ast"
 version = "0.4.3"
 dependencies = [
- "fancy-regex 0.17.0",
  "json_schema_fuzz",
  "jsonschema 0.45.1",
  "percent-encoding",

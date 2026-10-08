@@ -16,12 +16,12 @@
     "value": {}
   },
   "backcompat/allof_relaxed/new": {
-    "schema_digest": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96",
-    "value": ""
+    "schema_digest": "0d3ac1e9e006c0119b57d0512759bd7e261ea0d8cb38951a5183d17cdb4391f0",
+    "value": 11
   },
   "backcompat/allof_relaxed/old": {
-    "schema_digest": "ed6acb949bf1a2793c68e83e12f117314bfef9005dfe5f056702a1376592ef92",
-    "value": 0
+    "schema_digest": "3122f188377d4bc6b91e2bd00c560f35f1bb71758491b57042a5720df25c2df3",
+    "value": 10
   },
   "backcompat/allof_single_conjunct_subset/new": {
     "schema_digest": "de95534646cedb4354fe8a2e1f2c3ce5c87e08844579fc9030948809b20d771d",
@@ -432,8 +432,8 @@
     "value": {}
   },
   "backcompat/oneof_overlap/new": {
-    "schema_digest": "98a43f6d4d39e4eb7bfe8f764ffe2d1cdab624780e32875a8e4872c5affced33",
-    "value": "text"
+    "schema_digest": "117f598a0ab89e486fdae973ebc25c83ee5e4432d93bb29877be963274d660db",
+    "value": 0.5
   },
   "backcompat/oneof_overlap/old": {
     "schema_digest": "436abb3a9a1e03d4f789ac6719f0e350e9bf3e81a122a1ff79dd6d81472b8c15",
@@ -558,13 +558,11 @@
     }
   },
   "backcompat/required_to_optional/new": {
-    "schema_digest": "52ae9b42467ac0a18b5ed957ca40c1a5be794d01551127ff63b2eeebae215c7f",
-    "value": {
-      "id": 1
-    }
+    "schema_digest": "6894be88403a2d5bcd1ec6e51bf05c6d1ea6a8b0179d92b6e33a190b917fbead",
+    "value": {}
   },
   "backcompat/required_to_optional/old": {
-    "schema_digest": "6894be88403a2d5bcd1ec6e51bf05c6d1ea6a8b0179d92b6e33a190b917fbead",
+    "schema_digest": "52ae9b42467ac0a18b5ed957ca40c1a5be794d01551127ff63b2eeebae215c7f",
     "value": {
       "id": 1
     }
@@ -636,7 +634,7 @@
   "fuzz/additionalProperties/001": {
     "schema_digest": "f51e5ff6ce93c4cc11bf6602a1427e8ddbbc5990698378ef291428cf5c11aa82",
     "value": {
-      "\u00e1rm\u00e1nyos": 2
+      "ármányos": 2
     }
   },
   "fuzz/additionalProperties/002": {

@@ -543,11 +543,7 @@ mod tests {
     fn ci_grade_keeps_identical_unmodeled_schemas_nonfatal_with_warnings() {
         let schema = serde_json::json!({
             "type": "object",
-            "dependentSchemas": {
-                "kind": {
-                    "required": ["detail"]
-                }
-            }
+            "unevaluatedProperties": false
         });
         let old = GoldenEntry {
             mode: RoleCli::Serializer,

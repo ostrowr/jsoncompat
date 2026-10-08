@@ -354,7 +354,7 @@ fn contradictory_size_constraints_are_lowered_to_false_schemas() {
 }
 
 #[test]
-fn unsupported_ecmascript_pattern_is_preserved_but_never_matches() {
+fn ecmascript_control_escape_is_preserved_and_matches() {
     let schema = build_schema(&json!({
         "type": "string",
         "pattern": "^\\cC$"
@@ -367,9 +367,9 @@ fn unsupported_ecmascript_pattern_is_preserved_but_never_matches() {
 
     let pattern = pattern.as_ref().expect("pattern");
     assert_eq!(pattern.as_str(), "^\\cC$");
-    assert_eq!(pattern.support(), PatternSupport::Unsupported);
+    assert_eq!(pattern.support(), PatternSupport::Supported);
     assert!(!schema.accepts_value(&json!("")));
-    assert!(!schema.accepts_value(&json!("\u{3}")));
+    assert!(schema.accepts_value(&json!("\u{3}")));
 }
 
 #[test]

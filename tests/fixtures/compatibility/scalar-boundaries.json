@@ -1,0 +1,368 @@
+[
+  {
+    "description": "ECMA digit classes exclude non-ASCII digits",
+    "old": {
+      "type": "string",
+      "pattern": "^\\d$"
+    },
+    "new": {
+      "const": "߀"
+    },
+    "expected": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "witnesses": [
+      {
+        "data": "1",
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "߀",
+        "old": false,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "ECMA negative digit classes include non-ASCII digits",
+    "old": {
+      "type": "string",
+      "pattern": "^\\D$"
+    },
+    "new": {
+      "const": "߀"
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "a",
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "߀",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "1",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "ECMA word classes exclude Unicode letters",
+    "old": {
+      "type": "string",
+      "pattern": "^\\w$"
+    },
+    "new": {
+      "const": "é"
+    },
+    "expected": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "witnesses": [
+      {
+        "data": "a",
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "é",
+        "old": false,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "ECMA space classes accept a byte order mark",
+    "old": {
+      "type": "string",
+      "pattern": "^\\s$"
+    },
+    "new": {
+      "const": "﻿"
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": " ",
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "﻿",
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Control escapes can be evaluated exactly",
+    "old": {
+      "type": "string",
+      "pattern": "^\\cC$"
+    },
+    "new": {
+      "const": "\u0003"
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "\u0003",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "cC",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "String lengths count Unicode code points",
+    "old": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1
+    },
+    "new": {
+      "const": "😀"
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "😀",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "a",
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "😀😀",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Exact integer comparison chooses the stronger large inclusive minimum",
+    "old": {
+      "type": "integer",
+      "minimum": 9007199254740993
+    },
+    "new": {
+      "type": "integer",
+      "minimum": 9007199254740993,
+      "exclusiveMinimum": 9007199254740992
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 9007199254740992,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": 9007199254740993,
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Exact integer comparison chooses the stronger large inclusive maximum",
+    "old": {
+      "type": "integer",
+      "maximum": 9007199254740992
+    },
+    "new": {
+      "type": "integer",
+      "maximum": 9007199254740992,
+      "exclusiveMaximum": 9007199254740993
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 9007199254740992,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": 9007199254740993,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Float-spelled exclusive integer bounds are adjusted exactly",
+    "old": {
+      "type": "integer",
+      "minimum": 9007199254740993
+    },
+    "new": {
+      "type": "integer",
+      "exclusiveMinimum": 9007199254740992.0
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 9007199254740992,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": 9007199254740993,
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Numeric equality recurses through objects and arrays",
+    "old": {
+      "const": {
+        "x": [
+          1,
+          0
+        ]
+      }
+    },
+    "new": {
+      "const": {
+        "x": [
+          1.0,
+          -0.0
+        ]
+      }
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": [
+            1,
+            0
+          ]
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": [
+            true,
+            0
+          ]
+        },
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Mixed enums retain applicable property constraints",
+    "old": {
+      "enum": [
+        null,
+        {
+          "x": 0
+        },
+        {}
+      ]
+    },
+    "new": {
+      "enum": [
+        null,
+        {
+          "x": 0
+        },
+        {}
+      ],
+      "properties": {
+        "x": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": null,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      }
+    ]
+  }
+]

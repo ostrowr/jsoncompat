@@ -737,26 +737,18 @@ fn canonicalize_rejects_integer_bounds_above_i64_max() {
 }
 
 #[test]
-fn canonicalize_collapses_overflowed_exclusive_integer_bounds_to_unsatisfiable() {
-    assert_canonicalizes_to(
-        &json!({
-            "type": "integer",
-            "exclusiveMaximum": i64::MIN
-        }),
-        &json!({
-            "not": true
-        }),
-    );
-
-    assert_canonicalizes_to(
-        &json!({
-            "type": "integer",
-            "exclusiveMinimum": i64::MAX
-        }),
-        &json!({
-            "not": true
-        }),
-    );
+fn canonicalize_rejects_unrepresentable_integer_bounds_instead_of_claiming_emptiness() {
+    for raw in [
+        json!({"type": "integer", "exclusiveMaximum": i64::MIN}),
+        json!({"type": "integer", "exclusiveMinimum": i64::MAX}),
+        json!({"type": "integer", "minimum": 9223372036854775808.0}),
+        json!({"type": "integer", "exclusiveMaximum": u64::MAX}),
+    ] {
+        assert!(matches!(
+            canonicalize_schema(&raw),
+            Err(CanonicalizeError::IntegerKeywordOutOfRange { .. })
+        ));
+    }
 }
 
 #[test]
@@ -798,7 +790,6 @@ fn canonicalize_closes_dependent_required_and_synthesizes_property_schemas() {
             }
         }),
         &json!({
-            "dependentRequired": {},
             "minProperties": 3,
             "properties": {
                 "bar": true,

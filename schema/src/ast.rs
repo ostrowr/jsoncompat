@@ -344,10 +344,13 @@ impl SchemaNode {
                     value.as_f64().is_some_and(|number_value| {
                         number_value.fract() == 0.0
                             && bounds.as_number_bounds().contains(number_value)
-                            && value_is_multiple_of(
-                                number_value,
-                                multiple_of.as_ref().map(|multiple_of| multiple_of.as_f64()),
-                            )
+                            && (multiple_of
+                                .as_ref()
+                                .is_none_or(|divisor| divisor.integer_divisor() == Some(1))
+                                || value_is_multiple_of(
+                                    number_value,
+                                    multiple_of.as_ref().map(|divisor| divisor.as_f64()),
+                                ))
                             && enum_contains_numeric_value(enumeration.as_deref(), value)
                     })
                 },
@@ -2082,8 +2085,12 @@ fn build_schema_ast_from_value(
         return Ok(graph.any());
     };
 
+    if let Some(dependencies) = obj.get("dependentSchemas") {
+        return parse_dependent_schemas(obj, dependencies, graph);
+    }
+
     match SchemaShape::classify(obj) {
-        SchemaShape::Ref(ref_path) => Ok(parse_ref_schema(graph, ref_path)),
+        SchemaShape::Ref(ref_path) => parse_ref_schema(obj, graph, ref_path),
         SchemaShape::Enum(values) => Ok(parse_enum_schema(graph, values)),
         SchemaShape::UnsupportedReference(ref_path) => Err(AstError::UnsupportedReference {
             ref_path: ref_path.to_owned(),
@@ -2106,6 +2113,18 @@ fn build_schema_ast_from_value(
         SchemaShape::Object => parse_object_schema(obj, graph),
         SchemaShape::Array => parse_array_schema(obj, graph),
         SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names, graph),
+        SchemaShape::ImplicitTypeUnion => parse_type_union_schema(
+            obj,
+            &[
+                Value::from("null"),
+                Value::from("boolean"),
+                Value::from("object"),
+                Value::from("array"),
+                Value::from("string"),
+                Value::from("number"),
+            ],
+            graph,
+        ),
         SchemaShape::Any => Ok(graph.any()),
     }
 }
@@ -2133,6 +2152,7 @@ enum SchemaShape<'a> {
     Object,
     Array,
     TypeUnion(&'a [Value]),
+    ImplicitTypeUnion,
     Any,
 }
 
@@ -2197,6 +2217,28 @@ impl<'a> SchemaShape<'a> {
         if keywords.flags.contains(SchemaKeywordFlags::NUMERIC) && keywords.values_are_all_numeric()
         {
             return Self::Number;
+        }
+        // Canonicalization preserves JSON Pointer targets rather than expanding
+        // their implicit type unions. Type-specific keywords still accept all
+        // other types, including inside recursive schemas and mixed enums.
+        if [
+            (
+                SchemaKeywordFlags::OBJECT,
+                Value::is_object as fn(&Value) -> bool,
+            ),
+            (SchemaKeywordFlags::ARRAY, Value::is_array),
+            (SchemaKeywordFlags::STRING, Value::is_string),
+            (SchemaKeywordFlags::NUMERIC, Value::is_number),
+        ]
+        .into_iter()
+        .any(|(flag, predicate)| {
+            keywords.flags.contains(flag)
+                && keywords
+                    .enum_values
+                    .is_none_or(|values| values.iter().any(predicate))
+                && keywords.const_value.is_none_or(predicate)
+        }) {
+            return Self::ImplicitTypeUnion;
         }
         if let Some(values) = keywords.enum_values {
             return Self::Enum(values);
@@ -2365,14 +2407,71 @@ impl<'a> SchemaKeywords<'a> {
 
     #[must_use]
     fn values_are_all(self, mut predicate: impl FnMut(&Value) -> bool) -> bool {
-        self.enum_values
-            .is_none_or(|values| values.iter().all(&mut predicate))
+        (self.enum_values.is_some() || self.const_value.is_some())
+            && self
+                .enum_values
+                .is_none_or(|values| values.iter().all(&mut predicate))
             && self.const_value.is_none_or(predicate)
     }
 }
 
-fn parse_ref_schema(graph: &mut MutableSchemaGraph, ref_path: &str) -> MutableSchemaNode {
-    graph.push(MutableSchemaNodeKind::Ref(ref_path.to_owned()))
+fn parse_ref_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+    ref_path: &str,
+) -> Result<MutableSchemaNode> {
+    let reference = graph.push(MutableSchemaNodeKind::Ref(ref_path.to_owned()));
+    // In Draft 2020-12, sibling assertions apply alongside the referenced
+    // schema. They must not disappear just because `$ref` is dispatched first.
+    if let Some(base) = parse_applicator_base_schema(obj, &["$ref"], graph)? {
+        Ok(graph.push(MutableSchemaNodeKind::AllOf(vec![reference, base])))
+    } else {
+        Ok(reference)
+    }
+}
+
+/// A schema dependency applies to the entire object when its trigger is
+/// present. Lower it into existing conditional nodes rather than adding a
+/// second dependency evaluator to every consumer of the IR. Keep the source
+/// JSON intact so JSON Pointers into `dependentSchemas` remain resolvable.
+fn parse_dependent_schemas(
+    obj: &Map<String, Value>,
+    dependencies: &Value,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    let dependencies = parse_object_keyword(dependencies, "dependentSchemas")?;
+    let mut conjuncts = Vec::with_capacity(dependencies.len() + 1);
+    let mut base = obj.clone();
+    base.remove("dependentSchemas");
+    for (trigger, schema) in dependencies {
+        if schema == &Value::Bool(true) {
+            continue;
+        }
+        if schema == &Value::Bool(false) {
+            // A false dependency simply forbids its trigger. Folding it into
+            // the base avoids an unnecessary conditional/intersection proof.
+            let properties = base
+                .entry("properties")
+                .or_insert_with(|| serde_json::json!({}));
+            properties
+                .as_object_mut()
+                .expect("validated properties map")
+                .insert(trigger.clone(), Value::Bool(false));
+            continue;
+        }
+        let if_schema = build_schema_ast_from_value(
+            &serde_json::json!({ "type": "object", "required": [trigger] }),
+            graph,
+        )?;
+        let then_schema = Some(build_schema_ast_from_value(schema, graph)?);
+        conjuncts.push(graph.push(MutableSchemaNodeKind::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema: None,
+        }));
+    }
+    conjuncts.insert(0, build_schema_ast_from_value(&Value::Object(base), graph)?);
+    Ok(graph.push(MutableSchemaNodeKind::AllOf(conjuncts)))
 }
 
 fn parse_enum_schema(graph: &mut MutableSchemaGraph, values: &[Value]) -> MutableSchemaNode {

@@ -52,6 +52,20 @@ Package READMEs stay user-facing on purpose. Deeper implementation notes live he
 
 `SchemaDocument::from_json()` stores the raw source JSON, canonicalizes it once, and preserves precise frontend errors. The raw `jsonschema` backend remains the source of truth for user-facing value validation through `SchemaDocument::is_valid()`.
 
+Reference siblings are intersections. When canonicalization leaves an implicit
+type union in place to preserve reference targets, the AST expands that union
+without imposing a type on otherwise untyped keywords. `dependentSchemas`
+lowers to conditional/intersection nodes in the AST, preserving the original
+JSON Pointer targets. Regex membership lazily compiles a shared backend validator so
+ECMA-262 character classes have the same meaning in static finite-value proofs
+and raw validation.
+
+Canonicalization preserves evaluation annotations throughout documents using
+`unevaluatedItems` or `unevaluatedProperties`: it must not insert `items: true`,
+invent declared properties from `required`, or discard successful `anyOf`/`if`
+annotations. These keywords still produce compatibility warnings because the
+structural prover does not model annotation sets.
+
 Publishable Rust crates depend on the upstream `jsonschema` package from
 crates.io. The unpublished Python extension separately owns its forked
 validator, which provides borrowed Python/Jiter instance validation for the
@@ -151,7 +165,9 @@ OpenAPI metadata that does not change the value-language contract is shape-check
 Key suites:
 
 - `tests/backcompat.rs` covers hand-authored serializer/deserializer compatibility cases and fuzz-backed counterexample searches;
+- `tests/compatibility.rs` checks small regression fixtures in both directions and all roles, including empty languages, with independently labeled raw/canonical/IR membership witnesses;
 - `tests/compat_soundness.rs` keeps claimed compatibility aligned with witness spaces;
+- `tests/compat_composition_soundness.rs` combines object guards with Boolean applicators and checks numeric extremes against raw-validator witnesses;
 - `tests/openapi.rs`, `tests/openapi_fixtures.rs`, and `tests/openapi_soundness.rs` cover the OpenAPI lowering and reporting contract;
 - `tests/fuzz.rs` runs JSON Schema Test Suite fixtures through parsing, generation, canonicalization parity, and evaluator checks;
 - `tests/dataclasses_backcompat.rs`, `tests/dataclasses_fuzz.rs`, and `tests/dataclasses_stamp_backcompat.rs` keep generated Python models aligned with plain schemas, fuzz fixtures, and stamped writer/reader histories;
@@ -161,13 +177,36 @@ Compatibility fixtures should stay small, synthetic, and net new. Do not add int
 
 When adding incompatible OpenAPI fixtures, keep the human-facing explanation precise as well as the verdict. The fixture contract should make it obvious which schema location broke compatibility.
 
+Every backcompat fixture includes labeled examples and a concrete counterexample
+for each incompatible direction. Fixture parsing rejects malformed labels and
+missing examples instead of silently skipping them. The OpenAPI fixture runner
+also validates `examples.json` against both lowered contracts and requires a
+counterexample for every reported request/response incompatibility. Operation
+removals are checked against the operation inventory. Generated samples
+supplement these labels; generation alone can miss optional pattern properties.
+
+The JSON Schema fixture runner audits imported example labels as well as custom
+ones, including negative examples for empty schemas. Optional format-assertion
+examples use an assertion-enabled validator for their labels; production
+compatibility continues to treat `format` as an annotation. Unsupported
+reference targets and dialects retain explicit skips. The suite is a regression
+corpus, not an exhaustive proof over all JSON Schemas; conservative false
+verdicts and the documented unsupported features remain possible.
+
+The fixture audit corrected `required_to_optional`, `allof_relaxed`, and
+`oneof_overlap` to exercise the transitions their names describe. The former
+control-escape fallback fixture now expects serializer compatibility because
+its pattern can be evaluated exactly. Historical `unsupported_*` fixture names
+are retained as regression identifiers, not current support claims.
+
 ## Detailed compatibility surface
 
 The end-user README intentionally keeps the feature summary short. The main implementation-facing rules that matter when extending support are:
 
-- raw JSON Schema warnings currently cover `additionalItems`, `contentEncoding`, `contentMediaType`, `contentSchema`, `dependencies`, `dependentSchemas`, `unevaluatedItems`, and `unevaluatedProperties`;
+- raw JSON Schema warnings currently cover `additionalItems`, `contentEncoding`, `contentMediaType`, `contentSchema`, `dependencies`, `unevaluatedItems`, and `unevaluatedProperties`;
 - hard compatibility errors currently cover `$id`, `$anchor`, `$dynamicRef`, `$dynamicAnchor`, unsupported non-local references, non-integral `number.multipleOf`, and number-schema bounds outside the adjacent-integer-safe `f64` range `[-9007199254740991, 9007199254740991]`;
-- serializer compatibility assumes producers do not emit undeclared extra properties, even when `additionalProperties: true`;
+- integer bounds normalize with exact integer arithmetic; endpoints outside the signed 64-bit representation are rejected instead of clamped or mislabeled as empty languages;
+- deserializer compatibility can assume old producers omit optional undeclared properties; required and dependency-forced names must still be checked. Intersections, negation, conditionals, exact-one unions, and `contains` proofs use full validation semantics, and recursion keys distinguish those semantics;
 - string-pattern reasoning is intentionally conservative when the checker cannot prove regex-language inclusion;
 - generation may rely on retries for heuristic cases and distinguishes deterministic `Unsatisfiable` from `ExhaustedAttempts`.
 

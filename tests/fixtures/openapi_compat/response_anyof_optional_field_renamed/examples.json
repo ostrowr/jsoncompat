@@ -1,0 +1,57 @@
+[
+  {
+    "data": {
+      "body": null,
+      "cookies": {},
+      "headers": {},
+      "path": {},
+      "query": {}
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/events",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {
+          "beta_new": "kIc2f",
+          "kind": "beta"
+        }
+      },
+      "headers": {},
+      "status": "200"
+    },
+    "method": "GET",
+    "new": true,
+    "old": false,
+    "path": "/events",
+    "surface": "Response"
+  },
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {
+          "kind": "beta"
+        }
+      },
+      "headers": {},
+      "status": "200"
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/events",
+    "surface": "Response"
+  }
+]

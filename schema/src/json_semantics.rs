@@ -64,6 +64,10 @@ fn integer_value_from_f64(value: f64) -> Option<i128> {
         return None;
     }
 
-    let integer = value as i128;
-    ((integer as f64) == value).then_some(integer)
+    // `i128::MAX as f64` rounds up to 2^127. A saturating cast followed by
+    // a float roundtrip would wrongly identify that value with i128::MAX.
+    if value < i128::MIN as f64 || value >= -(i128::MIN as f64) {
+        return None;
+    }
+    Some(value as i128)
 }

@@ -150,6 +150,19 @@ pub(super) fn object_constraints_subsumed(
     sup: ObjectConstraints<'_>,
     context: &mut SubschemaCheckContext,
 ) -> bool {
+    // Required names (including conditional dependencies) are emitted even
+    // when their value schema comes only from additionalProperties. Treating
+    // such a name as omitted would skip newly added constraints on its value.
+    if context.assume_subset_omits_undeclared_properties
+        && sub
+            .required
+            .iter()
+            .chain(sub.dependent_required.values().flatten())
+            .any(|name| !sub.properties.contains_key(name))
+    {
+        return context
+            .with_validation_semantics(|context| object_constraints_subsumed(sub, sup, context));
+    }
     // If the subset object branch has no inhabitants, it is trivially a
     // subset of every superset branch.  Keep this check before the required
     // and count implication checks below: those checks otherwise report

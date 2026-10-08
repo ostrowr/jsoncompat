@@ -347,7 +347,7 @@ impl<'a> DataclassModuleBuilder<'a> {
         if obj.get(CODEGEN_ANY_KEY).and_then(Value::as_bool) == Some(true) {
             return Ok(Annotation::json());
         }
-        if self.annotation_requires_full_schema_context(pointer, obj) {
+        if self.annotation_requires_full_schema_context(pointer) {
             // A branch model validates its projected subschema independently.
             // That is unsound when `unevaluatedProperties` depends on
             // annotations produced by a sibling `if`: the containing schema
@@ -405,14 +405,7 @@ impl<'a> DataclassModuleBuilder<'a> {
         Ok(Annotation::any())
     }
 
-    fn annotation_requires_full_schema_context(
-        &self,
-        pointer: &str,
-        codegen_schema: &Map<String, Value>,
-    ) -> bool {
-        if !codegen_schema.contains_key("oneOf") && !codegen_schema.contains_key("anyOf") {
-            return false;
-        }
+    fn annotation_requires_full_schema_context(&self, pointer: &str) -> bool {
         let Some(source_schema) = resolve_json_pointer(self.validation_root, pointer) else {
             return false;
         };

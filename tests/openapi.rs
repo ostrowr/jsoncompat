@@ -2238,15 +2238,6 @@ fn openapi_documents_reject_backend_invalid_webhook_schemas_before_reporting_web
 fn openapi_documents_keep_valid_but_unsupported_component_schemas_for_lowering_validation() {
     for (keyword, schema) in [
         (
-            "dependentSchemas",
-            json!({
-                "type": "object",
-                "dependentSchemas": {
-                    "kind": { "required": ["detail"] }
-                }
-            }),
-        ),
-        (
             "dependencies",
             json!({
                 "type": "object",
@@ -2334,15 +2325,6 @@ fn openapi_documents_keep_valid_component_refs_inside_later_lowering_schema_keyw
             json!({
                 "type": "string",
                 "contentSchema": { "$ref": "#/components/schemas/Shared" }
-            }),
-        ),
-        (
-            "dependentSchemas",
-            json!({
-                "type": "object",
-                "dependentSchemas": {
-                    "kind": { "$ref": "#/components/schemas/Shared" }
-                }
             }),
         ),
         (
@@ -4633,7 +4615,6 @@ fn compatibility_rejects_schema_keywords_without_openapi_compatibility_semantics
         "contentMediaType",
         "contentSchema",
         "dependencies",
-        "dependentSchemas",
         "unevaluatedItems",
         "unevaluatedProperties",
     ] {
@@ -4646,9 +4627,6 @@ fn compatibility_rejects_schema_keywords_without_openapi_compatibility_semantics
             "contentSchema" => json!({ "type": "string", (keyword): { "type": "object" } }),
             "dependencies" => {
                 json!({ "type": "object", (keyword): { "kind": ["detail"] } })
-            }
-            "dependentSchemas" => {
-                json!({ "type": "object", (keyword): { "kind": { "type": "string" } } })
             }
             "unevaluatedItems" => json!({ "type": "array", (keyword): false }),
             "unevaluatedProperties" => json!({ "type": "object", (keyword): false }),

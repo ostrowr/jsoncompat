@@ -194,6 +194,11 @@ Compatibility is directional:
 
 That is why making a previously required response field optional can be breaking for a serializer, while making a previously optional stored field required can be breaking for a deserializer.
 
+Deserializer checks assume old producers omit optional undeclared object
+properties where the checker can establish that assumption safely. Required
+properties and dependency-forced properties still have their values checked.
+Complex applicator comparisons conservatively use full validation semantics.
+
 ## OpenAPI contracts
 
 When the inputs are OpenAPI documents, pass `--openapi`. jsoncompat compares:

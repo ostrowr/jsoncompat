@@ -165,9 +165,7 @@ mod tests {
     fn compatibility_schema_validation_accepts_unmodeled_keywords_for_modeled_comparison() {
         compatibility_schema(&json!({
             "type": "object",
-            "dependentSchemas": {
-                "kind": { "required": ["detail"] }
-            }
+            "unevaluatedProperties": false
         }))
         .expect("compatibility bindings should accept warning-only schema keywords");
     }

@@ -1,0 +1,50 @@
+[
+  {
+    "data": {
+      "body": null,
+      "cookies": {},
+      "headers": {},
+      "path": {},
+      "query": {}
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/pets",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": null,
+      "headers": {
+        "x-rate-limit": {
+          "explode": false,
+          "value": 0
+        }
+      },
+      "status": "200"
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/pets",
+    "surface": "Response"
+  },
+  {
+    "method": "GET",
+    "path": "/pets",
+    "surface": "Response",
+    "data": {
+      "status": "200",
+      "body": null,
+      "headers": {
+        "x-rate-limit": {
+          "explode": false,
+          "value": ""
+        }
+      }
+    },
+    "old": false,
+    "new": true
+  }
+]

@@ -1,0 +1,60 @@
+[
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {
+          "alpha": "tEZC4",
+          "kind": "alpha"
+        }
+      },
+      "cookies": {},
+      "headers": {},
+      "path": {},
+      "query": {}
+    },
+    "method": "POST",
+    "new": true,
+    "old": true,
+    "path": "/events",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": null,
+      "headers": {},
+      "status": "204"
+    },
+    "method": "POST",
+    "new": true,
+    "old": true,
+    "path": "/events",
+    "surface": "Response"
+  },
+  {
+    "method": "POST",
+    "path": "/events",
+    "surface": "Request",
+    "data": {
+      "path": {},
+      "query": {},
+      "cookies": {},
+      "headers": {},
+      "body": {
+        "content_type": {
+          "type": "application",
+          "subtype": "json"
+        },
+        "value": {
+          "kind": "beta",
+          "beta": ""
+        }
+      }
+    },
+    "old": true,
+    "new": false
+  }
+]

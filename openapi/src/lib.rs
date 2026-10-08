@@ -6184,7 +6184,6 @@ fn unsupported_lowering_schema_keyword_feature(keyword: &str) -> Option<&'static
         "contentMediaType" => Some("JSON Schema keyword 'contentMediaType'"),
         "contentSchema" => Some("JSON Schema keyword 'contentSchema'"),
         "dependencies" => Some("JSON Schema keyword 'dependencies'"),
-        "dependentSchemas" => Some("JSON Schema keyword 'dependentSchemas'"),
         "unevaluatedItems" => Some("JSON Schema keyword 'unevaluatedItems'"),
         "unevaluatedProperties" => Some("JSON Schema keyword 'unevaluatedProperties'"),
         _ => None,

@@ -1,0 +1,187 @@
+[
+  {
+    "description": "Empty old schema makes forward reader compatibility vacuous",
+    "old": false,
+    "new": true,
+    "expected": [
+      false,
+      true,
+      true,
+      false
+    ],
+    "witnesses": [
+      {
+        "data": null,
+        "old": false,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Disjoint type intersections are empty",
+    "old": false,
+    "new": {
+      "allOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "s",
+        "old": false,
+        "new": false
+      },
+      {
+        "data": 0,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "A required forbidden property is impossible",
+    "old": false,
+    "new": {
+      "type": "object",
+      "properties": {
+        "x": false
+      },
+      "additionalProperties": false,
+      "required": [
+        "x"
+      ]
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {},
+        "old": false,
+        "new": false
+      },
+      {
+        "data": {
+          "x": 0
+        },
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Unique tuples cannot reuse the sole possible item",
+    "old": false,
+    "new": {
+      "type": "array",
+      "items": {
+        "const": 1
+      },
+      "minItems": 2,
+      "uniqueItems": true
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": [
+          1,
+          1
+        ],
+        "old": false,
+        "new": false
+      },
+      {
+        "data": [],
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "A singleton range must intersect a mixed enum",
+    "old": false,
+    "new": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 4,
+      "enum": [
+        "a",
+        5
+      ]
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 4,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": 5,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": "a",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "An empty array needs no contains match when minContains is zero",
+    "old": {
+      "const": []
+    },
+    "new": {
+      "type": "array",
+      "maxItems": 0,
+      "contains": false,
+      "minContains": 0
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": [],
+        "old": true,
+        "new": true
+      },
+      {
+        "data": [
+          0
+        ],
+        "old": false,
+        "new": false
+      }
+    ]
+  }
+]

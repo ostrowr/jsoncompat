@@ -406,8 +406,8 @@ mod tests {
     fn compat_command_accepts_valid_but_unmodeled_schema_keywords_with_warnings() {
         for (keyword, old_schema) in [
             (
-                "dependentSchemas",
-                r#"{"type":"object","dependentSchemas":{"kind":{"required":["detail"]}}}"#,
+                "unevaluatedProperties",
+                r#"{"type":"object","unevaluatedProperties": false}"#,
             ),
             (
                 "dependencies",
@@ -795,10 +795,10 @@ mod tests {
             .as_nanos();
         let dir = std::env::temp_dir();
         let old_path = dir.join(format!(
-            "jsoncompat-openapi-dependent-schemas-old-{unique}.json"
+            "jsoncompat-openapi-unevaluated-properties-old-{unique}.json"
         ));
         let new_path = dir.join(format!(
-            "jsoncompat-openapi-dependent-schemas-new-{unique}.json"
+            "jsoncompat-openapi-unevaluated-properties-new-{unique}.json"
         ));
         let old = r#"{
   "openapi": "3.1.0",
@@ -811,9 +811,7 @@ mod tests {
             "application/json": {
               "schema": {
                 "type": "object",
-                "dependentSchemas": {
-                  "kind": { "required": ["detail"] }
-                }
+                "unevaluatedProperties": false
               }
             }
           }
@@ -868,13 +866,13 @@ mod tests {
         );
         assert!(
             message.contains(
-                "#/paths/~1pets/post/requestBody/content/application~1json/schema/dependentSchemas"
+                "#/paths/~1pets/post/requestBody/content/application~1json/schema/unevaluatedProperties"
             ),
             "{message}"
         );
         assert!(
             message.contains(
-                "OpenAPI compatibility checks do not support JSON Schema keyword 'dependentSchemas'"
+                "OpenAPI compatibility checks do not support JSON Schema keyword 'unevaluatedProperties'"
             ),
             "{message}"
         );
