@@ -1,0 +1,43 @@
+[
+  {
+    "data": {
+      "body": null,
+      "cookies": {},
+      "headers": {},
+      "path": {
+        "petId": {
+          "explode": false,
+          "style": "simple",
+          "value": ""
+        }
+      },
+      "query": {}
+    },
+    "method": "GET",
+    "new": false,
+    "old": true,
+    "path": "/pets/{petId}",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {
+          "children": [],
+          "value": 10
+        }
+      },
+      "headers": {},
+      "status": "200"
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/pets/{petId}",
+    "surface": "Response"
+  }
+]

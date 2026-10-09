@@ -1,1 +1,0 @@
-invalid schema at 'GeneratedSchema': unsupported reference 'https://test.json-schema.org/dynamicRef-anchor-same-schema/root': only local JSON Pointer $ref targets of the form '#/...'

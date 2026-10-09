@@ -1,1 +1,11 @@
-{"allOf":[{"type":"integer"},{"minimum":0}]}
+{
+  "allOf": [
+    {
+      "type": "integer",
+      "minimum": 0
+    },
+    {
+      "maximum": 10
+    }
+  ]
+}

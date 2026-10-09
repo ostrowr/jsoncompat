@@ -112,7 +112,7 @@ jobs:
         run: |
           uv sync --project pybindings --all-extras --locked --no-install-project
           cargo build -p jsoncompat_py --locked
-          UV_NO_SYNC=1 cargo test --locked --test python_dataclasses_prepared --test python_dataclasses_runtime --test codegen_cli
+          UV_NO_SYNC=1 cargo test --locked --test python_dataclasses_prepared --test python_dataclasses_differential --test python_dataclasses_runtime --test codegen_cli
 
   python-linux:
     runs-on: ${{ matrix.platform.runner }}

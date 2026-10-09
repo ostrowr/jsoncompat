@@ -74,7 +74,28 @@ fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
                 .root()
                 .map_err(|error| format!("{} roundtrip resolve: {error}", path.display()))?
                 .clone();
-            if ast != ast2 {
+            // Implicit type unions retained at reference targets may contain
+            // Boolean/Null nodes whose serialized canonical form is an enum.
+            // Compare normalized representations rather than variant identity.
+            let roundtrip = canonicalize_schema(&ast2.to_json())?;
+            if let Some(groups) = root.as_array() {
+                for test in groups
+                    .iter()
+                    .filter(|group| group.get("schema") == Some(&schema_json))
+                    .filter_map(|group| group.get("tests").and_then(Value::as_array))
+                    .flatten()
+                {
+                    if let Some(value) = test.get("data") {
+                        assert_eq!(
+                            ast.accepts_value(value),
+                            ast2.accepts_value(value),
+                            "{} roundtrip changed acceptance of {value}",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            if schema2 != roundtrip {
                 panic!(
                     "roundtrip failed for {}\noriginal: {}\ninput: {}\nroundtrip: {}",
                     path.display(),

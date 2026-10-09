@@ -885,9 +885,11 @@ dependencies = [
 name = "json_schema_ast"
 version = "0.4.3"
 dependencies = [
- "fancy-regex 0.17.0",
  "json_schema_fuzz",
  "jsonschema 0.45.1",
+ "num-bigint",
+ "num-rational",
+ "num-traits",
  "percent-encoding",
  "rand",
  "serde_json",
@@ -1045,6 +1047,7 @@ dependencies = [
  "getrandom 0.3.4",
  "idna",
  "itoa",
+ "num-bigint",
  "num-cmp",
  "num-traits",
  "percent-encoding",

@@ -47,6 +47,8 @@ pub enum GenerateError {
 #[derive(Debug)]
 pub struct ValueGenerator {
     max_generation_attempts: NonZeroUsize,
+    max_candidate_nodes: NonZeroUsize,
+    remaining_nodes: usize,
 }
 
 /// Explicit generation controls used by the document-level fuzzer API.
@@ -57,12 +59,14 @@ pub struct ValueGenerator {
 pub struct GenerationConfig {
     depth: u8,
     max_generation_attempts: NonZeroUsize,
+    max_candidate_nodes: NonZeroUsize,
 }
 
 impl Default for GenerationConfig {
     fn default() -> Self {
         Self {
             depth: DEFAULT_GENERATION_DEPTH,
+            max_candidate_nodes: NonZeroUsize::new(16_384).expect("non-zero node budget"),
             max_generation_attempts: NonZeroUsize::new(DEFAULT_MAX_GENERATION_ATTEMPTS)
                 .expect("default generation attempt limit must be non-zero"),
         }
@@ -88,6 +92,18 @@ impl GenerationConfig {
         self
     }
 
+    /// Bound structural work per candidate, including nested applicator retries.
+    #[must_use]
+    pub fn with_max_candidate_nodes(mut self, nodes: NonZeroUsize) -> Self {
+        self.max_candidate_nodes = nodes;
+        self
+    }
+
+    #[must_use]
+    pub const fn max_candidate_nodes(self) -> NonZeroUsize {
+        self.max_candidate_nodes
+    }
+
     /// Return the recursion depth limit used for nested schemas.
     #[must_use]
     pub const fn depth(self) -> u8 {
@@ -110,12 +126,6 @@ struct ArrayGenerationSchema<'a> {
 }
 
 impl ValueGenerator {
-    fn with_max_generation_attempts(max_generation_attempts: NonZeroUsize) -> Self {
-        Self {
-            max_generation_attempts,
-        }
-    }
-
     /// Generate one JSON value accepted by the raw schema validator.
     ///
     /// This method first builds candidates from the document's resolved
@@ -130,7 +140,11 @@ impl ValueGenerator {
         config: GenerationConfig,
         rng: &mut impl Rng,
     ) -> Result<Value, GenerateError> {
-        let mut generator = Self::with_max_generation_attempts(config.max_generation_attempts);
+        let mut generator = Self {
+            max_generation_attempts: config.max_generation_attempts,
+            max_candidate_nodes: config.max_candidate_nodes,
+            remaining_nodes: config.max_candidate_nodes.get(),
+        };
         generator.generate_from_document(schema, rng, config.depth)
     }
 
@@ -153,6 +167,7 @@ impl ValueGenerator {
         }
 
         for _ in 0..self.max_generation_attempts.get() {
+            self.remaining_nodes = self.max_candidate_nodes.get();
             let candidate = self.generate_candidate(root, rng, depth);
             if schema.is_valid(&candidate)? {
                 return Ok(candidate);
@@ -274,19 +289,223 @@ fn is_terminal_unsatisfiable_schema(schema: &Value) -> bool {
     }
 }
 
+fn conjunctive_leaves<'a>(
+    schema: &'a SchemaNode,
+    rng: &mut impl Rng,
+    depth: u8,
+    out: &mut Vec<&'a SchemaNode>,
+) {
+    if depth == 0 {
+        return;
+    }
+    match schema.kind() {
+        SchemaNodeKind::AllOf(children) => {
+            for child in children {
+                conjunctive_leaves(child, rng, depth - 1, out);
+            }
+        }
+        SchemaNodeKind::AnyOf(children) | SchemaNodeKind::OneOf(children)
+            if !children.is_empty() =>
+        {
+            conjunctive_leaves(
+                &children[rng.random_range(0..children.len())],
+                rng,
+                depth - 1,
+                out,
+            )
+        }
+        SchemaNodeKind::Array { .. } | SchemaNodeKind::Object { .. } => out.push(schema),
+        _ => {}
+    }
+}
+
+// Intersections constrain the same array positions. Generate each position
+// from its strongest concrete constraint, then check every conjunct.
+fn intersected_array_candidate(
+    schemas: &[SchemaNode],
+    rng: &mut impl Rng,
+    depth: u8,
+    generator: &mut ValueGenerator,
+) -> Option<Value> {
+    let mut arrays = Vec::new();
+    for schema in schemas {
+        conjunctive_leaves(schema, rng, 16, &mut arrays);
+    }
+    arrays.retain(|schema| matches!(schema.kind(), SchemaNodeKind::Array { .. }));
+    if arrays.len() < 2 {
+        return None;
+    }
+    let mut length = 0;
+    let mut maximum = u64::MAX;
+    for schema in &arrays {
+        if let SchemaNodeKind::Array {
+            prefix_items,
+            items,
+            item_count,
+            contains,
+            ..
+        } = schema.kind()
+        {
+            length = length
+                .max(item_count.min())
+                .max(prefix_items.len() as u64)
+                .max(contains.as_ref().map_or(0, |c| c.count().min()));
+            maximum = maximum.min(item_count.max().unwrap_or(u64::MAX));
+            if matches!(items.kind(), SchemaNodeKind::BoolSchema(false)) {
+                maximum = maximum.min(prefix_items.len() as u64);
+            }
+        }
+    }
+    length = length.min(maximum);
+    if length > 64 {
+        return None;
+    }
+    let mut result = Vec::new();
+    for index in 0..length as usize {
+        let mut constraints: Vec<_> = arrays
+            .iter()
+            .filter_map(|schema| match schema.kind() {
+                SchemaNodeKind::Array {
+                    prefix_items,
+                    items,
+                    ..
+                } => Some(prefix_items.get(index).unwrap_or(items)),
+                _ => None,
+            })
+            .collect();
+        constraints.sort_by_key(|schema| match schema.kind() {
+            SchemaNodeKind::Const(_) | SchemaNodeKind::Enum(_) => 0,
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => 2,
+            _ => 1,
+        });
+        let mut found = None;
+        for _ in 0..8 {
+            let value = generator.generate_candidate(constraints[0], rng, depth.saturating_sub(1));
+            if constraints
+                .iter()
+                .all(|schema| schema.accepts_value(&value))
+            {
+                found = Some(value);
+                break;
+            }
+        }
+        result.push(found?);
+    }
+    Some(Value::Array(result))
+}
+
+fn intersected_object_candidate(
+    schemas: &[SchemaNode],
+    rng: &mut impl Rng,
+    depth: u8,
+    generator: &mut ValueGenerator,
+) -> Option<Value> {
+    let mut leaves = Vec::new();
+    for schema in schemas {
+        conjunctive_leaves(schema, rng, 16, &mut leaves);
+    }
+    leaves.retain(|schema| matches!(schema.kind(), SchemaNodeKind::Object { .. }));
+    if leaves.len() < 2 {
+        return None;
+    }
+    let mut required_names = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
+    for schema in &leaves {
+        if let SchemaNodeKind::Object {
+            required,
+            properties,
+            ..
+        } = schema.kind()
+        {
+            required_names.extend(required.iter().cloned());
+            names.extend(properties.keys().cloned());
+        }
+    }
+    names.extend(required_names.iter().cloned());
+    let mut object = Map::new();
+    for name in names {
+        let required = required_names.contains(&name);
+        if !required && rng.random_bool(0.5) {
+            continue;
+        }
+        let mut constraints = Vec::new();
+        for schema in &leaves {
+            if let SchemaNodeKind::Object {
+                properties,
+                pattern_properties,
+                additional,
+                ..
+            } = schema.kind()
+            {
+                let mut matched = false;
+                if let Some(property) = properties.get(&name) {
+                    constraints.push(property);
+                    matched = true;
+                }
+                for property in pattern_properties.values() {
+                    if property.pattern.is_match(&name) {
+                        constraints.push(&property.schema);
+                        matched = true;
+                    }
+                }
+                if !matched {
+                    constraints.push(additional);
+                }
+            }
+        }
+        constraints.sort_by_key(|schema| match schema.kind() {
+            SchemaNodeKind::Const(_) | SchemaNodeKind::Enum(_) => 0,
+            SchemaNodeKind::Any | SchemaNodeKind::BoolSchema(true) => 2,
+            _ => 1,
+        });
+        let mut found = None;
+        for _ in 0..8 {
+            let value = generator.generate_candidate(constraints[0], rng, depth.saturating_sub(1));
+            if constraints
+                .iter()
+                .all(|schema| schema.accepts_value(&value))
+            {
+                found = Some(value);
+                break;
+            }
+        }
+        if let Some(value) = found {
+            object.insert(name, value);
+        } else if required {
+            return None;
+        }
+    }
+    Some(Value::Object(object))
+}
+
 fn generate_candidate_with_context(
     schema: &SchemaNode,
     rng: &mut impl Rng,
     depth: u8,
     generator: &mut ValueGenerator,
 ) -> Value {
-    if depth == 0 {
+    if depth == 0 || generator.remaining_nodes == 0 {
         return Value::Null;
     }
 
+    generator.remaining_nodes -= 1;
     use SchemaNodeKind::*;
 
     match schema.kind() {
+        Validation(constraint) => {
+            if let Some(number) = constraint.number() {
+                let values = number.candidates();
+                return if values.is_empty() {
+                    Value::Null
+                } else {
+                    values[rng.random_range(0..values.len())].clone()
+                };
+            }
+            constraint.generation_schema().map_or_else(
+                || Value::Null,
+                |schema| generator.generate_candidate(schema, rng, depth),
+            )
+        }
         BoolSchema(false) => Value::Null,
         BoolSchema(true) | Any => random_any(rng, depth),
 
@@ -320,6 +539,16 @@ fn generate_candidate_with_context(
                 .collect::<Option<Vec<_>>>();
 
             for _ in 0..32 {
+                if let Some(candidate) = intersected_array_candidate(subs, rng, depth, generator)
+                    && generator.schema_accepts_value(schema, &candidate)
+                {
+                    return candidate;
+                }
+                if let Some(candidate) = intersected_object_candidate(subs, rng, depth, generator)
+                    && generator.schema_accepts_value(schema, &candidate)
+                {
+                    return candidate;
+                }
                 let candidate = if let Some(object_subschemas) = &object_subschemas {
                     use std::collections::HashMap;
 
@@ -471,8 +700,8 @@ fn generate_candidate_with_context(
 
             if let Some(fmt) = format
                 && let Some(s) = format_gen::generate_for_format(fmt, rng)
+                && length.contains(s.chars().count() as u64)
             {
-                // min_length/max_length constraints are ignored when format is used.
                 return Value::String(s);
             }
 
@@ -1420,8 +1649,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known fuzzer gap: format generation currently ignores length constraints"]
-    fn known_gap_format_string_with_min_length_is_satisfiable() {
+    fn format_annotation_respects_string_length() {
         let schema = resolve(json!({
             "type": "string",
             "format": "email",
@@ -1439,8 +1667,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known fuzzer gap: unevaluatedItems bookkeeping across oneOf is not represented in the AST"]
-    fn known_gap_unevaluated_items_with_oneof_is_satisfiable() {
+    fn unevaluated_items_with_oneof_is_satisfiable() {
         let schema = resolve(json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "prefixItems": [

@@ -109,8 +109,34 @@ pub(super) fn analyze_subschema_with_context(
     context: &mut SubschemaCheckContext,
     mode: ExplanationMode,
 ) -> SubschemaAnalysis {
+    if context.assume_subset_omits_undeclared_properties
+        && [sub, sup].iter().any(|schema| {
+            matches!(
+                schema.kind(),
+                SchemaNodeKind::AllOf(_)
+                    | SchemaNodeKind::OneOf(_)
+                    | SchemaNodeKind::Not(_)
+                    | SchemaNodeKind::IfThenElse { .. }
+                    | SchemaNodeKind::Array {
+                        contains: Some(_),
+                        ..
+                    }
+            )
+        })
+    {
+        return context.with_validation_semantics(|context| {
+            analyze_subschema_with_context(sub, sup, context, mode)
+        });
+    }
     if sub == sup {
         return SubschemaAnalysis::compatible();
+    }
+    if let Some(proven) = exact::exact_numeric_subset(sub, sup) {
+        return SubschemaAnalysis::from_check(proven, mode, || {
+            Some(SubschemaExplanation::new(
+                "exact numeric constraints are not known to be contained by the comparison target",
+            ))
+        });
     }
 
     let normalized_sub = unwrap_singleton_applicators(sub);
@@ -495,6 +521,11 @@ fn analyze_kind_pair(
                 )
             };
             SubschemaAnalysis::from_check(is_subschema, mode, || {
+                if !guards_equivalent {
+                    return Some(SubschemaExplanation::new(
+                        "conditional guards differ and their selected branches are not known to be compatible",
+                    ));
+                }
                 explain_identical_conditional_failure(
                     sub_then.as_ref(),
                     sup_then.as_ref(),

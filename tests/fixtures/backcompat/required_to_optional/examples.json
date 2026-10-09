@@ -1,5 +1,11 @@
 {
-  "old_only": [{}],
-  "new_only": [],
-  "both": [{"id":1}]
+  "old_only": [],
+  "new_only": [
+    {}
+  ],
+  "both": [
+    {
+      "id": 1
+    }
+  ]
 }

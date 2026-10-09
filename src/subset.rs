@@ -22,6 +22,7 @@ mod membership;
 
 // Keyword/type constraint checkers.
 mod array;
+mod exact;
 mod object;
 mod scalar;
 

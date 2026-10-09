@@ -1,0 +1,241 @@
+[
+  {
+    "description": "Reference siblings narrow the referenced language",
+    "old": {
+      "$defs": {
+        "value": {
+          "type": "integer"
+        }
+      },
+      "$ref": "#/$defs/value"
+    },
+    "new": {
+      "$defs": {
+        "value": {
+          "type": "integer"
+        }
+      },
+      "$ref": "#/$defs/value",
+      "minimum": 1
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 0,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": 1,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "a",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Reference siblings retain an independent enum restriction",
+    "old": {
+      "$defs": {
+        "value": {
+          "type": "string"
+        }
+      },
+      "$ref": "#/$defs/value"
+    },
+    "new": {
+      "$defs": {
+        "value": {
+          "type": "string"
+        }
+      },
+      "$ref": "#/$defs/value",
+      "enum": [
+        "a"
+      ]
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "b",
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "a",
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "A sibling type can make a reference unsatisfiable",
+    "old": false,
+    "new": {
+      "$defs": {
+        "value": {
+          "type": "number"
+        }
+      },
+      "$ref": "#/$defs/value",
+      "type": "string"
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 1,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": "s",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Untyped recursive properties still accept primitives",
+    "old": {
+      "properties": {
+        "child": {
+          "$ref": "#"
+        }
+      },
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "child": {
+          "$ref": "#"
+        }
+      },
+      "additionalProperties": false
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": null,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "child": false
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "child": {}
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Untyped local array references do not impose an array type",
+    "old": {
+      "items": {
+        "$ref": "#/$defs/value"
+      },
+      "$defs": {
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": null,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": [
+          "a"
+        ],
+        "old": true,
+        "new": true
+      },
+      {
+        "data": [
+          0
+        ],
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "JSON Pointer escaping distinguishes slash and tilde property names",
+    "old": {
+      "$defs": {
+        "a/b~c": {
+          "type": "integer"
+        }
+      },
+      "$ref": "#/$defs/a~1b~0c"
+    },
+    "new": {
+      "type": "integer"
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 0,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "s",
+        "old": false,
+        "new": false
+      }
+    ]
+  }
+]

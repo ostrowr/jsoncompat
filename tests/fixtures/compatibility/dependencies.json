@@ -1,0 +1,327 @@
+[
+  {
+    "description": "A schema dependency adds a conditional requirement",
+    "old": {
+      "type": "object",
+      "properties": {
+        "x": true,
+        "y": true
+      },
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "x": true,
+        "y": true
+      },
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "x": {
+          "required": [
+            "y"
+          ]
+        }
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "x": 0,
+          "y": 0
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "A dependency validates the whole object rather than the trigger value",
+    "old": {
+      "type": "object",
+      "properties": {
+        "x": true,
+        "y": true
+      },
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "x": true,
+        "y": true
+      },
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "x": {
+          "properties": {
+            "y": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": {},
+          "y": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "x": {},
+          "y": "a"
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "y": 0
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "A false dependency forbids its trigger",
+    "old": {
+      "type": "object",
+      "properties": {
+        "x": false
+      },
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "x": true
+      },
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "x": false
+      }
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": null
+        },
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Dependencies apply only to objects",
+    "old": {
+      "type": [
+        "string",
+        "array",
+        "null"
+      ]
+    },
+    "new": {
+      "type": [
+        "string",
+        "array",
+        "null"
+      ],
+      "dependentSchemas": {
+        "x": false
+      }
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "x",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "old": true,
+        "new": true
+      },
+      {
+        "data": null,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": 0
+        },
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Two dependency triggers are conjunctive",
+    "old": {
+      "type": "object",
+      "properties": {
+        "x": true,
+        "y": true,
+        "z": true
+      },
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "x": {
+          "required": [
+            "y"
+          ]
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "x": true,
+        "y": true,
+        "z": true
+      },
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "x": {
+          "required": [
+            "y"
+          ]
+        },
+        "y": {
+          "required": [
+            "z"
+          ]
+        }
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0,
+          "y": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "y": 0,
+          "z": 0
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "A local ref can target a schema dependency",
+    "old": {
+      "dependentSchemas": {
+        "a/b~c": {
+          "type": "object",
+          "required": [
+            "y"
+          ]
+        }
+      }
+    },
+    "new": {
+      "dependentSchemas": {
+        "a/b~c": {
+          "type": "object",
+          "required": [
+            "y"
+          ]
+        }
+      },
+      "$ref": "#/dependentSchemas/a~1b~0c"
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {},
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "y": 0
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "a/b~c": 0
+        },
+        "old": false,
+        "new": false
+      }
+    ]
+  }
+]

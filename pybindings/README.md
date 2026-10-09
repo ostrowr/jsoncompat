@@ -44,7 +44,7 @@ print(example)
 
 - `check_compat(old_schema_json: str, new_schema_json: str, role: str = "both") -> bool`
   - `role` must be `"serializer"`, `"deserializer"`, or `"both"`.
-  - Raises `ValueError` for invalid schemas or hard unsupported compatibility features such as non-integral `number.multipleOf`.
+  - Raises `ValueError` for invalid schemas or unsupported dialects or unresolved resources.
 - `generator_for(schema_json: str) -> Generator`
   - Parses the schema once and returns a reusable generator.
   - `Generator.generate_value(depth: int = 5) -> str` returns a JSON string for one generated value accepted by the schema.
@@ -146,13 +146,23 @@ scalar constraints directly and avoid a complete intermediate JSON tree or a
 second schema walk. Other schemas use the same precompiled general validator;
 ambiguous unions retain schema-based selection. Ordinary self-referential and
 mutually recursive models using local `$ref` are supported, with a runtime depth
-guard. The specialized `$dynamicRef` and `$recursiveRef` keywords, nonlocal
-reference resolution, custom vocabularies, and regex backreferences/atomic
-groups/subroutine calls currently fail during generation. Unicode word boundaries
+guard. Embedded resource identifiers, anchors, and `$dynamicRef` scopes resolve
+to local graph references during generation. Unavailable resources, the legacy
+`$recursiveRef` keyword, asserted formats/custom vocabularies, and regex
+backreferences/atomic groups/subroutine calls fail during generation. Unicode word boundaries
 and lookarounds use prebuilt operations. Complex regex compositions have an
 execution budget; exhausting it rejects validation, including inside negation,
 conditionals, or property patterns. Unsupported features fail explicitly;
-constraints are never silently dropped or compiled later.
+constraints are never silently dropped or compiled later. Exact decimal bounds
+and divisors are prepared ahead of time. JSON input is validated before conversion
+to Python floats; if rounding makes a stored value invalid, checked serialization
+rejects it. The value API validates the decimal representation of the Python value.
+
+`cargo test --test python_dataclasses_differential` compares optimized and
+forced-general execution against the original schemas using the independent
+validator. It covers each input/output operation separately, the generated fixture
+corpus, adversarial composed schemas, invalid mutated models, Unicode/regex
+edge cases, exact numeric boundaries, 200-field models, and large payloads.
 
 Benchmark the build cost, fully checked round trips, and fresh-process startup
 against the same strict Pydantic peers used by the existing benchmarks:
@@ -373,3 +383,9 @@ benchmark the same values.
 MIT License. See:
 
 - https://github.com/ostrowr/jsoncompat/blob/main/LICENSE
+
+`analyze_compat(old_schema_json, new_schema_json, role="both")` returns a JSON
+string with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible
+results include `direction` and `counterexample`; unknown results include
+`reason`. `check_compat` remains boolean and returns false when no inclusion
+proof is available. See the [keyword support matrix](../keyword-support.md).

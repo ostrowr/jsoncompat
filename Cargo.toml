@@ -48,6 +48,10 @@ name = "backcompat"
 harness = false
 
 [[test]]
+name = "compatibility"
+harness = false
+
+[[test]]
 name = "fuzz"
 harness = false
 

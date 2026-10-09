@@ -6,6 +6,7 @@ use json_schema_ast::{
 };
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 use rand::{SeedableRng, rngs::StdRng};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -27,14 +28,9 @@ const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/s
 /// ```
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("not.json".to_string(), [8].iter().cloned().collect());
-    map.insert(
-        "unevaluatedItems.json".to_string(),
-        [12, 18].iter().cloned().collect(),
-    );
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 15].iter().cloned().collect(),
+        [12].iter().cloned().collect(),
     );
 
     map
@@ -50,8 +46,8 @@ datatest_stable::harness! {
 
 fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = fs::read(file)?;
-    let root: Value = serde_json::from_slice(&bytes)?;
-    let schemas = collect_fixture_schemas(&root);
+    let schemas: Vec<FixtureSchema> = serde_json::from_slice(&bytes)?;
+    assert!(!schemas.is_empty(), "fixture {file:?} contains no schemas");
 
     // Deterministic RNG per file for reproducibility.
     let seed = 0xBADBABE + file.to_string_lossy().len() as u64;
@@ -66,12 +62,11 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let allowed = whitelist.get::<str>(rel_str.as_ref());
 
     for (idx, fixture_schema) in schemas.iter().enumerate() {
+        assert!(
+            !fixture_schema.tests.is_empty(),
+            "{rel_str} schema #{idx} contains no labeled examples"
+        );
         let schema_json = &fixture_schema.schema;
-        // Skip `false` schemas – they have an empty instance set by design.
-        if schema_json == &Value::Bool(false) {
-            continue;
-        }
-
         let is_whitelisted = allowed.map(|set| set.contains(&idx)).unwrap_or(false);
 
         let schema = match SchemaDocument::from_json(schema_json) {
@@ -123,21 +118,28 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => return Err(error.into()),
         };
 
-        if matches!(root.kind(), SchemaNodeKind::BoolSchema(false))
-            && !fixture_schema
-                .tests
-                .iter()
-                .any(|fixture_test| fixture_test.valid)
-        {
-            continue;
-        }
-
         let generation_config = GenerationConfig::new(6);
         let evaluator_should_be_exact =
             internal_evaluator_should_be_exact(root, schema.canonical_schema_json()?);
         let canonical_validator = compile(schema.canonical_schema_json()?)?;
 
-        if validate_fixture_tests {
+        let format_assertion_fixture =
+            rel_str.starts_with("optional/format/") || rel_str == "optional/format-assertion.json";
+        if format_assertion_fixture {
+            // The imported suite labels these under the optional assertion
+            // vocabulary; jsoncompat itself treats format as an annotation.
+            let assertion_validator = json_schema_ast::JSONSchema::options()
+                .should_validate_formats(true)
+                .build(schema_json)?;
+            for test in &fixture_schema.tests {
+                assert_eq!(
+                    assertion_validator.is_valid(&test.data),
+                    test.valid,
+                    "{rel_str} schema #{idx}: incorrect format-assertion label for {:?}",
+                    test.description
+                );
+            }
+        } else {
             for fixture_test in &fixture_schema.tests {
                 let raw_valid = schema.is_valid(&fixture_test.data)?;
                 let canonicalized_valid = canonical_validator.is_valid(&fixture_test.data);
@@ -175,6 +177,12 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+
+        // Empty schemas still have their negative fixture labels audited;
+        // only value generation is vacuous.
+        if matches!(root.kind(), SchemaNodeKind::BoolSchema(false)) {
+            continue;
         }
 
         let mut success = true;
@@ -246,66 +254,28 @@ fn fixture(file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[derive(Debug)]
+// Parse labels strictly: malformed examples must fail, never silently vanish
+// through filter_map. Upstream prose metadata is deliberately uninterpreted.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FixtureSchema {
     description: String,
     schema: Value,
     tests: Vec<FixtureTest>,
+    #[serde(rename = "comment")]
+    _comment: Option<String>,
+    #[serde(rename = "specification")]
+    _specification: Option<serde::de::IgnoredAny>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FixtureTest {
     description: String,
     data: Value,
     valid: bool,
-}
-
-fn collect_fixture_schemas(root: &Value) -> Vec<FixtureSchema> {
-    match root {
-        Value::Array(groups) => groups
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| {
-                let schema = item.get("schema")?.clone();
-                let description = item
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("schema #{index}"));
-                let tests = item
-                    .get("tests")
-                    .and_then(Value::as_array)
-                    .map(|tests| {
-                        tests
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(test_index, test)| {
-                                Some(FixtureTest {
-                                    description: test
-                                        .get("description")
-                                        .and_then(Value::as_str)
-                                        .map(str::to_owned)
-                                        .unwrap_or_else(|| format!("test #{test_index}")),
-                                    data: test.get("data")?.clone(),
-                                    valid: test.get("valid")?.as_bool()?,
-                                })
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                Some(FixtureSchema {
-                    description,
-                    schema,
-                    tests,
-                })
-            })
-            .collect(),
-        schema => vec![FixtureSchema {
-            description: "root schema".to_owned(),
-            schema: schema.clone(),
-            tests: Vec::new(),
-        }],
-    }
+    #[serde(rename = "comment")]
+    _comment: Option<String>,
 }
 
 fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
@@ -326,30 +296,8 @@ fn schema_declares_unsupported_schema_uri(schema: &Value) -> bool {
     }
 }
 
-fn internal_evaluator_should_be_exact(schema: &SchemaNode, canonical_schema: &Value) -> bool {
-    canonical_keywords_are_supported_by_internal_evaluator(canonical_schema)
-        && schema_is_supported_by_internal_evaluator(schema, &mut HashSet::new())
-}
-
-fn canonical_keywords_are_supported_by_internal_evaluator(schema: &Value) -> bool {
-    let Value::Object(object) = schema else {
-        return true;
-    };
-
-    if object.contains_key("unevaluatedItems")
-        || object.contains_key("unevaluatedProperties")
-        || object.contains_key("dependentSchemas")
-    {
-        return false;
-    }
-
-    object.values().all(|value| match value {
-        Value::Array(values) => values
-            .iter()
-            .all(canonical_keywords_are_supported_by_internal_evaluator),
-        Value::Object(_) => canonical_keywords_are_supported_by_internal_evaluator(value),
-        _ => true,
-    })
+fn internal_evaluator_should_be_exact(schema: &SchemaNode, _canonical_schema: &Value) -> bool {
+    schema_is_supported_by_internal_evaluator(schema, &mut HashSet::new())
 }
 
 fn schema_is_supported_by_internal_evaluator(
@@ -372,7 +320,7 @@ fn schema_is_supported_by_internal_evaluator(
                     .as_ref()
                     .is_none_or(|pattern| pattern.support() == PatternSupport::Supported)
         }
-        Number { .. } | Integer { .. } => true,
+        Number { .. } | Integer { .. } | Validation(_) => true,
         Object {
             properties,
             pattern_properties,

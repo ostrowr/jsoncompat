@@ -1,0 +1,505 @@
+[
+  {
+    "description": "A conjunct cannot hide fields declared by another conjunct",
+    "old": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "x": true,
+            "y": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "new": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "x": true,
+            "y": true
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "x": "a"
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Negation reverses inclusion without treating guards as emitted objects",
+    "old": {
+      "not": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "new": {
+      "not": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": null,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Conditional guards with different optional properties are not equivalent",
+    "old": {
+      "if": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          }
+        }
+      },
+      "then": false
+    },
+    "new": {
+      "if": {
+        "type": "object",
+        "properties": {
+          "y": {
+            "type": "string"
+          }
+        }
+      },
+      "then": false
+    },
+    "expected": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "y": 0
+        },
+        "old": false,
+        "new": true
+      },
+      {
+        "data": {
+          "x": 0,
+          "y": 0
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "An overlapping oneOf excludes values satisfying both branches",
+    "old": {
+      "type": "number"
+    },
+    "new": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 1,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": 1.5,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "a",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Object oneOf guards preserve overlap on named fields",
+    "old": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "new": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    },
+    "expected": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "x": "a"
+        },
+        "old": false,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Excluded contains predicates must use validation semantics",
+    "old": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          }
+        }
+      },
+      "minContains": 0,
+      "maxContains": 0
+    },
+    "new": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": {}
+      },
+      "minContains": 0,
+      "maxContains": 0
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": [
+          {
+            "x": 0
+          }
+        ],
+        "old": true,
+        "new": false
+      },
+      {
+        "data": [],
+        "old": true,
+        "new": true
+      },
+      {
+        "data": [
+          0
+        ],
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "A false if chooses the implicit unconstrained else branch",
+    "old": true,
+    "new": {
+      "if": false,
+      "then": false
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": null,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "An absent if makes then and else annotations",
+    "old": true,
+    "new": {
+      "then": false,
+      "else": false
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 0,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "The former allof_relaxed fixture was a disjoint type change",
+    "old": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "minimum": 0
+        }
+      ]
+    },
+    "new": {
+      "type": "string"
+    },
+    "expected": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "witnesses": [
+      {
+        "data": 0,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": "s",
+        "old": false,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Required additional properties must still satisfy new value constraints",
+    "old": {
+      "type": "object",
+      "required": [
+        "x"
+      ],
+      "additionalProperties": true
+    },
+    "new": {
+      "type": "object",
+      "required": [
+        "x"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "x": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "x": "a"
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Required additional properties must still satisfy new value constraints under a dependency",
+    "old": {
+      "type": "object",
+      "properties": {
+        "trigger": true
+      },
+      "dependentRequired": {
+        "trigger": [
+          "x"
+        ]
+      },
+      "additionalProperties": true
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "trigger": true,
+        "x": {
+          "type": "string"
+        }
+      },
+      "dependentRequired": {
+        "trigger": [
+          "x"
+        ]
+      },
+      "additionalProperties": true
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {
+          "trigger": true,
+          "x": 0
+        },
+        "old": true,
+        "new": false
+      },
+      {
+        "data": {
+          "trigger": true,
+          "x": "a"
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  }
+]

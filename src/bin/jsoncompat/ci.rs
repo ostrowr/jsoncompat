@@ -540,14 +540,10 @@ mod tests {
     }
 
     #[test]
-    fn ci_grade_keeps_identical_unmodeled_schemas_nonfatal_with_warnings() {
+    fn ci_grade_accepts_identical_unevaluated_schemas_without_warnings() {
         let schema = serde_json::json!({
             "type": "object",
-            "dependentSchemas": {
-                "kind": {
-                    "required": ["detail"]
-                }
-            }
+            "unevaluatedProperties": false
         });
         let old = GoldenEntry {
             mode: RoleCli::Serializer,
@@ -563,22 +559,6 @@ mod tests {
         let grade = grade_entry(Some(&old), Some(&new));
 
         assert_eq!(grade.status, Status::Identical);
-        assert_eq!(grade.warnings.len(), 2);
-        assert!(
-            grade
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("old:")),
-            "expected an old-schema warning: {:?}",
-            grade.warnings
-        );
-        assert!(
-            grade
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("new:")),
-            "expected a new-schema warning: {:?}",
-            grade.warnings
-        );
+        assert!(grade.warnings.is_empty());
     }
 }

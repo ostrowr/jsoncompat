@@ -30,11 +30,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdae\x8eA\x0e\xc20\x0c\x04\xef}E\x943/\xe0\x19\\\x11\xaa\x9ax\x85\x8cJ\x1a\x1c\xf7\x80\xaa\xfe\x1d7P*\xb5\x17K\xbb\xe3]{j\x9c\xf3\x84\x8cDHz\xc1kd\x01\xf9\xb3\x9b\x0c\x18\x8a\xa6X\xdb\xd8\xc9b^\xabiv\xe0\xbe\xe7to;"A)\xbe\xfa7\x9b\xf3i)\xcc2d\x882\xca\xd6\xb4\x8f\xac\xc0\x90\xbe3L\xfb\xa2b\x1b\xdf\xb2Ztx\xe0\x10I\xe33@~\x91\xff\xfd\x95\x0e\xe1\x81\xa8\xbe\x99?"\x15@\x81', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (("billing_address", "billing_address", 1, True), ("credit_card", "credit_card", 2, True),), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["billing_address",1],["credit_card",2]],"patterns":[],"required":[],"additional":null}},{"dependencies":[["credit_card",["billing_address"]]]}]},{"types":["string"],"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("billing_address", "billing_address", 1, True), ("credit_card", "credit_card", 2, True),), 3, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["billing_address",1],["credit_card",2]],"patterns":[],"required":[],"additional":null}},{"dependencies":[["credit_card",["billing_address"]]]}]},{"types":["string"],"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",),
         ("float",),
         ("any",)
-    ], b'{"version":2,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false],"json_keys":[[0,["\\"billing_address\\":","\\"credit_card\\":"]]]}')
+    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false],"json_keys":[[0,["\\"billing_address\\":","\\"credit_card\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

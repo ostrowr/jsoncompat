@@ -1,0 +1,34 @@
+[
+  {
+    "data": {
+      "body": null,
+      "cookies": {},
+      "headers": {},
+      "path": {},
+      "query": {}
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/payload",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {}
+      },
+      "headers": {},
+      "status": "200"
+    },
+    "method": "GET",
+    "new": true,
+    "old": true,
+    "path": "/payload",
+    "surface": "Response"
+  }
+]

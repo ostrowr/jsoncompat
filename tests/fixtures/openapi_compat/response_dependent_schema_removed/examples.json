@@ -1,0 +1,54 @@
+[
+  {
+    "data": {
+      "body": null,
+      "cookies": {},
+      "headers": {},
+      "path": {},
+      "query": {}
+    },
+    "method": "POST",
+    "new": true,
+    "old": true,
+    "path": "/payload",
+    "surface": "Request"
+  },
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {
+          "x": 0
+        }
+      },
+      "headers": {},
+      "status": "200"
+    },
+    "method": "POST",
+    "new": true,
+    "old": false,
+    "path": "/payload",
+    "surface": "Response"
+  },
+  {
+    "data": {
+      "body": {
+        "content_type": {
+          "subtype": "json",
+          "type": "application"
+        },
+        "value": {}
+      },
+      "headers": {},
+      "status": "200"
+    },
+    "method": "POST",
+    "new": true,
+    "old": true,
+    "path": "/payload",
+    "surface": "Response"
+  }
+]

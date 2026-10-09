@@ -55,3 +55,9 @@ features, known-unsatisfiable schemas, or retry exhaustion.
 ## License
 
 MIT
+
+`analyze_compat(old_schema_json, new_schema_json, role)` returns a JSON string
+with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible results
+include a validated `counterexample` and its `direction`. Unknown results include
+a `reason`. The existing boolean API remains available. See the
+[keyword support matrix](../keyword-support.md).

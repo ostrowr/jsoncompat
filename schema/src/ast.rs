@@ -14,7 +14,7 @@ use crate::json_semantics::{integer_value_from_json, json_values_equal, numeric_
 use crate::schema_metadata::{is_schema_metadata_key, strip_schema_metadata};
 use crate::{
     CompileError, JSONSchema, SCHEMA_ARRAY_CHILD_KEYWORDS, SCHEMA_MAP_CHILD_KEYWORDS,
-    SINGLE_SCHEMA_CHILD_KEYWORDS, SchemaError, compile,
+    SINGLE_SCHEMA_CHILD_KEYWORDS, SchemaError, ValidationConstraint, compile,
 };
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value};
@@ -30,6 +30,12 @@ type Result<T> = std::result::Result<T, AstError>;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AstError {
+    #[error("invalid schema options: {reason}")]
+    InvalidOptions { reason: String },
+    #[error("schema resource or anchor URI '{uri}' is defined more than once")]
+    AmbiguousResource { uri: String },
+    #[error("structural analysis budget exceeded for {feature}")]
+    AnalysisLimit { feature: &'static str },
     /// The raw schema document failed dialect or keyword-shape validation.
     #[error(transparent)]
     Schema(#[from] SchemaError),
@@ -79,7 +85,30 @@ impl SchemaDocument {
     /// those should keep producing the schema frontend's more precise typed
     /// reference errors during root resolution.
     pub fn from_json(raw: &Value) -> Result<Self> {
-        let canonical = canonicalize_schema(raw)?.as_value().clone();
+        Self::from_prepared(raw)
+    }
+
+    /// Build with explicitly supplied resources and format vocabulary options.
+    pub fn from_json_with_options(raw: &Value, options: &crate::SchemaOptions) -> Result<Self> {
+        Self::from_prepared(&crate::options::prepare(raw, options)?)
+    }
+
+    fn from_prepared(raw: &Value) -> Result<Self> {
+        // Validate the source's dialect and shape before rewriting references.
+        let checked = canonicalize_schema(raw)?;
+        let canonical = if crate::references::needs_linking(raw) {
+            match crate::references::link(raw) {
+                Ok(linked) => canonicalize_schema(&linked)?.as_value().clone(),
+                Err(
+                    AstError::UnresolvedReference { .. }
+                    | AstError::UnsupportedReference { .. }
+                    | AstError::AnalysisLimit { .. },
+                ) => checked.as_value().clone(),
+                Err(error) => return Err(error),
+            }
+        } else {
+            checked.as_value().clone()
+        };
         let schema = Self {
             raw: raw.clone(),
             root: OnceCell::new(),
@@ -106,6 +135,44 @@ impl SchemaDocument {
     pub fn root(&self) -> Result<&SchemaNode> {
         get_or_try_init(&self.root, || {
             let canonical = self.canonical_schema_json()?;
+            if crate::options::has_assertions(canonical) {
+                let mut graph = MutableSchemaGraph::default();
+                let root = graph.push(MutableSchemaNodeKind::Validation(
+                    ValidationConstraint::new(canonical.clone())?,
+                ));
+                return Ok(freeze_schema_node(root, &graph, &mut HashMap::new()));
+            }
+            let prepared;
+            let canonical = if crate::unevaluated::present(canonical) {
+                let linked = match crate::references::link(&self.raw) {
+                    Ok(linked) => linked,
+                    Err(AstError::AnalysisLimit { .. }) => {
+                        return validation_node(self.raw.clone());
+                    }
+                    Err(error) => return Err(error),
+                };
+                if let Some(lowered) = crate::unevaluated::lower(&linked) {
+                    prepared = canonicalize_schema(&lowered)?.as_value().clone();
+                    &prepared
+                } else {
+                    let mut graph = MutableSchemaGraph::default();
+                    let root = graph.push(MutableSchemaNodeKind::Validation(
+                        ValidationConstraint::new(linked)?,
+                    ));
+                    return Ok(freeze_schema_node(root, &graph, &mut HashMap::new()));
+                }
+            } else if crate::references::needs_linking(canonical) {
+                prepared = match crate::references::link(canonical) {
+                    Ok(linked) => linked,
+                    Err(AstError::AnalysisLimit { .. }) => {
+                        return validation_node(self.raw.clone());
+                    }
+                    Err(error) => return Err(error),
+                };
+                &prepared
+            } else {
+                canonical
+            };
             let mut graph = MutableSchemaGraph::default();
             let root = build_schema_ast_from_value(canonical, &mut graph)?;
             let root = resolve_refs_internal(
@@ -124,6 +191,19 @@ impl SchemaDocument {
         get_or_try_init(&self.canonical, || {
             Ok(canonicalize_schema(&self.raw)?.as_value().clone())
         })
+    }
+
+    /// Resolve embedded resources and dynamic scopes to local JSON Pointers.
+    ///
+    /// Unlike canonicalization, this preserves validation keywords and branch
+    /// multiplicity. Build-time consumers can compile the resulting graph
+    /// without implementing URI resolution or dynamic-scope lookup at runtime.
+    pub fn linked_schema_json(&self) -> Result<std::borrow::Cow<'_, Value>> {
+        if crate::references::needs_linking(&self.raw) {
+            crate::references::link(&self.raw).map(std::borrow::Cow::Owned)
+        } else {
+            Ok(std::borrow::Cow::Borrowed(&self.raw))
+        }
     }
 
     /// Return the original JSON Schema document supplied at construction time.
@@ -161,6 +241,14 @@ impl SchemaDocument {
             compile(&self.raw).map_err(|source| AstError::RawValidator { source })
         })
     }
+}
+
+fn validation_node(source: Value) -> Result<SchemaNode> {
+    let mut graph = MutableSchemaGraph::default();
+    let root = graph.push(MutableSchemaNodeKind::Validation(
+        ValidationConstraint::new(source)?,
+    ));
+    Ok(freeze_schema_node(root, &graph, &mut HashMap::new()))
 }
 
 fn schema_uses_resolver_owned_reference_features(schema: &Value) -> bool {
@@ -306,6 +394,7 @@ impl SchemaNode {
         }
 
         let is_valid = match self.kind() {
+            SchemaNodeKind::Validation(constraint) => constraint.accepts(value),
             SchemaNodeKind::BoolSchema(valid) => *valid,
             SchemaNodeKind::Any => true,
             SchemaNodeKind::String {
@@ -323,16 +412,27 @@ impl SchemaNode {
                         &Value::String(string_value.to_owned()),
                     )
             }),
+            SchemaNodeKind::Number { .. } | SchemaNodeKind::Integer { .. }
+                if value.is_number() && value.as_i64().is_none() && value.as_u64().is_none() =>
+            {
+                // Preserve decimal lexemes and integers outside machine range.
+                // The ordinary integer path below remains allocation-free.
+                crate::ExactNumber::from_node(self).is_some_and(|number| number.accepts(value))
+            }
             SchemaNodeKind::Number {
                 bounds,
                 multiple_of,
                 enumeration,
             } => value.as_f64().is_some_and(|number_value| {
                 bounds.contains(number_value)
-                    && value_is_multiple_of(
-                        number_value,
-                        multiple_of.as_ref().map(|multiple_of| multiple_of.as_f64()),
-                    )
+                    && multiple_of.as_ref().is_none_or(|divisor| {
+                        if let Some(integer) = integer_value_from_json(value)
+                            && let Some(divisor) = exact_positive_integer(divisor.as_f64())
+                        {
+                            return integer % i128::from(divisor) == 0;
+                        }
+                        value_is_multiple_of(number_value, Some(divisor.as_f64()))
+                    })
                     && enum_contains_numeric_value(enumeration.as_deref(), value)
             }),
             SchemaNodeKind::Integer {
@@ -344,10 +444,13 @@ impl SchemaNode {
                     value.as_f64().is_some_and(|number_value| {
                         number_value.fract() == 0.0
                             && bounds.as_number_bounds().contains(number_value)
-                            && value_is_multiple_of(
-                                number_value,
-                                multiple_of.as_ref().map(|multiple_of| multiple_of.as_f64()),
-                            )
+                            && (multiple_of
+                                .as_ref()
+                                .is_none_or(|divisor| divisor.integer_divisor() == Some(1))
+                                || value_is_multiple_of(
+                                    number_value,
+                                    multiple_of.as_ref().map(|divisor| divisor.as_f64()),
+                                ))
                             && enum_contains_numeric_value(enumeration.as_deref(), value)
                     })
                 },
@@ -529,7 +632,8 @@ impl SchemaNode {
                     | Boolean { .. }
                     | Null { .. }
                     | Const(_)
-                    | Enum(_) => Vec::new(),
+                    | Enum(_)
+                    | Validation(_) => Vec::new(),
                 }
             };
 
@@ -550,6 +654,7 @@ impl SchemaNode {
         use SchemaNodeKind::*;
 
         match self.kind() {
+            Validation(constraint) => constraint.source().clone(),
             BoolSchema(b) => Value::Bool(*b),
             Any => Value::Object(serde_json::Map::new()),
 
@@ -1101,6 +1206,7 @@ trait SchemaNodeGraph: Sized {
 #[derive(Clone, Copy)]
 enum SchemaNodeKindView<'a, Node> {
     BoolSchema(bool),
+    Validation(&'a ValidationConstraint),
     Any,
     String {
         length: CountRange<u64>,
@@ -1174,6 +1280,7 @@ impl<'a> From<&'a MutableSchemaNodeKind> for SchemaNodeKindView<'a, MutableSchem
         match kind {
             MutableSchemaNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
             MutableSchemaNodeKind::Any => Self::Any,
+            MutableSchemaNodeKind::Validation(value) => Self::Validation(value),
             MutableSchemaNodeKind::String {
                 length,
                 pattern,
@@ -1264,6 +1371,7 @@ impl<'a, Node> From<&'a SchemaNodeKind<Node>> for SchemaNodeKindView<'a, Node> {
         match kind {
             SchemaNodeKind::BoolSchema(value) => Self::BoolSchema(*value),
             SchemaNodeKind::Any => Self::Any,
+            SchemaNodeKind::Validation(value) => Self::Validation(value),
             SchemaNodeKind::String {
                 length,
                 pattern,
@@ -1378,6 +1486,7 @@ fn schema_node_kind_views_are_equal<Node>(
     match (left, right) {
         (BoolSchema(left), BoolSchema(right)) => left == right,
         (Any, Any) => true,
+        (Validation(a), Validation(b)) => a == b,
         (Any, BoolSchema(true)) | (BoolSchema(true), Any) => true,
         (
             String {
@@ -1643,6 +1752,7 @@ fn freeze_schema_node_kind(
     match kind {
         MutableSchemaNodeKind::BoolSchema(value) => SchemaNodeKind::BoolSchema(value),
         MutableSchemaNodeKind::Any => SchemaNodeKind::Any,
+        MutableSchemaNodeKind::Validation(value) => SchemaNodeKind::Validation(value),
         MutableSchemaNodeKind::String {
             length,
             pattern,
@@ -1932,6 +2042,7 @@ impl IntegerMultipleOf {
 pub enum SchemaNodeKind<Node = SchemaNode> {
     /// Boolean schema form: `true` accepts all values, `false` accepts none.
     BoolSchema(bool),
+    Validation(ValidationConstraint),
     /// Unconstrained schema object.
     Any,
 
@@ -1955,9 +2066,13 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
         enumeration: Option<Vec<Value>>,
     },
     /// Boolean schema with optional enum restriction.
-    Boolean { enumeration: Option<Vec<Value>> },
+    Boolean {
+        enumeration: Option<Vec<Value>>,
+    },
     /// Null schema with optional enum restriction.
-    Null { enumeration: Option<Vec<Value>> },
+    Null {
+        enumeration: Option<Vec<Value>>,
+    },
 
     /// Object schema with resolved property schemas and normalized count constraints.
     Object {
@@ -2007,6 +2122,7 @@ pub enum SchemaNodeKind<Node = SchemaNode> {
 #[non_exhaustive]
 enum MutableSchemaNodeKind<Node = MutableSchemaNode> {
     BoolSchema(bool),
+    Validation(ValidationConstraint),
     Any,
 
     String {
@@ -2082,8 +2198,42 @@ fn build_schema_ast_from_value(
         return Ok(graph.any());
     };
 
+    if let Some(dependencies) = obj.get("dependencies").and_then(Value::as_object) {
+        let mut base = obj.clone();
+        base.remove("dependencies");
+        for (name, dependency) in dependencies {
+            let keyword = if dependency.is_array() {
+                "dependentRequired"
+            } else {
+                "dependentSchemas"
+            };
+            let entries = base
+                .entry(keyword)
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+                .expect("validated dependency map");
+            if let Some(existing) = entries.get_mut(name) {
+                if let Some(values) = dependency.as_array() {
+                    existing
+                        .as_array_mut()
+                        .expect("validated dependency array")
+                        .extend(values.iter().cloned());
+                } else {
+                    *existing = serde_json::json!({"allOf":[existing,dependency]});
+                }
+            } else {
+                entries.insert(name.clone(), dependency.clone());
+            }
+        }
+        return build_schema_ast_from_value(&Value::Object(base), graph);
+    }
+
+    if let Some(dependencies) = obj.get("dependentSchemas") {
+        return parse_dependent_schemas(obj, dependencies, graph);
+    }
+
     match SchemaShape::classify(obj) {
-        SchemaShape::Ref(ref_path) => Ok(parse_ref_schema(graph, ref_path)),
+        SchemaShape::Ref(ref_path) => parse_ref_schema(obj, graph, ref_path),
         SchemaShape::Enum(values) => Ok(parse_enum_schema(graph, values)),
         SchemaShape::UnsupportedReference(ref_path) => Err(AstError::UnsupportedReference {
             ref_path: ref_path.to_owned(),
@@ -2106,6 +2256,18 @@ fn build_schema_ast_from_value(
         SchemaShape::Object => parse_object_schema(obj, graph),
         SchemaShape::Array => parse_array_schema(obj, graph),
         SchemaShape::TypeUnion(type_names) => parse_type_union_schema(obj, type_names, graph),
+        SchemaShape::ImplicitTypeUnion => parse_type_union_schema(
+            obj,
+            &[
+                Value::from("null"),
+                Value::from("boolean"),
+                Value::from("object"),
+                Value::from("array"),
+                Value::from("string"),
+                Value::from("number"),
+            ],
+            graph,
+        ),
         SchemaShape::Any => Ok(graph.any()),
     }
 }
@@ -2133,6 +2295,7 @@ enum SchemaShape<'a> {
     Object,
     Array,
     TypeUnion(&'a [Value]),
+    ImplicitTypeUnion,
     Any,
 }
 
@@ -2197,6 +2360,28 @@ impl<'a> SchemaShape<'a> {
         if keywords.flags.contains(SchemaKeywordFlags::NUMERIC) && keywords.values_are_all_numeric()
         {
             return Self::Number;
+        }
+        // Canonicalization preserves JSON Pointer targets rather than expanding
+        // their implicit type unions. Type-specific keywords still accept all
+        // other types, including inside recursive schemas and mixed enums.
+        if [
+            (
+                SchemaKeywordFlags::OBJECT,
+                Value::is_object as fn(&Value) -> bool,
+            ),
+            (SchemaKeywordFlags::ARRAY, Value::is_array),
+            (SchemaKeywordFlags::STRING, Value::is_string),
+            (SchemaKeywordFlags::NUMERIC, Value::is_number),
+        ]
+        .into_iter()
+        .any(|(flag, predicate)| {
+            keywords.flags.contains(flag)
+                && keywords
+                    .enum_values
+                    .is_none_or(|values| values.iter().any(predicate))
+                && keywords.const_value.is_none_or(predicate)
+        }) {
+            return Self::ImplicitTypeUnion;
         }
         if let Some(values) = keywords.enum_values {
             return Self::Enum(values);
@@ -2365,14 +2550,71 @@ impl<'a> SchemaKeywords<'a> {
 
     #[must_use]
     fn values_are_all(self, mut predicate: impl FnMut(&Value) -> bool) -> bool {
-        self.enum_values
-            .is_none_or(|values| values.iter().all(&mut predicate))
+        (self.enum_values.is_some() || self.const_value.is_some())
+            && self
+                .enum_values
+                .is_none_or(|values| values.iter().all(&mut predicate))
             && self.const_value.is_none_or(predicate)
     }
 }
 
-fn parse_ref_schema(graph: &mut MutableSchemaGraph, ref_path: &str) -> MutableSchemaNode {
-    graph.push(MutableSchemaNodeKind::Ref(ref_path.to_owned()))
+fn parse_ref_schema(
+    obj: &Map<String, Value>,
+    graph: &mut MutableSchemaGraph,
+    ref_path: &str,
+) -> Result<MutableSchemaNode> {
+    let reference = graph.push(MutableSchemaNodeKind::Ref(ref_path.to_owned()));
+    // In Draft 2020-12, sibling assertions apply alongside the referenced
+    // schema. They must not disappear just because `$ref` is dispatched first.
+    if let Some(base) = parse_applicator_base_schema(obj, &["$ref"], graph)? {
+        Ok(graph.push(MutableSchemaNodeKind::AllOf(vec![reference, base])))
+    } else {
+        Ok(reference)
+    }
+}
+
+/// A schema dependency applies to the entire object when its trigger is
+/// present. Lower it into existing conditional nodes rather than adding a
+/// second dependency evaluator to every consumer of the IR. Keep the source
+/// JSON intact so JSON Pointers into `dependentSchemas` remain resolvable.
+fn parse_dependent_schemas(
+    obj: &Map<String, Value>,
+    dependencies: &Value,
+    graph: &mut MutableSchemaGraph,
+) -> Result<MutableSchemaNode> {
+    let dependencies = parse_object_keyword(dependencies, "dependentSchemas")?;
+    let mut conjuncts = Vec::with_capacity(dependencies.len() + 1);
+    let mut base = obj.clone();
+    base.remove("dependentSchemas");
+    for (trigger, schema) in dependencies {
+        if schema == &Value::Bool(true) {
+            continue;
+        }
+        if schema == &Value::Bool(false) {
+            // A false dependency simply forbids its trigger. Folding it into
+            // the base avoids an unnecessary conditional/intersection proof.
+            let properties = base
+                .entry("properties")
+                .or_insert_with(|| serde_json::json!({}));
+            properties
+                .as_object_mut()
+                .expect("validated properties map")
+                .insert(trigger.clone(), Value::Bool(false));
+            continue;
+        }
+        let if_schema = build_schema_ast_from_value(
+            &serde_json::json!({ "type": "object", "required": [trigger] }),
+            graph,
+        )?;
+        let then_schema = Some(build_schema_ast_from_value(schema, graph)?);
+        conjuncts.push(graph.push(MutableSchemaNodeKind::IfThenElse {
+            if_schema,
+            then_schema,
+            else_schema: None,
+        }));
+    }
+    conjuncts.insert(0, build_schema_ast_from_value(&Value::Object(base), graph)?);
+    Ok(graph.push(MutableSchemaNodeKind::AllOf(conjuncts)))
 }
 
 fn parse_enum_schema(graph: &mut MutableSchemaGraph, values: &[Value]) -> MutableSchemaNode {
@@ -2557,6 +2799,11 @@ fn parse_number_schema(
     integer: bool,
     graph: &mut MutableSchemaGraph,
 ) -> Result<MutableSchemaNode> {
+    if crate::exact::needs_exact_number(obj) {
+        return Ok(graph.push(MutableSchemaNodeKind::Validation(
+            ValidationConstraint::new(Value::Object(obj.clone()))?,
+        )));
+    }
     if integer {
         let Some(bounds) = IntegerBounds::from_json_schema_keywords(
             parse_i64_keyword(obj, "minimum")?,
@@ -3174,6 +3421,7 @@ fn resolve_refs_internal(
         }
         MutableSchemaNodeKind::BoolSchema(_)
         | MutableSchemaNodeKind::Any
+        | MutableSchemaNodeKind::Validation(_)
         | MutableSchemaNodeKind::String { .. }
         | MutableSchemaNodeKind::Number { .. }
         | MutableSchemaNodeKind::Integer { .. }

@@ -110,13 +110,17 @@ fn compat_schemas(
     fuzz: u32,
     depth: u8,
 ) -> Result<()> {
-    let ok_static = backcompat::check_compat(&old.schema, &new.schema, role)?;
-    let offender = if fuzz > 0 && !ok_static {
-        let mut rng = rand::rng();
-        sample_incompat(&old, &new, role, fuzz as usize, depth, &mut rng)?
-    } else {
-        None
-    };
+    let verdict = backcompat::analyze_compat(&old.schema, &new.schema, role)?;
+    let ok_static = matches!(verdict, backcompat::CompatibilityResult::Compatible);
+    let offender =
+        if let backcompat::CompatibilityResult::Incompatible { counterexample, .. } = &verdict {
+            Some(counterexample.clone())
+        } else if fuzz > 0 && !ok_static {
+            let mut rng = rand::rng();
+            sample_incompat(&old, &new, role, fuzz as usize, depth, &mut rng)?
+        } else {
+            None
+        };
 
     if ok_static && offender.is_none() {
         eprintln!(
@@ -128,8 +132,13 @@ fn compat_schemas(
     }
 
     eprintln!(
-        "{} Schemas are NOT backward-compatible (role = {:?})",
+        "{} {} (role = {:?})",
         "✘".red(),
+        if offender.is_some() {
+            "Schemas are NOT backward-compatible"
+        } else {
+            "Compatibility is UNKNOWN: no inclusion proof or counterexample"
+        },
         role
     );
     if let Some(detail) = backcompat::explain_compat_failure(&old.schema, &new.schema, role)? {
@@ -406,8 +415,8 @@ mod tests {
     fn compat_command_accepts_valid_but_unmodeled_schema_keywords_with_warnings() {
         for (keyword, old_schema) in [
             (
-                "dependentSchemas",
-                r#"{"type":"object","dependentSchemas":{"kind":{"required":["detail"]}}}"#,
+                "unevaluatedProperties",
+                r#"{"type":"object","unevaluatedProperties": false}"#,
             ),
             (
                 "dependencies",
@@ -795,10 +804,10 @@ mod tests {
             .as_nanos();
         let dir = std::env::temp_dir();
         let old_path = dir.join(format!(
-            "jsoncompat-openapi-dependent-schemas-old-{unique}.json"
+            "jsoncompat-openapi-unevaluated-properties-old-{unique}.json"
         ));
         let new_path = dir.join(format!(
-            "jsoncompat-openapi-dependent-schemas-new-{unique}.json"
+            "jsoncompat-openapi-unevaluated-properties-new-{unique}.json"
         ));
         let old = r#"{
   "openapi": "3.1.0",
@@ -811,9 +820,7 @@ mod tests {
             "application/json": {
               "schema": {
                 "type": "object",
-                "dependentSchemas": {
-                  "kind": { "required": ["detail"] }
-                }
+                "$id": "https://example.com/request"
               }
             }
           }
@@ -867,15 +874,13 @@ mod tests {
             "{message}"
         );
         assert!(
-            message.contains(
-                "#/paths/~1pets/post/requestBody/content/application~1json/schema/dependentSchemas"
-            ),
+            message
+                .contains("#/paths/~1pets/post/requestBody/content/application~1json/schema/$id"),
             "{message}"
         );
         assert!(
-            message.contains(
-                "OpenAPI compatibility checks do not support JSON Schema keyword 'dependentSchemas'"
-            ),
+            message
+                .contains("OpenAPI compatibility checks do not support JSON Schema keyword '$id'"),
             "{message}"
         );
     }

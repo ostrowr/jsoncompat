@@ -14,13 +14,25 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(crate) struct SubschemaCheckContext {
-    active_pairs: HashMap<(NodeId, NodeId), usize>,
+    active_pairs: HashMap<(NodeId, NodeId, bool), usize>,
     pub(super) acceptance_deviations: HashMap<NodeId, AcceptanceDeviation>,
     productive_depth: usize,
     pub(super) assume_subset_omits_undeclared_properties: bool,
 }
 
 impl SubschemaCheckContext {
+    /// Applicator proofs compare guards, exclusions, and individual conjuncts,
+    /// not necessarily the schema of the value being emitted. Those comparisons
+    /// must use full validation semantics: a name missing from one conjunct can
+    /// still be declared by another, and negation reverses inclusion.
+    pub(super) fn with_validation_semantics<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let emitted = self.assume_subset_omits_undeclared_properties;
+        self.assume_subset_omits_undeclared_properties = false;
+        let result = f(self);
+        self.assume_subset_omits_undeclared_properties = emitted;
+        result
+    }
+
     /// Context variant used when checking values emitted by serializers that
     /// omit undeclared object properties.
     pub(super) fn for_emitted_values() -> Self {
@@ -42,7 +54,7 @@ impl SubschemaCheckContext {
     /// guarded by a productive edge and can be accepted coinductively.
     pub(super) fn recursion_reentry_is_guarded(&self, key: (NodeId, NodeId)) -> Option<bool> {
         self.active_pairs
-            .get(&key)
+            .get(&(key.0, key.1, self.assume_subset_omits_undeclared_properties))
             .map(|active_depth| self.productive_depth > *active_depth)
     }
 
@@ -55,6 +67,7 @@ impl SubschemaCheckContext {
         key: (NodeId, NodeId),
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
+        let key = (key.0, key.1, self.assume_subset_omits_undeclared_properties);
         self.active_pairs.insert(key, self.productive_depth);
         let result = f(self);
         self.active_pairs.remove(&key);

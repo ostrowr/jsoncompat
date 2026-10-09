@@ -1,6 +1,8 @@
 //! Normalized constraint types used by the resolved schema IR.
 
-use fancy_regex::Regex;
+use jsonschema::Validator;
+use serde_json::{Value, json};
+use std::cell::OnceCell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -295,10 +297,10 @@ impl<T: Copy + Ord> CountRange<T> {
     }
 }
 
-/// Whether a regex pattern can be executed by the internal Rust matcher.
+/// Whether a regex pattern can be executed by the cached validator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PatternSupport {
-    /// The pattern compiled into the internal Rust matcher.
+    /// The pattern compiled with the same semantics as document validation.
     Supported,
     /// The pattern is preserved as source text but cannot be evaluated internally.
     Unsupported,
@@ -308,24 +310,25 @@ pub enum PatternSupport {
 #[derive(Clone)]
 pub struct PatternConstraint {
     source: String,
-    support: PatternSupport,
-    matcher: Option<Rc<Regex>>,
+    matcher: Rc<OnceCell<Option<Validator>>>,
 }
 
 impl PatternConstraint {
     pub(crate) fn new(source: String) -> Self {
-        let matcher = Regex::new(&source).ok().map(Rc::new);
-        let support = if matcher.is_some() {
-            PatternSupport::Supported
-        } else {
-            PatternSupport::Unsupported
-        };
-
         Self {
             source,
-            support,
-            matcher,
+            matcher: Rc::new(OnceCell::new()),
         }
+    }
+
+    fn matcher(&self) -> Option<&Validator> {
+        // Use the same ECMA-262 translation as document validation. Rust's
+        // Unicode `\d`/`\w`/`\s` classes are different languages; compiling
+        // the source directly as a Rust regex can make finite subset proofs
+        // unsound. Compile only when needed and share the cache across clones.
+        self.matcher
+            .get_or_init(|| jsonschema::draft202012::new(&json!({ "pattern": self.source })).ok())
+            .as_ref()
     }
 
     /// Return the original JSON Schema pattern source.
@@ -334,10 +337,14 @@ impl PatternConstraint {
         &self.source
     }
 
-    /// Return whether the pattern is supported by the internal Rust matcher.
+    /// Return whether the pattern is supported by the cached validator.
     #[must_use]
-    pub const fn support(&self) -> PatternSupport {
-        self.support
+    pub fn support(&self) -> PatternSupport {
+        if self.matcher().is_some() {
+            PatternSupport::Supported
+        } else {
+            PatternSupport::Unsupported
+        }
     }
 
     /// Return true when the supported internal matcher accepts `candidate`.
@@ -346,13 +353,8 @@ impl PatternConstraint {
     /// validation should use `SchemaDocument::is_valid` instead.
     #[must_use]
     pub fn is_match(&self, candidate: &str) -> bool {
-        match self.support {
-            PatternSupport::Supported => self
-                .matcher
-                .as_ref()
-                .is_some_and(|regex| regex.is_match(candidate).unwrap_or(false)),
-            PatternSupport::Unsupported => false,
-        }
+        self.matcher()
+            .is_some_and(|validator| validator.is_valid(&Value::String(candidate.to_owned())))
     }
 }
 

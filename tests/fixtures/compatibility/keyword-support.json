@@ -1,0 +1,461 @@
+[
+  {
+    "description": "Decimal multiples are compared as exact rational lattices",
+    "old": {
+      "type": "number",
+      "multipleOf": 0.1
+    },
+    "new": {
+      "type": "number",
+      "multipleOf": 0.3
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 0.3,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": 0.1,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": 0.30000000000000004,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Integer domains intersect decimal lattices exactly",
+    "old": {
+      "type": "integer",
+      "multipleOf": 3
+    },
+    "new": {
+      "type": "integer",
+      "multipleOf": 0.3
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 3,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": 1,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": 0.3,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Unsigned integer bounds preserve adjacent values",
+    "old": {
+      "type": "integer",
+      "minimum": 18446744073709551613
+    },
+    "new": {
+      "type": "integer",
+      "minimum": 18446744073709551614
+    },
+    "expected": [
+      true,
+      false,
+      false,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 18446744073709551613,
+        "old": true,
+        "new": false
+      },
+      {
+        "data": 18446744073709551615,
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Exclusive wide integer bounds round on the integer lattice",
+    "old": {
+      "type": "integer",
+      "exclusiveMinimum": 9007199254740992
+    },
+    "new": {
+      "type": "integer",
+      "minimum": 9007199254740993
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 9007199254740992,
+        "old": false,
+        "new": false
+      },
+      {
+        "data": 9007199254740993,
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Unevaluated properties close a directly declared object",
+    "old": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "string"
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": "ok"
+        },
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "z": 1
+        },
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Unevaluated items close a tuple",
+    "old": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ],
+      "items": false
+    },
+    "new": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ],
+      "unevaluatedItems": false
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": [],
+        "old": true,
+        "new": true
+      },
+      {
+        "data": [
+          "yes"
+        ],
+        "old": true,
+        "new": true
+      },
+      {
+        "data": [
+          "yes",
+          1
+        ],
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Anchors refer to a resource schema",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "$id": "https://example.com/root",
+      "$defs": {
+        "value": {
+          "$anchor": "value",
+          "type": "string"
+        }
+      },
+      "$ref": "#value"
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "yes",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": 1,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Resource identifiers resolve relative child resources",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "$id": "https://example.com/root",
+      "$defs": {
+        "value": {
+          "$id": "value",
+          "type": "string"
+        }
+      },
+      "$ref": "value"
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "yes",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": 1,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Dynamic references without an outer override use their initial anchor",
+    "old": {
+      "type": "integer"
+    },
+    "new": {
+      "$defs": {
+        "value": {
+          "$dynamicAnchor": "value",
+          "type": "integer"
+        }
+      },
+      "$dynamicRef": "#value"
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": 1,
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "x",
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Content keywords annotate encoded strings without decoding",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "contentMediaType": "application/json",
+      "contentSchema": {
+        "type": "integer"
+      }
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": "not base64!",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": "e30=",
+        "old": true,
+        "new": true
+      },
+      {
+        "data": 1,
+        "old": false,
+        "new": false
+      }
+    ]
+  },
+  {
+    "description": "Legacy property dependencies retain their assertions",
+    "old": {
+      "type": "object",
+      "dependentRequired": {
+        "x": [
+          "y"
+        ]
+      }
+    },
+    "new": {
+      "type": "object",
+      "dependencies": {
+        "x": [
+          "y"
+        ]
+      }
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": 1
+        },
+        "old": false,
+        "new": false
+      },
+      {
+        "data": {
+          "x": 1,
+          "y": 2
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  },
+  {
+    "description": "Legacy schema dependencies retain their assertions",
+    "old": {
+      "type": "object",
+      "dependentSchemas": {
+        "x": {
+          "required": [
+            "y"
+          ]
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "dependencies": {
+        "x": {
+          "required": [
+            "y"
+          ]
+        }
+      }
+    },
+    "expected": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "witnesses": [
+      {
+        "data": {},
+        "old": true,
+        "new": true
+      },
+      {
+        "data": {
+          "x": 1
+        },
+        "old": false,
+        "new": false
+      },
+      {
+        "data": {
+          "x": 1,
+          "y": 2
+        },
+        "old": true,
+        "new": true
+      }
+    ]
+  }
+]

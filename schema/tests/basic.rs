@@ -354,7 +354,7 @@ fn contradictory_size_constraints_are_lowered_to_false_schemas() {
 }
 
 #[test]
-fn unsupported_ecmascript_pattern_is_preserved_but_never_matches() {
+fn ecmascript_control_escape_is_preserved_and_matches() {
     let schema = build_schema(&json!({
         "type": "string",
         "pattern": "^\\cC$"
@@ -367,9 +367,9 @@ fn unsupported_ecmascript_pattern_is_preserved_but_never_matches() {
 
     let pattern = pattern.as_ref().expect("pattern");
     assert_eq!(pattern.as_str(), "^\\cC$");
-    assert_eq!(pattern.support(), PatternSupport::Unsupported);
+    assert_eq!(pattern.support(), PatternSupport::Supported);
     assert!(!schema.accepts_value(&json!("")));
-    assert!(!schema.accepts_value(&json!("\u{3}")));
+    assert!(schema.accepts_value(&json!("\u{3}")));
 }
 
 #[test]
@@ -1144,24 +1144,20 @@ fn rejects_non_local_ref_with_explicit_unsupported_reference_error() {
 }
 
 #[test]
-fn rejects_anchor_and_dynamic_ref_keywords_with_explicit_unsupported_reference_error() {
+fn resolves_anchor_and_identity_keywords_and_rejects_dangling_dynamic_refs() {
     for raw in [
-        json!({
-            "$anchor": "node",
-            "type": "string"
-        }),
-        json!({
-            "$dynamicRef": "#node"
-        }),
-        json!({
-            "$id": "https://example.com/schemas/node.json",
-            "type": "string"
-        }),
+        json!({"$anchor":"node","type":"string"}),
+        json!({"$id":"https://example.com/node","type":"string"}),
     ] {
         let schema = SchemaDocument::from_json(&raw).unwrap();
-        let error = schema.root().unwrap_err();
-        assert!(matches!(error, AstError::UnsupportedReference { .. }));
+        assert!(schema.root().unwrap().accepts_value(&json!("yes")));
+        assert!(!schema.root().unwrap().accepts_value(&json!(0)));
     }
+    let schema = SchemaDocument::from_json(&json!({"$dynamicRef":"#missing"})).unwrap();
+    assert!(matches!(
+        schema.root(),
+        Err(AstError::UnresolvedReference { .. })
+    ));
 }
 
 #[test]
@@ -1175,8 +1171,7 @@ fn raw_validation_does_not_force_ast_resolution() {
     assert!(schema.is_valid(&json!("value")).unwrap());
     assert!(!schema.is_valid(&json!(123)).unwrap());
 
-    let error = schema.root().unwrap_err();
-    assert!(matches!(error, AstError::UnsupportedReference { .. }));
+    assert!(schema.root().unwrap().accepts_value(&json!("value")));
 }
 
 #[test]
@@ -1212,7 +1207,7 @@ fn schema_documents_do_not_treat_ref_shaped_const_payloads_as_resolver_features(
 }
 
 #[test]
-fn schema_documents_preserve_resolver_owned_reference_errors_at_resolution_time() {
+fn schema_documents_keep_backend_validation_separate_from_resolution() {
     let schema = SchemaDocument::from_json(&json!({
         "$id": "https://example.com/schemas/node.json",
         "type": "string",
@@ -1220,8 +1215,11 @@ fn schema_documents_preserve_resolver_owned_reference_errors_at_resolution_time(
     }))
     .expect("resolver-owned reference features keep construction focused on shape validation");
 
-    let error = schema.root().unwrap_err();
-    assert!(matches!(error, AstError::UnsupportedReference { .. }));
+    assert!(schema.root().is_ok());
+    assert!(matches!(
+        schema.validate_source_schema(),
+        Err(AstError::RawValidator { .. })
+    ));
 }
 
 #[test]

@@ -2,7 +2,8 @@ use serde_json::{Map, Value};
 
 pub(crate) const JSONCOMPAT_METADATA_KEY: &str = "x-jsoncompat";
 
-pub(crate) const SCHEMA_METADATA_KEYS: [&str; 9] = [
+pub(crate) const SCHEMA_METADATA_KEYS: [&str; 10] = [
+    crate::options::ASSERT_FORMAT,
     "$schema",
     "$id",
     "$anchor",
@@ -14,7 +15,8 @@ pub(crate) const SCHEMA_METADATA_KEYS: [&str; 9] = [
     JSONCOMPAT_METADATA_KEY,
 ];
 
-pub(crate) const PRESERVED_SCHEMA_METADATA_KEYS: [&str; 8] = [
+pub(crate) const PRESERVED_SCHEMA_METADATA_KEYS: [&str; 9] = [
+    crate::options::ASSERT_FORMAT,
     "$schema",
     "$id",
     "$anchor",
@@ -28,7 +30,8 @@ pub(crate) const PRESERVED_SCHEMA_METADATA_KEYS: [&str; 8] = [
 // Terminal schemas preserve identity metadata, but not `$defs` / `definitions`:
 // once an object collapses to `{"not": true}` there are no remaining subschemas
 // that can reference local definitions.
-pub(crate) const TERMINAL_SCHEMA_METADATA_KEYS: [&str; 6] = [
+pub(crate) const TERMINAL_SCHEMA_METADATA_KEYS: [&str; 7] = [
+    crate::options::ASSERT_FORMAT,
     "$schema",
     "$id",
     "$anchor",

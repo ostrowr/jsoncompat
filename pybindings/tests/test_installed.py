@@ -1,6 +1,7 @@
 """Smoke tests for the installed package; run via check_sdist.py."""
 
 from importlib import machinery, resources
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -43,6 +44,17 @@ class InstalledDistributionTests(unittest.TestCase):
         self.assertFalse(validator.is_valid_value(0))
         generator = jsoncompat.generator_for(schema)
         self.assertTrue(validator.is_valid_json(generator.generate_value(depth=2)))
+
+    def test_keyword_support_and_three_way_verdicts(self) -> None:
+        decimal = '{"type":"number","multipleOf":0.1}'
+        validator = jsoncompat.validator_for(decimal)
+        self.assertTrue(validator.is_valid_json("0.3"))
+        self.assertFalse(validator.is_valid_json("0.30000000000000004"))
+        self.assertFalse(validator.is_valid_value(0.30000000000000004))
+        result = json.loads(jsoncompat.analyze_compat(decimal, '{"type":"number"}', "serializer"))
+        self.assertEqual(result["status"], "incompatible")
+        self.assertFalse(validator.is_valid_value(result["counterexample"]))
+        self.assertTrue(jsoncompat.is_valid('{"type":"string","contentSchema":{"$ref":"https://example.com/not-fetched"}}', '"opaque"'))
 
     def run_example(self, name: Literal["dataclasses", "stamp"]) -> None:
         example = Path(__file__).resolve().parent / "examples" / name

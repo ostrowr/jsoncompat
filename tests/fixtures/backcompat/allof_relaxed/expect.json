@@ -1,6 +1,5 @@
 {
   "serializer": false,
-  "deserializer": false,
-  "expected_serializer_message": "new schema #: required allOf branch 1: new values may be strings, but the previous schema only accepted integers",
-  "expected_deserializer_message": "old schema #: new values may be allOf-constrained values, but the previous schema only accepted strings"
+  "deserializer": true,
+  "expected_serializer_message": "new schema #: required allOf branch 2 -> closest previous anyOf branch: new values may be integers, but the previous schema only accepted enumerated values"
 }

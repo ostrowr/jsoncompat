@@ -1,0 +1,13 @@
+{
+  "old_only": [
+    {
+      "value": 1
+    }
+  ],
+  "new_only": [
+    {
+      "value": "\u0003"
+    }
+  ],
+  "both": []
+}

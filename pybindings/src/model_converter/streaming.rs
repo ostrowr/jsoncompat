@@ -10,6 +10,11 @@ use jiter::{Jiter, JiterError, Peek};
 
 use super::*;
 
+struct StreamValidation {
+    selection: UnionSelection,
+    exact: bool,
+}
+
 impl ModelConverterPy {
     pub(crate) fn can_validate_while_parsing(&self) -> bool {
         self.conversion_validates[self.root.0.0]
@@ -27,11 +32,24 @@ impl ModelConverterPy {
         } else {
             UnionSelection::FirstRepresentable
         };
-        match self.stream_node(py, self.root.0, &mut parser, selection, MAX_MODEL_DEPTH) {
+        let mut validation = StreamValidation {
+            selection,
+            exact: false,
+        };
+        match self.stream_node(
+            py,
+            self.root.0,
+            &mut parser,
+            &mut validation,
+            MAX_MODEL_DEPTH,
+        ) {
             Ok(value) => {
                 parser
                     .finish()
                     .map_err(|error| stream_error(error, &parser).into_pyerr())?;
+                if checked && validation.exact {
+                    return crate::construct_exact_model_json(py, payload, self);
+                }
                 Ok(Some(value))
             }
             Err(ConversionFailure::Mismatch(ConversionMismatch::Depth)) => {
@@ -39,7 +57,9 @@ impl ModelConverterPy {
                 // bounding the additional streaming converter's stack use.
                 let value = JiterJsonValue::parse(payload, false)
                     .map_err(|error| jiter::map_json_error(payload, &error))?;
-                if checked {
+                if checked && rounded_integer_float(&value) {
+                    crate::construct_exact_model_json(py, payload, self)
+                } else if checked {
                     self.construct_jiter_checked(py, &value)
                 } else {
                     self.construct_jiter_unchecked(py, &value).map(Some)
@@ -55,12 +75,13 @@ impl ModelConverterPy {
         py: Python<'_>,
         node_id: NodeId,
         parser: &mut Jiter<'_>,
-        selection: UnionSelection,
+        validation: &mut StreamValidation,
         depth: u16,
     ) -> ConversionResult<Py<PyAny>> {
         if depth == 0 {
             return Err(ConversionFailure::Mismatch(ConversionMismatch::Depth));
         }
+        let selection = validation.selection;
         let node = self.node(node_id);
         if let ConversionNode::Root {
             model_type,
@@ -69,7 +90,7 @@ impl ModelConverterPy {
             ..
         } = node
         {
-            let value = self.stream_node(py, *value, parser, selection, depth - 1)?;
+            let value = self.stream_node(py, *value, parser, validation, depth - 1)?;
             let instance = allocate_model(py, model_type, &self.object_new)?;
             root_attribute.set_owned(py, &instance, value)?;
             return Ok(instance.unbind());
@@ -99,7 +120,7 @@ impl ModelConverterPy {
                     .known_array()
                     .map_err(|error| stream_error(error, parser))?;
                 while next.is_some() {
-                    values.push(self.stream_node(py, *item, parser, selection, depth - 1)?);
+                    values.push(self.stream_node(py, *item, parser, validation, depth - 1)?);
                     next = parser
                         .array_step()
                         .map_err(|error| stream_error(error, parser))?;
@@ -134,7 +155,7 @@ impl ModelConverterPy {
                             return Err(duplicate_key(name).into());
                         }
                         let value =
-                            self.stream_node(py, field.value_node, parser, selection, depth - 1)?;
+                            self.stream_node(py, field.value_node, parser, validation, depth - 1)?;
                         field.attribute.set_owned(py, &instance, value)?;
                         count += 1;
                     } else if let Some(extra) = extra {
@@ -143,7 +164,7 @@ impl ModelConverterPy {
                         }
                         let name = jiter::cached_py_string(py, name).into_any().unbind();
                         let value =
-                            self.stream_node(py, extra.value_node, parser, selection, depth - 1)?;
+                            self.stream_node(py, extra.value_node, parser, validation, depth - 1)?;
                         extra_values.push((name, value));
                     } else {
                         return Err(ConversionFailure::Mismatch(
@@ -181,7 +202,7 @@ impl ModelConverterPy {
                         return Err(duplicate_key(name).into());
                     }
                     let name = jiter::cached_py_string(py, name).into_any().unbind();
-                    let value = self.stream_node(py, *value, parser, selection, depth - 1)?;
+                    let value = self.stream_node(py, *value, parser, validation, depth - 1)?;
                     values.push((name, value));
                     key = parser.next_key().map_err(|error| {
                         ConversionFailure::Raised(PyValueError::new_err(error.to_string()))
@@ -194,6 +215,17 @@ impl ModelConverterPy {
                 let value = parser
                     .known_value(peek)
                     .map_err(|error| stream_error(error, parser))?;
+                if selection != UnionSelection::FirstRepresentable && rounded_integer_float(&value)
+                {
+                    validation.exact = true;
+                    // Check exact membership after parsing the entire payload.
+                    return self.convert_jiter(
+                        py,
+                        node_id,
+                        &value,
+                        UnionSelection::FirstRepresentable,
+                    );
+                }
                 self.convert_jiter(py, node_id, &value, selection)
             }
         }
@@ -202,4 +234,18 @@ impl ModelConverterPy {
 
 fn stream_error(error: JiterError, parser: &Jiter<'_>) -> ConversionFailure {
     ConversionFailure::Raised(PyValueError::new_err(error.description(parser)))
+}
+
+/// A fractional JSON token can round onto an integer (including zero). Only
+/// those parsed values need the exact-number retry for integer-shaped schemas;
+/// ordinary integer tokens stay on the streaming path.
+pub(crate) fn rounded_integer_float(value: &JiterJsonValue<'_>) -> bool {
+    match value {
+        JiterJsonValue::Float(value) => value.fract() == 0.0,
+        JiterJsonValue::Array(values) => values.iter().any(rounded_integer_float),
+        JiterJsonValue::Object(values) => {
+            values.iter().any(|(_, value)| rounded_integer_float(value))
+        }
+        _ => false,
+    }
 }

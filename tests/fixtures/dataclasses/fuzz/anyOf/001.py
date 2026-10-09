@@ -25,9 +25,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda]\x8e\xc1\x0a\x830\x0c\x86\xef>E(;\xea\xe2\xcaN>\xc3`\x0f0v([m\x15\x8c\xd2\xe6\xa0\x88\xefn\xac\xe2\xc1\xcb\x0f\xf9\xf2\xfd!s\x06\xa0n\xf1\xe7mgT\x05\xca3\x0f\xb1BlcO\xc5\x8e\xef}p\xf8\x0f\xa6f\xd4\xa5.\x8b\x87\xc6\xc3\xcf\xb7\xb2\xa1\xe9]K\xf5#\x03\xc0\x9cRpg\xc6\x97%\xc7^V:\xc1%\xbf\x18\x0d\x9d\xc6s7$\xbf\xe9(O\x83\xdd\xde\x89\x1c\x1ar*[V\\u,L', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["string"],"choices":null,"rules":[{"any":[1,2]}]},{"types":null,"choices":null,"rules":[{"string_length":{"min":0,"max":2}}]},{"types":null,"choices":null,"rules":[{"string_length":{"min":4,"max":null}}]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":["string"],"choices":null,"rules":[{"any":[1,2]}]},{"types":null,"choices":null,"rules":[{"string_length":{"min":0,"max":2}}]},{"types":null,"choices":null,"rules":[{"string_length":{"min":4,"max":null}}]}],"patterns":[]}'),
         ("str",)
-    ], b'{"version":2,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
+    ], b'{"version":3,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

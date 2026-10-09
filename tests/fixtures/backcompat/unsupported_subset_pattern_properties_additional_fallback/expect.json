@@ -1,6 +1,5 @@
 {
-  "serializer": false,
+  "serializer": true,
   "deserializer": false,
-  "expected_serializer_message": "old schema #/properties/x: property 'x' can appear with values the comparison target rejects",
   "expected_deserializer_message": "old schema #/additionalProperties: additional properties can accept values the comparison target rejects"
 }

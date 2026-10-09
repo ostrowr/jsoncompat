@@ -1,5 +1,5 @@
 {
   "serializer": false,
   "deserializer": true,
-  "expected_serializer_message": "new schema #: integer multipleOf 1 is not at least as restrictive as required multipleOf 1.5"
+  "expected_serializer_message": "new schema #: exact numeric constraints are not known to be contained by the comparison target"
 }

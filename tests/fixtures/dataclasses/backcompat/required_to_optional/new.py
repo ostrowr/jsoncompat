@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 @typing.final
 class GeneratedSchema(dc.DataclassAdditionalModel["typing.Any"]):
-    id: int = dc.field("id")
+    id: dc.Omittable[int] = dc.field("id", default=dc.JSONCOMPAT_MISSING)
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
 
     __slots__ = ("id", "__jsoncompat_extra__",)
@@ -20,17 +20,19 @@ __all__ = ("GeneratedSchema", "JSONCOMPAT_MODEL",)
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, id: typing.Any, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
+_jsoncompat_missing = dc.JsoncompatMissingType()
+
+def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, id: typing.Any = _jsoncompat_missing, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda=\x8c\xb1\x0d\x800\x0c\x04\xfbL\x11\xb9f\x02VA4\xc0\x0b\x99\x82\x04c\x0a\x14yw\x9cH\xa4\xb1\xfe\xcf\xba/!F\xca\x922D\x197\x8d\xb18q\xc6[\xcf\xde\xf4\xcd\xf0N|*v\x085n~m\xa8\x03\x82\xebaAU\xa6\xae{\x98\xdb\xf7\x97\xd3r`U\x0a\xf6\x01\xf6\xa8\x1d\xf0', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda=\x8c1\x0e\x800\x0c\x03\xf7\xbe\xa2\xca\xcc\x0b\xf8\x0ab\x01,\x14\x06ZB\x18P\x95\xbf\x93V\xa2\x8be\x9ft.!F\xca\x922D\x197\x8d\xb18q\xc6[\xef\xbe\xf4\xcd\xf0M|*v\x085n\x9e6\xd4\x03\xc1\xf5\xb0\xa0*\xd3\xdc\xc8/\xa4\xe5\xc0\xaa\x14\xec\x03\xbch\x1c\x0b', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (("id", "id", 1, False),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",1]],"patterns":[],"required":["id"],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("id", "id", 1, True),), 2, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("int",),
         ("any",)
-    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"id\\":"]]]}')
+    ], b'{"version":3,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"id\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

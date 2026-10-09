@@ -13,6 +13,7 @@ datatest_stable::harness! {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Expectation {
     serializer: bool,
     deserializer: bool,
@@ -20,11 +21,10 @@ struct Expectation {
     expected_serializer_message: Option<String>,
     #[serde(default)]
     expected_deserializer_message: Option<String>,
-    #[serde(default)]
-    allowed_failure: bool,
 }
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct SampleSets {
     #[serde(default)]
     old_only: Vec<Value>,
@@ -49,15 +49,13 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let de = check_compat(&old_schema, &new_schema, Role::Deserializer)?;
     let ser_message = explain_compat_failure(&old_schema, &new_schema, Role::Serializer)?;
     let de_message = explain_compat_failure(&old_schema, &new_schema, Role::Deserializer)?;
+    assert_eq!(
+        check_compat(&old_schema, &new_schema, Role::Both)?,
+        ser && de
+    );
 
-    if expect.allowed_failure {
-        if ser == expect.serializer && de == expect.deserializer {
-            panic!("Previously-failing fixture now passes; remove allowed_failure from {dir:?}");
-        }
-    } else {
-        assert_eq!(ser, expect.serializer, "serializer mismatch in {dir:?}");
-        assert_eq!(de, expect.deserializer, "deserializer mismatch in {dir:?}");
-    }
+    assert_eq!(ser, expect.serializer, "serializer mismatch in {dir:?}");
+    assert_eq!(de, expect.deserializer, "deserializer mismatch in {dir:?}");
     assert_expected_message(
         dir.as_path(),
         "serializer",
@@ -73,39 +71,53 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         de_message.as_deref(),
     );
 
-    // Load examples if present
+    // Every fixture must carry independently labeled examples.
     let ex_path = dir.join("examples.json");
-    if ex_path.exists() {
-        let samples: SampleSets = serde_json::from_slice(&fs::read(&ex_path)?)?;
-        for v in &samples.old_only {
-            assert!(
-                old_schema.is_valid(v)?,
-                "old_only invalid in {dir:?}: {v:?}"
-            );
-            assert!(
-                !new_schema.is_valid(v)?,
-                "old_only accepted by NEW in {dir:?}: {v:?}"
-            );
-        }
-        for v in &samples.new_only {
-            assert!(
-                new_schema.is_valid(v)?,
-                "new_only invalid in {dir:?}: {v:?}"
-            );
-            assert!(
-                !old_schema.is_valid(v)?,
-                "new_only accepted by OLD in {dir:?}: {v:?}"
-            );
-        }
-        for v in &samples.both {
-            assert!(
-                old_schema.is_valid(v)? && new_schema.is_valid(v)?,
-                "both sample invalid in {dir:?}: {v:?}"
-            );
-        }
+    let samples: SampleSets = serde_json::from_slice(&fs::read(&ex_path)?)?;
+    assert!(
+        !(samples.old_only.is_empty() && samples.new_only.is_empty() && samples.both.is_empty()),
+        "fixture {dir:?} contains no labeled examples"
+    );
+    assert!(
+        expect.serializer || !samples.new_only.is_empty(),
+        "serializer incompatibility in {dir:?} needs a concrete counterexample"
+    );
+    assert!(
+        expect.deserializer || !samples.old_only.is_empty(),
+        "deserializer incompatibility in {dir:?} needs a concrete counterexample"
+    );
+    for v in &samples.old_only {
+        assert!(
+            old_schema.is_valid(v)?,
+            "old_only invalid in {dir:?}: {v:?}"
+        );
+        assert!(
+            !new_schema.is_valid(v)?,
+            "old_only accepted by NEW in {dir:?}: {v:?}"
+        );
+    }
+    for v in &samples.new_only {
+        assert!(
+            !expect.serializer,
+            "serializer label contradicts new_only witness in {dir:?}: {v}"
+        );
+        assert!(
+            new_schema.is_valid(v)?,
+            "new_only invalid in {dir:?}: {v:?}"
+        );
+        assert!(
+            !old_schema.is_valid(v)?,
+            "new_only accepted by OLD in {dir:?}: {v:?}"
+        );
+    }
+    for v in &samples.both {
+        assert!(
+            old_schema.is_valid(v)? && new_schema.is_valid(v)?,
+            "both sample invalid in {dir:?}: {v:?}"
+        );
     }
 
-    // Quick fuzz confirmation (10 samples each direction)
+    // Deterministic generated witnesses supplement the independently labeled examples.
     let mut rng = StdRng::seed_from_u64(0xDEADBEEF + dir.to_string_lossy().len() as u64);
     let config = GenerationConfig::new(4);
 

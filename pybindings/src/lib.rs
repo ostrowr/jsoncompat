@@ -44,13 +44,50 @@ fn validated_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
 
 fn validated_python_schema(raw: &JsonValue) -> Result<PythonSchema, String> {
     let document = validated_schema(raw)?;
-    let validator = jsonschema::draft202012::options()
-        .build(document.source_schema_json())
+    let mut options = jsonschema::draft202012::options();
+    for keyword in [
+        "type",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "x-jsoncompat-format-assertion",
+    ] {
+        options = options.with_keyword(keyword, move |_, value, _| {
+            let schema = serde_json::json!({keyword: value});
+            let validator = json_schema_ast::compile(&schema)
+                .map_err(|error| jsonschema::ValidationError::custom(error.to_string()))?;
+            Ok(Box::new(SharedAssertion(validator)))
+        });
+    }
+    let input = json_schema_ast::prepare_for_validation(document.source_schema_json())
+        .map_err(|error| error.to_string())?;
+    let validator = options
+        .build(&input)
         .map_err(|error| format!("schema failed Draft 2020-12 validator compilation: {error}"))?;
     Ok(PythonSchema {
         document,
         validator,
     })
+}
+
+// The Python-optimized backend delegates assertions with exact arithmetic to
+// the shared compiler, preserving identical semantics on every API surface.
+struct SharedAssertion(json_schema_ast::JSONSchema);
+impl jsonschema::Keyword for SharedAssertion {
+    fn is_valid(&self, instance: &JsonValue) -> bool {
+        self.0.is_valid(instance)
+    }
+    fn validate<'i>(&self, instance: &'i JsonValue) -> Result<(), jsonschema::ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(jsonschema::ValidationError::custom(
+                "schema assertion failed",
+            ))
+        }
+    }
 }
 
 fn compatibility_schema(raw: &JsonValue) -> Result<SchemaDocument, String> {
@@ -635,24 +672,40 @@ fn construct_model_json_bytes_checked(
     // Retain arbitrary-precision JSON numbers for schemas with exact bounds.
     // This decision is built into the artifact, never discovered on first use.
     if converter.schema()?.requires_exact_json_numbers() {
-        let exact: JsonValue = serde_json::from_slice(payload)
-            .map_err(|error| PyValueError::new_err(error.to_string()))?;
-        if !converter
-            .schema()?
-            .is_valid_instance_assuming_json(JSONInstanceRef::from_serde(&exact))
-        {
-            return Ok(None);
-        }
+        return construct_exact_model_json(py, payload, converter);
     }
+
     if converter.can_validate_while_parsing() {
         return converter.construct_stream(py, payload, true);
     }
     let parsed =
         JiterJsonValue::parse(payload, false).map_err(|error| map_json_error(payload, &error))?;
+    if model_converter::rounded_integer_float(&parsed) {
+        return construct_exact_model_json(py, payload, converter);
+    }
     // Jiter has already enforced JSON scalar syntax and finite numbers; the
     // model converter that immediately follows rejects duplicate keys at every
     // object node. Avoid repeating those shape checks here.
     converter.construct_jiter_checked(py, &parsed)
+}
+
+fn construct_exact_model_json(
+    py: Python<'_>,
+    payload: &[u8],
+    converter: &ModelConverterPy,
+) -> PyResult<Option<Py<PyAny>>> {
+    let exact: JsonValue = serde_json::from_slice(payload)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    if !converter
+        .schema()?
+        .is_valid_instance_assuming_json(JSONInstanceRef::from_serde(&exact))
+    {
+        return Ok(None);
+    }
+    // Validate the wire value once, before conversion rounds decimal numbers.
+    // Conversion still rejects duplicate keys and non-JSON shapes. Checked
+    // serialization separately validates the actual stored Python value.
+    converter.construct_stream(py, payload, false)
 }
 
 #[pymethods]
@@ -855,6 +908,19 @@ fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> 
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("Compatibility check failed: {e}")))
 }
 
+/// Return a JSON object with compatible, incompatible, or unknown status.
+#[pyfunction]
+#[pyo3(signature = (old_schema_json, new_schema_json, role="both"), name = "analyze_compat")]
+fn analyze_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> PyResult<String> {
+    let old = compatibility_schema(&parse_json(old_schema_json)?)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    let new = compatibility_schema(&parse_json(new_schema_json)?)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    let result = jsoncompat::analyze_compat(&old, &new, parse_role(role)?)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    serde_json::to_string(&result).map_err(|error| PyValueError::new_err(error.to_string()))
+}
+
 /// Generate a JSON value intended to satisfy the provided schema.
 ///
 /// Parameters
@@ -1016,6 +1082,7 @@ fn is_valid_py(schema_json: &str, instance_json: &str) -> PyResult<bool> {
 #[pyo3(name = "_native")]
 fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
+    m.add_function(wrap_pyfunction!(analyze_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
     m.add_function(wrap_pyfunction!(generator_for_py, m)?)?;
     m.add_function(wrap_pyfunction!(validator_for_py, m)?)?;

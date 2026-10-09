@@ -254,7 +254,7 @@ impl ModelConverterPlan {
         }
         self.nodes.truncate(base_nodes);
         PreparedPlan {
-            version: 2,
+            version: 3,
             base_nodes,
             guard_nodes,
             guards,

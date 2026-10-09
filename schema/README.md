@@ -68,3 +68,7 @@ are rejected with typed resolver errors.
 ## License
 
 Licensed under MIT. See [LICENSE](../LICENSE).
+
+Use `SchemaDocument::from_json_with_options` with `SchemaOptions` to register
+offline resources and select format assertion behavior. The
+[keyword support matrix](../keyword-support.md) documents coverage and limits.

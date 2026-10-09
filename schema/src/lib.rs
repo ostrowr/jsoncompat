@@ -10,6 +10,14 @@
 mod ast;
 mod canonicalize;
 mod constraints;
+mod exact;
+mod options;
+pub use options::SchemaOptions;
+mod references;
+mod unevaluated;
+mod validation;
+pub use exact::ExactNumber;
+pub use validation::ValidationConstraint;
 mod json_semantics;
 mod schema_children;
 
@@ -41,6 +49,11 @@ use serde_json::Value;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CompileError {
+    #[error("schema reference resolution failed: {source}")]
+    Reference {
+        #[source]
+        source: Box<AstError>,
+    },
     /// The raw schema failed this crate's dialect or keyword-shape checks.
     #[error(transparent)]
     Schema(#[from] SchemaError),
@@ -54,12 +67,54 @@ pub enum CompileError {
 /// Compile a JSON Schema document directly with the validator backend.
 pub fn compile(schema: &Value) -> Result<JSONSchema, CompileError> {
     validate_schema_dialects(schema)?;
-    compile_schema_value(schema)
+    compile_schema_value(prepare_for_validation(schema)?.as_ref())
+}
+
+/// Prepare an equivalent backend input with statically resolved resource scopes
+/// and without annotation-only content assertions. Referenced resources inside
+/// contentSchema remain usable.
+pub fn prepare_for_validation(schema: &Value) -> Result<std::borrow::Cow<'_, Value>, CompileError> {
+    fn has_content(schema: &Value) -> bool {
+        schema.get("contentSchema").is_some()
+            || references::children(schema)
+                .iter()
+                .any(|(_, child)| has_content(child))
+    }
+    if !has_content(schema) && !references::needs_linking(schema) {
+        return Ok(std::borrow::Cow::Borrowed(schema));
+    }
+    // Resolve dynamic scope before handing the graph to either backend. Native
+    // dynamic-reference compilation can otherwise discard sibling assertions
+    // (for example prefixItems beside a dynamically overridden reference).
+    jsonschema::draft202012::meta::validate(schema).map_err(|source| {
+        CompileError::ValidatorRejectedSchema {
+            source: Box::new(source.to_owned()),
+        }
+    })?;
+    let mut linked = references::link(schema).map_err(|source| CompileError::Reference {
+        source: Box::new(source),
+    })?;
+    fn strip(schema: &mut Value) {
+        if let Some(object) = schema.as_object_mut() {
+            object.remove("contentSchema");
+        }
+        let paths: Vec<_> = references::children(schema)
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        for path in paths {
+            if let Some(child) = schema.pointer_mut(&format!("/{path}")) {
+                strip(child);
+            }
+        }
+    }
+    strip(&mut linked);
+    Ok(std::borrow::Cow::Owned(linked))
 }
 
 #[cfg(test)]
 pub(crate) fn compile_canonical(schema: &CanonicalSchema) -> Result<JSONSchema, CompileError> {
-    compile_schema_value(schema.as_value())
+    compile_schema_value(prepare_for_validation(schema.as_value())?.as_ref())
 }
 
 fn compile_schema_value(schema: &Value) -> Result<JSONSchema, CompileError> {
@@ -67,7 +122,7 @@ fn compile_schema_value(schema: &Value) -> Result<JSONSchema, CompileError> {
     // compilation errors borrow the rejected schema fragment. Convert those
     // failures into owned errors before returning so callers do not need to
     // keep the original `Value` alive.
-    jsonschema::draft202012::options()
+    options::configure(exact::configure(jsonschema::draft202012::options()))
         .build(schema)
         .map_err(|source| CompileError::ValidatorRejectedSchema {
             source: Box::new(owned_validation_error(source)),

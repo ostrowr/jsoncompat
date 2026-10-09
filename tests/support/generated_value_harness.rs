@@ -330,64 +330,13 @@ fn format_rejection_failure(
 
 fn load_whitelist() -> HashMap<String, HashSet<usize>> {
     let mut map: HashMap<String, HashSet<usize>> = HashMap::new();
-    map.insert("anyOf.json".to_string(), [4].iter().cloned().collect());
-    map.insert("allOf.json".to_string(), [4, 5].iter().cloned().collect());
-    map.insert(
-        "oneOf.json".to_string(),
-        [2, 4, 5].iter().cloned().collect(),
-    );
-    map.insert("not.json".to_string(), [4, 5, 8].iter().cloned().collect());
-    map.insert(
-        "unevaluatedItems.json".to_string(),
-        [12, 18].iter().cloned().collect(),
-    );
+    map.insert("anyOf.json".to_string(), [4].into_iter().collect());
+    map.insert("allOf.json".to_string(), [4, 5].into_iter().collect());
+    map.insert("oneOf.json".to_string(), [2, 4, 5].into_iter().collect());
+    map.insert("not.json".to_string(), [4, 5].into_iter().collect());
     map.insert(
         "unevaluatedProperties.json".to_string(),
-        [12, 15].iter().cloned().collect(),
+        [12].into_iter().collect(),
     );
-    map.insert(
-        "anchor.json".to_string(),
-        [0, 1, 2, 3].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/anchor.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/unknownKeyword.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "optional/id.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert(
-        "dynamicRef.json".to_string(),
-        [2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 20]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-    map.insert("optional/dynamicRef.json".to_string(), (1..30).collect());
-    map.insert(
-        "ref.json".to_string(),
-        [6, 10, 11, 17, 19, 27, 28, 29, 30, 31]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-    map.insert("vocabulary.json".to_string(), [0].iter().cloned().collect());
-    map.insert(
-        "refRemote.json".to_string(),
-        [0, 1, 2, 3, 4, 8, 9, 11, 12, 13, 14]
-            .iter()
-            .cloned()
-            .collect(),
-    );
-    map.insert(
-        "optional/cross-draft.json".to_string(),
-        [0].iter().cloned().collect(),
-    );
-    map.insert("defs.json".to_string(), [0].iter().cloned().collect());
     map
 }

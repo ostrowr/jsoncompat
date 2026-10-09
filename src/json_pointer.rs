@@ -14,10 +14,6 @@ impl JsonPointer {
         self.tokens.push(token.into());
     }
 
-    pub(crate) fn pop(&mut self) {
-        self.tokens.pop();
-    }
-
     pub(crate) fn prepend<'a>(&mut self, tokens: impl IntoIterator<Item = &'a str>) {
         let mut prefix = tokens
             .into_iter()

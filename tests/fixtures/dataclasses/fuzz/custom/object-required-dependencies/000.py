@@ -29,10 +29,10 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda}\x8f\xbd\x0e\x820\x10\xc7w\x9e\x824\x8ej\x95\xd1\xa70\xae\xc6\xa1\xd2\x13\x8ap\xad\xed1\x18\xc2\xbb{\x14PX\\\x9a\xfc?\xee\xd7\xbb.IS\xb1\x09y\x09\x8d\x12\xa7T\x94D.\x9c\xa4\xac\x82\xc5\xddh\xef\xad/\xa4\xf6\xeaA2;d\x87\xdd1\x93S\x7f;\x0c+\xad\x0d\x19\x8b\xaa>{\xeb\xc0\x93\x81\xc0\xa4\x87\xaa\x03\xc4\x82\x06\x07\xa8\x01\xe9\x02\xaf\xd6x\xd0\x9cv\x1cp\x84\xaa\x01V\xd7\xa8X3\xd4\xd4"\xaa\x1b\xbf}\x9co\x0c\xae\xc8Yt\xdd\xd2\x9ap\xe3\xf8,\xd9\xa0\xb7\x1b\xf8"\x907X\x8c\xe0\x08\xe5\xeciP/\xbb\xb9\xc5@C\xb9\x0d\xe0\xd7\xd5i\xcd\xff\xd8\xef\xbe\xfew\xe6u\xf1\xd56Y\x9fx\x8b\xe5\x19e\xef\x15\xe4$\x92\xfe\x03\xff\xc9l\xad', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (("email", "email", 1, False), ("kind", "kind", 2, False), ("name", "name", 1, True),), None, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["email",1],["kind",2],["name",1]],"patterns":[],"required":["kind","email"],"additional":3}},{"dependencies":[["name",["email"]]]},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":["user"],"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("email", "email", 1, False), ("kind", "kind", 2, False), ("name", "name", 1, True),), None, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["email",1],["kind",2],["name",1]],"patterns":[],"required":["kind","email"],"additional":3}},{"dependencies":[["name",["email"]]]},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":["user"],"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("str",),
         ('literal', ("user",))
-    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,["\\"email\\":","\\"kind\\":","\\"name\\":"]]]}')
+    ], b'{"version":3,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false],"json_keys":[[0,["\\"email\\":","\\"kind\\":","\\"name\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())
