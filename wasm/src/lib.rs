@@ -124,20 +124,40 @@ pub fn check_compat_js(
         .map_err(|e| JsValue::from_str(&format!("compatibility check failed: {e}")))
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const VERDICT_TYPES: &str = r#"
+export type CompatibilityResult =
+  | { status: "compatible" }
+  | { status: "incompatible"; direction: "serializer" | "deserializer" | "both"; counterexample: unknown; counterexample_json: string }
+  | { status: "unknown"; reason: string };
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "CompatibilityResult")]
+    pub type JsCompatibilityResult;
+}
+
 /// Return a JSON object with compatible, incompatible, or unknown status.
 #[wasm_bindgen(js_name = analyze_compat)]
 pub fn analyze_compat_js(
     old_schema_json: &str,
     new_schema_json: &str,
     role: &str,
-) -> Result<String, JsValue> {
+) -> Result<JsCompatibilityResult, JsValue> {
     let old = compatibility_schema(&parse_json(old_schema_json)?)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let new = compatibility_schema(&parse_json(new_schema_json)?)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let result = jsoncompat::analyze_compat(&old, &new, parse_role(role)?)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
-    serde_json::to_string(&result).map_err(|error| JsValue::from_str(&error.to_string()))
+    let mut output =
+        serde_json::to_value(&result).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    if let jsoncompat::CompatibilityResult::Incompatible { counterexample, .. } = result {
+        output["counterexample_json"] = serde_json::Value::String(counterexample.to_string());
+    }
+    let json =
+        serde_json::to_string(&output).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    Ok(js_sys::JSON::parse(&json)?.unchecked_into())
 }
 
 /// Generate a JSON value (string) that should satisfy the given schema.

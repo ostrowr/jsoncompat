@@ -22,6 +22,7 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": resolve(__dirname, "./src"),
+			jsoncompat: resolve(__dirname, "../../wasm/pkg-web"),
 		},
 	},
 });

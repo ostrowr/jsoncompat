@@ -921,7 +921,12 @@ fn analyze_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
     let result = jsoncompat::analyze_compat(&old, &new, parse_role(role)?)
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
-    serde_json::to_string(&result).map_err(|error| PyValueError::new_err(error.to_string()))
+    let mut output =
+        serde_json::to_value(&result).map_err(|error| PyValueError::new_err(error.to_string()))?;
+    if let jsoncompat::CompatibilityResult::Incompatible { counterexample, .. } = result {
+        output["counterexample_json"] = JsonValue::String(counterexample.to_string());
+    }
+    serde_json::to_string(&output).map_err(|error| PyValueError::new_err(error.to_string()))
 }
 
 /// Generate a JSON value intended to satisfy the provided schema.

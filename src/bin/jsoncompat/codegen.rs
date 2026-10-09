@@ -27,7 +27,16 @@ pub(crate) struct CodegenArgs {
 }
 
 pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
-    let schema = SchemaDoc::load(&args.schema)?;
+    let raw: serde_json::Value = serde_json::from_str(&crate::read_to_string(&args.schema)?)
+        .with_context(|| format!("parsing {}", args.schema))?;
+    anyhow::ensure!(
+        !super::compat::looks_like_openapi_document(&raw),
+        "{} is an OpenAPI document, not a JSON Schema; select a component schema or use explicit OpenAPI package generation",
+        args.schema
+    );
+    let schema = SchemaDoc {
+        schema: jsoncompat::SchemaDocument::from_json(&raw)?,
+    };
     let canonical_schema = schema
         .schema
         .canonical_schema_json()

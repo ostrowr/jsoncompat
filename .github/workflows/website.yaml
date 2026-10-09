@@ -5,11 +5,25 @@ on:
     branches: [main]
     paths:
       - 'web/jsoncompatdotcom/**'
+      - 'wasm/**'
+      - 'src/**'
+      - 'schema/**'
+      - 'fuzz/**'
+      - 'codegen/**'
+      - 'openapi/**'
+      - 'Cargo.lock'
       - 'presentation/deck/**'
       - 'presentation/interactive/**'
   pull_request:
     paths:
       - 'web/jsoncompatdotcom/**'
+      - 'wasm/**'
+      - 'src/**'
+      - 'schema/**'
+      - 'fuzz/**'
+      - 'codegen/**'
+      - 'openapi/**'
+      - 'Cargo.lock'
       - 'presentation/deck/**'
       - 'presentation/interactive/**'
   workflow_dispatch:
@@ -38,6 +52,14 @@ jobs:
       - name: Run Biome checks
         working-directory: web/jsoncompatdotcom
         run: pnpm run ci
+
+      - name: Install Rust and the WebAssembly target
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.15.0 --locked
 
       - name: Build website
         working-directory: web/jsoncompatdotcom

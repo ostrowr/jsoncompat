@@ -9,7 +9,7 @@ import threading
 import warnings
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, NoReturn, Protocol, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, NoReturn, Protocol, TypedDict, cast
 
 if TYPE_CHECKING:
     from jsoncompat._native import (
@@ -28,6 +28,26 @@ type JsonValue = (
     | tuple["JsonValue", ...]
     | dict[str, "JsonValue"]
 )
+class Compatible(TypedDict):
+    status: Literal["compatible"]
+
+
+class Incompatible(TypedDict):
+    status: Literal["incompatible"]
+    direction: RoleLiteral
+    counterexample: JsonValue
+    # Preserves decimal lexemes that a language's floating-point value cannot.
+    counterexample_json: str
+
+
+class Unknown(TypedDict):
+    status: Literal["unknown"]
+    reason: str
+
+
+type CompatibilityResult = Compatible | Incompatible | Unknown
+
+
 CheckCompatFn = Callable[[str, str, RoleLiteral], bool]
 GenerateValueFn = Callable[[str, int], str]
 IsValidFn = Callable[[str, str], bool]
@@ -317,11 +337,16 @@ if not TYPE_CHECKING:
         JSONCOMPAT_MISSING = _native_symbols.JSONCOMPAT_MISSING
 
 
-def analyze_compat(old_schema_json: str, new_schema_json: str, role: RoleLiteral = "both") -> str:
-    """Return a JSON verdict with status and a counterexample or unknown reason."""
+def analyze_compat(old_schema_json: str, new_schema_json: str, role: RoleLiteral = "both") -> CompatibilityResult:
+    """Return a typed verdict with a validated witness or an unknown reason.
+
+    Use counterexample_json when preserving exact JSON decimal values matters.
+    """
     if _native_symbols is None:
         raise ModuleNotFoundError("Build the jsoncompat native extension before calling analyze_compat().")
-    return _native_symbols.analyze_compat(old_schema_json, new_schema_json, role)
+    import json
+
+    return cast(CompatibilityResult, json.loads(_native_symbols.analyze_compat(old_schema_json, new_schema_json, role)))
 
 
 def check_compat(
@@ -452,6 +477,10 @@ __all__ = [
     "Validator",
     "check_compat",
     "analyze_compat",
+    "CompatibilityResult",
+    "Compatible",
+    "Incompatible",
+    "Unknown",
     "generate_value",
     "generator_for",
     "is_valid",

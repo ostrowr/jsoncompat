@@ -22,12 +22,15 @@ mod json_pointer;
 mod openapi_compat;
 mod stamp;
 mod subset;
-pub use compatibility_result::{CompatibilityResult, analyze_compat};
+pub use compatibility_result::{
+    AnalysisOptions, CompatibilityResult, analyze_compat, analyze_compat_with_options,
+};
 
 pub use jsoncompat_openapi::{OpenApiDocument, OpenApiError, OpenApiLoweringError};
 pub use openapi_compat::{
-    OpenApiCompatibilityError, OpenApiCompatibilityIssue, OpenApiCompatibilityReport,
-    OpenApiCompatibilitySurface, check_openapi_compat, validate_openapi_compatibility_input,
+    OpenApiCompatibilityError, OpenApiCompatibilityIssue, OpenApiCompatibilityIssueKind,
+    OpenApiCompatibilityReport, OpenApiCompatibilitySurface, check_openapi_compat,
+    validate_openapi_compatibility_input,
 };
 pub use stamp::{
     ENVELOPE_DATA_KEY, ENVELOPE_VERSION_KEY, STAMP_MANIFEST_VERSION, SchemaHistory,
@@ -60,37 +63,6 @@ pub enum CompatibilityError {
     /// The old or new schema document failed canonicalization or resolution.
     #[error(transparent)]
     Schema(#[from] SchemaBuildError),
-    /// Reference-scope keywords change how the document resolves names. They
-    /// stay hard errors until the resolver models those scopes precisely.
-    #[error(
-        "JSON Schema compatibility checks do not support keyword '{keyword}' at '{pointer}' yet"
-    )]
-    UnsupportedCompatibilityKeyword { pointer: String, keyword: String },
-    /// Number-schema bounds beyond the adjacent-integer-safe `f64` range can
-    /// collapse distinct JSON integers in the resolved IR, so subset proofs
-    /// must fail before comparison rather than overclaim.
-    #[error(
-        "JSON Schema compatibility checks do not support number bound '{keyword}' at '{pointer}' outside the exact f64 integer range [-9007199254740991, 9007199254740991] yet"
-    )]
-    UnsupportedCompatibilityNumberBound { pointer: String, keyword: String },
-    /// Compatibility checks do not approximate fractional `number.multipleOf`
-    /// inclusion with floating-point arithmetic.
-    #[error("non-integral number multipleOf constraints are not supported by compatibility checks")]
-    UnsupportedNonIntegralNumberMultipleOf,
-}
-
-/// Compatibility diagnostics that do not prevent a modeled comparison.
-///
-/// These warnings mean a schema uses valid JSON Schema syntax whose semantics
-/// are not represented by the subset checker yet. Callers that need a complete
-/// contract verdict should surface the warning alongside the modeled result.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
-pub enum CompatibilityWarning {
-    #[error(
-        "JSON Schema compatibility checks do not model keyword '{keyword}' at '{pointer}'; comparison ignores that keyword"
-    )]
-    UnsupportedKeyword { pointer: String, keyword: String },
 }
 
 /// Return whether `new` is backward-compatible with `old` under `role`.
@@ -108,7 +80,8 @@ pub enum CompatibilityWarning {
 /// assumption that serializers do not emit undeclared properties solely because
 /// `additionalProperties` would permit them.
 ///
-/// A return value of `Ok(false)` is a proven or conservative incompatibility.
+/// A return value of `Ok(false)` means no inclusion proof was found. Use
+/// [`analyze_compat`] to distinguish a counterexample from an unknown result.
 /// A return value of `Err(_)` means the checker cannot soundly run on the input
 /// schema or feature set.
 pub fn check_compat(
@@ -116,8 +89,8 @@ pub fn check_compat(
     new: &SchemaDocument,
     role: Role,
 ) -> Result<bool, CompatibilityError> {
-    let old = compatibility_input(old)?.root;
-    let new = compatibility_input(new)?.root;
+    let old = compatibility_input(old)?;
+    let new = compatibility_input(new)?;
 
     match role {
         Role::Serializer => Ok(is_subschema_of(new, old)),
@@ -137,8 +110,8 @@ pub fn explain_compat_failure(
     new: &SchemaDocument,
     role: Role,
 ) -> Result<Option<String>, CompatibilityError> {
-    let old = compatibility_input(old)?.root;
-    let new = compatibility_input(new)?.root;
+    let old = compatibility_input(old)?;
+    let new = compatibility_input(new)?;
 
     let explanation = match role {
         Role::Serializer => {
@@ -158,34 +131,16 @@ pub fn explain_compat_failure(
 
 /// Return whether this schema can participate in compatibility checks.
 ///
-/// `SchemaDocument::from_json` accepts the full document-level schema surface
-/// modeled by the schema frontend. Compatibility still rejects inputs that
-/// would make the subset check unsound; valid-but-unmodeled keywords are
-/// reported separately through [`compatibility_warnings`].
+/// Valid unsupported proof cases remain [`CompatibilityResult::Unknown`].
 pub fn validate_compatibility_input(schema: &SchemaDocument) -> Result<(), CompatibilityError> {
     compatibility_input(schema).map(|_| ())
 }
 
-/// Return non-fatal compatibility diagnostics for one schema document.
-pub fn compatibility_warnings(
-    schema: &SchemaDocument,
-) -> Result<Vec<CompatibilityWarning>, CompatibilityError> {
-    compatibility_input(schema).map(|input| input.warnings)
-}
-
-struct CompatibilityInput<'a> {
-    root: &'a SchemaNode,
-    warnings: Vec<CompatibilityWarning>,
-}
-
-fn compatibility_input(
-    schema: &SchemaDocument,
-) -> Result<CompatibilityInput<'_>, CompatibilityError> {
-    let warnings = Vec::new();
+fn compatibility_input(schema: &SchemaDocument) -> Result<&SchemaNode, CompatibilityError> {
     match schema.root() {
         Ok(root) => {
             schema.validate_source_schema()?;
-            Ok(CompatibilityInput { root, warnings })
+            Ok(root)
         }
         Err(source @ SchemaBuildError::UnsupportedReference { .. }) => {
             validate_source_schema_ignoring_non_local_refs(schema)?;
@@ -263,7 +218,7 @@ fn strip_non_local_schema_ref_array(value: &Value) -> Value {
 mod tests {
     use super::{
         CompatibilityError, Role, SchemaBuildError, SchemaDocument, check_compat,
-        compatibility_warnings,
+        validate_compatibility_input,
     };
     use serde_json::json;
 
@@ -357,9 +312,7 @@ mod tests {
             ),
         ] {
             let old = schema(raw);
-            let warnings = compatibility_warnings(&old).expect("warning collection should succeed");
-
-            assert!(warnings.is_empty());
+            validate_compatibility_input(&old).expect("schema should participate in analysis");
         }
     }
 
@@ -433,10 +386,7 @@ mod tests {
             },
             "type": "string"
         }));
-        let warnings =
-            compatibility_warnings(&old).expect("warning collection should inspect unused defs");
-
-        assert!(warnings.is_empty());
+        validate_compatibility_input(&old).expect("unused definitions should be supported");
     }
 
     #[test]

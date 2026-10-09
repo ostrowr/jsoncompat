@@ -7,7 +7,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum CompatibilityResult {
     Compatible,
@@ -20,6 +20,25 @@ pub enum CompatibilityResult {
     },
 }
 
+/// Deterministic counterexample search bounds. Static proofs and explicit
+/// schema literals are checked even when the generated-candidate budget is zero.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AnalysisOptions {
+    pub max_generated_candidates: usize,
+    pub max_depth: u8,
+    pub seed: u64,
+}
+impl Default for AnalysisOptions {
+    fn default() -> Self {
+        Self {
+            max_generated_candidates: 16,
+            max_depth: 8,
+            seed: 0x434f4d504154,
+        }
+    }
+}
+
 /// Prove compatibility or find a concrete counterexample. Failure to do either
 /// is explicitly unknown, including unsupported structural expansions.
 pub fn analyze_compat(
@@ -27,10 +46,19 @@ pub fn analyze_compat(
     new: &SchemaDocument,
     role: Role,
 ) -> Result<CompatibilityResult, CompatibilityError> {
+    analyze_compat_with_options(old, new, role, AnalysisOptions::default())
+}
+
+pub fn analyze_compat_with_options(
+    old: &SchemaDocument,
+    new: &SchemaDocument,
+    role: Role,
+    options: AnalysisOptions,
+) -> Result<CompatibilityResult, CompatibilityError> {
     if check_compat(old, new, role)? {
         return Ok(CompatibilityResult::Compatible);
     }
-    let mut rng = StdRng::seed_from_u64(0x434f4d504154);
+    let mut rng = StdRng::seed_from_u64(options.seed);
     for direction in [Role::Serializer, Role::Deserializer] {
         if role != Role::Both && direction != role {
             continue;
@@ -51,15 +79,18 @@ pub fn analyze_compat(
             json!(""),
             json!("a"),
             json!([]),
+            json!([0, 0]),
             json!({}),
         ];
         literals(source.source_schema_json(), &mut candidates);
         literals(target.source_schema_json(), &mut candidates);
         // Check cheap witnesses first, and generate only until one disproves
         // inclusion. Common failures need no randomized generation at all.
-        let generated = (0..16).filter_map(|_| {
-            ValueGenerator::generate(source, GenerationConfig::new(4), &mut rng).ok()
-        });
+        let config = GenerationConfig::new(options.max_depth)
+            .with_max_generation_attempts(std::num::NonZeroUsize::new(8).unwrap())
+            .with_max_candidate_nodes(std::num::NonZeroUsize::new(4096).unwrap());
+        let generated = (0..options.max_generated_candidates)
+            .map_while(|_| ValueGenerator::generate(source, config, &mut rng).ok());
         for value in candidates.into_iter().chain(generated) {
             if source.is_valid(&value)?
                 && !target.is_valid(&value)?
@@ -74,9 +105,13 @@ pub fn analyze_compat(
         }
     }
     Ok(CompatibilityResult::Unknown {
-        reason:
-            "the structural prover could not establish inclusion, and no counterexample was found"
-                .into(),
+        reason: format!(
+            "{}; no validated counterexample was found (up to {} generated candidates per direction, depth {})",
+            crate::explain_compat_failure(old, new, role)?
+                .unwrap_or_else(|| "the structural prover could not establish inclusion".into()),
+            options.max_generated_candidates,
+            options.max_depth
+        ),
     })
 }
 

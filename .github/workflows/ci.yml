@@ -333,6 +333,9 @@ jobs:
             wasm-pack build wasm --release --target "$target" --out-dir "pkg-$target"
           done
 
+      - name: Exercise structured WebAssembly verdicts
+        run: node wasm/tests/verdicts.mjs
+
       - name: Prepare distribution directory
         run: |
           mkdir -p dist/js

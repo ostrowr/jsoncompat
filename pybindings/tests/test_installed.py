@@ -51,7 +51,7 @@ class InstalledDistributionTests(unittest.TestCase):
         self.assertTrue(validator.is_valid_json("0.3"))
         self.assertFalse(validator.is_valid_json("0.30000000000000004"))
         self.assertFalse(validator.is_valid_value(0.30000000000000004))
-        result = json.loads(jsoncompat.analyze_compat(decimal, '{"type":"number"}', "serializer"))
+        result = jsoncompat.analyze_compat(decimal, '{"type":"number"}', "serializer")
         self.assertEqual(result["status"], "incompatible")
         self.assertFalse(validator.is_valid_value(result["counterexample"]))
         self.assertTrue(jsoncompat.is_valid('{"type":"string","contentSchema":{"$ref":"https://example.com/not-fetched"}}', '"opaque"'))

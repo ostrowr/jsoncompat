@@ -15,7 +15,7 @@ jsoncompat compares:
 By default, `$schema` must use Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. Rust callers can supply Draft 2020-12 vocabulary metaschemas and external resources through `SchemaOptions`. OpenAPI 3.0-only shortcuts such as `nullable` are not reinterpreted.
 
 > [!WARNING]
-> jsoncompat is alpha software. It is intentionally conservative in places, and it can still miss incompatible changes or report false positives.
+> jsoncompat is alpha software. It is intentionally conservative: incomplete proofs without validated counterexamples are reported as `Unknown`.
 >
 > The full docs and examples live at [jsoncompat.com](https://jsoncompat.com).
 
@@ -45,6 +45,8 @@ Check both serializer and deserializer compatibility, and ask for fuzzed counter
 ```bash
 jsoncompat compat old-schema.json new-schema.json --role both --fuzz 1000 --depth 8
 ```
+
+Use `--json` for a structured verdict. Exit codes are 0 for compatible, 1 for incompatible or invalid input, and 2 for unknown.
 
 Check an OpenAPI 3.1 contract:
 

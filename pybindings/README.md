@@ -384,8 +384,10 @@ MIT License. See:
 
 - https://github.com/ostrowr/jsoncompat/blob/main/LICENSE
 
-`analyze_compat(old_schema_json, new_schema_json, role="both")` returns a JSON
-string with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible
+`analyze_compat(old_schema_json, new_schema_json, role="both")` returns a typed Python dictionary
+with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible
 results include `direction` and `counterexample`; unknown results include
 `reason`. `check_compat` remains boolean and returns false when no inclusion
 proof is available. See the [keyword support matrix](../keyword-support.md).
+
+Incompatible results also include `counterexample_json`, the exact JSON spelling of the witness. Use it when decimal precision exceeds the host language’s number representation.

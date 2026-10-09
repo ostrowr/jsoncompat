@@ -1,7 +1,7 @@
 //! Small, deterministic proof regressions, including empty languages that
 //! cannot be exercised by the generated-value roundtrip fixtures.
 use jsoncompat::{
-    Role, SchemaDocument, check_compat, compatibility_warnings, explain_compat_failure,
+    Role, SchemaDocument, check_compat, explain_compat_failure, validate_compatibility_input,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -38,11 +38,7 @@ fn fixture(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let old_canonical = json_schema_ast::compile(old.canonical_schema_json()?)?;
         let new_canonical = json_schema_ast::compile(new.canonical_schema_json()?)?;
         for schema in [&old, &new] {
-            assert!(
-                compatibility_warnings(schema)?.is_empty(),
-                "{} must model every assertion",
-                case.description
-            );
+            validate_compatibility_input(schema)?;
         }
         assert!(
             !case.witnesses.is_empty(),

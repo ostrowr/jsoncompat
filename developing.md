@@ -63,8 +63,8 @@ and raw validation.
 Canonicalization preserves evaluation annotations throughout documents using
 `unevaluatedItems` or `unevaluatedProperties`: it must not insert `items: true`,
 invent declared properties from `required`, or discard successful `anyOf`/`if`
-annotations. These keywords still produce compatibility warnings because the
-structural prover does not model annotation sets.
+annotations. When annotation expansion exceeds the proof engine’s scope,
+`analyze_compat` returns `Unknown` unless it finds a validated counterexample.
 
 Publishable Rust crates depend on the upstream `jsonschema` package from
 crates.io. The unpublished Python extension separately owns its forked
@@ -116,14 +116,9 @@ smaller than the resolved IR surface:
 
 ## Compatibility diagnostics
 
-`validate_compatibility_input()` only rejects inputs that cannot participate in a sound comparison. Warning-only gaps are exposed separately through `compatibility_warnings()`.
+`analyze_compat()` distinguishes a proof (`Compatible`), a validated counterexample (`Incompatible`), and an incomplete proof/search (`Unknown`). `AnalysisOptions` bounds deterministic counterexample generation. `check_compat()` remains the one-sided boolean proof API; false alone does not establish a break.
 
-The split is deliberate:
-
-- warning-only raw JSON Schema keywords are valid inputs whose semantics are not yet modeled by the subset checker;
-- hard errors remain hard errors for unsupported reference scoping, non-integral `number.multipleOf`, unsafe floating-point number-bound precision, malformed schemas, and other cases that would make a static verdict unsafe.
-
-`jsoncompat compat` prints warnings before the verdict for raw schemas; `jsoncompat compat --openapi` selects the separate OpenAPI contract path explicitly. `jsoncompat ci` keeps the warning text in its output without turning that grade into `Invalid`.
+OpenAPI reports preserve unknown operation surfaces. Removed operations are explicit structural breaks. The CLI, Python dictionaries, and WASM objects expose the same three statuses. `compat --json` and `ci --display json` keep stdout machine-readable. CLI exit codes are 0 for compatible, 1 for incompatible or invalid input, and 2 for unknown. There is no warning-only path that ignores assertion semantics.
 
 ## Canonicalization and debugging
 
