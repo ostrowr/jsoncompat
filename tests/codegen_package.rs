@@ -16,10 +16,18 @@ impl Work {
             rand::random::<u64>()
         ));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        let work = Self(path);
+        // The cache deliberately fingerprints its compiler. Keep this test's
+        // compiler fixed even if another Cargo process rebuilds the checkout.
+        fs::copy(env!("CARGO_BIN_EXE_jsoncompat"), work.compiler()).unwrap();
+        work
+    }
+    fn compiler(&self) -> PathBuf {
+        self.0
+            .join(format!("compiler{}", std::env::consts::EXE_SUFFIX))
     }
     fn generate(&self, extra: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        Command::new(self.compiler())
             .current_dir(&self.0)
             .args([
                 "codegen",

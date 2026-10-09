@@ -22,7 +22,6 @@ from __future__ import annotations
 from benchmark_harness import measure
 
 import argparse
-import gc
 import hashlib
 import importlib.util
 import json

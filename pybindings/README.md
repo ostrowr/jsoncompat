@@ -158,7 +158,7 @@ and divisors are prepared ahead of time. JSON input is validated before conversi
 to Python floats; if rounding makes a stored value invalid, checked serialization
 rejects it. The value API validates the decimal representation of the Python value.
 
-Generated-model failures raise `jsoncompat.ValidationError`, a `ValueError`
+Schema validation failures from generated models raise `jsoncompat.ValidationError`, a `ValueError`
 subclass with `kind`, `instance_path`, `schema_path`, and `keyword`. Paths are
 RFC 6901 pointers; the schema pointer refers to the linked schema used by the
 prepared program. `kind="resource_limit"` distinguishes evaluation budgets from

@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import compileall
 import importlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -48,6 +49,7 @@ def build(args) -> dict:
     start = time.perf_counter()
     subprocess.run([str(args.cli.resolve()), "codegen", "--openapi", str(schema), "--output", str(args.directory / "generated"), "--models-per-module", str(args.module_size)], check=True, timeout=args.timeout)
     generated_seconds = time.perf_counter() - start
+    compiler_peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024)
     peer = args.directory / "pydantic_models"
     peer.mkdir(exist_ok=True)
     exports = {}
@@ -70,7 +72,7 @@ def build(args) -> dict:
     start = time.perf_counter()
     assert compileall.compile_dir(args.directory / "generated", quiet=2)
     assert compileall.compile_dir(peer, quiet=2)
-    return dict(generated_build_seconds=generated_seconds, pydantic_source_seconds=peer_seconds,
+    return dict(generated_build_seconds=generated_seconds, compiler_peak_rss_mib=compiler_peak, input_bytes=schema.stat().st_size, pydantic_source_seconds=peer_seconds,
                 bytecode_seconds=time.perf_counter()-start,
                 artifacts={kind: {"source_bytes":sum(p.stat().st_size for p in (args.directory/kind).rglob("*.py")),
                                   "bytecode_bytes":sum(p.stat().st_size for p in (args.directory/kind).rglob("*.pyc"))}
@@ -132,6 +134,9 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--directory", type=Path, default=REPO / "target/python-codegen/unique-imports")
     parser.add_argument("--cli", type=Path, default=REPO / "target/release/jsoncompat")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--build-only", action="store_true", help="build artifacts without runtime measurements")
+    mode.add_argument("--reuse-build", action="store_true", help="measure an existing build with matching inputs and compiler")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--kind", choices=["generated", "pydantic_models"], default="generated")
     args = parser.parse_args()
@@ -140,7 +145,20 @@ def main() -> None:
     if args.worker:
         worker(args)
         return
-    report = dict(provenance=provenance(REPO), requested_classes=args.classes, fields=args.fields, build=build(args), runs=[])
+    config = dict(classes=args.classes, fields=args.fields, module_size=args.module_size,
+                  compiler_sha256=hashlib.sha256(args.cli.read_bytes()).hexdigest())
+    build_path = args.directory / "build.json"
+    if args.reuse_build:
+        built = json.loads(build_path.read_text())
+        if built["configuration"] != config:
+            parser.error("existing build does not match the requested population or compiler")
+    else:
+        built = dict(configuration=config, provenance=provenance(REPO), timings=build(args))
+        build_path.write_text(json.dumps(built, indent=2) + "\n")
+    if args.build_only:
+        print(json.dumps(built, indent=2))
+        return
+    report = dict(provenance=provenance(REPO), requested_classes=args.classes, fields=args.fields, build=built, runs=[])
     for bytecode in (True, False):
         for kind in ("generated", "pydantic_models"):
             command = [sys.executable, __file__, "--worker", "--directory", str(args.directory), "--classes", str(args.classes), "--fields", str(args.fields), "--module-size", str(args.module_size), "--memory-mib", str(args.memory_mib), "--kind", kind]

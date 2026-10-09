@@ -1,6 +1,7 @@
 """Shared timing and environment reporting for all generated-model benchmarks."""
 from __future__ import annotations
 import gc
+import os
 import platform
 import statistics
 import subprocess
@@ -45,7 +46,7 @@ def provenance(repo: Path) -> dict[str, object]:
     import pydantic
     def git(*args: str) -> str:
         return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
-    return dict(python=platform.python_version(), pydantic=pydantic.__version__,
+    return dict(native_profile=os.environ.get("JSONCOMPAT_NATIVE_PROFILE", "debug"), python=platform.python_version(), pydantic=pydantic.__version__,
                 platform=platform.platform(), revision=git("rev-parse", "HEAD"),
                 dirty=bool(git("status", "--porcelain", "--untracked-files=no")),
                 timer="perf_counter_ns", gc_during_round_trip=False,

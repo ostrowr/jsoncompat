@@ -13,12 +13,9 @@ from benchmark_harness import measure
 
 import argparse
 import cProfile
-import gc
 import json
 import platform
 import pstats
-import statistics
-import time
 from typing import Annotated, Any, Callable, Literal
 
 import pydantic

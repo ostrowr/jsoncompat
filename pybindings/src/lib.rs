@@ -587,6 +587,8 @@ impl ModelRuntimePy {
                         && let Some(failure) = converter
                             .schema()?
                             .explain_instance(converter.projection().instance(instance))
+                        && failure.kind
+                            != jsoncompat_codegen::prepared_schema::ValidationFailureKind::NonJson
                     {
                         return Err(validation_error::from_failure(py, failure));
                     }
@@ -659,6 +661,13 @@ impl ModelRuntimePy {
             Ok(None) => None,
         };
         if let Ok(Some(failure)) = explain() {
+            // Keep concrete representation errors (cycles, non-finite values,
+            // etc.) instead of replacing them with a generic JSON-shape error.
+            if failure.kind == jsoncompat_codegen::prepared_schema::ValidationFailureKind::NonJson
+                && let Some(original) = original
+            {
+                return Err(original);
+            }
             return Err(validation_error::from_failure(py, failure));
         }
         Err(original.unwrap_or_else(|| {

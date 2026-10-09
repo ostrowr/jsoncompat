@@ -11,7 +11,6 @@ import argparse
 import copy
 import json
 import os
-import platform
 import statistics
 import subprocess
 import sys
@@ -19,7 +18,6 @@ import time
 from pathlib import Path
 from typing import Annotated, Any
 
-import pydantic
 from bench_dataclasses_codegen import build_models
 from benchmark_harness import measure, provenance
 from benchmark_generated_models import load_generated_path

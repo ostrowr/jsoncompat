@@ -1,7 +1,7 @@
 {
-  "compatible": false,
+  "status": "unknown",
   "surfaces": [
     "Response"
   ],
-  "expected_message": "new schema #/properties/body/properties/value: property 'body' -> property 'value': enumerated values are not contained by the comparison target"
+  "expected_message": "new schema #/properties/body/properties/value: property 'body' -> property 'value': enumerated values are not contained by the comparison target; no validated counterexample was found (up to 16 generated candidates per direction, depth 8)"
 }

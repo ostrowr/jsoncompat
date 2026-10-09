@@ -12,11 +12,8 @@ from __future__ import annotations
 from benchmark_harness import measure
 
 import argparse
-import gc
 import json
 import platform
-import statistics
-import time
 from pathlib import Path
 from typing import Any, Callable, Literal
 
