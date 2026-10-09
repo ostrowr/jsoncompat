@@ -14,7 +14,7 @@
     "check": "biome check",
     "ci": "biome ci",
     "migrate": "biome migrate --write",
-    "build:wasm": "wasm-pack build ../../wasm --release --target web --out-dir pkg-web",
+    "build:wasm": "bash ./scripts/build-wasm.sh",
     "prebuild": "pnpm run build:wasm"
   },
   "dependencies": {
