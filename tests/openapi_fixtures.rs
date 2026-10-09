@@ -149,7 +149,7 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
                         .is_valid(counterexample)?
                 ),
                 expected,
-                "reported witness does not prove {issue:?}"
+                "reported witness does not prove a compatibility break in {dir:?}"
             );
             assert!(
                 witnessed_issues.contains(&(operation, issue.surface)),
