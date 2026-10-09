@@ -433,11 +433,11 @@ for construct_missing in (lambda: object.__new__(JsoncompatMissingType),):
 def compile_model_runtimes(roots, descriptors, frozen_list, frozen_dict):
     keys = [(i, [json.dumps(f[0], ensure_ascii=False) + ":" for f in sorted(node[2])])
             for i,node in enumerate(descriptors) if len(node) >= 3 and node[0] == "model"]
-    plan = json.dumps({"version":2,"base_nodes":len(descriptors),"guard_nodes":[],"guards":[],
+    plan = json.dumps({"version":3,"base_nodes":len(descriptors),"guard_nodes":[],"guards":[],
                        "conversion_validates":[False]*len(descriptors),"json_keys":keys}).encode()
     # Keep descriptor examples compact; the program is a direct descriptor
     # argument, with no schema attributes or metadata required on Model.
-    program = b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'
+    program = b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'
     descriptors = [(*node, program) if node and
                    ((node[0] == "root" and len(node) == 3) or
                     (node[0] == "model" and len(node) == 4)) else node
@@ -1951,7 +1951,14 @@ fn unsupported_schemas_fail_during_generation() {
         "type": "array", "items": {"$ref": "https://example.com/unavailable"}
     }))
     .expect_err("unavailable references must fail before publishing models");
-    assert!(error.to_string().contains("reference"));
+    assert!(
+        matches!(
+            &error,
+            jsoncompat_codegen::DataclassError::UnsupportedRef { pointer, ref_value }
+                if pointer == "#/items/$ref" && ref_value == "https://example.com/unavailable"
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
