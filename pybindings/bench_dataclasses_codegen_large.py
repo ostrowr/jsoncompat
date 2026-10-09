@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pydantic
-from bench_dataclasses_codegen import build_models, measure
+from bench_dataclasses_codegen import build_models
+from benchmark_harness import measure, provenance
 from benchmark_generated_models import load_generated_path
 from pydantic import ConfigDict, Field, RootModel, create_model
 
@@ -170,9 +171,7 @@ def main() -> None:
     directory = args.output.resolve().parent
     directory.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
-        "python": platform.python_version(),
-        "pydantic": pydantic.__version__,
-        "platform": platform.platform(),
+        **provenance(REPO),
         "cases": {},
     }
     met_target = True

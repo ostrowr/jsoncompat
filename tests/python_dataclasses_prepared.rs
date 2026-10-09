@@ -1,3 +1,5 @@
+#[path = "support/dataclass_corpus.rs"]
+mod corpus;
 use json_schema_ast::SchemaDocument;
 use jsoncompat_codegen::{generate_dataclass_models, generate_dataclass_module_from_document};
 use serde_json::json;
@@ -154,6 +156,7 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
         let source = generate_dataclass_models(&schema).expect("generate test models");
         fs::write(directory.join(format!("{name}.py")), source).expect("write models");
     }
+    corpus::generate(&directory.join("fixtures"));
     let output = python_env::python_command()
         .arg("tests/support/python_prepared.py")
         .arg(&directory)

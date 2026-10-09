@@ -534,6 +534,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             return Ok(Annotation::model(declaration_name));
         };
         let Value::Object(target_obj) = target else {
+            self.register_named_declaration(target, ref_value)?;
             return Ok(Annotation::model(declaration_name));
         };
 
@@ -543,6 +544,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             || is_object_schema(target_obj)
             || is_array_schema(target_obj)
         {
+            self.register_named_declaration(target, ref_value)?;
             return Ok(Annotation::model(declaration_name));
         }
 
@@ -554,6 +556,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             return Ok(type_annotation);
         }
 
+        self.register_named_declaration(target, ref_value)?;
         Ok(Annotation::model(declaration_name))
     }
 
@@ -723,6 +726,114 @@ pub fn generate_dataclass_module_from_document(
         return render_dataclass_module(&codegen_schema, document.source_schema_json());
     }
     render_dataclass_module(canonical, document.source_schema_json())
+}
+
+/// Generate selected named declarations from one resource graph. The package
+/// root is a namespace, so no unconstrained wrapper class is manufactured.
+pub fn generate_dataclass_declarations(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+) -> Result<DataclassModule, DataclassError> {
+    document.validate_source_schema()?;
+    let canonical = document.canonical_schema_json()?;
+    let mut refs = collect_named_refs(canonical)?;
+    // Resource linking can relocate declarations into generated definitions.
+    // Explicit declaration metadata preserves their public names across that
+    // transformation, including offline external resources.
+    let declarations: BTreeMap<String, String> = declarations
+        .iter()
+        .map(|(pointer, name)| {
+            let resolved = if canonical
+                .pointer(pointer.strip_prefix('#').unwrap_or(pointer))
+                .is_some()
+            {
+                pointer.clone()
+            } else {
+                refs.iter()
+                    .find(|(_, candidate)| *candidate == name)
+                    .map(|(pointer, _)| pointer.clone())
+                    .unwrap_or_else(|| pointer.clone())
+            };
+            (resolved, name.clone())
+        })
+        .collect();
+    for (pointer, name) in &declarations {
+        if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || [
+                "False",
+                "None",
+                "True",
+                "and",
+                "as",
+                "assert",
+                "async",
+                "await",
+                "break",
+                "class",
+                "continue",
+                "def",
+                "del",
+                "elif",
+                "else",
+                "except",
+                "finally",
+                "for",
+                "from",
+                "global",
+                "if",
+                "import",
+                "in",
+                "is",
+                "lambda",
+                "nonlocal",
+                "not",
+                "or",
+                "pass",
+                "raise",
+                "return",
+                "try",
+                "while",
+                "with",
+                "yield",
+                "typing",
+                "collections",
+                "dc",
+                "JSONCOMPAT_MODEL",
+            ]
+            .contains(&name.as_str())
+        {
+            return Err(invalid_schema(
+                pointer.clone(),
+                "model names must be Python identifiers",
+            ));
+        }
+        refs.insert(pointer.clone(), name.clone());
+    }
+    let mut names = BTreeSet::new();
+    for (pointer, name) in &refs {
+        if pointer != "#" && !names.insert(name) {
+            return Err(DataclassError::DuplicateDeclaration { name: name.clone() });
+        }
+    }
+    let mut builder = DataclassModuleBuilder::new(refs, canonical, document.source_schema_json());
+    for pointer in declarations.keys() {
+        let schema = pointer
+            .strip_prefix('#')
+            .and_then(|pointer| canonical.pointer(pointer))
+            .ok_or_else(|| {
+                invalid_schema(
+                    pointer.clone(),
+                    "named declaration is absent from the canonical schema",
+                )
+            })?;
+        builder.register_named_declaration(schema, pointer)?;
+    }
+    let root = declarations
+        .values()
+        .next()
+        .ok_or_else(|| invalid_schema("#".into(), "at least one declaration is required"))?;
+    render::module(&builder.classes, root)
 }
 
 fn unconstrained_codegen_schema(canonical: &Value) -> Value {

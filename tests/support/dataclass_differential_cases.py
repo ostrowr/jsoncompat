@@ -147,4 +147,5 @@ def cases():
 
 
 if __name__ == "__main__":
-    print(json.dumps(cases(), ensure_ascii=True, allow_nan=False))
+    from generated_schema_cases import cases as generated_cases
+    print(json.dumps(cases() + list(generated_cases()), ensure_ascii=True, allow_nan=False))

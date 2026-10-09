@@ -14,7 +14,7 @@ enum CodegenTarget {
 #[derive(Args)]
 pub(crate) struct CodegenArgs {
     /// Code generation target.
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, default_value = "dataclasses")]
     target: CodegenTarget,
     /// Pretty-print output (multi-line).
     #[arg(short, long)]
@@ -24,18 +24,59 @@ pub(crate) struct CodegenArgs {
     /// Write readable Python models and a private generated companion.
     #[arg(short, long, value_name = "MODELS.py")]
     output: Option<PathBuf>,
+    /// Generate a Python package from OpenAPI component schemas.
+    #[arg(long, requires = "output")]
+    openapi: bool,
+    /// Select component schemas (dependencies are included). Defaults to all.
+    #[arg(long = "component", requires = "openapi")]
+    components: Vec<String>,
+    /// Rename a component: COMPONENT=PythonName.
+    #[arg(long, requires = "openapi")]
+    rename: Vec<String>,
+    /// Target module size; connected references stay together even above it.
+    #[arg(long, default_value = "128")]
+    models_per_module: std::num::NonZeroUsize,
+    /// JSON SchemaOptions: offline resources and optional format assertions.
+    #[arg(long, value_name = "OPTIONS.json")]
+    schema_options: Option<PathBuf>,
 }
 
 pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
     let raw: serde_json::Value = serde_json::from_str(&crate::read_to_string(&args.schema)?)
         .with_context(|| format!("parsing {}", args.schema))?;
+    let options: jsoncompat::SchemaOptions = args
+        .schema_options
+        .as_ref()
+        .map(|path| {
+            std::fs::read(path)
+                .map_err(anyhow::Error::from)
+                .and_then(|bytes| serde_json::from_slice(&bytes).map_err(Into::into))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    if args.openapi {
+        anyhow::ensure!(
+            args.target == CodegenTarget::Dataclasses,
+            "--openapi requires --target dataclasses"
+        );
+        return super::codegen_package::generate(
+            &raw,
+            args.output
+                .as_deref()
+                .context("--openapi requires --output PACKAGE_DIR")?,
+            &args.components,
+            &args.rename,
+            args.models_per_module,
+            &options,
+        );
+    }
     anyhow::ensure!(
         !super::compat::looks_like_openapi_document(&raw),
-        "{} is an OpenAPI document, not a JSON Schema; select a component schema or use explicit OpenAPI package generation",
+        "{} is an OpenAPI document, not a JSON Schema; pass --openapi --output PACKAGE_DIR to generate component models",
         args.schema
     );
     let schema = SchemaDoc {
-        schema: jsoncompat::SchemaDocument::from_json(&raw)?,
+        schema: jsoncompat::SchemaDocument::from_json_with_options(&raw, &options)?,
     };
     let canonical_schema = schema
         .schema
@@ -82,7 +123,7 @@ pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
     }
 }
 
-fn write_atomic(destination: &Path, source: &str) -> Result<()> {
+pub(super) fn write_atomic(destination: &Path, source: &str) -> Result<()> {
     let parent = destination
         .parent()
         .filter(|path| !path.as_os_str().is_empty())

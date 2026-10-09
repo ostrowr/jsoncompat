@@ -1,179 +1,159 @@
-"""Measure retained independent classes with bounded memory and elapsed time.
+"""Build unique OpenAPI components and measure actual package imports.
 
-Build 100-class shards first, then load fresh class identities from the cached
-shard under distinct module names. This isolates class setup and retained memory;
-it excludes a real package's dependency graph and unique-file disk I/O.
+Each class has its own constraints and source. Runs stop at a memory budget;
+partial populations are reported, never extrapolated to 200,000 classes.
 """
-
 from __future__ import annotations
-
 import argparse
-import gc
-import importlib.util
+import compileall
+import importlib
 import json
 import os
 from pathlib import Path
-import platform
-import py_compile
 import resource
+import subprocess
 import sys
+import tempfile
 import time
-
-from bench_dataclasses_codegen import build_models
-from bench_dataclasses_codegen_large import record_schema, record_value
+from benchmark_harness import measure, provenance
 
 REPO = Path(__file__).resolve().parents[1]
 
 
-def load(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+def width(index: int, fields: int) -> int:
+    return fields or (5, 20, 50, 100, 200)[index % 5]
+
+
+def record(index: int, fields: int) -> tuple[dict, dict]:
+    properties = {}
+    value = {}
+    for field in range(width(index, fields)):
+        key = f"field{field:04}"
+        properties[key] = {"type": "integer", "minimum": index + field} if field % 2 else {"type": "string", "minLength": 1 + index % 8}
+        value[key] = index + field if field % 2 else "x" * (1 + index % 8)
+    return dict(type="object", properties=properties, required=list(properties), additionalProperties=False), value
+
+
+def build(args) -> dict:
+    args.directory.mkdir(parents=True, exist_ok=True)
+    schema = args.directory / "openapi.json"
+    # Stream the input to avoid a second full schema tree in the benchmark driver.
+    with schema.open("w") as stream:
+        stream.write('{"openapi":"3.1.0","info":{"title":"Unique model scale","version":"1"},"paths":{},"components":{"schemas":{')
+        for i in range(args.classes):
+            if i:
+                stream.write(",")
+            stream.write(json.dumps(f"Model{i:07}") + ":" + json.dumps(record(i, args.fields)[0], separators=(",", ":")))
+        stream.write("}}}")
+    start = time.perf_counter()
+    subprocess.run([str(args.cli.resolve()), "codegen", "--openapi", str(schema), "--output", str(args.directory / "generated"), "--models-per-module", str(args.module_size)], check=True, timeout=args.timeout)
+    generated_seconds = time.perf_counter() - start
+    peer = args.directory / "pydantic_models"
+    peer.mkdir(exist_ok=True)
+    exports = {}
+    start = time.perf_counter()
+    for begin in range(0, args.classes, args.module_size):
+        module = f"models_{begin // args.module_size:04}"
+        lines = ["from pydantic import BaseModel, ConfigDict, Field"]
+        for i in range(begin, min(args.classes, begin + args.module_size)):
+            name = f"Model{i:07}"
+            exports[name] = module
+            lines += [f"class {name}(BaseModel):", "    model_config = ConfigDict(extra='forbid')"]
+            for field in range(width(i, args.fields)):
+                annotation, constraint = ("int", f"ge={i+field}") if field % 2 else ("str", f"min_length={1+i%8}")
+                lines.append(f"    field{field:04}: {annotation} = Field({constraint})")
+        (peer / f"{module}.py").write_text("\n".join(lines) + "\n")
+    # Use the exact same lazy namespace policy for the Pydantic baseline.
+    (peer / "__init__.py").write_text((args.directory / "generated/__init__.py").read_text())
+    (peer / "_exports.py").write_text("MODELS = " + repr(exports) + "\n")
+    peer_seconds = time.perf_counter() - start
+    start = time.perf_counter()
+    assert compileall.compile_dir(args.directory / "generated", quiet=2)
+    assert compileall.compile_dir(peer, quiet=2)
+    return dict(generated_build_seconds=generated_seconds, pydantic_source_seconds=peer_seconds,
+                bytecode_seconds=time.perf_counter()-start,
+                artifacts={kind: {"source_bytes":sum(p.stat().st_size for p in (args.directory/kind).rglob("*.py")),
+                                  "bytecode_bytes":sum(p.stat().st_size for p in (args.directory/kind).rglob("*.pyc"))}
+                           for kind in ("generated", "pydantic_models")})
 
 
 def rss_mib() -> float:
-    units = 1 if sys.platform == "darwin" else 1024
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * units / 1024**2
-
-
-def build(args) -> None:
-    args.directory.mkdir(parents=True, exist_ok=True)
-    sys.path.insert(0, str(args.directory))
-    names = [f"Record{index:04}" for index in range(args.shard_size)]
-    def independent_schema(index: int) -> dict:
-        schema = dict(record_schema(args.fields), title=names[index])
-        if args.distinct_constraints:
-            for field in schema["properties"].values():
-                if field["type"] == "integer":
-                    field["minimum"] = index
-                else:
-                    field["minLength"] = 1 + index % 32
-        return schema
-
-    schema = independent_schema(0)
-    schema["$defs"] = {
-        name: independent_schema(index) for index, name in enumerate(names) if index
-    }
-    source = args.directory / f"schema_{args.fields}.json"
-    source.write_text(json.dumps(schema))
-    generated = args.directory / f"generated_{args.fields}.py"
-    metadata = build_models(args.cli, source, generated)
-    peer = args.directory / f"pydantic_{args.fields}.py"
-    lines = ["from pydantic import BaseModel, ConfigDict, Field"]
-    for model_index, name in enumerate(names):
-        lines += [f"class {name}(BaseModel):", '    model_config = ConfigDict(frozen=True, strict=True, extra="forbid")']
-        for index in range(args.fields):
-            minimum = model_index if args.distinct_constraints else 0
-            minimum_length = 1 + model_index % 32 if args.distinct_constraints else 1
-            annotation, constraint = ("str", f"min_length={minimum_length}") if index % 2 == 0 else ("int", f"ge={minimum}")
-            lines.append(f"    field{index:04}: {annotation} = Field({constraint})")
-    lines += [f"__all__ = {tuple(names)!r}"]
-    peer.write_text("\n".join(lines) + "\n")
-    py_compile.compile(str(peer), doraise=True)
-    for kind, path in (("generated", generated), ("pydantic", peer)):
-        module = load(path, f"check_{kind}_{args.fields}")
-        models = [getattr(module, name) for name in module.__all__ if name != "JSONCOMPAT_MODEL"]
-        assert len(models) == args.shard_size
-        model = models[-1]
-        decode = model.deserialize if kind == "generated" else model.model_validate_json
-        payload = record_value(args.fields, args.shard_size - 1 if args.distinct_constraints else 0)
-        instance = decode(json.dumps(payload))
-        emitted = instance.serialize() if kind == "generated" else instance.model_dump_json()
-        assert json.loads(emitted) == payload
-        invalid = [{}, dict(payload, field0000=""), dict(payload, unexpected=1)]
-        if args.distinct_constraints and args.shard_size > 1:
-            if args.fields > 1:
-                invalid.append(dict(payload, field0001=args.shard_size - 2))
-            if (args.shard_size - 1) % 32:
-                invalid.append(dict(payload, field0000="x"))
-        for bad in invalid:
-            try:
-                decode(json.dumps(bad))
-            except (TypeError, ValueError):
-                pass
-            else:
-                raise AssertionError(f"{kind} accepted invalid input")
-    metadata.update(fields=args.fields, distinct_constraints=args.distinct_constraints, classes_per_shard=args.shard_size, pydantic_source_bytes=peer.stat().st_size)
-    (args.directory / f"build_{args.fields}.json").write_text(json.dumps(metadata, indent=2) + "\n")
-    print(json.dumps(metadata), flush=True)
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / (1024 * 1024 if sys.platform == "darwin" else 1024)
 
 
 def worker(args) -> None:
-    import pydantic
-    from pydantic import BaseModel
-    import jsoncompat.codegen.dataclasses  # Preload both runtimes equally.
-
-    class Warmup(BaseModel):
-        value: int
-
-    sys.path.insert(0, str(args.directory))
-    gc.collect()
-    baseline = rss_mib()
-    print(json.dumps(dict(event="baseline", kind=args.mode, fields=args.fields, distinct_constraints=args.distinct_constraints,
-                          peak_rss_mib=baseline, python=platform.python_version(),
-                          pydantic=pydantic.__version__, platform=platform.platform(),
-                          gc_enabled=gc.isenabled())), flush=True)
-    path = args.directory / f"{args.mode}_{args.fields}.py"
-    modules = []
+    sys.path.insert(0, str(args.directory.resolve()))
     start = time.perf_counter()
-    setup_seconds = 0.0
-    checkpoints = {1000, 5000, 10000, 20000, 50000, 100000, 200000}
+    module = importlib.import_module(args.kind)
+    package_seconds = time.perf_counter() - start
+    start = time.perf_counter()
+    model = getattr(module, "Model0000000")
+    payload = json.dumps(record(0, args.fields)[1])
+    def round_trip(cls, payload):
+        return cls.deserialize(payload).serialize() if args.kind == "generated" else cls.model_validate_json(payload).model_dump_json()
+    assert json.loads(round_trip(model, payload)) == json.loads(payload)
+    first_seconds = time.perf_counter() - start
+    start = time.perf_counter()
     loaded = 0
-    while loaded < args.classes:
-        begin = time.perf_counter()
-        module = load(path, f"scale_{args.mode}_{args.fields}_{len(modules)}")
-        setup_seconds += time.perf_counter() - begin
-        modules.append(module)
-        loaded += args.shard_size
-        peak = rss_mib()
-        elapsed = time.perf_counter() - start
-        stop = "memory_budget" if peak >= args.memory_mib else "time_budget" if elapsed >= args.seconds else None
-        if loaded in checkpoints or stop or loaded >= args.classes:
-            print(json.dumps(dict(event="measurement", kind=args.mode, fields=args.fields,
-                                  classes=loaded, import_seconds=setup_seconds,
-                                  elapsed_seconds=elapsed, peak_rss_mib=peak,
-                                  added_peak_mib=peak-baseline, modules=len(modules), stop=stop)), flush=True)
-        if stop:
+    for i in range(args.classes):
+        getattr(module, f"Model{i:07}")
+        loaded += 1
+        if (i + 1) % args.module_size == 0 and rss_mib() >= args.memory_mib:
             break
-    identities = {
-        id(getattr(module, name)) for module in modules for name in module.__all__
-        if name != "JSONCOMPAT_MODEL"
-    }
-    assert len(identities) == loaded
-    model = getattr(modules[-1], f"Record{args.shard_size-1:04}")
-    payload = json.dumps(record_value(args.fields, args.shard_size - 1 if args.distinct_constraints else 0))
-    begin = time.perf_counter()
-    if args.mode == "pydantic":
-        model.model_validate_json(payload).model_dump_json()
-    else:
-        model.deserialize(payload).serialize()
-    print(json.dumps(dict(event="first_use", seconds=time.perf_counter()-begin)), flush=True)
-    # Exclude interpreter teardown; every class stayed alive during measurement.
-    os._exit(0)
+    all_seconds = time.perf_counter() - start
+    sample_ids = sorted({0, loaded // 2, loaded - 1})
+    callbacks = {}
+    for i in sample_ids:
+        cls = getattr(module, f"Model{i:07}")
+        value = record(i, args.fields)[1]
+        payload = json.dumps(value, separators=(",", ":"))
+        assert json.loads(round_trip(cls, payload)) == value
+        for bad in ({}, dict(value, field0000=""), dict(value, unexpected=1)):
+            try:
+                round_trip(cls, json.dumps(bad))
+            except (ValueError, TypeError):
+                pass
+            else:
+                raise AssertionError("invalid benchmark input accepted")
+        callbacks[str(i)] = lambda cls=cls, payload=payload: round_trip(cls, payload)
+    print(json.dumps(dict(kind=args.kind, package_import_seconds=package_seconds,
+          first_access_round_trip_seconds=first_seconds, population_import_seconds=all_seconds,
+          loaded_classes=loaded, requested_classes=args.classes, complete=loaded == args.classes,
+          peak_rss_mib=rss_mib(), round_trip=measure(callbacks, 2000, 7))), flush=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--classes", type=int, default=1000)
+    parser.add_argument("--fields", type=int, default=0, help="0 cycles through 5,20,50,100,200 fields")
+    parser.add_argument("--module-size", type=int, default=128)
+    parser.add_argument("--memory-mib", type=int, default=2048)
+    parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--directory", type=Path, default=REPO / "target/python-codegen/unique-imports")
+    parser.add_argument("--cli", type=Path, default=REPO / "target/release/jsoncompat")
+    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--kind", choices=["generated", "pydantic_models"], default="generated")
+    args = parser.parse_args()
+    if min(args.classes, args.module_size, args.memory_mib, args.timeout) <= 0 or not 0 <= args.fields <= 200:
+        parser.error("positive limits and 0..200 fields are required")
+    if args.worker:
+        worker(args)
+        return
+    report = dict(provenance=provenance(REPO), requested_classes=args.classes, fields=args.fields, build=build(args), runs=[])
+    for bytecode in (True, False):
+        for kind in ("generated", "pydantic_models"):
+            command = [sys.executable, __file__, "--worker", "--directory", str(args.directory), "--classes", str(args.classes), "--fields", str(args.fields), "--module-size", str(args.module_size), "--memory-mib", str(args.memory_mib), "--kind", kind]
+            with tempfile.TemporaryDirectory(prefix="jsoncompat-import-cache-") as cache:
+                environment = dict(os.environ)
+                if not bytecode:
+                    environment["PYTHONPYCACHEPREFIX"] = cache
+                result = subprocess.run(command, check=True, capture_output=True, text=True, env=environment, timeout=args.timeout)
+            report["runs"].append(dict(bytecode=bytecode, **json.loads(result.stdout)))
+    output = args.directory / "report.json"
+    output.write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["build", "generated", "pydantic"])
-    parser.add_argument("--fields", type=int, required=True)
-    parser.add_argument("--distinct-constraints", action="store_true", help="give each class distinct numeric/string bounds")
-    parser.add_argument("--shard-size", type=int, default=100)
-    parser.add_argument("--classes", type=int, default=200000)
-    parser.add_argument("--memory-mib", type=int, default=2048)
-    parser.add_argument("--seconds", type=int, default=180)
-    parser.add_argument("--cli", type=Path, default=REPO / "target/release/jsoncompat")
-    parser.add_argument("--directory", type=Path, default=REPO / "target/python-codegen/imports")
-    args = parser.parse_args()
-    args.directory = args.directory.resolve()
-    if min(args.fields, args.shard_size, args.classes, args.memory_mib, args.seconds) < 1:
-        parser.error("counts and budgets must be positive")
-    if args.classes % args.shard_size:
-        parser.error("class count must be a multiple of shard size")
-    if os.environ.get("JSONCOMPAT_NATIVE_PROFILE") != "release":
-        parser.error("set JSONCOMPAT_NATIVE_PROFILE=release and build the release extension")
-    if args.mode == "build":
-        build(args)
-    else:
-        worker(args)
+    main()

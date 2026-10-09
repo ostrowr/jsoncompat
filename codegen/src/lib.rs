@@ -10,7 +10,7 @@ pub mod model_plan;
 pub mod prepared_schema;
 
 pub use dataclasses::{
-    DataclassError, DataclassModule, generate_dataclass_models,
+    DataclassError, DataclassModule, generate_dataclass_declarations, generate_dataclass_models,
     generate_dataclass_models_from_document, generate_dataclass_module_from_document,
 };
 use serde::{Deserialize, Serialize};

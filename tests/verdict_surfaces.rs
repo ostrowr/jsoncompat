@@ -99,3 +99,42 @@ fn unknown_survives_openapi_cli_and_golden_file_grading() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("OpenAPI document"));
     fs::remove_dir_all(path).unwrap();
 }
+
+#[test]
+fn cli_schema_options_link_offline_resources() {
+    let directory =
+        std::env::temp_dir().join(format!("jsoncompat-options-{}", rand::random::<u64>()));
+    fs::create_dir(&directory).unwrap();
+    fs::write(
+        directory.join("schema.json"),
+        r#"{"$ref":"https://example.com/name"}"#,
+    )
+    .unwrap();
+    fs::write(
+        directory.join("options.json"),
+        r#"{"resources":{"https://example.com/name":{"type":"string","minLength":2}}}"#,
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        .current_dir(&directory)
+        .args([
+            "compat",
+            "schema.json",
+            "schema.json",
+            "--schema-options",
+            "options.json",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["status"],
+        "compatible"
+    );
+    fs::remove_dir_all(directory).unwrap();
+}

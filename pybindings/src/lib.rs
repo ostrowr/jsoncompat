@@ -8,6 +8,7 @@
 mod model_converter;
 mod prepared_schema;
 mod unicode;
+mod validation_error;
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -480,7 +481,7 @@ impl ModelRuntimePy {
         } else {
             candidate.validate(py)?
         };
-        Self::require_valid(&converter, py, converted)
+        Self::require_valid(&converter, py, Ok(converted), || Ok(None))
     }
 
     /// Construct a generated model from an already-decoded JSON value.
@@ -497,8 +498,12 @@ impl ModelRuntimePy {
             converter.construct_unchecked(py, value).map(Some)
         } else {
             construct_model_value(py, value, &converter)
-        }?;
-        Self::require_valid(&converter, py, converted)
+        };
+        Self::require_valid(&converter, py, converted, || {
+            Ok(converter
+                .schema()?
+                .explain_instance(JSONInstanceRef::from_python(value)))
+        })
     }
 
     /// Parse JSON and construct a generated model in one native pass.
@@ -510,24 +515,35 @@ impl ModelRuntimePy {
         skip_validation: bool,
     ) -> PyResult<Py<PyAny>> {
         let converter = self.converter(py)?;
-        let converted = if let Ok(text) = payload.cast::<PyString>() {
-            if skip_validation {
-                construct_model_json_bytes_unchecked(py, text.to_str()?.as_bytes(), &converter)?
+        let converted = (|| {
+            if let Ok(text) = payload.cast::<PyString>() {
+                if skip_validation {
+                    construct_model_json_bytes_unchecked(py, text.to_str()?.as_bytes(), &converter)
+                } else {
+                    construct_model_json_bytes_checked(py, text.to_str()?.as_bytes(), &converter)
+                }
+            } else if let Ok(bytes) = payload.cast::<PyBytes>() {
+                if skip_validation {
+                    construct_model_json_bytes_unchecked(py, bytes.as_bytes(), &converter)
+                } else {
+                    construct_model_json_bytes_checked(py, bytes.as_bytes(), &converter)
+                }
             } else {
-                construct_model_json_bytes_checked(py, text.to_str()?.as_bytes(), &converter)?
+                Err(PyErr::new::<PyTypeError, _>(
+                    "JSON payloads must be str or bytes",
+                ))
             }
-        } else if let Ok(bytes) = payload.cast::<PyBytes>() {
-            if skip_validation {
-                construct_model_json_bytes_unchecked(py, bytes.as_bytes(), &converter)?
+        })();
+        Self::require_valid(&converter, py, converted, || {
+            let parsed: JsonValue = if let Ok(text) = payload.cast::<PyString>() {
+                serde_json::from_str(text.to_str()?)
+                    .map_err(|error| PyValueError::new_err(error.to_string()))?
             } else {
-                construct_model_json_bytes_checked(py, bytes.as_bytes(), &converter)?
-            }
-        } else {
-            return Err(PyErr::new::<PyTypeError, _>(
-                "JSON payloads must be str or bytes",
-            ));
-        };
-        Self::require_valid(&converter, py, converted)
+                serde_json::from_slice(payload.cast::<PyBytes>()?.as_bytes())
+                    .map_err(|error| PyValueError::new_err(error.to_string()))?
+            };
+            Ok(converter.schema()?.explain(&parsed))
+        })
     }
 
     /// Materialize a generated model as a mutable Python JSON value.
@@ -542,7 +558,11 @@ impl ModelRuntimePy {
         Self::ensure_model_instance(&converter, py, instance)?;
         let value = model_to_value(py, instance, &converter)?;
         if !skip_validation && !converter.validate_json_value(py, &value)? {
-            return Self::require_valid(&converter, py, None);
+            return Self::require_valid(&converter, py, Ok(None), || {
+                Ok(converter
+                    .schema()?
+                    .explain_instance(converter.projection().instance(instance)))
+            });
         }
         Ok(value.into_py())
     }
@@ -560,9 +580,24 @@ impl ModelRuntimePy {
         let payload = if skip_validation {
             converter.serialize_model_trusted(py, instance)?
         } else {
-            let payload = converter.serialize_model_checked(py, instance)?;
+            let payload = match converter.serialize_model_checked(py, instance) {
+                Ok(payload) => payload,
+                Err(original) => {
+                    if original.is_instance_of::<PyValueError>(py)
+                        && let Some(failure) = converter
+                            .schema()?
+                            .explain_instance(converter.projection().instance(instance))
+                    {
+                        return Err(validation_error::from_failure(py, failure));
+                    }
+                    return Err(original);
+                }
+            };
             if !converter.validate_emitted_json(&payload)? {
-                return Self::require_valid(&converter, py, None);
+                return Self::require_valid(&converter, py, Ok(None), || {
+                    let parsed = parse_json(&payload)?;
+                    Ok(converter.schema()?.explain(&parsed))
+                });
             }
             payload
         };
@@ -613,16 +648,27 @@ impl ModelRuntimePy {
     fn require_valid<T>(
         converter: &ModelConverterPy,
         py: Python<'_>,
-        value: Option<T>,
+        value: PyResult<Option<T>>,
+        explain: impl FnOnce()
+            -> PyResult<Option<jsoncompat_codegen::prepared_schema::ValidationFailure>>,
     ) -> PyResult<T> {
-        value.ok_or_else(|| {
+        let original = match value {
+            Ok(Some(value)) => return Ok(value),
+            Err(error) if !error.is_instance_of::<PyValueError>(py) => return Err(error),
+            Err(error) => Some(error),
+            Ok(None) => None,
+        };
+        if let Ok(Some(failure)) = explain() {
+            return Err(validation_error::from_failure(py, failure));
+        }
+        Err(original.unwrap_or_else(|| {
             let model_name = converter
                 .model_type()
                 .and_then(|model_type| model_type.bind(py).name())
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| "generated model".to_owned());
-            PyErr::new::<PyValueError, _>(format!("value does not satisfy {model_name} schema"))
-        })
+            PyValueError::new_err(format!("value does not satisfy {model_name} schema"))
+        }))
     }
 }
 
@@ -894,6 +940,20 @@ fn parse_role(role: &str) -> PyResult<Role> {
 /// -------
 /// bool
 ///     `True` if the change is considered compatible, `False` otherwise.
+/// Link explicit offline resources and select the format vocabulary once, before
+/// handing the schema to any Python API. Generated model imports never call this.
+#[pyfunction(name = "prepare_schema")]
+fn prepare_schema_py(schema_json: &str, options_json: &str) -> PyResult<String> {
+    let options: json_schema_ast::SchemaOptions = serde_json::from_str(options_json)
+        .map_err(|error| PyValueError::new_err(format!("invalid schema options: {error}")))?;
+    let document = SchemaDocument::from_json_with_options(&parse_json(schema_json)?, &options)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    document
+        .linked_schema_json()
+        .map(|value| value.to_string())
+        .map_err(|error| PyValueError::new_err(error.to_string()))
+}
+
 #[pyfunction]
 #[pyo3(signature = (old_schema_json, new_schema_json, role="both"), name = "check_compat")]
 fn check_compat_py(old_schema_json: &str, new_schema_json: &str, role: &str) -> PyResult<bool> {
@@ -1089,6 +1149,7 @@ fn is_valid_py(schema_json: &str, instance_json: &str) -> PyResult<bool> {
 #[pymodule]
 #[pyo3(name = "_native")]
 fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(prepare_schema_py, m)?)?;
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(generate_value_py, m)?)?;
@@ -1098,6 +1159,10 @@ fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deserialize_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(serialize_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_valid_py, m)?)?;
+    m.add(
+        "ValidationError",
+        py.get_type::<validation_error::ValidationError>(),
+    )?;
     m.add_class::<GeneratorPy>()?;
     m.add_class::<JsoncompatMissingPy>()?;
     m.add_class::<ModelRuntimePy>()?;

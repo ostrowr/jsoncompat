@@ -16,10 +16,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 
 mod annotations;
+mod diagnostics;
+pub use diagnostics::{ValidationFailure, ValidationFailureKind};
 mod pattern;
 use pattern::Pattern;
 
-const VERSION: u32 = 3;
+const VERSION: u32 = 4;
 const MAX_DEPTH: usize = 512;
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -34,6 +36,7 @@ pub struct PreparedSchema {
     version: u32,
     nodes: Vec<Node>,
     patterns: Vec<Pattern>,
+    pattern_sources: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     exact_json_numbers: bool,
 }
@@ -43,6 +46,8 @@ pub struct PreparedSchema {
 pub struct Node {
     pub types: Option<Vec<JsonType>>,
     pub choices: Option<Vec<Value>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub constant: bool,
     pub rules: Vec<Rule>,
 }
 
@@ -84,7 +89,10 @@ impl JsonType {
 #[serde(rename_all = "snake_case")]
 pub enum Rule {
     False,
-    Ref(NodeId),
+    Ref {
+        node: NodeId,
+        pointer: String,
+    },
     All(Vec<NodeId>),
     Any(Vec<NodeId>),
     One(Vec<NodeId>),
@@ -201,7 +209,7 @@ impl Rule {
     fn edges_valid(&self, node_count: usize) -> bool {
         let valid = |node: NodeId| node.0 < node_count;
         match self {
-            Self::Ref(node)
+            Self::Ref { node, .. }
             | Self::Not(node)
             | Self::PropertyNames(node)
             | Self::Contains { node, .. }
@@ -280,6 +288,13 @@ impl PreparedSchema {
             version: VERSION,
             exact_json_numbers,
             nodes: builder.nodes,
+            pattern_sources: {
+                let mut sources = vec![String::new(); builder.patterns.len()];
+                for (source, id) in builder.pattern_ids {
+                    sources[id.0] = source;
+                }
+                sources
+            },
             patterns: builder.patterns,
         })
     }
@@ -290,7 +305,10 @@ impl PreparedSchema {
 
     pub fn load(bytes: &[u8]) -> Result<Self, String> {
         let program: Self = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        if program.version != VERSION || program.nodes.is_empty() {
+        if program.version != VERSION
+            || program.nodes.is_empty()
+            || program.pattern_sources.len() != program.patterns.len()
+        {
             return Err(
                 "unsupported or empty prepared schema; rebuild the generated module".into(),
             );
@@ -438,7 +456,7 @@ impl PreparedSchema {
     ) -> bool {
         match rule {
             Rule::False => false,
-            Rule::Ref(node) => self.accepts(*node, value, depth, context),
+            Rule::Ref { node, .. } => self.accepts(*node, value, depth, context),
             Rule::All(nodes) => nodes
                 .iter()
                 .all(|node| self.accepts(*node, value, depth, context)),
@@ -738,6 +756,7 @@ impl Builder<'_> {
         self.nodes.push(Node {
             types: None,
             choices: None,
+            constant: false,
             rules: Vec::new(),
         });
         let node = self.node(schema, path)?;
@@ -768,6 +787,7 @@ impl Builder<'_> {
         let mut node = Node {
             types: None,
             choices: None,
+            constant: false,
             rules: Vec::new(),
         };
         match schema {
@@ -809,6 +829,7 @@ impl Builder<'_> {
             node.choices = Some(choices.as_array().ok_or("invalid enum")?.clone());
         }
         if let Some(value) = object.get("const") {
+            node.constant = true;
             if node.choices.as_ref().is_some_and(|choices| {
                 !choices
                     .iter()
@@ -833,8 +854,10 @@ impl Builder<'_> {
                 .pointer(&pointer)
                 .ok_or_else(|| format!("unresolved reference {reference}"))?
                 .clone();
-            node.rules
-                .push(Rule::Ref(self.add(&target, &format!("#{pointer}"))?));
+            node.rules.push(Rule::Ref {
+                node: self.add(&target, &format!("#{pointer}"))?,
+                pointer: pointer.into_owned(),
+            });
         }
         for key in ["allOf", "anyOf", "oneOf"] {
             if let Some(values) = object.get(key).and_then(Value::as_array) {
@@ -1077,8 +1100,12 @@ mod tests {
                         .map(|index| Node {
                             types: None,
                             choices: None,
+                            constant: false,
                             rules: if index < length {
-                                vec![Rule::Ref(NodeId(index + 1))]
+                                vec![Rule::Ref {
+                                    node: NodeId(index + 1),
+                                    pointer: String::new(),
+                                }]
                             } else {
                                 Vec::new()
                             },
@@ -1086,6 +1113,7 @@ mod tests {
                         .chain(std::iter::once(Node {
                             types: None,
                             choices: None,
+                            constant: false,
                             rules: vec![Rule::False],
                         }))
                         .collect();
@@ -1093,6 +1121,7 @@ mod tests {
                         version: VERSION,
                         nodes,
                         patterns: Vec::new(),
+                        pattern_sources: Vec::new(),
                         exact_json_numbers: false,
                     };
                     for rule in [
@@ -1105,6 +1134,14 @@ mod tests {
                     ] {
                         program.nodes[0].rules = vec![rule];
                         assert!(!program.is_valid_json_view(InstanceRef::from_serde(&Value::Null)));
+                        assert_eq!(
+                            program.explain(&Value::Null).unwrap().kind,
+                            if length >= MAX_DEPTH {
+                                ValidationFailureKind::ResourceLimit
+                            } else {
+                                ValidationFailureKind::Constraint
+                            }
+                        );
                     }
                 }
             })

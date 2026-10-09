@@ -1,333 +1,88 @@
-use jsoncompat::{StampManifest, stamp_schema};
-use jsoncompat_codegen::generate_dataclass_models;
-use serde_json::Value;
-use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
-
+#[path = "support/dataclass_corpus.rs"]
+mod corpus;
 #[path = "support/python_env.rs"]
 mod python_env;
-
-const UPDATE_ENV: &str = "JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES";
-const SNAPSHOT_ROOT: &str = "tests/fixtures/dataclasses";
-
-#[derive(Debug, Clone)]
-enum SnapshotKind {
-    Python,
-    Error,
-}
-
-#[derive(Debug, Clone)]
-struct Snapshot {
-    kind: SnapshotKind,
-    contents: String,
-}
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 #[test]
 fn dataclass_snapshots_are_up_to_date_for_all_sample_schemas() {
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let update = std::env::var_os(UPDATE_ENV).is_some();
-
-    let mut expected_paths = BTreeSet::new();
-
-    snapshot_backcompat_fixtures(repo_root, update, &mut expected_paths);
-    snapshot_fuzz_fixtures(repo_root, update, &mut expected_paths);
-    snapshot_python_benchmark_models(repo_root, update, &mut expected_paths);
-    snapshot_stamp_example(repo_root, update, &mut expected_paths);
-
-    prune_or_validate_stale_snapshots(repo_root, update, &expected_paths);
-    assert_python_syntax(&expected_paths);
-}
-
-fn snapshot_python_benchmark_models(
-    repo_root: &Path,
-    update: bool,
-    expected_paths: &mut BTreeSet<PathBuf>,
-) {
-    let schema_root = repo_root.join("pybindings/benchmark_schemas");
-    for schema_file in sorted_json_files(&schema_root) {
-        let relative = schema_file
-            .strip_prefix(&schema_root)
-            .expect("benchmark schema path is under its root")
-            .with_extension("");
-        assert_snapshot(
-            repo_root,
-            Path::new("benchmarks").join(relative),
-            render_schema_snapshot(&read_json(schema_file)),
-            update,
-            expected_paths,
-        );
-    }
-}
-
-fn snapshot_backcompat_fixtures(
-    repo_root: &Path,
-    update: bool,
-    expected_paths: &mut BTreeSet<PathBuf>,
-) {
-    let fixture_root = repo_root.join("tests/fixtures/backcompat");
-    for fixture_dir in sorted_dirs(&fixture_root) {
-        let case_name = fixture_dir
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("utf-8 fixture directory name");
-        assert_snapshot(
-            repo_root,
-            Path::new("backcompat").join(case_name).join("old"),
-            render_schema_snapshot(&read_json(fixture_dir.join("old.json"))),
-            update,
-            expected_paths,
-        );
-        assert_snapshot(
-            repo_root,
-            Path::new("backcompat").join(case_name).join("new"),
-            render_schema_snapshot(&read_json(fixture_dir.join("new.json"))),
-            update,
-            expected_paths,
-        );
-    }
-}
-
-fn snapshot_fuzz_fixtures(repo_root: &Path, update: bool, expected_paths: &mut BTreeSet<PathBuf>) {
-    let fixture_root = repo_root.join("tests/fixtures/fuzz");
-    for schema_file in sorted_json_files(&fixture_root) {
-        let relative = schema_file
-            .strip_prefix(&fixture_root)
-            .expect("fixture path is under fuzz root");
-        let schema_doc = read_json(&schema_file);
-        let schemas = collect_embedded_schemas(&schema_doc);
-
-        let snapshot_dir = Path::new("fuzz").join(relative).with_extension("");
-        for (index, schema) in schemas.into_iter().enumerate() {
-            assert_snapshot(
-                repo_root,
-                snapshot_dir.join(format!("{index:03}")),
-                render_schema_snapshot(&schema),
-                update,
-                expected_paths,
-            );
-        }
-    }
-}
-
-fn snapshot_stamp_example(repo_root: &Path, update: bool, expected_paths: &mut BTreeSet<PathBuf>) {
-    let example_root = repo_root.join("examples/stamp");
-    let schema_v1 = read_json(example_root.join("schema-v1.json"));
-    let schema_v2 = read_json(example_root.join("schema-v2.json"));
-    let result = stamp_schema(
-        &StampManifest::empty(),
-        "examples/stamp/user-profile",
-        schema_v1,
-    )
-    .and_then(|first| stamp_schema(&first.manifest, "examples/stamp/user-profile", schema_v2))
-    .expect("stamp example schemas");
-    assert_snapshot(
-        repo_root,
-        Path::new("examples/stamp/user-profile-writer").to_path_buf(),
-        render_schema_snapshot(&result.bundle.writer),
-        update,
-        expected_paths,
-    );
-    assert_snapshot(
-        repo_root,
-        Path::new("examples/stamp/user-profile-reader").to_path_buf(),
-        render_schema_snapshot(&result.bundle.reader),
-        update,
-        expected_paths,
-    );
-}
-
-fn render_schema_snapshot(schema: &Value) -> Snapshot {
-    match generate_dataclass_models(schema) {
-        Ok(source) => Snapshot {
-            kind: SnapshotKind::Python,
-            contents: source,
-        },
-        Err(error) => Snapshot {
-            kind: SnapshotKind::Error,
-            contents: format!("{error}\n"),
-        },
-    }
-}
-
-fn assert_snapshot(
-    repo_root: &Path,
-    relative_base: PathBuf,
-    snapshot: Snapshot,
-    update: bool,
-    expected_paths: &mut BTreeSet<PathBuf>,
-) {
-    let snapshot_path = repo_root
-        .join(SNAPSHOT_ROOT)
-        .join(&relative_base)
-        .with_extension(snapshot.extension());
-    let stale_path = repo_root
-        .join(SNAPSHOT_ROOT)
-        .join(&relative_base)
-        .with_extension(snapshot.stale_extension());
-    expected_paths.insert(snapshot_path.clone());
-
-    if update {
-        if let Some(parent) = snapshot_path.parent() {
-            fs::create_dir_all(parent).expect("create snapshot directory");
-        }
-        fs::write(&snapshot_path, snapshot.contents.as_bytes()).expect("write snapshot fixture");
-        if stale_path.exists() {
-            fs::remove_file(&stale_path).expect("remove stale snapshot fixture");
-        }
-    }
-
-    let current = fs::read_to_string(&snapshot_path).unwrap_or_else(|error| {
-        panic!(
-            "missing dataclass snapshot {}: {error}. Run `just regen-dataclasses-fixtures`.",
-            snapshot_path.display()
-        )
-    });
-    assert_eq!(
-        normalized_newlines(&current),
-        normalized_newlines(&snapshot.contents),
-        "dataclass snapshot is stale: {}. Run `just regen-dataclasses-fixtures`.",
-        snapshot_path.display()
-    );
-}
-
-fn normalized_newlines(contents: &str) -> String {
-    contents.replace("\r\n", "\n")
-}
-
-impl Snapshot {
-    fn extension(&self) -> &'static str {
-        match self.kind {
-            SnapshotKind::Python => "py",
-            SnapshotKind::Error => "error.txt",
-        }
-    }
-
-    fn stale_extension(&self) -> &'static str {
-        match self.kind {
-            SnapshotKind::Python => "error.txt",
-            SnapshotKind::Error => "py",
-        }
-    }
-}
-
-fn prune_or_validate_stale_snapshots(
-    repo_root: &Path,
-    update: bool,
-    expected_paths: &BTreeSet<PathBuf>,
-) {
-    let snapshot_root = repo_root.join(SNAPSHOT_ROOT);
-    if !snapshot_root.exists() {
-        if update {
-            fs::create_dir_all(&snapshot_root).expect("create snapshot root");
-            return;
-        }
-        panic!(
-            "missing dataclass snapshot root {}. Run `just regen-dataclasses-fixtures`.",
-            snapshot_root.display()
-        );
-    }
-
-    for file in sorted_files_recursive(&snapshot_root) {
-        let ext = file.extension().and_then(|ext| ext.to_str());
-        let file_name = file
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("utf-8 snapshot filename");
-        let is_snapshot = matches!(ext, Some("py")) || file_name.ends_with(".error.txt");
-        if !is_snapshot || expected_paths.contains(&file) {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let snapshots = repo.join("tests/fixtures/dataclasses");
+    let destination = std::env::temp_dir().join(format!(
+        "jsoncompat-corpus-{}-{}",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
+    let update = std::env::var_os("JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES").is_some();
+    let paths = corpus::generate(&destination);
+    let mut expected = BTreeSet::new();
+    for path in &paths {
+        let relative = path.strip_prefix(&destination).unwrap();
+        // Keep readable representative model graphs and stamped roles. All
+        // other models still receive syntax, runtime and differential checks.
+        let golden = relative.starts_with("benchmarks")
+            || relative.starts_with("examples")
+            || path.extension().is_some_and(|ext| ext == "txt");
+        if !golden {
             continue;
         }
-
+        let snapshot = snapshots.join(relative);
+        let source = fs::read_to_string(path).unwrap();
         if update {
-            fs::remove_file(&file).expect("remove stale generated snapshot");
-        } else {
-            panic!(
-                "stale dataclass snapshot {}. Run `just regen-dataclasses-fixtures`.",
-                file.display()
-            );
+            fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
+            fs::write(&snapshot, &source).unwrap();
         }
+        assert_eq!(
+            fs::read_to_string(&snapshot)
+                .unwrap_or_else(|error| panic!(
+                    "{}: {error}; run just regen-dataclasses-fixtures",
+                    snapshot.display()
+                ))
+                .replace("\r\n", "\n"),
+            source.replace("\r\n", "\n"),
+            "stale golden {}; run just regen-dataclasses-fixtures",
+            snapshot.display()
+        );
+        expected.insert(snapshot);
     }
-}
-
-fn collect_embedded_schemas(root: &Value) -> Vec<Value> {
-    match root {
-        Value::Array(items) => items
-            .iter()
-            .filter_map(|item| item.get("schema").cloned())
-            .collect(),
-        schema => vec![schema.clone()],
-    }
-}
-
-fn sorted_dirs(root: &Path) -> Vec<PathBuf> {
-    let mut dirs = fs::read_dir(root)
-        .unwrap_or_else(|error| panic!("read dir {}: {error}", root.display()))
-        .map(|entry| entry.expect("read dir entry").path())
-        .filter(|path| path.is_dir())
-        .collect::<Vec<_>>();
-    dirs.sort();
-    dirs
-}
-
-fn sorted_json_files(root: &Path) -> Vec<PathBuf> {
-    sorted_files_recursive(root)
-        .into_iter()
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
-        .collect()
-}
-
-fn sorted_files_recursive(root: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(path) = stack.pop() {
+    let mut pending = vec![snapshots];
+    while let Some(path) = pending.pop() {
         if path.is_dir() {
-            for entry in fs::read_dir(&path)
-                .unwrap_or_else(|error| panic!("read dir {}: {error}", path.display()))
-            {
-                stack.push(entry.expect("read dir entry").path());
+            pending.extend(
+                fs::read_dir(path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path()),
+            );
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "py" || ext == "txt")
+            && !expected.contains(&path)
+        {
+            if update {
+                fs::remove_file(path).unwrap();
+            } else {
+                panic!(
+                    "stale golden {}; run just regen-dataclasses-fixtures",
+                    path.display()
+                );
             }
-        } else {
-            files.push(path);
         }
     }
-    files.sort();
-    files
-}
-
-fn read_json(path: impl AsRef<Path>) -> Value {
-    serde_json::from_slice(
-        &fs::read(path.as_ref())
-            .unwrap_or_else(|error| panic!("read json {}: {error}", path.as_ref().display())),
-    )
-    .unwrap_or_else(|error| panic!("parse json {}: {error}", path.as_ref().display()))
-}
-
-fn assert_python_syntax(expected_paths: &BTreeSet<PathBuf>) {
-    let python_paths = expected_paths
+    let python_paths: Vec<&PathBuf> = paths
         .iter()
-        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("py"))
-        .collect::<Vec<_>>();
-    let mut child = python_env::python_command()
-        .arg("-B")
-        .arg("-c")
-        .arg(
-            "import ast, json, pathlib, sys\nfor raw_path in json.load(sys.stdin):\n    path = pathlib.Path(raw_path)\n    ast.parse(path.read_text(encoding='utf-8'), filename=str(path))",
-        )
-        .stdin(Stdio::piped())
-        .spawn()
-        .expect("start python syntax check");
-
-    serde_json::to_writer(
-        child.stdin.take().expect("python syntax check stdin"),
-        &python_paths,
-    )
-    .expect("write generated dataclass paths");
-
-    let status = child.wait().expect("run python syntax check");
+        .filter(|path| path.extension().is_some_and(|ext| ext == "py"))
+        .collect();
     assert!(
-        status.success(),
-        "generated dataclass fixtures did not compile"
+        python_paths.len() > 500,
+        "full corpus must still be generated"
     );
+    let mut child = python_env::python_command().args(["-B", "-c", "import ast,json,pathlib,sys\nfor p in json.load(sys.stdin):\n ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p)"]).stdin(Stdio::piped()).spawn().unwrap();
+    serde_json::to_writer(child.stdin.take().unwrap(), &python_paths).unwrap();
+    assert!(child.wait().unwrap().success());
+    fs::remove_dir_all(destination).unwrap();
 }

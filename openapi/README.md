@@ -66,10 +66,18 @@ let report = check_openapi_compat(&old, &new).unwrap();
 assert!(report.is_compatible());
 ```
 
-`OpenApiCompatibilityReport::issues()` lists operation removals plus request- and response-surface incompatibilities.
+`OpenApiCompatibilityReport::issues()` lists operation removals plus request- and response-surface incompatibilities or unknown results. Use `is_unknown()` to distinguish an incomplete proof from a validated incompatibility.
 
 ## More detail
 
 - [Repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md)
 - [Developer guide](https://github.com/ostrowr/jsoncompat/blob/main/developing.md) for validation/lowering internals, test strategy, and unsupported-surface design
 - [jsoncompat.com](https://jsoncompat.com)
+
+## Generate Python model packages
+
+`jsoncompat codegen --openapi openapi.json --output models` builds component
+schemas into readable Python declarations and private prepared companions.
+Use `from models import ComponentName`. See the
+[package build contract](../pybindings/README.md#openapi-model-packages) for
+selection, naming, incremental regeneration, lazy imports, and reference grouping.

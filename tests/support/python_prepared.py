@@ -24,7 +24,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 WORK = Path(sys.argv.pop(1))
 REPO = Path(__file__).resolve().parents[2]
-FIXTURES = REPO / "tests/fixtures/dataclasses"
+FIXTURES = WORK / "fixtures"
 
 
 def _load(path):
@@ -58,6 +58,50 @@ class PreparedTests(unittest.TestCase):
             py_compile.compile(str(source), doraise=True)
             if not source.name.startswith("_"):
                 cls.modules[source.stem] = _load(source)
+
+    def test_structured_errors_do_not_compile_on_failure(self):
+        model = self.modules["constrained"].Constrained
+        bad = {"name": "ok", "count": -1}
+        unchecked = model.from_value(bad, skip_validation=True)
+        def forbidden(*args, **kwargs):
+            raise AssertionError("validation error compiled a schema")
+        with patch.object(jsoncompat, "validator_for", forbidden), patch.object(builtins, "compile", forbidden):
+            for operation in [lambda: model.from_value(bad), lambda: model.deserialize(json.dumps(bad)),
+                              lambda: model.deserialize(json.dumps(bad).encode()),
+                              lambda: model(name="ok", count=-1), unchecked.serialize, unchecked.to_value]:
+                with self.assertRaises(jsoncompat.ValidationError) as raised:
+                    operation()
+                self.assertEqual(raised.exception.instance_path, "/count")
+                self.assertEqual(raised.exception.schema_path, "/properties/count/minimum")
+                self.assertEqual(raised.exception.keyword, "minimum")
+                self.assertEqual(raised.exception.kind, "constraint")
+
+    def test_schema_options_are_explicit_and_shared(self):
+        schema = '{"$ref":"https://example.com/name"}'
+        options = {"resources": {"https://example.com/name": {"type":"string", "minLength":2}}}
+        validator = jsoncompat.validator_for(schema, options=options)
+        self.assertTrue(validator.is_valid_json('"ok"'))
+        self.assertFalse(validator.is_valid_json('"x"'))
+        self.assertTrue(validator.is_valid_json(jsoncompat.generator_for(schema, options=options).generate_value()))
+        self.assertEqual(jsoncompat.analyze_compat(schema, schema, options=options)["status"], "compatible")
+        self.assertTrue(jsoncompat.check_compat(schema, schema, options=options))
+        for asserted in (True, False):
+            validator = jsoncompat.validator_for('{"format":"email"}', options={"assert_formats":asserted})
+            self.assertEqual(validator.is_valid_json('"invalid"'), not asserted)
+        with self.assertRaises(ValueError):
+            jsoncompat.validator_for("true", options={"unexpected": True})
+
+    def test_public_verdict_is_structured_and_preserves_exact_witness_json(self):
+        result = jsoncompat.analyze_compat('{"type":"string"}', '{"type":"integer"}', "serializer")
+        self.assertEqual(result["status"], "incompatible")
+        self.assertEqual(result["direction"], "serializer")
+        self.assertTrue(jsoncompat.validator_for('{"type":"integer"}').is_valid_json(result["counterexample_json"]))
+        self.assertFalse(jsoncompat.validator_for('{"type":"string"}').is_valid_json(result["counterexample_json"]))
+        self.assertEqual(jsoncompat.analyze_compat("true", "true"), {"status": "compatible"})
+        properties = {f"p{i}": True for i in range(9)}
+        simple = {"type": "object", "properties": properties, "additionalProperties": False}
+        complex_schema = {"type": "object", "anyOf": [{"properties": {k: True}} for k in properties], "unevaluatedProperties": False}
+        self.assertEqual(jsoncompat.analyze_compat(json.dumps(simple), json.dumps(complex_schema))["status"], "unknown")
 
     def test_numeric_exponents_never_turn_failed_assertions_into_negations(self):
         for exponent in (324, 10000, 10001, 2147483648):
@@ -471,8 +515,9 @@ class PreparedTests(unittest.TestCase):
             validator = jsoncompat.validator_for(model.__jsoncompat_schema__)
             self.assertFalse(validator.is_valid_value(value), name)
             with self.subTest(schema=name):
-                with self.assertRaises(ValueError):
+                with self.assertRaises(jsoncompat.ValidationError) as raised:
                     model.deserialize(json.dumps(value))
+                self.assertEqual(raised.exception.kind, "resource_limit")
                 with self.assertRaises(ValueError):
                     model.from_value(value)
                 trusted = model.from_value(value, skip_validation=True)
@@ -518,7 +563,7 @@ class PreparedTests(unittest.TestCase):
                 for node in call.args[2].elts:
                     if ast.literal_eval(node.elts[0]) in ("model", "root"):
                         program = json.loads(ast.literal_eval(node.elts[-1]))
-                        program["nodes"][0]["rules"].append({"ref": 999999})
+                        program["nodes"][0]["rules"].append({"ref": {"node": 999999, "pointer": ""}})
                         node.elts[-1] = ast.Constant(json.dumps(program).encode())
                         changed = True
         self.assertTrue(changed)

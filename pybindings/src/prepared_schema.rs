@@ -18,6 +18,12 @@ impl PreparedSchema {
     pub(crate) fn load(bytes: &[u8]) -> Result<Self, String> {
         portable::PreparedSchema::load(bytes).map(Self)
     }
+    pub(crate) fn explain_instance(
+        &self,
+        value: jsonschema::InstanceRef<'_>,
+    ) -> Option<portable::ValidationFailure> {
+        self.0.explain_view(View(value))
+    }
     pub(crate) fn is_valid_instance(&self, value: jsonschema::InstanceRef<'_>) -> bool {
         self.0.is_valid_view(View(value))
     }

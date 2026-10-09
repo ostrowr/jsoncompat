@@ -35,7 +35,7 @@ impl PreparedSchema {
         }
         active.push(id.0);
         let evaluated = self.nodes[id.0].rules.iter().any(|rule| match rule {
-            Rule::Ref(child) => {
+            Rule::Ref { node: child, .. } => {
                 self.evaluates(*child, value, location, depth + 1, context, active, true)
             }
             Rule::All(children) => children.iter().any(|child| {

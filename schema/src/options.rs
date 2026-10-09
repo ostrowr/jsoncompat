@@ -9,7 +9,8 @@ const VOCAB: &str = "https://json-schema.org/draft/2020-12/vocab/";
 
 /// Resource retrieval is explicit and offline. Format assertions default to the
 /// vocabulary selected by `$schema`; standard Draft 2020-12 formats annotate.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct SchemaOptions {
     pub resources: BTreeMap<String, Value>,
     /// Override vocabulary selection for every resource when `Some`.

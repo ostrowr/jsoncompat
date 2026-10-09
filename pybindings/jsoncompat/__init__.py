@@ -28,6 +28,12 @@ type JsonValue = (
     | tuple["JsonValue", ...]
     | dict[str, "JsonValue"]
 )
+class SchemaOptions(TypedDict, total=False):
+    """Explicit offline resources and optional format assertion policy."""
+    resources: dict[str, JsonValue]
+    assert_formats: bool | None
+
+
 class Compatible(TypedDict):
     status: Literal["compatible"]
 
@@ -107,6 +113,8 @@ class ModelRuntime(Protocol):
 
 
 class NativeModule(Protocol):
+    ValidationError: type[ValueError]
+    def prepare_schema(self, schema_json: str, options_json: str) -> str: ...
     JSONCOMPAT_MISSING: Any
     JsoncompatMissingType: type[Any]
 
@@ -337,7 +345,28 @@ if not TYPE_CHECKING:
         JSONCOMPAT_MISSING = _native_symbols.JSONCOMPAT_MISSING
 
 
-def analyze_compat(old_schema_json: str, new_schema_json: str, role: RoleLiteral = "both") -> CompatibilityResult:
+# A ValueError subclass with kind, instance_path, schema_path, and keyword on
+# generated-model validation failures. A missing extension fails at API use.
+if TYPE_CHECKING:
+    class ValidationError(ValueError):
+        kind: Literal["constraint", "resource_limit", "non_json"]
+        instance_path: str
+        schema_path: str
+        keyword: str
+else:
+    ValidationError = _native_symbols.ValidationError if _native_symbols is not None else ValueError
+
+
+def _with_options(schema_json: str, options: SchemaOptions | None) -> str:
+    if options is None:
+        return schema_json
+    if _native_symbols is None:
+        raise ModuleNotFoundError("Build the jsoncompat native extension before using schema options.")
+    import json
+    return _native_symbols.prepare_schema(schema_json, json.dumps(options))
+
+
+def analyze_compat(old_schema_json: str, new_schema_json: str, role: RoleLiteral = "both", *, options: SchemaOptions | None = None) -> CompatibilityResult:
     """Return a typed verdict with a validated witness or an unknown reason.
 
     Use counterexample_json when preserving exact JSON decimal values matters.
@@ -346,19 +375,20 @@ def analyze_compat(old_schema_json: str, new_schema_json: str, role: RoleLiteral
         raise ModuleNotFoundError("Build the jsoncompat native extension before calling analyze_compat().")
     import json
 
-    return cast(CompatibilityResult, json.loads(_native_symbols.analyze_compat(old_schema_json, new_schema_json, role)))
+    return cast(CompatibilityResult, json.loads(_native_symbols.analyze_compat(_with_options(old_schema_json, options), _with_options(new_schema_json, options), role)))
 
 
 def check_compat(
     old_schema_json: str,
     new_schema_json: str,
     role: RoleLiteral = "both",
+    *, options: SchemaOptions | None = None,
 ) -> bool:
     check_compat_native = _check_compat_native
-    return check_compat_native(old_schema_json, new_schema_json, role)
+    return check_compat_native(_with_options(old_schema_json, options), _with_options(new_schema_json, options), role)
 
 
-def generate_value(schema_json: str, depth: int = 5) -> str:
+def generate_value(schema_json: str, depth: int = 5, *, options: SchemaOptions | None = None) -> str:
     warnings.warn(
         "jsoncompat.generate_value(schema_json, depth) is deprecated; "
         "use jsoncompat.generator_for(schema_json).generate_value(depth) instead.",
@@ -366,7 +396,7 @@ def generate_value(schema_json: str, depth: int = 5) -> str:
         stacklevel=2,
     )
     generate_value_native = _generate_value_native
-    return generate_value_native(schema_json, depth)
+    return generate_value_native(_with_options(schema_json, options), depth)
 
 
 class _ThreadLocalGenerator:
@@ -421,12 +451,12 @@ class _ThreadLocalValidator:
         return self._native().serialize_json(instance)
 
 
-def generator_for(schema_json: str) -> Generator:
-    return _ThreadLocalGenerator(schema_json)
+def generator_for(schema_json: str, *, options: SchemaOptions | None = None) -> Generator:
+    return _ThreadLocalGenerator(_with_options(schema_json, options))
 
 
-def validator_for(schema_json: str) -> Validator:
-    return _ThreadLocalValidator(schema_json)
+def validator_for(schema_json: str, *, options: SchemaOptions | None = None) -> Validator:
+    return _ThreadLocalValidator(_with_options(schema_json, options))
 
 
 def deserialize_json_value(payload: str | bytes) -> JsonValue:
@@ -456,7 +486,7 @@ def bind_prepared_model_runtimes(
     )
 
 
-def is_valid(schema_json: str, instance_json: str) -> bool:
+def is_valid(schema_json: str, instance_json: str, *, options: SchemaOptions | None = None) -> bool:
     warnings.warn(
         "jsoncompat.is_valid(schema_json, instance_json) is deprecated; "
         "use jsoncompat.validator_for(schema_json).is_valid_json(instance_json) instead.",
@@ -464,7 +494,7 @@ def is_valid(schema_json: str, instance_json: str) -> bool:
         stacklevel=2,
     )
     is_valid_native = _is_valid_native
-    return is_valid_native(schema_json, instance_json)
+    return is_valid_native(_with_options(schema_json, options), instance_json)
 
 
 __all__ = [
@@ -477,6 +507,8 @@ __all__ = [
     "Validator",
     "check_compat",
     "analyze_compat",
+    "SchemaOptions",
+    "ValidationError",
     "CompatibilityResult",
     "Compatible",
     "Incompatible",

@@ -112,7 +112,6 @@ fn every_known_json_schema_fixture_round_trips_through_generated_dataclasses()
 
         match generate_dataclass_models(&fixture_case.schema) {
             Ok(source) => {
-                assert_generated_snapshot(repo_root, fixture_case)?;
                 let runtime_error = runtime_unsupported.remove(&fixture_case.case_id);
                 let unsatisfiable_fixture = unsatisfiable.remove(&fixture_case.case_id);
                 assert!(
@@ -405,23 +404,6 @@ fn embedded_fuzz_schemas(root: &Value) -> Vec<(Value, Vec<Value>)> {
             Some((schema, candidates))
         })
         .collect()
-}
-
-fn assert_generated_snapshot(
-    repo_root: &Path,
-    fixture_case: &FixtureCase,
-) -> Result<(), Box<dyn Error>> {
-    let python_path = snapshot_path(repo_root, &fixture_case.snapshot_base, "py");
-    let error_path = snapshot_path(repo_root, &fixture_case.snapshot_base, "error.txt");
-    if !python_path.is_file() || error_path.exists() {
-        return Err(format!(
-            "generated fixture {} must have exactly one Python snapshot at {}; run `just regen-dataclasses-fixtures`",
-            fixture_case.case_id,
-            python_path.display(),
-        )
-        .into());
-    }
-    Ok(())
 }
 
 fn assert_codegen_error_snapshot(

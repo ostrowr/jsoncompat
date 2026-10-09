@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import init, { analyze_compat } from '../pkg-web/jsoncompat_wasm.js';
+import init, { analyze_compat, validator_for, generator_for } from '../pkg-web/jsoncompat_wasm.js';
 
 await init({ module_or_path: await readFile(new URL('../pkg-web/jsoncompat_wasm_bg.wasm', import.meta.url)) });
 assert.equal(analyze_compat('{"type":"integer"}', '{"type":"integer"}', 'both').status, 'compatible');
@@ -15,3 +15,13 @@ const unknown = analyze_compat(JSON.stringify(simple), JSON.stringify(complex), 
 assert.equal(unknown.status, 'unknown');
 assert.equal(typeof unknown.reason, 'string');
 console.log('Structured WASM verdicts verified');
+
+const schema = '{"$ref":"https://example.com/name"}';
+const options = JSON.stringify({resources: {"https://example.com/name": {type: "string", minLength: 2}}});
+const validator = validator_for(schema, options);
+assert.equal(validator.is_valid('"ok"'), true);
+assert.equal(validator.is_valid('"x"'), false);
+assert.equal(validator.is_valid(generator_for(schema, options).generate_value(3)), true);
+assert.equal(analyze_compat(schema, schema, 'both', options).status, 'compatible');
+assert.equal(validator_for('{"format":"email"}', '{"assert_formats":true}').is_valid('"invalid"'), false);
+assert.equal(validator_for('{"format":"email"}', '{"assert_formats":false}').is_valid('"invalid"'), true);

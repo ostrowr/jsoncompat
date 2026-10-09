@@ -42,6 +42,7 @@ The benchmark fixtures under [benches/fixtures](benches/fixtures) are fixed on p
 | `src/` | `jsoncompat` | Compatibility checking and the CLI |
 | `openapi/` | `jsoncompat_openapi` | OpenAPI document validation and lowering into synthetic request/response schemas |
 | `fuzz/` | `json_schema_fuzz` | Schema-guided JSON value generation |
+| `codegen/` | `jsoncompat_codegen` | Python source generation, portable validation programs, and conversion proofs |
 | `pybindings/` | `jsoncompat_py` | PyO3 bindings |
 | `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings |
 | `web/` | website | Documentation site and interactive frontend |
@@ -254,3 +255,25 @@ python3 pybindings/tests/check_sdist.py target/sdist/*.tar.gz
 ```
 
 Prepared validation programs use a generic borrowed-value interface in `codegen/src/prepared_schema/instance.rs`. The Python extension implements it for its parser and Python views. The published codegen crate must not depend on the Python validator fork.
+
+
+### Prepared runtime boundaries
+
+`codegen/src/prepared_schema` owns portable validation, annotations, precompiled
+patterns, and cold structured diagnostics. `pybindings/src/prepared_schema.rs`
+adapts Python/Jiter values without leaking fork types into published crates.
+`pybindings/src/model_converter/{input,output,projection}.rs` separate construction,
+serialization, and borrowed model views; binding/layout remains in the parent.
+`openapi/src/validation.rs` validates document shapes before lowering, while
+`schema_groups.rs` partitions component packages without breaking references.
+
+Use `just check-packages` before release: it packages every published Rust crate
+and builds the resulting dependency closure from archives. CI runs this gate
+independently of workspace tests. Keep the Python-specific validator fork confined
+to the unpublished extension.
+
+Representative generated Python snapshots remain in source control; the full
+fixture corpus is regenerated for E2E tests and benchmarks. Do not replace runtime
+coverage with snapshots or label a repeated cached shard as a unique model package.
+`just python-bench-imports` now measures unique OpenAPI-generated packages and
+records both completed and memory-limited populations.

@@ -26,6 +26,9 @@ pub(crate) struct CompatArgs {
     /// Emit a machine-readable verdict on stdout.
     #[arg(long)]
     json: bool,
+    /// JSON file containing offline resources and the format assertion policy.
+    #[arg(long, conflicts_with = "openapi")]
+    schema_options: Option<std::path::PathBuf>,
 }
 
 pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
@@ -44,8 +47,18 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
         return compat_openapi(old, new, &args.old, &args.new, args.json);
     }
 
-    let old = SchemaCompatInput::load(&args.old)?;
-    let new = SchemaCompatInput::load(&args.new)?;
+    let options: json_schema_ast::SchemaOptions = args
+        .schema_options
+        .as_ref()
+        .map(|path| {
+            let bytes =
+                std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+            serde_json::from_slice(&bytes).context("invalid schema options")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let old = SchemaCompatInput::load_with_options(&args.old, options.clone())?;
+    let new = SchemaCompatInput::load_with_options(&args.new, options)?;
     let role: backcompat::Role = args.role.into();
     compat_schemas(
         old.document,
@@ -62,7 +75,12 @@ struct SchemaCompatInput {
 }
 
 impl SchemaCompatInput {
+    #[cfg(test)]
     fn load(path: &str) -> Result<Self> {
+        Self::load_with_options(path, Default::default())
+    }
+
+    fn load_with_options(path: &str, options: json_schema_ast::SchemaOptions) -> Result<Self> {
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
         if looks_like_openapi_document(&json) {
@@ -71,7 +89,7 @@ impl SchemaCompatInput {
             );
         }
 
-        let schema = backcompat::SchemaDocument::from_json(&json)
+        let schema = backcompat::SchemaDocument::from_json_with_options(&json, &options)
             .with_context(|| format!("building schema for {path}"))?;
         backcompat::validate_compatibility_input(&schema)
             .with_context(|| format!("validating JSON Schema compatibility input for {path}"))?;
@@ -241,6 +259,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -279,6 +298,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -321,6 +341,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -368,6 +389,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -415,6 +437,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -464,6 +487,7 @@ mod tests {
                 fuzz: 0,
                 depth: 8,
                 json: false,
+                schema_options: None,
             });
 
             fs::remove_file(old_path).unwrap();
@@ -516,6 +540,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         });
 
         fs::remove_file(old_path).unwrap();
@@ -634,6 +659,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -675,6 +701,7 @@ mod tests {
                 fuzz: 0,
                 depth: 8,
                 json: false,
+                schema_options: None,
             })
             .unwrap_err();
 
@@ -738,6 +765,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -799,6 +827,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -884,6 +913,7 @@ mod tests {
             fuzz: 0,
             depth: 8,
             json: false,
+            schema_options: None,
         })
         .unwrap_err();
 

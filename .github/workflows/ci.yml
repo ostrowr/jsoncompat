@@ -500,3 +500,42 @@ jobs:
           else
             gh release create "$tag" "${assets[@]}" --repo "$repo" --verify-tag --title "$tag" --notes ""
           fi
+
+  python-performance:
+    name: Generated model performance report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: pybindings
+      PYTHONHASHSEED: '0'
+      JSONCOMPAT_NATIVE_PROFILE: release
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install uv
+          uv sync --project pybindings --all-extras --group benchmark --locked --no-install-project
+      - name: Build release runtime and CLI
+        run: cargo build --release -p jsoncompat -p jsoncompat_py --locked
+      # Shared runners report timing samples instead of enforcing a noisy wall-
+      # clock ratio. Controlled release runs use the same scripts --assert-target.
+      - name: Measure validated round trips and unique package startup
+        run: |
+          uv run --no-sync --project pybindings python pybindings/bench_dataclasses_codegen.py --iterations 2000 --tree-iterations 50 --repeats 5 --startup-repeats 3
+          uv run --no-sync --project pybindings python pybindings/bench_dataclasses_codegen_large.py --repeats 3 --startup-repeats 2
+          uv run --no-sync --project pybindings python pybindings/bench_dataclasses_imports.py --classes 256 --memory-mib 1024
+      - name: Upload timing samples and provenance
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: python-performance
+          path: |
+            target/python-codegen/benchmark.json
+            target/python-codegen/large/benchmark.json
+            target/python-codegen/unique-imports/report.json

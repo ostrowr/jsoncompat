@@ -164,6 +164,12 @@ def check_case(case, path):
         for value in case[label]:
             assert oracle.is_valid_json(wire(value)) == (label == 'valid'), (case['name'], 'incorrect witness', label, value, schema)
     values = [(v, oracle.is_valid_value(v), oracle.is_valid_json(wire(v))) for v in candidates(case)]
+    if case.get('independent'):
+        from generated_schema_cases import matches
+        for value, valid_value, valid_wire in values:
+            expected = matches(schema, value)
+            assert valid_value == valid_wire == expected, (case['name'], 'independent oracle', schema, value)
+        COUNTS['independent_schemas'] += 1
     for mode in ('optimized', 'general'):
         module, inline = load(path, mode)
         try:
@@ -246,8 +252,7 @@ def check_mutated_models(directory):
             sys.modules.pop(module.__name__, None)
 
 
-def check_fixture_corpus():
-    fixtures = REPO / 'tests/fixtures/dataclasses'
+def check_fixture_corpus(fixtures):
     samples = json.loads((REPO / 'pybindings/bench_fixture_samples.json').read_text())
     count = 0
     for path in sorted(fixtures.rglob('*.py')):
@@ -301,9 +306,15 @@ def main():
     directory = Path(sys.argv[1])
     check_path_controls(directory)
     for case in json.loads((directory / 'cases.json').read_text()):
-        check_case(case, directory / (case['name'] + '.py'))
+        try:
+            check_case(case, directory / (case['name'] + '.py'))
+        except AssertionError:
+            if case.get('independent'):
+                from generated_schema_cases import minimize_failure
+                minimize_failure(case, directory)
+            raise
     check_mutated_models(directory)
-    check_fixture_corpus()
+    check_fixture_corpus(directory / "fixtures")
     assert COUNTS['schemas'] > 130, COUNTS
     assert COUNTS['inline_models'] > 20 and COUNTS['fallback_models'] > 20, COUNTS
     print('Differential E2E coverage (seed=%#x): %s' % (SEED, dict(sorted(COUNTS.items()))), flush=True)

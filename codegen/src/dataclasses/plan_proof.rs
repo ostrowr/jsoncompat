@@ -90,7 +90,9 @@ impl ModelConverterPlan {
                 type_valid
                     && choices_valid
                     && constraint.rules.iter().all(|rule| match rule {
-                        Rule::Ref(id) => self.implies_prepared_schema(node_id, schema, *id, active),
+                        Rule::Ref { node: id, .. } => {
+                            self.implies_prepared_schema(node_id, schema, *id, active)
+                        }
                         Rule::All(ids) => ids
                             .iter()
                             .all(|id| self.implies_prepared_schema(node_id, schema, *id, active)),
@@ -289,7 +291,7 @@ impl ModelConverterPlan {
                     || literals_disjoint
                     || constraint.rules.iter().any(|rule| match rule {
                         Rule::False => true,
-                        Rule::Ref(child) => {
+                        Rule::Ref { node: child, .. } => {
                             self.excludes_prepared_schema(node_id, schema, *child, active)
                         }
                         Rule::All(children) => children.iter().any(|child| {

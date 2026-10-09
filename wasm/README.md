@@ -63,3 +63,8 @@ a `reason`. The existing boolean API remains available. See the
 [keyword support matrix](../keyword-support.md).
 
 Incompatible results also include `counterexample_json`, the exact JSON spelling of the witness. Use it when decimal precision exceeds the host language’s number representation.
+
+All schema-taking free functions accept an optional final `options_json` string
+containing the same `resources` and `assert_formats` fields as Rust `SchemaOptions`.
+For example, `validator_for(schema, JSON.stringify({assert_formats: true}))`
+enables format assertions. Resource retrieval remains explicit and offline.
