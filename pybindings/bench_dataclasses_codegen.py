@@ -10,23 +10,21 @@ from __future__ import annotations
 
 import argparse
 import ast
-import gc
 import json
 import os
-import platform
 import statistics
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import bench_dataclasses_runtime as small
 import bench_dataclasses_scaling as large
-import pydantic
 from bench_dataclasses_startup import PYDANTIC_PEER_SOURCE
 from benchmark_generated_models import MODEL_ROOT, load_generated_path
 import py_compile
+from benchmark_harness import measure, provenance
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -51,36 +49,6 @@ def build_models(cli: Path, schema: Path, destination: Path) -> dict[str, float 
         "build_ms": (time.perf_counter_ns() - start) / 1_000_000,
         "public_source_bytes": destination.stat().st_size,
         "implementation_source_bytes": companion.stat().st_size,
-    }
-
-
-def measure(
-    callbacks: dict[str, Callable[[], object]], iterations: int, repeats: int
-) -> dict[str, Any]:
-    names = list(callbacks)
-    samples: dict[str, list[float]] = {name: [] for name in names}
-    for callback in callbacks.values():
-        for _ in range(50):
-            callback()
-    gc_was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        for repeat in range(repeats):
-            offset = repeat % len(names)
-            for name in names[offset:] + names[:offset]:
-                callback = callbacks[name]
-                start = time.perf_counter_ns()
-                for _ in range(iterations):
-                    callback()
-                samples[name].append(
-                    (time.perf_counter_ns() - start) / iterations / 1000
-                )
-    finally:
-        if gc_was_enabled:
-            gc.enable()
-    return {
-        name: {"median_us": statistics.median(values), "samples_us": values}
-        for name, values in samples.items()
     }
 
 
@@ -212,9 +180,7 @@ def main() -> None:
     output_dir = args.output.resolve().parent
     output_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
-        "python": platform.python_version(),
-        "pydantic": pydantic.__version__,
-        "platform": platform.platform(),
+        **provenance(REPO),
         "native_profile": "release",
         "target": "prepared/Pydantic elapsed time <= 0.70 on each case",
         "cases": {},

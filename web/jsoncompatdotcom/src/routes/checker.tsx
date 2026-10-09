@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import init, { check_compat, generate_value } from "jsoncompat";
+import init, { analyze_compat, generate_value, type CompatibilityResult } from "jsoncompat";
 // Import the raw wasm asset so Vite gives us the final URL it will be served at.
 // The `?url` suffix tells Vite to return the URL string instead of inlining / compiling it.
 // Using this explicit URL avoids any ambiguity about where the runtime should fetch the
@@ -75,10 +75,17 @@ export const Route = createFileRoute("/checker")({
 	component: CheckerPage,
 });
 
+function Verdict({ result }: { result?: CompatibilityResult }) {
+    if (!result) return <span className="text-gray-400">—</span>;
+    if (result.status === "compatible") return <span className="font-semibold text-green-700">Compatible</span>;
+    if (result.status === "unknown") return <div className="text-amber-800"><strong>Unknown</strong><p>{result.reason}</p></div>;
+    return <div className="text-red-700"><strong>Incompatible</strong><pre className="max-w-sm overflow-auto">{result.counterexample_json}</pre></div>;
+}
+
 function CheckerPage() {
 	const [oldSchema, setOldSchema] = useState(INITAL_OLD_SCHEMA);
 	const [newSchema, setNewSchema] = useState(INITAL_NEW_SCHEMA);
-	const [compat, setCompat] = useState<Record<string, boolean> | null>(null);
+	const [compat, setCompat] = useState<Record<string, CompatibilityResult> | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [exampleOld, setExampleOld] = useState<string | null>(null);
 	const [exampleNew, setExampleNew] = useState<string | null>(null);
@@ -89,12 +96,12 @@ function CheckerPage() {
 		setExampleOld(null);
 		setExampleNew(null);
 		try {
-			await init(wasmUrl); // TODO: only do once
+			await init(wasmUrl);
 
 			const roles = ["serializer", "deserializer", "both"] as const;
-			const results: Record<string, boolean> = {} as Record<string, boolean>;
+			const results: Record<string, CompatibilityResult> = {} as Record<string, CompatibilityResult>;
 			for (const r of roles) {
-				results[r] = await check_compat(oldSchema, newSchema, r);
+				results[r] = analyze_compat(oldSchema, newSchema, r);
 			}
 			setCompat(results);
 
@@ -175,11 +182,7 @@ function CheckerPage() {
 								Every value produced with the <em>new</em> schema must also
 								satisfy the <em>old</em> schema.
 							</td>
-							<td
-								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.serializer ? "text-green-700" : "text-red-700"}`}
-							>
-								{compat ? (compat.serializer ? "✔" : "✖") : "—"}
-							</td>
+							<td className="px-4 py-3 align-top"><Verdict result={compat?.serializer} /></td>
 						</tr>
 						<tr className="bg-amber-50">
 							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">
@@ -189,11 +192,7 @@ function CheckerPage() {
 								Every value valid under the <em>old</em> schema must also
 								satisfy the <em>new</em> schema.
 							</td>
-							<td
-								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.deserializer ? "text-green-700" : "text-red-700"}`}
-							>
-								{compat ? (compat.deserializer ? "✔" : "✖") : "—"}
-							</td>
+							<td className="px-4 py-3 align-top"><Verdict result={compat?.deserializer} /></td>
 						</tr>
 						<tr className="bg-purple-50">
 							<td className="px-4 py-3 whitespace-nowrap font-medium align-top">
@@ -202,17 +201,12 @@ function CheckerPage() {
 							<td className="px-4 py-3 align-top">
 								Both serializer <em>and</em> deserializer guarantees must hold.
 							</td>
-							<td
-								className={`px-4 py-3 align-top font-semibold ${compat == null ? "text-gray-400" : compat.both ? "text-green-700" : "text-red-700"}`}
-							>
-								{compat ? (compat.both ? "✔" : "✖") : "—"}
-							</td>
+							<td className="px-4 py-3 align-top"><Verdict result={compat?.both} /></td>
 						</tr>
 					</tbody>
 				</table>
 			</section>
 
-			{/* explanatory list removed – table is now self‑contained */}
 
 			{(exampleOld || exampleNew) && (
 				<section className="mt-8 overflow-hidden rounded-md border border-gray-200 bg-white">

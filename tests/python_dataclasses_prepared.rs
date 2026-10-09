@@ -1,3 +1,5 @@
+#[path = "support/dataclass_corpus.rs"]
+mod corpus;
 use json_schema_ast::SchemaDocument;
 use jsoncompat_codegen::{generate_dataclass_models, generate_dataclass_module_from_document};
 use serde_json::json;
@@ -64,6 +66,13 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
             json!({"type": "object", "properties": {"a\"b\\c\n🐲": {"type": "integer"}}, "required": ["a\"b\\c\n🐲"], "additionalProperties": false}),
         ),
     ];
+    schemas.push(("tiny_minimum", json!({"minimum":0})));
+    schemas.push(("tiny_not", json!({"not":{"minimum":0}})));
+    schemas.push((
+        "tiny_if",
+        json!({"if":{"minimum":0},"then":false,"else":true}),
+    ));
+    schemas.push(("tiny_integer", json!({"type":"integer"})));
     schemas.push(("duplicate_oneof", json!({"oneOf":[true,true,true]})));
     schemas.push((
         "duplicate_leaf_oneof",
@@ -147,6 +156,7 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
         let source = generate_dataclass_models(&schema).expect("generate test models");
         fs::write(directory.join(format!("{name}.py")), source).expect("write models");
     }
+    corpus::generate(&directory.join("fixtures"));
     let output = python_env::python_command()
         .arg("tests/support/python_prepared.py")
         .arg(&directory)

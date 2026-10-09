@@ -9,12 +9,11 @@ and their checked-in module is guarded by the dataclass snapshot test.
 
 from __future__ import annotations
 
+from benchmark_harness import measure
+
 import argparse
-import gc
 import json
 import platform
-import statistics
-import time
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -233,27 +232,8 @@ def bench(
     repeats: int,
     callback: Callable[[], Any],
 ) -> None:
-    for _ in range(min(iterations, 100)):
-        callback()
-
-    samples: list[float] = []
-    gc_was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        for _ in range(repeats):
-            start = time.perf_counter()
-            for _ in range(iterations):
-                callback()
-            samples.append(time.perf_counter() - start)
-    finally:
-        if gc_was_enabled:
-            gc.enable()
-
-    median = statistics.median(samples) / iterations * 1_000_000
-    best = min(samples) / iterations * 1_000_000
-    print(
-        f"{name:28} iterations={iterations:>8} median={median:.2f}us best={best:.2f}us"
-    )
+    timing = measure({name: callback}, iterations, repeats, warmup=100)[name]
+    print(f"{name:28} iterations={iterations:>8} median={timing['median_us']:.2f}us best={min(timing['samples_us']):.2f}us")
 
 
 def positive_int(raw_value: str) -> int:

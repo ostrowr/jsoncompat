@@ -7,17 +7,21 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use jsonschema::{InstanceRef, NumberRef};
+pub mod instance;
+use instance::{ArrayView, InstanceRef, InstanceView, NumberView, ObjectView};
+use json_schema_ast::Decimal;
 use num_cmp::NumCmp;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 
 mod annotations;
+mod diagnostics;
+pub use diagnostics::{ValidationFailure, ValidationFailureKind};
 mod pattern;
 use pattern::Pattern;
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 4;
 const MAX_DEPTH: usize = 512;
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -32,6 +36,7 @@ pub struct PreparedSchema {
     version: u32,
     nodes: Vec<Node>,
     patterns: Vec<Pattern>,
+    pattern_sources: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     exact_json_numbers: bool,
 }
@@ -41,6 +46,8 @@ pub struct PreparedSchema {
 pub struct Node {
     pub types: Option<Vec<JsonType>>,
     pub choices: Option<Vec<Value>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub constant: bool,
     pub rules: Vec<Rule>,
 }
 
@@ -58,17 +65,18 @@ pub enum JsonType {
 
 impl JsonType {
     #[inline]
-    pub fn accepts(self, value: InstanceRef<'_>) -> bool {
+    pub fn accepts<'a>(self, value: impl InstanceView<'a>) -> bool {
         match self {
             Self::Null => value.is_null(),
             Self::Boolean => value.is_boolean(),
-            Self::Integer => value.as_number().is_some_and(|number| match number {
-                NumberRef::Serde(number) if !number.is_i64() && !number.is_u64() => {
-                    exact_instance_number(value)
-                        .is_some_and(|value| value.denom().is_some_and(num_traits::One::is_one))
-                }
-                _ => number.is_integer(),
-            }),
+            Self::Integer => value
+                .as_number()
+                .is_some_and(|number| match number.serde() {
+                    Some(number) if !number.is_i64() && !number.is_u64() => {
+                        exact_instance_number(value).is_some_and(|value| value.is_integer())
+                    }
+                    _ => number.is_integer(),
+                }),
             Self::Number => value.is_number(),
             Self::String => value.is_string(),
             Self::Array => value.is_array(),
@@ -81,7 +89,10 @@ impl JsonType {
 #[serde(rename_all = "snake_case")]
 pub enum Rule {
     False,
-    Ref(NodeId),
+    Ref {
+        node: NodeId,
+        pointer: String,
+    },
     All(Vec<NodeId>),
     Any(Vec<NodeId>),
     One(Vec<NodeId>),
@@ -110,7 +121,7 @@ pub enum Rule {
         max: Option<u64>,
     },
     Unique,
-    MultipleOf(fraction::BigFraction),
+    MultipleOf(Decimal),
     UnevaluatedProperties(NodeId),
     UnevaluatedItems(NodeId),
     Pattern(PatternId),
@@ -129,74 +140,13 @@ pub enum Rule {
     Bound {
         value: Number,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        exact: Option<fraction::BigFraction>,
+        exact: Option<Decimal>,
         lower: bool,
         exclusive: bool,
     },
 }
 
 impl Node {
-    /// The parser and writer already know the concrete scalar representation.
-    /// Avoid re-dispatching through all supported instance backends per rule.
-    #[inline]
-    pub fn accepts_jiter_leaf(&self, value: &jiter::JsonValue<'_>) -> bool {
-        match value {
-            jiter::JsonValue::Str(text) => {
-                self.types
-                    .as_ref()
-                    .is_none_or(|types| types.iter().any(|kind| matches!(kind, JsonType::String)))
-                    && self.choices.as_ref().is_none_or(|choices| {
-                        choices
-                            .iter()
-                            .any(|choice| choice.as_str() == Some(text.as_ref()))
-                    })
-                    && self.rules.iter().all(|rule| match rule {
-                        Rule::False => false,
-                        Rule::StringLength { min, max } => string_length_valid(text, *min, *max),
-                        Rule::Bound { .. } | Rule::MultipleOf(_) => true,
-                        _ => unreachable!("leaf guards contain only scalar constraints"),
-                    })
-            }
-            jiter::JsonValue::Int(number) => {
-                self.types.as_ref().is_none_or(|types| {
-                    types
-                        .iter()
-                        .any(|kind| matches!(kind, JsonType::Integer | JsonType::Number))
-                }) && self.choices.as_ref().is_none_or(|choices| {
-                    choices.iter().any(|choice| {
-                        choice.as_number().is_some_and(|choice| {
-                            compare_integer(*number, choice) == Some(Ordering::Equal)
-                        })
-                    })
-                }) && self.rules.iter().all(|rule| match rule {
-                    Rule::False => false,
-                    Rule::Bound {
-                        value,
-                        exact,
-                        lower,
-                        exclusive,
-                    } => exact
-                        .as_ref()
-                        .map_or_else(
-                            || compare_integer(*number, value),
-                            |limit| fraction::BigFraction::from(*number).partial_cmp(limit),
-                        )
-                        .is_some_and(|order| match order {
-                            Ordering::Equal => !exclusive,
-                            Ordering::Greater => *lower,
-                            Ordering::Less => !lower,
-                        }),
-                    Rule::MultipleOf(divisor) => {
-                        multiple_of(InstanceRef::from_jiter(value), divisor)
-                    }
-                    Rule::StringLength { .. } => true,
-                    _ => unreachable!("leaf guards contain only scalar constraints"),
-                })
-            }
-            _ => self.accepts_leaf(InstanceRef::from_jiter(value)),
-        }
-    }
-
     pub fn is_leaf(&self) -> bool {
         self.rules.iter().all(|rule| {
             matches!(
@@ -207,7 +157,7 @@ impl Node {
     }
 
     #[inline]
-    pub fn accepts_leaf(&self, value: InstanceRef<'_>) -> bool {
+    pub fn accepts_leaf_view<'a>(&self, value: impl InstanceView<'a>) -> bool {
         self.types
             .as_ref()
             .is_none_or(|types| types.iter().any(|kind| kind.accepts(value)))
@@ -238,10 +188,10 @@ impl Node {
     }
 }
 
-fn multiple_of(value: InstanceRef<'_>, divisor: &fraction::BigFraction) -> bool {
+fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &Decimal) -> bool {
     value.as_number().is_none_or(|number| {
         // Keep machine-sized integer divisibility exact and allocation-free.
-        if divisor.denom().is_some_and(num_traits::One::is_one)
+        if divisor.is_integer()
             && let Some(divisor) = divisor.to_u64().filter(|value| *value != 0)
         {
             if let Some(number) = number.as_i64() {
@@ -251,11 +201,7 @@ fn multiple_of(value: InstanceRef<'_>, divisor: &fraction::BigFraction) -> bool 
                 return number % divisor == 0;
             }
         }
-        exact_instance_number(value).is_some_and(|number| {
-            (&number / divisor)
-                .denom()
-                .is_some_and(num_traits::One::is_one)
-        })
+        exact_instance_number(value).is_some_and(|number| number.is_multiple_of(divisor))
     })
 }
 
@@ -263,7 +209,7 @@ impl Rule {
     fn edges_valid(&self, node_count: usize) -> bool {
         let valid = |node: NodeId| node.0 < node_count;
         match self {
-            Self::Ref(node)
+            Self::Ref { node, .. }
             | Self::Not(node)
             | Self::PropertyNames(node)
             | Self::Contains { node, .. }
@@ -332,7 +278,7 @@ impl PreparedSchema {
         let exact_json_numbers = builder.nodes.iter().any(|node| {
             node.rules.iter().any(|rule| {
                 matches!(rule, Rule::Bound { exact: Some(_), .. })
-                    || matches!(rule, Rule::MultipleOf(divisor) if !divisor.denom().is_some_and(num_traits::One::is_one))
+                    || matches!(rule, Rule::MultipleOf(divisor) if !divisor.is_integer())
             }) || node
                 .choices
                 .as_ref()
@@ -342,6 +288,13 @@ impl PreparedSchema {
             version: VERSION,
             exact_json_numbers,
             nodes: builder.nodes,
+            pattern_sources: {
+                let mut sources = vec![String::new(); builder.patterns.len()];
+                for (source, id) in builder.pattern_ids {
+                    sources[id.0] = source;
+                }
+                sources
+            },
             patterns: builder.patterns,
         })
     }
@@ -352,7 +305,10 @@ impl PreparedSchema {
 
     pub fn load(bytes: &[u8]) -> Result<Self, String> {
         let program: Self = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        if program.version != VERSION || program.nodes.is_empty() {
+        if program.version != VERSION
+            || program.nodes.is_empty()
+            || program.pattern_sources.len() != program.patterns.len()
+        {
             return Err(
                 "unsupported or empty prepared schema; rebuild the generated module".into(),
             );
@@ -382,11 +338,11 @@ impl PreparedSchema {
         Ok(program)
     }
 
-    pub fn is_valid_instance(&self, value: InstanceRef<'_>) -> bool {
-        value.is_json() && self.is_valid_instance_assuming_json(value)
+    pub fn is_valid_view<'a>(&self, value: impl InstanceView<'a>) -> bool {
+        value.is_json() && self.is_valid_json_view(value)
     }
 
-    pub fn is_valid_instance_assuming_json(&self, value: InstanceRef<'_>) -> bool {
+    pub fn is_valid_json_view<'a>(&self, value: impl InstanceView<'a>) -> bool {
         let mut context = Evaluation::default();
         let valid = self.accepts(NodeId(0), value, 0, &mut context);
         valid && !context.incomplete
@@ -404,10 +360,10 @@ impl PreparedSchema {
         }
     }
 
-    fn accepts(
+    fn accepts<'a>(
         &self,
         id: NodeId,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         depth: usize,
         context: &mut Evaluation,
     ) -> bool {
@@ -478,10 +434,10 @@ impl PreparedSchema {
         valid
     }
 
-    fn accepts_child(
+    fn accepts_child<'a>(
         &self,
         node: NodeId,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         depth: usize,
         context: &mut Evaluation,
     ) -> bool {
@@ -491,16 +447,16 @@ impl PreparedSchema {
         valid
     }
 
-    fn accepts_rule(
+    fn accepts_rule<'a>(
         &self,
         rule: &Rule,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         depth: usize,
         context: &mut Evaluation,
     ) -> bool {
         match rule {
             Rule::False => false,
-            Rule::Ref(node) => self.accepts(*node, value, depth, context),
+            Rule::Ref { node, .. } => self.accepts(*node, value, depth, context),
             Rule::All(nodes) => nodes
                 .iter()
                 .all(|node| self.accepts(*node, value, depth, context)),
@@ -658,7 +614,7 @@ struct Evaluation {
     incomplete: bool,
 }
 
-fn string_length_valid(value: &str, min: u64, max: Option<u64>) -> bool {
+pub fn string_length_valid(value: &str, min: u64, max: Option<u64>) -> bool {
     if max.is_none() && min <= 1 {
         return min == 0 || !value.is_empty();
     }
@@ -681,30 +637,14 @@ fn needs_exact_json_number(value: &Value) -> bool {
 
 // Persist exact large/decimal boundaries in the build artifact. Ordinary
 // machine-sized integer constraints keep their allocation-free fast path.
-fn exact_decimal(text: &str) -> Option<fraction::BigFraction> {
-    if let Some((mantissa, exponent)) = text.split_once(['e', 'E']) {
-        let exponent: i32 = exponent.parse().ok()?;
-        if exponent.unsigned_abs() > 10_000 {
-            return None;
-        }
-        let mantissa: fraction::BigFraction = mantissa.parse().ok()?;
-        let power = fraction::BigFraction::from(
-            num_bigint::BigUint::from(10_u8).pow(exponent.unsigned_abs()),
-        );
-        Some(if exponent < 0 {
-            mantissa / power
-        } else {
-            mantissa * power
-        })
-    } else {
-        text.parse().ok()
-    }
+fn exact_decimal(text: &str) -> Option<Decimal> {
+    Decimal::try_from(text.to_owned()).ok()
 }
 
-fn compare_bound(
-    value: InstanceRef<'_>,
+fn compare_bound<'a>(
+    value: impl InstanceView<'a>,
     limit: &Number,
-    exact: Option<&fraction::BigFraction>,
+    exact: Option<&Decimal>,
 ) -> Option<Ordering> {
     let number = value.as_number()?;
     let Some(exact) = exact else {
@@ -714,15 +654,15 @@ fn compare_bound(
     number.partial_cmp(exact)
 }
 
-fn exact_instance_number(value: InstanceRef<'_>) -> Option<fraction::BigFraction> {
+fn exact_instance_number<'a>(value: impl InstanceView<'a>) -> Option<Decimal> {
     let number = value.as_number()?;
     Some(if let Some(value) = number.as_i64() {
-        fraction::BigFraction::from(value)
+        Decimal::from_i64(value)
     } else if let Some(value) = number.as_u64() {
-        fraction::BigFraction::from(value)
+        Decimal::from_u64(value)
     } else {
-        match number {
-            NumberRef::BigInteger(value) => fraction::BigFraction::from(value.clone()),
+        match number.big_integer() {
+            Some(value) => exact_decimal(&value.to_string())?,
             // Use the decimal representation of a Python float, just as the
             // public value validator does; preserve raw JSON decimal lexemes.
             _ => exact_decimal(&value.to_owned().to_string())?,
@@ -730,8 +670,8 @@ fn exact_instance_number(value: InstanceRef<'_>) -> Option<fraction::BigFraction
     })
 }
 
-fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
-    if let NumberRef::Serde(number) = value
+fn compare_number<'a>(value: impl NumberView<'a>, limit: &Number) -> Option<Ordering> {
+    if let Some(number) = value.serde()
         && !number.is_i64()
         && !number.is_u64()
     {
@@ -750,7 +690,7 @@ fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
             }
         }};
     }
-    if let NumberRef::BigInteger(value) = value {
+    if let Some(value) = value.big_integer() {
         if let Some(value) = value.to_i64() {
             return compare!(value);
         }
@@ -774,7 +714,7 @@ fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
     }
 }
 
-fn compare_integer(value: i64, limit: &Number) -> Option<Ordering> {
+pub fn compare_integer(value: i64, limit: &Number) -> Option<Ordering> {
     if let Some(limit) = limit.as_i64() {
         Some(value.cmp(&limit))
     } else if let Some(limit) = limit.as_u64() {
@@ -816,6 +756,7 @@ impl Builder<'_> {
         self.nodes.push(Node {
             types: None,
             choices: None,
+            constant: false,
             rules: Vec::new(),
         });
         let node = self.node(schema, path)?;
@@ -846,6 +787,7 @@ impl Builder<'_> {
         let mut node = Node {
             types: None,
             choices: None,
+            constant: false,
             rules: Vec::new(),
         };
         match schema {
@@ -887,6 +829,7 @@ impl Builder<'_> {
             node.choices = Some(choices.as_array().ok_or("invalid enum")?.clone());
         }
         if let Some(value) = object.get("const") {
+            node.constant = true;
             if node.choices.as_ref().is_some_and(|choices| {
                 !choices
                     .iter()
@@ -911,8 +854,10 @@ impl Builder<'_> {
                 .pointer(&pointer)
                 .ok_or_else(|| format!("unresolved reference {reference}"))?
                 .clone();
-            node.rules
-                .push(Rule::Ref(self.add(&target, &format!("#{pointer}"))?));
+            node.rules.push(Rule::Ref {
+                node: self.add(&target, &format!("#{pointer}"))?,
+                pointer: pointer.into_owned(),
+            });
         }
         for key in ["allOf", "anyOf", "oneOf"] {
             if let Some(values) = object.get(key).and_then(Value::as_array) {
@@ -1155,8 +1100,12 @@ mod tests {
                         .map(|index| Node {
                             types: None,
                             choices: None,
+                            constant: false,
                             rules: if index < length {
-                                vec![Rule::Ref(NodeId(index + 1))]
+                                vec![Rule::Ref {
+                                    node: NodeId(index + 1),
+                                    pointer: String::new(),
+                                }]
                             } else {
                                 Vec::new()
                             },
@@ -1164,6 +1113,7 @@ mod tests {
                         .chain(std::iter::once(Node {
                             types: None,
                             choices: None,
+                            constant: false,
                             rules: vec![Rule::False],
                         }))
                         .collect();
@@ -1171,6 +1121,7 @@ mod tests {
                         version: VERSION,
                         nodes,
                         patterns: Vec::new(),
+                        pattern_sources: Vec::new(),
                         exact_json_numbers: false,
                     };
                     for rule in [
@@ -1182,10 +1133,14 @@ mod tests {
                         },
                     ] {
                         program.nodes[0].rules = vec![rule];
-                        assert!(
-                            !program.is_valid_instance_assuming_json(InstanceRef::from_serde(
-                                &Value::Null
-                            ))
+                        assert!(!program.is_valid_json_view(InstanceRef::from_serde(&Value::Null)));
+                        assert_eq!(
+                            program.explain(&Value::Null).unwrap().kind,
+                            if length >= MAX_DEPTH {
+                                ValidationFailureKind::ResourceLimit
+                            } else {
+                                ValidationFailureKind::Constraint
+                            }
                         );
                     }
                 }

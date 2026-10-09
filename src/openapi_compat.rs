@@ -1,7 +1,8 @@
 //! Compatibility reporting over lowered OpenAPI request/response contracts.
 
 use crate::{
-    CompatibilityError, Role, check_compat, explain_compat_failure, validate_compatibility_input,
+    CompatibilityError, CompatibilityResult, Role, analyze_compat, explain_compat_failure,
+    validate_compatibility_input,
 };
 use jsoncompat_openapi::{
     LoweredOperation, OpenApiDocument, OpenApiLoweringError, OperationKey, lower_operations,
@@ -17,22 +18,39 @@ pub enum OpenApiCompatibilityError {
     Compatibility(#[from] CompatibilityError),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OpenApiCompatibilitySurface {
     Operation,
     Request,
     Response,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OpenApiCompatibilityIssue {
     pub method: String,
     pub path: String,
     pub surface: OpenApiCompatibilitySurface,
     pub message: String,
+    pub kind: OpenApiCompatibilityIssueKind,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Removed operations are structural breaks; schema breaks carry a validated
+/// value. An unsuccessful inclusion proof alone is explicitly unknown.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum OpenApiCompatibilityIssueKind {
+    OperationRemoved,
+    Incompatible {
+        direction: Role,
+        counterexample: serde_json::Value,
+    },
+    Unknown {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct OpenApiCompatibilityReport {
     issues: Vec<OpenApiCompatibilityIssue>,
 }
@@ -41,6 +59,18 @@ impl OpenApiCompatibilityReport {
     #[must_use]
     pub fn is_compatible(&self) -> bool {
         self.issues.is_empty()
+    }
+
+    /// True only when at least one break was established.
+    #[must_use]
+    pub fn is_incompatible(&self) -> bool {
+        self.issues
+            .iter()
+            .any(|issue| !matches!(issue.kind, OpenApiCompatibilityIssueKind::Unknown { .. }))
+    }
+    #[must_use]
+    pub fn is_unknown(&self) -> bool {
+        !self.is_compatible() && !self.is_incompatible()
     }
 
     #[must_use]
@@ -53,12 +83,14 @@ impl OpenApiCompatibilityReport {
         operation: &OperationKey,
         surface: OpenApiCompatibilitySurface,
         message: impl Into<String>,
+        kind: OpenApiCompatibilityIssueKind,
     ) {
         self.issues.push(OpenApiCompatibilityIssue {
             method: operation.method.clone(),
             path: operation.path.clone(),
             surface,
             message: message.into(),
+            kind,
         });
     }
 }
@@ -133,6 +165,7 @@ pub fn check_openapi_compat(
                 key,
                 OpenApiCompatibilitySurface::Operation,
                 "operation was removed",
+                OpenApiCompatibilityIssueKind::OperationRemoved,
             );
             continue;
         };
@@ -169,16 +202,28 @@ impl OperationSurface<'_> {
         report: &mut OpenApiCompatibilityReport,
         operation: &OperationKey,
     ) -> Result<(), OpenApiCompatibilityError> {
-        if !self.changed || check_compat(self.old, self.new, self.role)? {
+        if !self.changed {
             return Ok(());
         }
-
-        let detail = explain_compat_failure(self.old, self.new, self.role)?;
-        report.push(
-            operation,
-            self.surface,
-            detail.unwrap_or_else(|| self.fallback_message.to_owned()),
-        );
+        let (message, kind) = match analyze_compat(self.old, self.new, self.role)? {
+            CompatibilityResult::Compatible => return Ok(()),
+            CompatibilityResult::Incompatible {
+                direction,
+                counterexample,
+            } => (
+                explain_compat_failure(self.old, self.new, self.role)?
+                    .unwrap_or_else(|| self.fallback_message.to_owned()),
+                OpenApiCompatibilityIssueKind::Incompatible {
+                    direction,
+                    counterexample,
+                },
+            ),
+            CompatibilityResult::Unknown { reason } => (
+                reason.clone(),
+                OpenApiCompatibilityIssueKind::Unknown { reason },
+            ),
+        };
+        report.push(operation, self.surface, message, kind);
         Ok(())
     }
 }

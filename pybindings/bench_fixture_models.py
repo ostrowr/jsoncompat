@@ -1,7 +1,7 @@
 """Benchmark generated jsoncompat and Pydantic models for every schema fixture.
 
-The jsoncompat side consumes the checked-in generated snapshots under
-``tests/fixtures/dataclasses``. The Pydantic side is generated from the exact
+The jsoncompat side consumes the corpus prepared by
+``cargo run --example dataclass_corpus``. The Pydantic side is generated from the exact
 same schemas with the pinned ``datamodel-code-generator`` dependency. Generated
 Pydantic modules and detailed results are written below ``target`` so the
 benchmark never makes generated build artifacts part of the source tree.
@@ -19,8 +19,9 @@ timed end to end from JSON through the generated dataclass and back to JSON.
 
 from __future__ import annotations
 
+from benchmark_harness import measure
+
 import argparse
-import gc
 import hashlib
 import importlib.util
 import json
@@ -56,11 +57,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures"
 FUZZ_ROOT = FIXTURE_ROOT / "fuzz"
 BACKCOMPAT_ROOT = FIXTURE_ROOT / "backcompat"
-JSONCOMPAT_MODEL_ROOT = FIXTURE_ROOT / "dataclasses"
+JSONCOMPAT_MODEL_ROOT = REPO_ROOT / "target" / "generated-dataclass-fixtures"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "target" / "python-fixture-benchmark"
 CHECKED_SAMPLE_CACHE = REPO_ROOT / "pybindings" / "bench_fixture_samples.json"
-RUNTIME_UNSUPPORTED_MANIFEST = JSONCOMPAT_MODEL_ROOT / "runtime_unsupported.json"
-UNSATISFIABLE_MANIFEST = JSONCOMPAT_MODEL_ROOT / "unsatisfiable.json"
+RUNTIME_UNSUPPORTED_MANIFEST = FIXTURE_ROOT / "dataclasses" / "runtime_unsupported.json"
+UNSATISFIABLE_MANIFEST = FIXTURE_ROOT / "dataclasses" / "unsatisfiable.json"
 
 PYDANTIC_BASE_CLASS = "fixture_benchmark_support.StrictBaseModel"
 PYDANTIC_ROOT_NAME = "GeneratedSchema"
@@ -738,22 +739,7 @@ def benchmark_operation(
     iterations: int,
     repeats: int,
 ) -> float:
-    for _ in range(min(iterations, 3)):
-        callback()
-
-    samples: list[float] = []
-    gc_was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        for _ in range(repeats):
-            started = time.perf_counter_ns()
-            for _ in range(iterations):
-                callback()
-            samples.append((time.perf_counter_ns() - started) / iterations)
-    finally:
-        if gc_was_enabled:
-            gc.enable()
-    return statistics.median(samples)
+    return measure({"operation": callback}, iterations, repeats, warmup=3)["operation"]["median_us"] * 1000
 
 
 def benchmark_jsoncompat_end_to_end(

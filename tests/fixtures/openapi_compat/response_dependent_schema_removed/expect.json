@@ -1,7 +1,7 @@
 {
-  "compatible": false,
+  "status": "unknown",
   "surfaces": [
     "Response"
   ],
-  "expected_message": "new schema #/properties/body/properties/value: property 'body' -> property 'value' -> required allOf branch 2: new values may be objects, but the previous schema only accepted conditional-schema values"
+  "expected_message": "new schema #/properties/body/properties/value: property 'body' -> property 'value' -> required allOf branch 2: new values may be objects, but the previous schema only accepted conditional-schema values; no validated counterexample was found (up to 16 generated candidates per direction, depth 8)"
 }

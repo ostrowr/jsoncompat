@@ -1,5 +1,7 @@
 {
-  "compatible": false,
-  "surfaces": ["Operation"],
+  "status": "incompatible",
+  "surfaces": [
+    "Operation"
+  ],
   "expected_message": "operation was removed"
 }

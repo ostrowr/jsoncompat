@@ -18,8 +18,19 @@ check:
   pnpm --prefix web/jsoncompatdotcom run ci
   pnpm --prefix web/jsoncompatdotcom run build
 
+# Build the packaged dependency closure, including unpublished local versions.
+check-packages:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  # Cargo caches unpacked staged crates by registry path and version. A fresh
+  # registry path prevents reusing an older archive after same-version edits.
+  package_target=$(mktemp -d "${TMPDIR:-/tmp}/jsoncompat-packages.XXXXXX")
+  trap 'rm -rf "$package_target"' EXIT
+  cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked --target-dir "$package_target"
+
 regen-dataclasses-fixtures:
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas
+  JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_examples --test stamp_examples snapshot
 
 bench:
   @echo "[just] running Rust benchmarks …"
@@ -43,6 +54,7 @@ _build-python-release:
 _verify-dataclass-fixtures:
   @echo "[just] verifying checked-in generated dataclass fixtures are current …"
   cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas
+  cargo run --example dataclass_corpus -- target/generated-dataclass-fixtures
 
 [private]
 _python-bench-provenance profile:
@@ -102,13 +114,11 @@ python-bench-codegen-large: _build-python-release (_python-bench-provenance "cod
   cargo build --release --bin jsoncompat --locked
   {{python_bench_command}} pybindings/bench_dataclasses_codegen_large.py --assert-target
 
-# Retain up to 200,000 independent classes, stopping at the memory budget.
-python-bench-imports fields="5" memory_mib="2048": _build-python-release
+# Build genuinely unique models; fields=0 mixes 5,20,50,100,200 fields.
+# Each fresh process stops at its memory budget and reports partial populations.
+python-bench-imports classes="1000" fields="0" memory_mib="2048": _build-python-release
   cargo build --release --bin jsoncompat --locked
-  {{python_bench_command}} pybindings/bench_dataclasses_imports.py build --fields {{fields}}
-  {{python_bench_command}} pybindings/bench_dataclasses_imports.py generated --fields {{fields}} --memory-mib {{memory_mib}} > target/python-codegen/imports/generated_{{fields}}.jsonl
-  {{python_bench_command}} pybindings/bench_dataclasses_imports.py pydantic --fields {{fields}} --memory-mib {{memory_mib}} > target/python-codegen/imports/pydantic_{{fields}}.jsonl
-  @cat target/python-codegen/imports/generated_{{fields}}.jsonl target/python-codegen/imports/pydantic_{{fields}}.jsonl
+  {{python_bench_command}} pybindings/bench_dataclasses_imports.py --classes {{classes}} --fields {{fields}} --memory-mib {{memory_mib}}
 
 # Benchmark fresh-interpreter import and first-use costs.
 python-bench-startup repeats="25": _build-python-release (_python-bench-provenance "startup") (_python-bench-startup repeats "startup")

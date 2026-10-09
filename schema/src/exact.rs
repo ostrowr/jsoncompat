@@ -7,21 +7,7 @@ use serde_json::{Map, Value};
 /// Parse the decimal value represented by a JSON number, without a binary
 /// floating-point division or epsilon comparison.
 pub fn decimal(value: &Value) -> Option<BigRational> {
-    let text = value.as_number()?.to_string();
-    let (mantissa, exponent) = text
-        .split_once(['e', 'E'])
-        .map_or(Some((text.as_str(), 0_i32)), |(m, e)| {
-            Some((m, e.parse().ok()?))
-        })?;
-    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
-    let numerator = format!("{whole}{fraction}").parse::<BigInt>().ok()?;
-    let scale = i32::try_from(fraction.len()).ok()?.checked_sub(exponent)?;
-    let power = BigInt::from(10_u8).pow(scale.unsigned_abs());
-    Some(if scale >= 0 {
-        BigRational::new(numerator, power)
-    } else {
-        BigRational::from_integer(numerator * power)
-    })
+    crate::Decimal::from_value(value)?.rational()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +86,33 @@ impl ExactNumber {
     }
 
     pub fn from_schema(object: &Map<String, Value>) -> Option<Self> {
+        // A bound outside the proof representation is unknown, never absent.
+        for key in [
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+        ] {
+            if object
+                .get(key)
+                .is_some_and(|value| decimal(value).is_none())
+            {
+                return None;
+            }
+        }
+        if object
+            .get("enum")
+            .and_then(Value::as_array)
+            .is_some_and(|values| {
+                values
+                    .iter()
+                    .any(|value| value.is_number() && decimal(value).is_none())
+            })
+        {
+            return None;
+        }
+
         if object.keys().any(|key| {
             !matches!(
                 key.as_str(),
@@ -321,8 +334,19 @@ pub(crate) fn needs_exact_number(object: &Map<String, Value>) -> bool {
     .any(|key| {
         object
             .get(key)
-            .and_then(Value::as_f64)
-            .is_some_and(|value| value.abs() > 9_007_199_254_740_991.0)
+            .and_then(Value::as_number)
+            .is_some_and(|number| {
+                let exact = crate::Decimal::from_number(number);
+                number
+                    .as_f64()
+                    .and_then(serde_json::Number::from_f64)
+                    .is_none_or(|rounded| {
+                        exact != crate::Decimal::from_number(&rounded)
+                            || rounded
+                                .as_f64()
+                                .is_some_and(|value| value.abs() > 9_007_199_254_740_991.0)
+                    })
+            })
     })
 }
 
@@ -339,12 +363,13 @@ pub(crate) fn configure(
         "multipleOf",
     ] {
         options = options.with_keyword(keyword, move |_, value, _| {
-            let bound = decimal(value).ok_or_else(|| {
+            let bound = crate::Decimal::from_value(value).ok_or_else(|| {
                 jsonschema::ValidationError::custom("expected a finite JSON number")
             })?;
             let small = bound
-                .to_f64()
-                .filter(|value| bound.is_integer() && value.abs() <= 9_007_199_254_740_991.0);
+                .to_i128()
+                .filter(|value| value.unsigned_abs() <= 9_007_199_254_740_991)
+                .map(|value| value as f64);
             Ok(Box::new(NumericKeyword {
                 keyword,
                 bound,
@@ -357,7 +382,7 @@ pub(crate) fn configure(
 
 struct NumericKeyword {
     keyword: &'static str,
-    bound: BigRational,
+    bound: crate::Decimal,
     small: Option<f64>,
 }
 impl jsonschema::Keyword for NumericKeyword {
@@ -388,7 +413,7 @@ impl jsonschema::Keyword for NumericKeyword {
                 };
             }
         }
-        let Some(value) = decimal(instance) else {
+        let Some(value) = crate::Decimal::from_value(instance) else {
             return false;
         };
         match self.keyword {
@@ -396,7 +421,7 @@ impl jsonschema::Keyword for NumericKeyword {
             "maximum" => value <= self.bound,
             "exclusiveMinimum" => value > self.bound,
             "exclusiveMaximum" => value < self.bound,
-            "multipleOf" => self.bound > BigRational::zero() && (value / &self.bound).is_integer(),
+            "multipleOf" => value.is_multiple_of(&self.bound),
             _ => unreachable!(),
         }
     }

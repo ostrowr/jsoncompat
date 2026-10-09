@@ -1,3 +1,5 @@
+#[path = "support/dataclass_corpus.rs"]
+mod corpus;
 use jsoncompat_codegen::generate_dataclass_models;
 use serde::Deserialize;
 use serde_json::Value;
@@ -39,8 +41,10 @@ fn optimized_and_general_models_match_independent_validation() {
             .unwrap_or_else(|error| panic!("generate {}: {error}", case.name));
         fs::write(directory.join(format!("{}.py", case.name)), source).expect("write model");
     }
+    corpus::generate(&directory.join("fixtures"));
     let output = python_env::python_command()
         .arg("tests/support/python_dataclasses_differential.py")
+        .env("JSONCOMPAT_TEST_CLI", env!("CARGO_BIN_EXE_jsoncompat"))
         .arg(&directory)
         .output()
         .expect("run differential tests");

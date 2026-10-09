@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use owo_colors::OwoColorize;
 use serde_json::Value;
 
-use crate::{RoleCli, SchemaDoc, read_to_string, sample_incompat};
+use crate::{RoleCli, SchemaDoc, read_to_string};
 use jsoncompat as backcompat;
 
 #[derive(clap::Args)]
@@ -23,6 +23,12 @@ pub(crate) struct CompatArgs {
     /// Depth used during fuzzing.
     #[arg(short, long, default_value_t = 8)]
     depth: u8,
+    /// Emit a machine-readable verdict on stdout.
+    #[arg(long)]
+    json: bool,
+    /// JSON file containing offline resources and the format assertion policy.
+    #[arg(long, conflicts_with = "openapi")]
+    schema_options: Option<std::path::PathBuf>,
 }
 
 pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
@@ -38,24 +44,43 @@ pub(crate) fn cmd(args: CompatArgs) -> Result<()> {
 
         let old = load_openapi_document(&args.old)?;
         let new = load_openapi_document(&args.new)?;
-        return compat_openapi(old, new, &args.old, &args.new);
+        return compat_openapi(old, new, &args.old, &args.new, args.json);
     }
 
-    let old = SchemaCompatInput::load(&args.old)?;
-    let new = SchemaCompatInput::load(&args.new)?;
+    let options: json_schema_ast::SchemaOptions = args
+        .schema_options
+        .as_ref()
+        .map(|path| {
+            let bytes =
+                std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+            serde_json::from_slice(&bytes).context("invalid schema options")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let old = SchemaCompatInput::load_with_options(&args.old, options.clone())?;
+    let new = SchemaCompatInput::load_with_options(&args.new, options)?;
     let role: backcompat::Role = args.role.into();
-    old.print_warnings(&args.old);
-    new.print_warnings(&args.new);
-    compat_schemas(old.document, new.document, role, args.fuzz, args.depth)
+    compat_schemas(
+        old.document,
+        new.document,
+        role,
+        args.fuzz,
+        args.depth,
+        args.json,
+    )
 }
 
 struct SchemaCompatInput {
     document: SchemaDoc,
-    warnings: Vec<backcompat::CompatibilityWarning>,
 }
 
 impl SchemaCompatInput {
+    #[cfg(test)]
     fn load(path: &str) -> Result<Self> {
+        Self::load_with_options(path, Default::default())
+    }
+
+    fn load_with_options(path: &str, options: json_schema_ast::SchemaOptions) -> Result<Self> {
         let raw = read_to_string(path)?;
         let json: Value = serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
         if looks_like_openapi_document(&json) {
@@ -64,22 +89,13 @@ impl SchemaCompatInput {
             );
         }
 
-        let schema = backcompat::SchemaDocument::from_json(&json)
+        let schema = backcompat::SchemaDocument::from_json_with_options(&json, &options)
             .with_context(|| format!("building schema for {path}"))?;
         backcompat::validate_compatibility_input(&schema)
             .with_context(|| format!("validating JSON Schema compatibility input for {path}"))?;
-        let warnings = backcompat::compatibility_warnings(&schema)
-            .with_context(|| format!("collecting JSON Schema compatibility warnings for {path}"))?;
         Ok(Self {
             document: SchemaDoc { schema },
-            warnings,
         })
-    }
-
-    fn print_warnings(&self, path: &str) {
-        for warning in &self.warnings {
-            eprintln!("{} {path}: {warning}", "warning:".yellow());
-        }
     }
 }
 
@@ -93,7 +109,7 @@ fn load_openapi_document(path: &str) -> Result<backcompat::OpenApiDocument> {
     Ok(document)
 }
 
-fn looks_like_openapi_document(json: &Value) -> bool {
+pub(crate) fn looks_like_openapi_document(json: &Value) -> bool {
     let Some(object) = json.as_object() else {
         return false;
     };
@@ -109,61 +125,60 @@ fn compat_schemas(
     role: backcompat::Role,
     fuzz: u32,
     depth: u8,
+    json: bool,
 ) -> Result<()> {
-    let verdict = backcompat::analyze_compat(&old.schema, &new.schema, role)?;
-    let ok_static = matches!(verdict, backcompat::CompatibilityResult::Compatible);
-    let offender =
-        if let backcompat::CompatibilityResult::Incompatible { counterexample, .. } = &verdict {
-            Some(counterexample.clone())
-        } else if fuzz > 0 && !ok_static {
-            let mut rng = rand::rng();
-            sample_incompat(&old, &new, role, fuzz as usize, depth, &mut rng)?
-        } else {
-            None
-        };
-
-    if ok_static && offender.is_none() {
-        eprintln!(
-            "{} Schemas seem backward-compatible (role = {:?})",
-            "✔".green(),
-            role
-        );
-        return Ok(());
-    }
-
-    eprintln!(
-        "{} {} (role = {:?})",
-        "✘".red(),
-        if offender.is_some() {
-            "Schemas are NOT backward-compatible"
-        } else {
-            "Compatibility is UNKNOWN: no inclusion proof or counterexample"
+    let verdict = backcompat::analyze_compat_with_options(
+        &old.schema,
+        &new.schema,
+        role,
+        backcompat::AnalysisOptions {
+            max_generated_candidates: 16_usize.saturating_add(fuzz as usize),
+            max_depth: depth,
+            ..Default::default()
         },
-        role
-    );
-    if let Some(detail) = backcompat::explain_compat_failure(&old.schema, &new.schema, role)? {
-        eprintln!("{} {}", "•".yellow(), detail);
+    )?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&verdict)?);
     }
-
-    if let Some(ex) = offender {
-        let pretty =
-            serde_json::to_string_pretty(&ex).unwrap_or_else(|_| "<unserializable>".into());
-        eprintln!("{} Counter-example:\n{}", "•".yellow(), pretty);
-        let old_valid = old.is_valid(&ex)?;
-        let new_valid = new.is_valid(&ex)?;
-        eprintln!(
-            "{} Old schema: {}",
-            "•".yellow(),
-            if old_valid { "accepts" } else { "rejects" }
-        );
-        eprintln!(
-            "{} New schema: {}",
-            "•".yellow(),
-            if new_valid { "accepts" } else { "rejects" }
-        );
-    }
-
-    std::process::exit(1);
+    let exit = match &verdict {
+        backcompat::CompatibilityResult::Compatible => {
+            if !json {
+                eprintln!(
+                    "{} Schemas are backward-compatible (role = {role:?})",
+                    "✔".green()
+                );
+            }
+            return Ok(());
+        }
+        backcompat::CompatibilityResult::Incompatible {
+            direction,
+            counterexample,
+        } => {
+            if !json {
+                eprintln!(
+                    "{} Schemas are NOT backward-compatible (role = {direction:?})",
+                    "✘".red()
+                );
+                if let Some(detail) =
+                    backcompat::explain_compat_failure(&old.schema, &new.schema, *direction)?
+                {
+                    eprintln!("• {detail}");
+                }
+                eprintln!(
+                    "Counter-example:\n{}",
+                    serde_json::to_string_pretty(counterexample)?
+                );
+            }
+            1
+        }
+        backcompat::CompatibilityResult::Unknown { reason } => {
+            if !json {
+                eprintln!("Compatibility is UNKNOWN: {reason}");
+            }
+            2
+        }
+    };
+    std::process::exit(exit);
 }
 
 fn compat_openapi(
@@ -171,18 +186,37 @@ fn compat_openapi(
     new: backcompat::OpenApiDocument,
     old_path: &str,
     new_path: &str,
+    json: bool,
 ) -> Result<()> {
     let report = backcompat::check_openapi_compat(&old, &new).with_context(|| {
         format!("checking OpenAPI compatibility for {old_path} against {new_path}")
     })?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": if report.is_compatible() { "compatible" } else if report.is_incompatible() { "incompatible" } else { "unknown" },
+                "issues": report.issues(),
+            }))?
+        );
+        if report.is_compatible() {
+            return Ok(());
+        }
+        std::process::exit(if report.is_incompatible() { 1 } else { 2 });
+    }
     if report.is_compatible() {
         eprintln!("{} OpenAPI documents seem backward-compatible", "✔".green());
         return Ok(());
     }
 
     eprintln!(
-        "{} OpenAPI documents are NOT backward-compatible",
-        "✘".red()
+        "{} {}",
+        "✘".red(),
+        if report.is_incompatible() {
+            "OpenAPI documents are NOT backward-compatible"
+        } else {
+            "OpenAPI compatibility is UNKNOWN: no inclusion proof or counterexample"
+        }
     );
     for issue in report.issues() {
         eprintln!(
@@ -195,7 +229,7 @@ fn compat_openapi(
         );
     }
 
-    std::process::exit(1);
+    std::process::exit(if report.is_incompatible() { 1 } else { 2 });
 }
 
 #[cfg(test)]
@@ -224,6 +258,8 @@ mod tests {
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -261,6 +297,8 @@ mod tests {
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -302,6 +340,8 @@ mod tests {
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -348,6 +388,8 @@ mod tests {
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -394,6 +436,8 @@ mod tests {
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -442,6 +486,8 @@ mod tests {
                 role: RoleCli::Both,
                 fuzz: 0,
                 depth: 8,
+                json: false,
+                schema_options: None,
             });
 
             fs::remove_file(old_path).unwrap();
@@ -493,6 +539,8 @@ mod tests {
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         });
 
         fs::remove_file(old_path).unwrap();
@@ -610,6 +658,8 @@ mod tests {
             role: RoleCli::Serializer,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -650,6 +700,8 @@ mod tests {
                 role: RoleCli::Both,
                 fuzz: 0,
                 depth: 8,
+                json: false,
+                schema_options: None,
             })
             .unwrap_err();
 
@@ -712,6 +764,8 @@ mod tests {
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -772,6 +826,8 @@ mod tests {
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 
@@ -856,6 +912,8 @@ mod tests {
             role: RoleCli::Both,
             fuzz: 0,
             depth: 8,
+            json: false,
+            schema_options: None,
         })
         .unwrap_err();
 

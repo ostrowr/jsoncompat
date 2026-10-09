@@ -15,7 +15,7 @@ jsoncompat compares:
 By default, `$schema` must use Draft 2020-12 or the OpenAPI 3.1 Schema Object dialect. Rust callers can supply Draft 2020-12 vocabulary metaschemas and external resources through `SchemaOptions`. OpenAPI 3.0-only shortcuts such as `nullable` are not reinterpreted.
 
 > [!WARNING]
-> jsoncompat is alpha software. It is intentionally conservative in places, and it can still miss incompatible changes or report false positives.
+> jsoncompat is alpha software. It is intentionally conservative: incomplete proofs without validated counterexamples are reported as `Unknown`.
 >
 > The full docs and examples live at [jsoncompat.com](https://jsoncompat.com).
 
@@ -45,6 +45,8 @@ Check both serializer and deserializer compatibility, and ask for fuzzed counter
 ```bash
 jsoncompat compat old-schema.json new-schema.json --role both --fuzz 1000 --depth 8
 ```
+
+Use `--json` for a structured verdict. Exit codes are 0 for compatible, 1 for incompatible or invalid input, and 2 for unknown.
 
 Check an OpenAPI 3.1 contract:
 
@@ -138,6 +140,17 @@ full dataclass reflection metadata is created only when explicitly requested.
 Constructors and JSON I/O need no further preparation. See
 [generated Python models](pybindings/README.md#generated-model-artifacts) for the
 build contract and benchmarks.
+
+Generate an explicitly selected OpenAPI component package in the same build step:
+
+```bash
+jsoncompat codegen --openapi openapi.json --output my_models --models-per-module 128
+```
+
+Use `from my_models import Order`. The package loads model modules on demand;
+reference-connected models share identities and independent models stay in
+bounded modules. `--component` selects roots and `--rename` resolves name
+collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;
@@ -253,7 +266,7 @@ cases. The CLI reports that distinction explicitly.
 See the [keyword support matrix](keyword-support.md) for parsing, validation,
 proof, generation, resource-resolution, and format-vocabulary coverage.
 
-## Warnings and hard errors
+## Unknown results and errors
 
 Malformed schemas, missing resources, unsupported dialects, and unsupported
 OpenAPI contract surfaces produce errors. Supported annotations do not produce

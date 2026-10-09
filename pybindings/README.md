@@ -158,11 +158,29 @@ and divisors are prepared ahead of time. JSON input is validated before conversi
 to Python floats; if rounding makes a stored value invalid, checked serialization
 rejects it. The value API validates the decimal representation of the Python value.
 
+Schema validation failures from generated models raise `jsoncompat.ValidationError`, a `ValueError`
+subclass with `kind`, `instance_path`, `schema_path`, and `keyword`. Paths are
+RFC 6901 pointers; the schema pointer refers to the linked schema used by the
+prepared program. `kind="resource_limit"` distinguishes evaluation budgets from
+ordinary constraint failures. Diagnostics traverse the prebuilt program only
+on failure; they do not expand the stored schema or compile a validator.
+
+```python
+try:
+    Model.deserialize(payload)
+except jsoncompat.ValidationError as error:
+    print(error.instance_path, error.schema_path, error.keyword, error.kind)
+```
+
 `cargo test --test python_dataclasses_differential` compares optimized and
 forced-general execution against the original schemas using the independent
-validator. It covers each input/output operation separately, the generated fixture
-corpus, adversarial composed schemas, invalid mutated models, Unicode/regex
-edge cases, exact numeric boundaries, 200-field models, and large payloads.
+validator. It covers the full generated fixture corpus, each input/output
+operation, mutations, exact decimals, regexes, 200-field models, and large values.
+It also generates 128 schema trees and four equivalent forms of each, with
+independent grammar-specific membership checks. Set `JSONCOMPAT_SCHEMA_SEED`
+and `JSONCOMPAT_SCHEMA_CASES` to reproduce or expand this campaign. Failures keep
+artifacts and attempt bounded schema/value shrinking into
+`minimized.failure.json` before reporting the original failure.
 
 Benchmark the build cost, fully checked round trips, and fresh-process startup
 against the same strict Pydantic peers used by the existing benchmarks:
@@ -226,82 +244,29 @@ is preloaded. Full fresh-process import plus first round trip is
 42.1 ms versus 103.7 ms. First-call measurements include ordinary allocation and cache
 warming, but no deferred schema or model compilation.
 
-To measure independent-class imports with a retained-memory budget:
+To measure a real package containing unique classes and constraints:
 
 ```bash
-just python-bench-imports 5 6000
-just python-bench-imports 20 2048
-just python-bench-imports 200 2048
+just python-bench-imports 1000 0 2048
+just python-bench-imports 200000 5 6000
 ```
 
-This benchmark builds 100-class shards, then imports distinct retained model
-classes until it reaches 200,000 classes or the memory/time budget. Bytecode is
-built beforehand. It reuses cached shard files under distinct module names,
-so it measures class setup and retained memory, excluding unique-file I/O and
-a real package's dependency graph. Results and build costs are written to
-`target/python-codegen/imports/`. Wider models may reach the default 2 GiB
-budget before 200,000 classes; reports mark that boundary explicitly.
+Arguments are class count, fields per class, and retained-memory budget in MiB.
+Zero fields selects a mix of 5, 20, 50, 100, and 200. The benchmark builds an
+OpenAPI input containing every model, generates bounded modules, and creates a
+Pydantic package with the same lazy export policy. It measures fresh interpreters
+with and without prebuilt bytecode, package import, first class access and round
+trip, population loading, peak RSS, build time, artifact size, and checked round
+trips. Filesystem caches are not flushed. The report records the revision,
+working-tree state, interpreter, platform, requested population, and actual loaded
+population at `target/python-codegen/unique-imports/report.json`.
 
-Remeasured after this optimization pass, with all model identities kept alive
-and garbage collection enabled:
-
-| Fields/class | Implementation | Classes retained | Import seconds | Peak GiB |
-| ---: | --- | ---: | ---: | ---: |
-| 5 | Generated | 200,000 | 3.80 | 1.13 |
-| 5 | Pydantic | 200,000 | 61.51 | 4.15 |
-| 20 | Generated | 161,800 | 6.40 | 2.00 |
-| 20 | Pydantic | 31,100 | 27.21 | 2.01 |
-| 200 | Generated | 18,800 | 4.98 | 2.01 |
-| 200 | Pydantic | 3,600 | 27.00 | 2.05 |
-
-The 5-field case actually reaches 200,000 classes: generated models take
-93.8% less import time than Pydantic. The previous generated implementation took
-7.00 seconds and 2.67 GiB; this pass reduces that to 3.80 seconds and
-1.13 GiB. The 20- and 200-field cases stop at the 2 GiB budget; those are
-measured partial runs, not 200,000-class projections. Cached private companion
-constants are shared across copies of each shard. Within a shard, identical
-validation programs also share native storage. These memory figures do not
-predict the size of arbitrary unique schemas.
-
-A separate import profile alternates the preserved release `abd47c27` from
-before this pass with the new implementation (nine fresh-process samples per version,
-precompiled bytecode, runtime preloaded). Each shard contains 100 classes:
-
-| Fields/class | Before: 100-class import | After: 100-class import | Less elapsed time | Current install/class |
-| ---: | ---: | ---: | ---: | ---: |
-| 5 | 2.31 ms | 1.51 ms | 34.7% | 1.20 µs |
-| 20 | 6.12 ms | 2.76 ms | 54.9% | 1.35 µs |
-| 200 | 49.43 ms | 18.98 ms | 61.6% | 2.24 µs |
-
-`install_model` attaches constructor signatures and compressed schema sources.
-Class creation and native binding happen separately. Compact field descriptions
-avoid constructing full reflection metadata; the native binder reuses field
-names and identical validation programs. Generation interns repeated scalar
-checks and guards. Even the 1,000-field workload needs only two distinct scalar
-guards, while every field still enforces its own constraints.
-
-To verify that improvements also apply when native programs cannot be shared,
-`--distinct-constraints` gives each class in a shard different numeric/string
-bounds. The same alternating import profile gives:
-
-| Fields/class | Before: distinct constraints | After: distinct constraints | Less elapsed time |
-| ---: | ---: | ---: | ---: |
-| 5 | 2.38 ms | 1.85 ms | 22.0% |
-| 20 | 6.14 ms | 3.38 ms | 45.0% |
-| 200 | 50.68 ms | 21.65 ms | 57.3% |
-
-With distinct constraints in each shard, the retained-class experiment imports
-200,000 five-field classes in 4.23 seconds and 1.76 GiB. Under the 2 GiB budget,
-it retains 113,900 twenty-field classes or 15,500 two-hundred-field classes.
-The cached-file/shared-constant caveat still applies.
-
-Reproduce the distinct-constraint build and retained-class run with a separate
-artifact directory (the release extension and CLI must already be built):
-
-```bash
-PYTHONPATH=pybindings JSONCOMPAT_NATIVE_PROFILE=release uv run --project pybindings python pybindings/bench_dataclasses_imports.py build --fields 20 --distinct-constraints --directory target/python-codegen/imports-distinct
-PYTHONPATH=pybindings JSONCOMPAT_NATIVE_PROFILE=release uv run --project pybindings python pybindings/bench_dataclasses_imports.py generated --fields 20 --distinct-constraints --directory target/python-codegen/imports-distinct
-```
+Runtime workers stop at the memory budget between modules and have a timeout.
+Building the full input has its own time and memory costs; choose a population
+that fits the build machine. Partial runs are reported without extrapolation.
+Earlier cached-shard measurements are not evidence of unique-package startup and
+have been removed from this guide. All steady-state benchmarks share
+`benchmark_harness.py` for warmup, rotating order, GC policy, and timing samples.
 
 `Model.__jsoncompat_schema__` decompresses and caches the original source only
 on explicit access; imports, first round trips, and validation errors do not
@@ -310,6 +275,56 @@ when requested. Generation removes compilation from startup; creating and
 connecting runtime objects still costs time and memory.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
+
+
+## OpenAPI model packages
+
+```bash
+jsoncompat codegen --openapi openapi.json --output my_models --models-per-module 128
+python -m compileall -q my_models
+```
+
+```python
+from my_models import Order, Customer
+```
+
+The package exports component models by name. `__init__.pyi` makes those exports
+visible to type checkers. Public `models_0000.py` modules contain readable class
+and field declarations; private companions contain the prepared implementation.
+Package import loads only the export index. Accessing a model loads its module
+and binds all models in that module. No model compilation moves to first access.
+
+`--component Order` selects a component and its dependencies; repeat the flag
+for several roots. `--rename Order=Purchase` changes a public class name.
+Name collisions fail with a diagnostic. Reference-connected models stay together,
+including mutually recursive models, so class identities do not depend on import
+order. A connected group may exceed `--models-per-module`. Resource identifiers
+and anchor references conservatively keep all components in one group to retain
+scope. This command emits schema models, not an HTTP client or server.
+
+An output manifest fingerprints the compiler, schemas, options, and managed
+files. Unchanged groups reuse their artifacts; edited schemas rebuild affected
+groups. Regeneration removes obsolete managed files, preserves unrelated files,
+and refuses to overwrite unmanaged files. Deploy the complete directory as one
+build artifact; generation is not a live-reload or concurrent-writer protocol.
+
+## Offline resources and format policy
+
+Rust `SchemaOptions` is also available through Python's `options=` keyword:
+
+```python
+validator = jsoncompat.validator_for(
+    '{"$ref":"https://example.com/name"}',
+    options={"resources": {"https://example.com/name": {"type":"string"}}},
+)
+```
+
+The same options apply to `generator_for`, `analyze_compat`, `check_compat`,
+`generate_value`, and `is_valid`. `assert_formats` overrides the schema's format
+vocabulary policy. Resources are explicit and offline. The CLI accepts their
+JSON representation in `--schema-options options.json` for raw-schema
+compatibility and both code-generation modes. Unsupported asserted formats in
+generated models fail at build time rather than losing validation.
 
 ## More detail
 
@@ -384,8 +399,10 @@ MIT License. See:
 
 - https://github.com/ostrowr/jsoncompat/blob/main/LICENSE
 
-`analyze_compat(old_schema_json, new_schema_json, role="both")` returns a JSON
-string with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible
+`analyze_compat(old_schema_json, new_schema_json, role="both")` returns a typed Python dictionary
+with `status`: `compatible`, `incompatible`, or `unknown`. Incompatible
 results include `direction` and `counterexample`; unknown results include
 `reason`. `check_compat` remains boolean and returns false when no inclusion
 proof is available. See the [keyword support matrix](../keyword-support.md).
+
+Incompatible results also include `counterexample_json`, the exact JSON spelling of the witness. Use it when decimal precision exceeds the host language’s number representation.

@@ -42,7 +42,8 @@ The benchmark fixtures under [benches/fixtures](benches/fixtures) are fixed on p
 | `src/` | `jsoncompat` | Compatibility checking and the CLI |
 | `openapi/` | `jsoncompat_openapi` | OpenAPI document validation and lowering into synthetic request/response schemas |
 | `fuzz/` | `json_schema_fuzz` | Schema-guided JSON value generation |
-| `python/` | `jsoncompat_py` | PyO3 bindings |
+| `codegen/` | `jsoncompat_codegen` | Python source generation, portable validation programs, and conversion proofs |
+| `pybindings/` | `jsoncompat_py` | PyO3 bindings |
 | `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings |
 | `web/` | website | Documentation site and interactive frontend |
 
@@ -63,8 +64,8 @@ and raw validation.
 Canonicalization preserves evaluation annotations throughout documents using
 `unevaluatedItems` or `unevaluatedProperties`: it must not insert `items: true`,
 invent declared properties from `required`, or discard successful `anyOf`/`if`
-annotations. These keywords still produce compatibility warnings because the
-structural prover does not model annotation sets.
+annotations. When annotation expansion exceeds the proof engine’s scope,
+`analyze_compat` returns `Unknown` unless it finds a validated counterexample.
 
 Publishable Rust crates depend on the upstream `jsonschema` package from
 crates.io. The unpublished Python extension separately owns its forked
@@ -116,14 +117,9 @@ smaller than the resolved IR surface:
 
 ## Compatibility diagnostics
 
-`validate_compatibility_input()` only rejects inputs that cannot participate in a sound comparison. Warning-only gaps are exposed separately through `compatibility_warnings()`.
+`analyze_compat()` distinguishes a proof (`Compatible`), a validated counterexample (`Incompatible`), and an incomplete proof/search (`Unknown`). `AnalysisOptions` bounds deterministic counterexample generation. `check_compat()` remains the one-sided boolean proof API; false alone does not establish a break.
 
-The split is deliberate:
-
-- warning-only raw JSON Schema keywords are valid inputs whose semantics are not yet modeled by the subset checker;
-- hard errors remain hard errors for unsupported reference scoping, non-integral `number.multipleOf`, unsafe floating-point number-bound precision, malformed schemas, and other cases that would make a static verdict unsafe.
-
-`jsoncompat compat` prints warnings before the verdict for raw schemas; `jsoncompat compat --openapi` selects the separate OpenAPI contract path explicitly. `jsoncompat ci` keeps the warning text in its output without turning that grade into `Invalid`.
+OpenAPI reports preserve unknown operation surfaces. Removed operations are explicit structural breaks. The CLI, Python dictionaries, and WASM objects expose the same three statuses. `compat --json` and `ci --display json` keep stdout machine-readable. CLI exit codes are 0 for compatible, 1 for incompatible or invalid input, and 2 for unknown. There is no warning-only path that ignores assertion semantics.
 
 ## Canonicalization and debugging
 
@@ -225,7 +221,7 @@ The repository has several public-facing READMEs:
 
 - [readme.md](readme.md) is the general end-user entrypoint;
 - [openapi/README.md](openapi/README.md) is the OpenAPI usage guide;
-- [python/README.md](python/README.md), [wasm/README.md](wasm/README.md), [schema/README.md](schema/README.md), and [fuzz/README.md](fuzz/README.md) describe installable packages from a caller's perspective;
+- [pybindings/README.md](pybindings/README.md), [wasm/README.md](wasm/README.md), [schema/README.md](schema/README.md), and [fuzz/README.md](fuzz/README.md) describe installable packages from a caller's perspective;
 - [web/jsoncompatdotcom/README.md](web/jsoncompatdotcom/README.md) only covers running and validating the website locally.
 
 Keep repo architecture, internal invariants, test design, fixture policy, and
@@ -236,7 +232,7 @@ entrypoints.
 
 `just release` dry-runs the patch-release flow.
 
-PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. Merging to `main` deploys the website.
+PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. `just check-packages` builds every publishable archive using Cargo’s staged registry. Publishing jobs require the Rust test matrix, archive verification, workflow linting, and their respective artifact builds to succeed. Merging to `main` deploys the website.
 
 The Python wheel release jobs target CPython 3.12–3.15, including the
 free-threaded 3.14t builds, on Linux (manylinux and musllinux), Windows, and
@@ -257,3 +253,27 @@ To run the same source-install check locally with Maturin installed:
 maturin sdist --manifest-path pybindings/Cargo.toml --out target/sdist
 python3 pybindings/tests/check_sdist.py target/sdist/*.tar.gz
 ```
+
+Prepared validation programs use a generic borrowed-value interface in `codegen/src/prepared_schema/instance.rs`. The Python extension implements it for its parser and Python views. The published codegen crate must not depend on the Python validator fork.
+
+
+### Prepared runtime boundaries
+
+`codegen/src/prepared_schema` owns portable validation, annotations, precompiled
+patterns, and cold structured diagnostics. `pybindings/src/prepared_schema.rs`
+adapts Python/Jiter values without leaking fork types into published crates.
+`pybindings/src/model_converter/{input,output,projection}.rs` separate construction,
+serialization, and borrowed model views; binding/layout remains in the parent.
+`openapi/src/validation.rs` validates document shapes before lowering, while
+`schema_groups.rs` partitions component packages without breaking references.
+
+Use `just check-packages` before release: it packages every published Rust crate
+and builds the resulting dependency closure from archives. CI runs this gate
+independently of workspace tests. Keep the Python-specific validator fork confined
+to the unpublished extension.
+
+Representative generated Python snapshots remain in source control; the full
+fixture corpus is regenerated for E2E tests and benchmarks. Do not replace runtime
+coverage with snapshots or label a repeated cached shard as a unique model package.
+`just python-bench-imports` now measures unique OpenAPI-generated packages and
+records both completed and memory-limited populations.

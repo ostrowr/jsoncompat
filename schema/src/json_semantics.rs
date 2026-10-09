@@ -4,7 +4,6 @@
 //! equal even if one is encoded as `1` and the other as `1.0`. These helpers
 //! centralize that rule so enum/const checks and `uniqueItems` do not drift.
 
-use num_traits::ToPrimitive;
 use serde_json::Value;
 
 /// Return true when two JSON values are equal under JSON Schema semantics.
@@ -42,8 +41,8 @@ pub(crate) fn numeric_values_equal(expected: &Value, value: &Value) -> bool {
         return expected_integer == value_integer;
     }
 
-    crate::exact::decimal(expected)
-        .zip(crate::exact::decimal(value))
+    crate::Decimal::from_value(expected)
+        .zip(crate::Decimal::from_value(value))
         .is_some_and(|(expected, value)| expected == value)
 }
 
@@ -57,10 +56,7 @@ pub(crate) fn integer_value_from_json(value: &Value) -> Option<i128> {
         .map(i128::from)
         .or_else(|| number.as_u64().map(i128::from))
         .or_else(|| {
-            let exact = crate::exact::decimal(value)?;
-            exact
-                .is_integer()
-                .then(|| exact.to_integer().to_i128())
-                .flatten()
+            let exact = crate::Decimal::from_value(value)?;
+            exact.is_integer().then(|| exact.to_i128()).flatten()
         })
 }

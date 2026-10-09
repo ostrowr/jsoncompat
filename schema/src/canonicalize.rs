@@ -718,16 +718,10 @@ fn canonicalize_boolean_keyword(key: &str, value: &Value, pointer: &str) -> Resu
 }
 
 fn canonicalize_numeric_keyword(key: &str, value: &Value, pointer: &str) -> Result<Value> {
-    let Some(number) = value.as_f64() else {
+    let Some(number) = crate::Decimal::from_value(value) else {
         return Err(invalid_keyword_type(pointer, key, "a finite number", value));
     };
-    if !number.is_finite() {
-        return Err(CanonicalizeError::NonFiniteNumericKeyword {
-            pointer: pointer.to_owned(),
-            keyword: key.to_owned(),
-        });
-    }
-    if key == "multipleOf" && number <= 0.0 {
+    if key == "multipleOf" && !number.is_positive() {
         return Err(invalid_keyword_type(
             pointer,
             key,
@@ -1095,9 +1089,7 @@ fn value_type_name(value: &Value) -> Option<PrimitiveType> {
         Value::Array(_) => Some(PrimitiveType::Array),
         Value::String(_) => Some(PrimitiveType::String),
         Value::Number(number) if number.is_i64() || number.is_u64() => Some(PrimitiveType::Integer),
-        // This is a bit unfortunate because it relies on f64 semantics, but JSON
-        // Schema's "integer" type intentionally accepts values like 1.0.
-        Value::Number(number) if number.as_f64().is_some_and(|value| value.fract() == 0.0) => {
+        Value::Number(number) if crate::Decimal::from_number(number).is_integer() => {
             Some(PrimitiveType::Integer)
         }
         Value::Number(_) => Some(PrimitiveType::Number),
@@ -1496,16 +1488,16 @@ fn lower_equal_bounds_to_enum(
         return Ok(None);
     }
     if type_name == "integer"
-        && !crate::exact::decimal(minimum)
+        && !crate::Decimal::from_value(minimum)
             .expect("validated bound")
             .is_integer()
     {
         return Ok(Some(Value::Object(unsatisfiable_object(schema))));
     }
     if let Some(multiple_of) = schema.get("multipleOf")
-        && !(crate::exact::decimal(minimum).expect("validated bound")
-            / crate::exact::decimal(multiple_of).expect("validated divisor"))
-        .is_integer()
+        && !crate::Decimal::from_value(minimum)
+            .expect("validated bound")
+            .is_multiple_of(&crate::Decimal::from_value(multiple_of).expect("validated divisor"))
     {
         return Ok(Some(Value::Object(unsatisfiable_object(schema))));
     }

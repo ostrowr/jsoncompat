@@ -36,6 +36,20 @@ fn parse_json(s: &str) -> Result<JsonValue, JsValue> {
     serde_json::from_str(s).map_err(|e| JsValue::from_str(&format!("invalid JSON: {e}")))
 }
 
+fn with_options(schema_json: &str, options_json: Option<&str>) -> Result<String, JsValue> {
+    let Some(options_json) = options_json else {
+        return Ok(schema_json.into());
+    };
+    let options: jsoncompat::SchemaOptions = serde_json::from_str(options_json)
+        .map_err(|error| JsValue::from_str(&format!("invalid schema options: {error}")))?;
+    let document = SchemaDocument::from_json_with_options(&parse_json(schema_json)?, &options)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    document
+        .linked_schema_json()
+        .map(|value| value.to_string())
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
 fn parse_schema(schema_json: &str) -> Result<SchemaDocument, JsValue> {
     let raw = parse_json(schema_json)?;
     validated_schema(&raw).map_err(|e| JsValue::from_str(&format!("invalid schema: {e}")))
@@ -110,7 +124,10 @@ pub fn check_compat_js(
     old_schema_json: &str,
     new_schema_json: &str,
     role: &str,
+    options_json: Option<String>,
 ) -> Result<bool, JsValue> {
+    let old_schema_json = &with_options(old_schema_json, options_json.as_deref())?;
+    let new_schema_json = &with_options(new_schema_json, options_json.as_deref())?;
     let role_e = parse_role(role)?;
     let old_raw = parse_json(old_schema_json)?;
     let new_raw = parse_json(new_schema_json)?;
@@ -124,20 +141,43 @@ pub fn check_compat_js(
         .map_err(|e| JsValue::from_str(&format!("compatibility check failed: {e}")))
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const VERDICT_TYPES: &str = r#"
+export type CompatibilityResult =
+  | { status: "compatible" }
+  | { status: "incompatible"; direction: "serializer" | "deserializer" | "both"; counterexample: unknown; counterexample_json: string }
+  | { status: "unknown"; reason: string };
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "CompatibilityResult")]
+    pub type JsCompatibilityResult;
+}
+
 /// Return a JSON object with compatible, incompatible, or unknown status.
 #[wasm_bindgen(js_name = analyze_compat)]
 pub fn analyze_compat_js(
     old_schema_json: &str,
     new_schema_json: &str,
     role: &str,
-) -> Result<String, JsValue> {
+    options_json: Option<String>,
+) -> Result<JsCompatibilityResult, JsValue> {
+    let old_schema_json = &with_options(old_schema_json, options_json.as_deref())?;
+    let new_schema_json = &with_options(new_schema_json, options_json.as_deref())?;
     let old = compatibility_schema(&parse_json(old_schema_json)?)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let new = compatibility_schema(&parse_json(new_schema_json)?)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let result = jsoncompat::analyze_compat(&old, &new, parse_role(role)?)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
-    serde_json::to_string(&result).map_err(|error| JsValue::from_str(&error.to_string()))
+    let mut output =
+        serde_json::to_value(&result).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    if let jsoncompat::CompatibilityResult::Incompatible { counterexample, .. } = result {
+        output["counterexample_json"] = serde_json::Value::String(counterexample.to_string());
+    }
+    let json =
+        serde_json::to_string(&output).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    Ok(js_sys::JSON::parse(&json)?.unchecked_into())
 }
 
 /// Generate a JSON value (string) that should satisfy the given schema.
@@ -146,8 +186,15 @@ pub fn analyze_compat_js(
 /// * `depth` – recursion depth limit
 /// Exported to JavaScript as `generate_value`.
 #[wasm_bindgen(js_name = generate_value)]
-pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue> {
-    generate_value_for_schema(&parse_schema(schema_json)?, depth)
+pub fn generate_value_js(
+    schema_json: &str,
+    depth: u8,
+    options_json: Option<String>,
+) -> Result<String, JsValue> {
+    generate_value_for_schema(
+        &parse_schema(&with_options(schema_json, options_json.as_deref())?)?,
+        depth,
+    )
 }
 
 /// Build a reusable generator for a JSON Schema.
@@ -155,9 +202,12 @@ pub fn generate_value_js(schema_json: &str, depth: u8) -> Result<String, JsValue
 /// * `schema_json` – schema as JSON string
 /// Exported to JavaScript as `generator_for`.
 #[wasm_bindgen(js_name = generator_for)]
-pub fn generator_for_js(schema_json: &str) -> Result<Generator, JsValue> {
+pub fn generator_for_js(
+    schema_json: &str,
+    options_json: Option<String>,
+) -> Result<Generator, JsValue> {
     Ok(Generator {
-        schema: parse_schema(schema_json)?,
+        schema: parse_schema(&with_options(schema_json, options_json.as_deref())?)?,
     })
 }
 
@@ -166,9 +216,12 @@ pub fn generator_for_js(schema_json: &str) -> Result<Generator, JsValue> {
 /// * `schema_json` – schema as JSON string
 /// Exported to JavaScript as `validator_for`.
 #[wasm_bindgen(js_name = validator_for)]
-pub fn validator_for_js(schema_json: &str) -> Result<Validator, JsValue> {
+pub fn validator_for_js(
+    schema_json: &str,
+    options_json: Option<String>,
+) -> Result<Validator, JsValue> {
     Ok(Validator {
-        schema: parse_schema(schema_json)?,
+        schema: parse_schema(&with_options(schema_json, options_json.as_deref())?)?,
     })
 }
 

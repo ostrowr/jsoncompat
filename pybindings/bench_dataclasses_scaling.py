@@ -9,14 +9,13 @@ module is guarded by the dataclass snapshot test.
 
 from __future__ import annotations
 
+from benchmark_harness import measure
+
 import argparse
 import cProfile
-import gc
 import json
 import platform
 import pstats
-import statistics
-import time
 from typing import Annotated, Any, Callable, Literal
 
 import pydantic
@@ -128,25 +127,8 @@ def benchmark(
     iterations: int,
     repeats: int,
 ) -> None:
-    for _ in range(min(iterations, 10)):
-        callback()
-
-    samples: list[float] = []
-    gc_was_enabled = gc.isenabled()
-    gc.disable()
-    try:
-        for _ in range(repeats):
-            start = time.perf_counter()
-            for _ in range(iterations):
-                callback()
-            samples.append(time.perf_counter() - start)
-    finally:
-        if gc_was_enabled:
-            gc.enable()
-
-    median_ms = statistics.median(samples) / iterations * 1_000
-    best_ms = min(samples) / iterations * 1_000
-    print(f"{name:36} median={median_ms:9.3f}ms best={best_ms:9.3f}ms")
+    timing = measure({name: callback}, iterations, repeats, warmup=10)[name]
+    print(f"{name:36} median={timing['median_us']/1000:9.3f}ms best={min(timing['samples_us'])/1000:9.3f}ms")
 
 
 def profile(

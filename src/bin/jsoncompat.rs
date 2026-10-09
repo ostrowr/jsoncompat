@@ -20,6 +20,8 @@ use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 mod ci;
 #[path = "jsoncompat/codegen.rs"]
 mod codegen;
+#[path = "jsoncompat/codegen_package.rs"]
+mod codegen_package;
 #[path = "jsoncompat/compat.rs"]
 mod compat;
 #[path = "jsoncompat/demo.rs"]
@@ -55,10 +57,6 @@ impl SchemaDoc {
     }
 
     #[inline]
-    pub(crate) fn is_valid(&self, v: &Value) -> Result<bool> {
-        Ok(self.schema.is_valid(v)?)
-    }
-
     pub(crate) fn gen_value<R: Rng>(
         &self,
         rng: &mut R,
@@ -76,41 +74,6 @@ pub(crate) fn read_to_string(path: &str) -> Result<String> {
         Ok(buf)
     } else {
         fs::read_to_string(Path::new(path)).with_context(|| format!("reading {path}"))
-    }
-}
-
-// Sampling logic shared by fuzzing and counterexample search.
-pub(crate) fn sample_incompat<R: Rng>(
-    old: &SchemaDoc,
-    new: &SchemaDoc,
-    role: backcompat::Role,
-    attempts: usize,
-    depth: u8,
-    rng: &mut R,
-) -> Result<Option<Value>> {
-    let mut try_once = |src: &SchemaDoc, dst: &SchemaDoc| -> Result<Option<Value>> {
-        for _ in 0..attempts {
-            let v = match src.gen_value(rng, depth) {
-                Ok(value) => value,
-                Err(GenerateError::Unsatisfiable | GenerateError::ExhaustedAttempts { .. }) => {
-                    return Ok(None);
-                }
-                Err(error) => return Err(error.into()),
-            };
-            if src.is_valid(&v)? && !dst.is_valid(&v)? {
-                return Ok(Some(v));
-            }
-        }
-        Ok(None)
-    };
-
-    match role {
-        backcompat::Role::Serializer => try_once(new, old),
-        backcompat::Role::Deserializer => try_once(old, new),
-        backcompat::Role::Both => try_once(new, old).and_then(|result| match result {
-            Some(value) => Ok(Some(value)),
-            None => try_once(old, new),
-        }),
     }
 }
 
@@ -202,7 +165,7 @@ mod tests {
         let value = schema.gen_value(&mut rng, 4).unwrap();
 
         assert!(
-            schema.is_valid(&value).unwrap(),
+            schema.schema.is_valid(&value).unwrap(),
             "generated invalid value: {value}"
         );
     }
@@ -218,30 +181,5 @@ mod tests {
         let error = schema.gen_value(&mut rng, 4).unwrap_err();
 
         assert!(matches!(error, GenerateError::Unsatisfiable));
-    }
-
-    #[test]
-    fn sample_incompat_with_role_both_continues_after_exhausting_the_first_direction() {
-        let old_raw = json!({});
-        let new_raw = json!(false);
-        let old = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&old_raw).unwrap(),
-        };
-        let new = SchemaDoc {
-            schema: backcompat::SchemaDocument::from_json(&new_raw).unwrap(),
-        };
-        let mut rng = StdRng::seed_from_u64(7);
-
-        let offender = sample_incompat(&old, &new, backcompat::Role::Both, 3, 4, &mut rng).unwrap();
-
-        let offender = offender.expect("expected a deserializer counterexample");
-        assert!(
-            old.is_valid(&offender).unwrap(),
-            "old schema must accept {offender}"
-        );
-        assert!(
-            !new.is_valid(&offender).unwrap(),
-            "new schema must reject {offender}"
-        );
     }
 }

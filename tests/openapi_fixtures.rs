@@ -1,4 +1,7 @@
-use jsoncompat::{OpenApiCompatibilitySurface, OpenApiDocument, check_openapi_compat};
+use jsoncompat::{
+    OpenApiCompatibilityIssueKind, OpenApiCompatibilitySurface, OpenApiDocument,
+    check_openapi_compat,
+};
 use jsoncompat_openapi::{OpenApiOperationLowerer, OperationKey};
 use serde::Deserialize;
 use serde_json::Value;
@@ -12,11 +15,19 @@ datatest_stable::harness! {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Expectation {
-    compatible: bool,
+    status: Status,
     #[serde(default)]
     surfaces: Vec<String>,
     #[serde(default)]
     expected_message: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Status {
+    Compatible,
+    Incompatible,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -114,7 +125,32 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         if issue.surface == OpenApiCompatibilitySurface::Operation {
             assert!(old_lowerer.lower_operation(&operation)?.is_some());
             assert!(new_lowerer.lower_operation(&operation)?.is_none());
-        } else {
+        } else if let OpenApiCompatibilityIssueKind::Incompatible { counterexample, .. } =
+            &issue.kind
+        {
+            let old_contract = old_lowerer.lower_operation(&operation)?.unwrap();
+            let new_contract = new_lowerer.lower_operation(&operation)?.unwrap();
+            let (old_schema, new_schema, expected) = match issue.surface {
+                OpenApiCompatibilitySurface::Request => {
+                    (&old_contract.request, &new_contract.request, (true, false))
+                }
+                OpenApiCompatibilitySurface::Response => (
+                    &old_contract.response,
+                    &new_contract.response,
+                    (false, true),
+                ),
+                OpenApiCompatibilitySurface::Operation => unreachable!(),
+            };
+            assert_eq!(
+                (
+                    old.lowered_contract_document(old_schema)?
+                        .is_valid(counterexample)?,
+                    new.lowered_contract_document(new_schema)?
+                        .is_valid(counterexample)?
+                ),
+                expected,
+                "reported witness does not prove a compatibility break in {dir:?}"
+            );
             assert!(
                 witnessed_issues.contains(&(operation, issue.surface)),
                 "incompatible fixture {dir:?} needs a concrete {:?} counterexample",
@@ -124,8 +160,14 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     assert_eq!(
-        report.is_compatible(),
-        expect.compatible,
+        if report.is_compatible() {
+            Status::Compatible
+        } else if report.is_incompatible() {
+            Status::Incompatible
+        } else {
+            Status::Unknown
+        },
+        expect.status,
         "compatibility mismatch in {dir:?}: {report:?}"
     );
     let actual_surfaces = report
@@ -145,8 +187,8 @@ fn fixture(expect_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
         (Some(_), issues) => {
             panic!("fixture {dir:?} expects exactly one explained incompatibility, got {issues:?}")
         }
-        (None, []) if expect.compatible => {}
-        (None, _) if !expect.compatible => {
+        (None, []) if expect.status == Status::Compatible => {}
+        (None, _) if expect.status != Status::Compatible => {
             panic!("incompatible fixture {dir:?} must define `expected_message`")
         }
         (None, issues) => panic!("compatible fixture {dir:?} reported issues: {issues:?}"),

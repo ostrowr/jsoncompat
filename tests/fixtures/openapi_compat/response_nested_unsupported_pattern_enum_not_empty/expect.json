@@ -1,5 +1,5 @@
 {
-  "compatible": false,
+  "status": "incompatible",
   "surfaces": [
     "Response"
   ],

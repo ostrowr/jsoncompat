@@ -4,3 +4,5 @@
 .dev.vars*
 .venv
 __pycache__/
+
+/wasm/pkg*/

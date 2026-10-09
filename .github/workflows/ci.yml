@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   actionlint:
     name: actionlint
@@ -113,6 +116,20 @@ jobs:
           uv sync --project pybindings --all-extras --locked --no-install-project
           cargo build -p jsoncompat_py --locked
           UV_NO_SYNC=1 cargo test --locked --test python_dataclasses_prepared --test python_dataclasses_differential --test python_dataclasses_runtime --test codegen_cli
+
+  rust-packages:
+    name: Package and verify Rust release crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
+        with:
+          toolchain: stable
+      # Cargo stages workspace packages in a temporary registry and builds the
+      # archives against one another, without workspace path/git dependencies.
+      - name: Build every published archive
+        run: cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked --target-dir "$(mktemp -d)"
 
   python-linux:
     runs-on: ${{ matrix.platform.runner }}
@@ -259,7 +276,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [python-linux, python-musllinux, python-windows, python-macos, python-sdist]
+    needs: [actionlint, rust, rust-packages, python-linux, python-musllinux, python-windows, python-macos, python-sdist]
     permissions:
       # Use to sign the release artifacts
       id-token: write
@@ -319,6 +336,9 @@ jobs:
             wasm-pack build wasm --release --target "$target" --out-dir "pkg-$target"
           done
 
+      - name: Exercise structured WebAssembly verdicts
+        run: node wasm/tests/verdicts.mjs
+
       - name: Prepare distribution directory
         run: |
           mkdir -p dist/js
@@ -342,7 +362,7 @@ jobs:
     name: Release wasm package
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: wasm
+    needs: [actionlint, rust, rust-packages, wasm]
     permissions:
       # Used to upload release artifacts
       contents: write
@@ -448,7 +468,7 @@ jobs:
     name: Release CLI binaries
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    needs: cli
+    needs: [actionlint, rust, rust-packages, cli]
     permissions:
       contents: write
       attestations: write
@@ -483,3 +503,42 @@ jobs:
           else
             gh release create "$tag" "${assets[@]}" --repo "$repo" --verify-tag --title "$tag" --notes ""
           fi
+
+  python-performance:
+    name: Generated model performance report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: pybindings
+      PYTHONHASHSEED: '0'
+      JSONCOMPAT_NATIVE_PROFILE: release
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install uv
+          uv sync --project pybindings --all-extras --group benchmark --locked --no-install-project
+      - name: Build release runtime and CLI
+        run: cargo build --release -p jsoncompat -p jsoncompat_py --locked
+      # Shared runners report timing samples instead of enforcing a noisy wall-
+      # clock ratio. Controlled release runs use the same scripts --assert-target.
+      - name: Measure validated round trips and unique package startup
+        run: |
+          uv run --no-sync --project pybindings python pybindings/bench_dataclasses_codegen.py --iterations 2000 --tree-iterations 50 --repeats 5 --startup-repeats 3
+          uv run --no-sync --project pybindings python pybindings/bench_dataclasses_codegen_large.py --repeats 3 --startup-repeats 2
+          uv run --no-sync --project pybindings python pybindings/bench_dataclasses_imports.py --classes 256 --memory-mib 1024
+      - name: Upload timing samples and provenance
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: python-performance
+          path: |
+            target/python-codegen/benchmark.json
+            target/python-codegen/large/benchmark.json
+            target/python-codegen/unique-imports/report.json

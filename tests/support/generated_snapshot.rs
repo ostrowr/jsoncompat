@@ -10,6 +10,14 @@ pub fn assert_split_snapshot(schema: &Value, output: &Path) {
     let implementation = module.private_file();
     let stem = output.file_stem().unwrap().to_str().unwrap();
     let companion = format!("_{stem}_generated");
+    if std::env::var_os("JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES").is_some() {
+        fs::write(output, module.public_file(&companion)).unwrap();
+        fs::write(
+            output.with_file_name(format!("{companion}.py")),
+            &implementation,
+        )
+        .unwrap();
+    }
     assert_eq!(
         module.public_file(&companion),
         fs::read_to_string(output).unwrap().replace("\r\n", "\n"),
