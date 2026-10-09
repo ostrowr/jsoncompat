@@ -232,7 +232,7 @@ entrypoints.
 
 `just release` dry-runs the patch-release flow.
 
-PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. `just check-packages` builds every publishable archive using Cargo’s staged registry; CI runs the same gate before release. Merging to `main` deploys the website.
+PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. `just check-packages` builds every publishable archive using Cargo’s staged registry. Publishing jobs require the Rust test matrix, archive verification, workflow linting, and their respective artifact builds to succeed. Merging to `main` deploys the website.
 
 The Python wheel release jobs target CPython 3.12–3.15, including the
 free-threaded 3.14t builds, on Linux (manylinux and musllinux), Windows, and

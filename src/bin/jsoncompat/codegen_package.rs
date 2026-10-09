@@ -1,5 +1,5 @@
 //! Build a readable Python package with shared class identities and cached
-//! prepared programs. Nothing is imported or compiled by the application.
+//! prepared programs. Model compilation happens here, before application startup.
 use super::codegen::write_atomic;
 use anyhow::{Context, Result, bail, ensure};
 use jsoncompat::{OpenApiDocument, SchemaDocument, SchemaOptions};
