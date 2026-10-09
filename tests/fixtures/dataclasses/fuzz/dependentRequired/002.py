@@ -48,18 +48,18 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xdaM\x8b;\x0a\x800\x10D{O\x11\xb6\xb6\xb0\xf6\x14b+\x16jF\x88`~&\xa0\x84\xdc\xdd5"\xd8,\xfb\xde\xcc\xa4J\x08\x92\xb0\xd0\x12:\xf4pQyHjE\xe2\x80#\x17\xe3\xc94\x14b\x9e\'O\xf5\x07\xab1T\xfe\x91o~4\xedJw\xdeX\xf8\xa0p\xf0\xb0)\xd6\xfeUz\x9b\xe1\xb2`"3oX\x02U\xf9\x06+F%\xc2', _namespace)
     dc.install_model(GeneratedSchemaItem, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"dependencies":[["quux",["foo","bar"]]]}]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"dependencies":[["quux",["foo","bar"]]]}]}],"patterns":[]}'),
         ('union', (2, 4, 6, 7, 8, 9, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"dependencies":[["quux",["bar","foo"]]]}]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"dependencies":[["quux",["bar","foo"]]]}]}],"patterns":[]}'),
         ("any",),
         ('list', 5),
-        ('root', GeneratedSchemaItem, 3, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaItem, 3, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
         ("str",),
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":3,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
+    ], b'{"version":4,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

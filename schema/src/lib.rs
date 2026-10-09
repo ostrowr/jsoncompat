@@ -10,7 +10,9 @@
 mod ast;
 mod canonicalize;
 mod constraints;
+mod decimal;
 mod exact;
+pub use decimal::Decimal;
 mod options;
 pub use options::SchemaOptions;
 mod references;
@@ -20,6 +22,7 @@ pub use exact::ExactNumber;
 pub use validation::ValidationConstraint;
 mod json_semantics;
 mod schema_children;
+mod semantic_assertions;
 
 mod schema_metadata;
 
@@ -122,11 +125,13 @@ fn compile_schema_value(schema: &Value) -> Result<JSONSchema, CompileError> {
     // compilation errors borrow the rejected schema fragment. Convert those
     // failures into owned errors before returning so callers do not need to
     // keep the original `Value` alive.
-    options::configure(exact::configure(jsonschema::draft202012::options()))
-        .build(schema)
-        .map_err(|source| CompileError::ValidatorRejectedSchema {
-            source: Box::new(owned_validation_error(source)),
-        })
+    options::configure(semantic_assertions::configure(exact::configure(
+        jsonschema::draft202012::options(),
+    )))
+    .build(schema)
+    .map_err(|source| CompileError::ValidatorRejectedSchema {
+        source: Box::new(owned_validation_error(source)),
+    })
 }
 
 fn owned_validation_error(

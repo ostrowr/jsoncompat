@@ -56,18 +56,18 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xda\x95\xcb=\x0e\x80 \x0c\x86\xe1\x9dS\x90\xce\x0c\xce\x9e\xc2\x03\xb0\x88)\x09&\xfc\xa4\xe2`\x08w\x17\x8dAG;\xf6\xe9\xfb\x15!%x\x17&\x8a\x09);\xdc`\x94\x83\xba4}\xa94ifc\xd4\xd9\xcc\xd4\xa5Y>\x12\xb6\x1b\xc2\xee\x0d\x12\xdc\\\xd5\xdb\x07fo\x99=1{`\xf6\xfaO/\x9eM\xffF\xb3\xe2\x92A\xd4\x13\xc9\xf6[\x98', _namespace)
     dc.install_model(GeneratedSchemaItem, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 6)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo\\tbar",1],["foo\\nbar",1],["foo\\fbar",1],["foo\\rbar",1],["foo\\"bar",1],["foo\\\\bar",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo\\tbar",1],["foo\\nbar",1],["foo\\fbar",1],["foo\\rbar",1],["foo\\"bar",1],["foo\\\\bar",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (2, 5, 3, 7, 8, 9, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (("foo\tbar", "foo_bar", 3, True), ("foo\nbar", "foo_bar2", 3, True), ("foo\fbar", "foo_bar3", 3, True), ("foo\rbar", "foo_bar4", 3, True), ("foo\"bar", "foo_bar5", 3, True), ("foo\\bar", "foo_bar6", 3, True),), 4, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["foo\\tbar",1],["foo\\nbar",1],["foo\\fbar",1],["foo\\rbar",1],["foo\\"bar",1],["foo\\\\bar",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (("foo\tbar", "foo_bar", 3, True), ("foo\nbar", "foo_bar2", 3, True), ("foo\fbar", "foo_bar3", 3, True), ("foo\rbar", "foo_bar4", 3, True), ("foo\"bar", "foo_bar5", 3, True), ("foo\\bar", "foo_bar6", 3, True),), 4, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["foo\\tbar",1],["foo\\nbar",1],["foo\\fbar",1],["foo\\rbar",1],["foo\\"bar",1],["foo\\\\bar",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
         ("any",),
         ('list', 6),
-        ('root', GeneratedSchemaItem, 4, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaItem, 4, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",),
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":3,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,false,false,true,false,false,false,false],"json_keys":[[2,["\\"foo\\\\tbar\\":","\\"foo\\\\nbar\\":","\\"foo\\\\fbar\\":","\\"foo\\\\rbar\\":","\\"foo\\\\\\"bar\\":","\\"foo\\\\\\\\bar\\":"]]]}')
+    ], b'{"version":4,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,false,false,true,false,false,false,false],"json_keys":[[2,["\\"foo\\\\tbar\\":","\\"foo\\\\nbar\\":","\\"foo\\\\fbar\\":","\\"foo\\\\rbar\\":","\\"foo\\\\\\"bar\\":","\\"foo\\\\\\\\bar\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

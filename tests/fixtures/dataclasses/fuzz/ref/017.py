@@ -58,13 +58,13 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaN1, _jsoncompat_init_2, b'x\xdam\x8eA\x0e\x820\x10E\xf7\x9c\xa2\x19]\x82C\xbb\xe4\x12\x1e\xc0\xb8\xa8\xd2J\x0c\x14\xd2\xd6\x85!\xbd\xbb-\x8c\x8d\x18V3\xf3\xff\x9b\x9f?\x17\x8c\xc1\xb1U\xdaA\xc3\xe6x\xc4\xd3\xd4yO\xa6\xbbwj\x90Q\x82\xce\xfb\xc95\x88O7\x9aj\x95O\xa3}`k\xa5\xf6(jQW\\ \xf1\xe57@\xf6\xfdY\xc7\xf7\x0b\x09,g\xaf\xf9V%\x17\x0e\xb8\xd4@\xc3!\xdb\x81\xb6\xeb2CI\xfd\xf8\xa6\xdf\xff\xbf\x80--~i\xff\x9eT\xa2\xcdk\xb8)KdA\xf4nV\xf8\x00-oBq', _namespace)
     dc.install_model(GeneratedSchemaN2, _jsoncompat_init_3, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca+\xcdMJ-R\xe2\xaa\x05\x00F\xc3\x06z', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaN0, 1), (GeneratedSchemaN1, 3), (GeneratedSchemaN2, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"all":[2]}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN0, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"all":[2]}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN0, 2, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1]}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaN1, 4, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN1, 4, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
-        ('root', GeneratedSchemaN2, 4, b'{"version":2,"nodes":[{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":3,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,true,false,true],"json_keys":[]}')
+        ('root', GeneratedSchemaN2, 4, b'{"version":3,"nodes":[{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":4,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,true,false,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaN0, GeneratedSchemaN1, GeneratedSchemaN2,), globals())

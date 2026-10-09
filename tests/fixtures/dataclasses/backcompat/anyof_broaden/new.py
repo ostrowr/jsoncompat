@@ -25,11 +25,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdam\x8a;\x0a\xc0 \x10\x05{O\xf1\xd8:\'\xc8%r\x80\x90"\x82\x8a\x85\x8b\xf8)D\xbc\xbb\x8bX\xda\x0c\xcc0]\x01\xf4s{,\xddxE\x80\xbe(\xb9\xb4h\xa4R.\xc9\xb3\xa3\x95\xc7u~\xb8\x06m\xd2~\x84\x9f\x1a\x13\xcbi\x15*', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"any":[1,2]}]},{"types":["string"],"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"any":[1,2]}]},{"types":["string"],"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (2, 3,), None, None),
         ("float",),
         ("str",)
-    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[]}')
+    ], b'{"version":4,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

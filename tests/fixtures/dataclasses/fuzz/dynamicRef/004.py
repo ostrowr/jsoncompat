@@ -70,14 +70,14 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaN2, _jsoncompat_init_3, b'x\xda}\x8fA\x0e\x83 \x10E\xf7\x9e\x82\xd0.\xb5\x03\xb8\xf3\x06=\x06\xadPm\x02\x1a\xa0\x0bc\xb8{\xc1RB\x8cq\xc7\xfc\xff\xfe\xfca\xad\x10\xc2\xd7^H\x8b;\xb4\x86!\x8c\x9a\xe4w4\x8d\x90a\xc6\x17\xd80\xd0\x14\xd7\xd9\xb3\xcfA(\x1e\xed\xc1\xb9\xd9v\x00o;\xe9\xe6\'\xdf&\xf3\x82\xdep\xe9\x80\x11F\x1a\xca \xf1[\xde\xd7\xa9\x8e\x96u\xa3\x13\xca\x16\xc2\xd1\x05\x0c\'\xd3\xe7K\xd4\xa8\xef)I\xb2\xe8\x96Y\xc4 7\x86/\xbbRv\xfa\xc7vG\xb7%\xfd_\xab?\xea!L"\xabD\x1f\xee\xf2_\x10\xd4S\xc9', _namespace)
     dc.install_model(GeneratedSchemaN3, _jsoncompat_init_4, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca+\xcdMJ-R\xe2\xaa\x05\x00F\xc3\x06z', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaN0, 1), (GeneratedSchemaN1, 2), (GeneratedSchemaN2, 4), (GeneratedSchemaN3, 6)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":null,"choices":null,"rules":[{"ref":5}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN0, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN1, 3, b'{"version":2,"nodes":[{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":null,"choices":null,"rules":[{"ref":5}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN0, 2, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN1, 3, b'{"version":3,"nodes":[{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('list', 4),
-        ('root', GeneratedSchemaN2, 5, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN2, 5, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
-        ('root', GeneratedSchemaN3, 5, b'{"version":2,"nodes":[{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":3,"base_nodes":7,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,true,false,true,false,true],"json_keys":[]}')
+        ('root', GeneratedSchemaN3, 5, b'{"version":3,"nodes":[{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":4,"base_nodes":7,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,true,false,true,false,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaN0, GeneratedSchemaN1, GeneratedSchemaN2, GeneratedSchemaN3,), globals())

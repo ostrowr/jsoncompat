@@ -48,18 +48,18 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xda\x8d\x92\xb1\x0e\xc2 \x10\x86w\x9f\xa2a\xee\xd0\xc5\xc5701\xean\x1c\xa8\xbdV\x0c\xd0\x86^\x13I\xd3w\x17\x906\xa0\xa4\xca\xc4\xfd\xff\xdd\x07w0n\xb2\x8c\xd0\xaab\xc8ZI\xf9Y\xb5\x1d(d\xd0\x93]6\x1a\xcf\xb8\xa8;0\x11\x91\x83(A\x11#N\xb9\xad\x12LF\xe9\x85S\xbb\x880\x85\x9a>R\x11\x82\xa9\xd4\xa7\xda\x84\x17\x17f^v\x16\x98\xc3\x02\xc7.9p\xbe\x84W\xbfs\xfc\xdf\xb55\xe5=\xe4\x81\x80j\x80\xbf`\xc9&\xbd\x97h\xd5;\xf3\xc8\xda\xf2\x017$+|\x86 l\xb9\xbdP\x1e\x1d\xbb\xf7N\x91\xe0R\xa5\xa8^\xc3\x0a\xfa<\x80l\xf0n\xb2\xb71w\xd1S\xe0\x1e\x15\x93\xcd\x1a\xf9\xfb7\xb8\xcc\xcd<\xc8\xf7\x8b\x7f\x0e`z\x01\xaf"\x91H', _namespace)
     dc.install_model(GeneratedSchemaItem, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]}],"patterns":[]}'),
         ('union', (2, 4, 3, 7, 8, 9, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4,5,6,8,1]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":7}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}},{"property_names":2}]},{"types":["number"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4,5,6,8,1]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":7}}]},{"types":null,"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":0,"max":5}}]}],"patterns":[]}'),
         ("float",),
         ('list', 5),
-        ('root', GeneratedSchemaItem, 6, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaItem, 6, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
         ("str",),
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":3,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
+    ], b'{"version":4,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

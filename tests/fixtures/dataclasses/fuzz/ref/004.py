@@ -58,12 +58,12 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaB, _jsoncompat_init_2, b'x\xda}\x8dA\x0a\x80 \x10E\xf7\x9dB\xa6\x96\x81\xb4\xed\x12\x9dAk\x0c\xc1B\xcc\x16!\xde\xbd\xc9,\x0a\xa2\xdd\xfc7o\xfe\x84\x821\xa8\x06T\x0b\xb4,P\xa0(\xee\x91\xc2\xb4\x1a\xaf\xad\xc1N\x11m\xea\x0b\xfb\xcd"\x01\xd0\xb3\xc7\x11\x1d$\x1e\xcf5\xc8gA\xe5\xf08\x85\x92\xa77\\\xbc\xdd\xfe\xcf\x95\xd9-\xb2\xffU\x16w\xd1\xfd+}', _namespace)
     dc.install_model(GeneratedSchemaC, _jsoncompat_init_3, b'x\xda}\x8dA\x0a\x80 \x10E\xf7\x9dB\xa6\x96\x81\xb4\xed\x12\x9dAk\x0c\xc1B\xcc\x16!\xde\xbd\xc9,\x0a\xa2\xdd\xfc7o\xe6\x87\x821\xa8\x06T\x0b\xb4,P\xa0(\xee\x91\xc2\xb4\x1a\xaf\xad\xc1N\x11m\xea\x0b\xfb\xcd"\x01\xd0\xb3\xc7\x11\x1d$\x1e\xcf5\xc8\xe7\x83\xca\xe1q\x0a%O5\\\xbc\xdd\xfe\xcf\x95\xd9-\xb2\xff%\xc4\x1d\xd2\x01+~', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaA, 4), (GeneratedSchemaB, 2), (GeneratedSchemaC, 1)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaC, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaB, 3, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaC, 2, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaB, 3, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("int",),
-        ('root', GeneratedSchemaA, 3, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":3,"base_nodes":5,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,true,false,true],"json_keys":[]}')
+        ('root', GeneratedSchemaA, 3, b'{"version":3,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":4,"base_nodes":5,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,true,false,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaA, GeneratedSchemaB, GeneratedSchemaC,), globals())

@@ -26,9 +26,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x95\x8f\xc1\x0a\x830\x0c\x86\xef>E);\xea\xea<\xfa\x12\xdb}\xec\x105\x9d\x93\xae-m:\x10\xf1\xddW\xa7\x85\xe1\xcdK _\xf2\xfd!S\xc6\x18?\xf9\xb6\xc77\xf0\x9a\xf1\x9e\xc8\xfaZ\x88\xc1\x1b]\xac\xf8l\xdcSt\x0e$\x89\xaa\xac\xca\xe2R\x89m?_dP\xea*\xa3z\x8f\x0dc\xd3\xafFl\x9d\xb1\xe8\xe8\x85>\xce\x12\x8d\\\x1a\x13\x01\xb9\x80\x1b\x9b\xb3T\x1fk\x9e\x1e\x8f\xe45\xe0vyyR\x82\xc6\x0f\xa8\x00\x84\xdd\xed\xdf\x96\xa0<\xee\xae\xd2hq\xf9\xdf4\x03\xb6\xc4\xb3\xf9\x0bGsJ!', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (), 1, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"all":[1]},{"any":[3]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":4}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (), 1, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"all":[1]},{"any":[3]}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["bar",2]],"patterns":[],"required":[],"additional":null}},{"unevaluated_properties":4}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[]}'),
         ("any",)
-    ], b'{"version":3,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[[0,[]]]}')
+    ], b'{"version":4,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[[0,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

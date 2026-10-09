@@ -19,4 +19,3 @@ percent-encoding = "2.3"
 regex-automata = "0.4.14"
 regex-syntax = "0.8.11"
 fancy-regex = "0.17.0"
-fraction = { version = "0.15.3", features = ["with-serde-support"] }

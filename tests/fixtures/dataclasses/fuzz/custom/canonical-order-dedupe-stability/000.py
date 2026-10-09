@@ -25,11 +25,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (ColorEnum,) = _models
     dc.install_model(ColorEnum, _jsoncompat_init_0, b'x\xda5\x8d\xbb\x0e\x830\x0cEw\xbe"\x8a:\x96\x9af\xe4W\xaa\x0e<\xccK!A\x8e\x19\x10\xe2\xdfq\x02l\xc7\xc7\xbe\xbe{\xa6\x94~\x85f\xc0\xb9\xd2\xa5\xd2\x03\xf3\x12J\x80)x\x97_\xfa\xe3\xa9\x87\x96\xaa\x8e\xc1\x14\xa6\xc8\xbf\x06\xee\xfbw\x0c\xa3[gI\xfe\x84e"l\x93\x16\xac\xed\x8a\x0fG-\xf4O\x09\x1e\xd9b,k\xbc\xf5\xa4\xd2\x83k\xb1-\xc9\x07\xa6\xd1\xf5:;N\xd4W+\x8a', _namespace)
     dc.bind_module(1, [(ColorEnum, 0)], [
-        ('root', ColorEnum, 1, b'{"version":2,"nodes":[{"types":["string"],"choices":["red","blue","red"],"rules":[]}],"patterns":[]}'),
+        ('root', ColorEnum, 1, b'{"version":3,"nodes":[{"types":["string"],"choices":["red","blue","red"],"rules":[]}],"patterns":[]}'),
         ('literal', ("blue", "red",)),
         ('literal', ("blue",)),
         ('literal', ("red",))
-    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[]}')
+    ], b'{"version":4,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((ColorEnum,), globals())

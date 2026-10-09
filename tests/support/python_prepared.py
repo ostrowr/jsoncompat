@@ -59,6 +59,25 @@ class PreparedTests(unittest.TestCase):
             if not source.name.startswith("_"):
                 cls.modules[source.stem] = _load(source)
 
+    def test_numeric_exponents_never_turn_failed_assertions_into_negations(self):
+        for exponent in (324, 10000, 10001, 2147483648):
+            for negative in (False, True):
+                wire = f"{'-' if negative else ''}1e-{exponent}"
+                for name, schema, expected in (
+                    ("tiny_minimum", {"minimum": 0}, not negative),
+                    ("tiny_not", {"not": {"minimum": 0}}, negative),
+                    ("tiny_if", {"if": {"minimum": 0}, "then": False, "else": True}, negative),
+                    ("tiny_integer", {"type": "integer"}, False),
+                ):
+                    with self.subTest(wire=wire, name=name):
+                        self.assertEqual(jsoncompat.validator_for(json.dumps(schema)).is_valid_json(wire), expected)
+                        model = self.modules[name].JSONCOMPAT_MODEL
+                        if expected:
+                            model.deserialize(wire)
+                        else:
+                            with self.assertRaises(ValueError):
+                                model.deserialize(wire)
+
     def test_no_compiler_or_reflection_at_import_or_first_use(self):
         destination = WORK / "no_compile.py"
         destination.write_bytes((WORK / "constrained.py").read_bytes())

@@ -25,9 +25,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda\x95\x90A\x0e\x820\x10E\xf7\x9c\xa2i\\\x8aE\x96\\\xc2\x03\x18\x16(\x05jj[\xa7e\xa1\x84\xbb;\xad\xd0@\xd4\x187\x93\xce\x9f\x99\xff~:$\x84\xd0\x8d=w\xfcZ\xd1\x82\xd0\xce9c\x0b\xc6.V\xab\xf4%\xef4\xb4\xac\x86\xaaq,\xcf\xf2,\xdd\xe7l\xda\xdf\xfa\xe3J\xcaC\x83\xa7Gl\x08\x19BE\xd9\x806\x1c\x9c\xe0\x16g\xb3\x8az\xa3\xf5J@\xc9\xdd\x0d\xf7l\xeb@\xa8\x96\xc6\xd18\xbd\xc6\xedl\x0a\xfc\xd6\x0b\xe0u\xc4E\xcb\xa9+\x93\xc5\xc1\xcf,\xa7\xea\xf1-\x8b\xea\xa5\xfc?\x897\\\'\xc1Z\x86o\xfa\x90\x01\xd7a\xc1\x8fl\xa1\x1co9\xd0\xe8\x10\xb0\xef\xc8p\xef\x01\xc9\xf8\x04\xcf\xadk\\', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,3]},{"object":{"properties":[["bar",5]],"patterns":[],"required":["bar"],"additional":null}}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":["foo"],"additional":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["baz",4]],"patterns":[],"required":["baz"],"additional":null}}]},{"types":["null"],"choices":null,"rules":[]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"all":[1,3]},{"object":{"properties":[["bar",5]],"patterns":[],"required":["bar"],"additional":null}}]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["foo",2]],"patterns":[],"required":["foo"],"additional":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"object":{"properties":[["baz",4]],"patterns":[],"required":["baz"],"additional":null}}]},{"types":["null"],"choices":null,"rules":[]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
-    ], b'{"version":3,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
+    ], b'{"version":4,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

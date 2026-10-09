@@ -25,11 +25,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda-\xcb1\x0e\x80 \x0c@\xd1\x9dS\x90\xc6Q,2r\x1bT\x94\x18\xa5\x84v1\xc6\xbb\x1b\xa2\xeb\xcf\x7f\xb7\xd2\x1a:\x9eS<\x03x\x0dI\xa4\xb0G\xdc\x99\xb2\xf9\xf2@u\xc3\xa5\x86U\xd0Yg\xcd\xe8\xf0\xff\xfb\x86\xe5*\xb1\xc9\x89\xe8\x88!\x83z^K\x9b\x19\xba', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":["boolean"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":["boolean"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('literal', (False, True,)),
         ('literal', (False,)),
         ('literal', (True,))
-    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[]}')
+    ], b'{"version":4,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

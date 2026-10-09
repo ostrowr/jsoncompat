@@ -58,13 +58,13 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaSlashField, _jsoncompat_init_2, b'x\xda\xab\xe6RPP\xca-\xcd)\xc9,\xc8I\xf5OS\xb2R0\xd4\x01\x09\x95T\x16\xa4\x029J\x99y%\xa9\xe9\xa9EJ\\\xb5\x00\x03\xe1\x0cE', _namespace)
     dc.install_model(GeneratedSchemaTildeField, _jsoncompat_init_3, b'x\xda\xab\xe6RPP\xca-\xcd)\xc9,\xc8I\xf5OS\xb2R0\xd4\x01\x09\x95T\x16\xa4\x029J\x99y%\xa9\xe9\xa9EJ\\\xb5\x00\x03\xe1\x0cE', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaPercentField, 2), (GeneratedSchemaSlashField, 4), (GeneratedSchemaTildeField, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["percent",1],["slash",3],["tilde",4]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":2}]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[["percent",1],["slash",3],["tilde",4]],"patterns":[],"required":[],"additional":null}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":2}]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaPercentField, 3, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaPercentField, 3, b'{"version":3,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("int",),
-        ('root', GeneratedSchemaSlashField, 3, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaTildeField, 3, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":3,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,true,true],"json_keys":[]}')
+        ('root', GeneratedSchemaSlashField, 3, b'{"version":3,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaTildeField, 3, b'{"version":3,"nodes":[{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":4,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,true,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaPercentField, GeneratedSchemaSlashField, GeneratedSchemaTildeField,), globals())

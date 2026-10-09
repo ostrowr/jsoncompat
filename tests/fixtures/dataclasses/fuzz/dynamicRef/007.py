@@ -70,14 +70,14 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaN2, _jsoncompat_init_3, b'x\xda}\x8fA\x0e\x83 \x14D\xf7\x9e\x82\xd0.\xb5\x1fp\xe7\x0dz\x0cR\xa1\xda\x044\xf0\xbb0\x86\xbb\x17,!\xc6\x18w\xcc\xbc\x99\xccg\xad\x08\xa1\xf7^iO;\xb2F\x11\xa5e\xe5\x9d\xa0S:jz\x83-\x06\x96\xd3\xba0\xff\x1a\x94\x91\x09\x0f\x88\xb3\xef\x00>~\xb2\xcd\xdf~L\xee\x0d\xbd\x93\x1aA0\xc1\x1a. \xe7\xb7~\xa8\xf3\x1c\xdf\xcf\x8d\xa8\x8c\xdf\x19g\x17\x08\x9aa(\x97\x98\xd1>s\x93\x15\x13\x97Y\xa5\xa2tN.\x87Qq\xf9\xc7\xf6\x90n#E\xf7UU\xf6N\x1b\xe1\x07\xed\x89N\x10', _namespace)
     dc.install_model(GeneratedSchemaN3, _jsoncompat_init_4, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaN0, 1), (GeneratedSchemaN1, 2), (GeneratedSchemaN2, 4), (GeneratedSchemaN3, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":null,"choices":null,"rules":[{"ref":5}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN0, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN1, 3, b'{"version":2,"nodes":[{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":null,"choices":null,"rules":[{"ref":5}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN0, 2, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[{"ref":4}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN1, 3, b'{"version":3,"nodes":[{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":null,"choices":null,"rules":[{"ref":3}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ('list', 4),
-        ('root', GeneratedSchemaN2, 5, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN3, 6, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN2, 5, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN3, 6, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",)
-    ], b'{"version":3,"base_nodes":7,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,true,false,true,true,false],"json_keys":[]}')
+    ], b'{"version":4,"base_nodes":7,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,true,false,true,true,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaN0, GeneratedSchemaN1, GeneratedSchemaN2, GeneratedSchemaN3,), globals())

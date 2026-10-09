@@ -7,7 +7,7 @@ impl ModelConverterPlan {
         let prepared: PreparedPlan = serde_json::from_slice(bytes).map_err(|error| {
             super::PyValueError::new_err(format!("Invalid prepared model plan: {error}"))
         })?;
-        if prepared.version != 3
+        if prepared.version != 4
             || prepared.base_nodes != self.nodes.len()
             || prepared.conversion_validates.len() != self.nodes.len() + prepared.guard_nodes.len()
         {

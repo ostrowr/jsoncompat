@@ -25,9 +25,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda-\x8cK\x0e@0\x14E\xe7V\xd14\x86xU\x7f\x9b\xb0\x06\xe1\xf9\xc5\xa7i\x9f\x81\x88\xbdSL\xef=\xe7\x9c\x0ec\xdc5\xcd\x80K\xcdK\xc6\x07"eJ\x80\xc9l\xab\xff\xcd\xc1\xa6{hu\xdd\x11H!\x85\x1fJ\xf8y\xcf\xca\xcb>\xd3\xa8f\xac\xba\xc7\x17A(\xa38I\xb3\xbcxO:\x14\xda\xec\xb8\x12\xf6\xa8\xb9s\xdd\x998!8', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[{"multiple_of":{"Rational":["Plus",[[123456789],[1000000000]]]}}]}],"patterns":[],"exact_json_numbers":true}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":["integer"],"choices":null,"rules":[{"multiple_of":"123456789e-9"}]}],"patterns":[],"exact_json_numbers":true}'),
         ("int",)
-    ], b'{"version":3,"base_nodes":2,"guard_nodes":[{"original":1,"guard":{"types":["integer"],"choices":null,"rules":[{"multiple_of":{"Rational":["Plus",[[123456789],[1000000000]]]}}]}}],"guards":[{"owner":0,"field":null,"guard":0}],"conversion_validates":[true,false,false],"json_keys":[]}')
+    ], b'{"version":4,"base_nodes":2,"guard_nodes":[{"original":1,"guard":{"types":["integer"],"choices":null,"rules":[{"multiple_of":"123456789e-9"}]}}],"guards":[{"owner":0,"field":null,"guard":0}],"conversion_validates":[true,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

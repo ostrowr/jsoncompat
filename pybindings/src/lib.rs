@@ -47,6 +47,9 @@ fn validated_python_schema(raw: &JsonValue) -> Result<PythonSchema, String> {
     let mut options = jsonschema::draft202012::options();
     for keyword in [
         "type",
+        "const",
+        "enum",
+        "uniqueItems",
         "minimum",
         "maximum",
         "exclusiveMinimum",

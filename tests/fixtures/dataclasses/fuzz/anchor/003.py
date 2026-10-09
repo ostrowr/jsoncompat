@@ -47,11 +47,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaN0, _jsoncompat_init_1, b'x\xda\x9dN;\x0e\x830\x0c\xdd9E\x94v\x84:\xc9\xc8\x19z\x09T\xf2\xa1\x12\x06\xc5^*\xc4\xdd\x9b\xd0(\xea\xc2\xc2\xe6\xf7\xf3{[#\x84\xbc\x8f\xd6\x91\xec\xc5\x96@\x82\xa8\xea\x9d\xc5h]\xc2\xf2\x06\x87\x0dP\xcb\xb6j\xf4\x0av\x1e\xb2\x1c\x98W\xea\x01\xde\xb4`\xf7\xa3\x1fK\xf40\xc6\xc11\x18eT\xa7\x0d\x14\xff\x91\xdf\xdbR\xa7\xff\xeb\xe6\x09\x9f\x16=\x87D\xaaZ\xc4\x9f\xd5\xe6\x16\xe28\xa1/\xf9\xa6\xfc8\x9bx}\xde\xfe\x05,BI\x03', _namespace)
     dc.install_model(GeneratedSchemaN1, _jsoncompat_init_2, b'x\xda\xab\xe6RPP\xca\xcd\xcc\xf3I\xcdK/\xc9P\xb2R0\xd0\x01\x89\x94T\x16\xa4\x029J\xc5%E\x99y\xe9J\\\xb5\x00\xe4\xcb\x0br', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaN0, 1), (GeneratedSchemaN1, 3)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaN0, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaN0, 2, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",),
-        ('root', GeneratedSchemaN1, 2, b'{"version":2,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
+        ('root', GeneratedSchemaN1, 2, b'{"version":3,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":4,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaN0, GeneratedSchemaN1,), globals())

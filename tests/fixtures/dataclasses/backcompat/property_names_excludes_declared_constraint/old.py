@@ -29,10 +29,10 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdaM\xc91\x0e\x800\x08\x85\xe1\xbd\xa7 \xcc\x9e\xc0\xe3\xd4\xa2\xc1\xa1\x10\xcab\x1a\xee.q0]^\xf2\xbe\x7f\x16\x00T\x13%s\xa6\x81;\xcc\x94\xb4S\xacrk\xd4\x7fJ\xf4G)?\x0e7\xee\x17~\x1c\xb9\xb1\x95\xa5J\xbd\xe9p,\xf1\x02\xc0\xe9\x19g', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (("forbidden", "forbidden", 1, True),), 2, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["forbidden",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("forbidden", "forbidden", 1, True),), 2, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["forbidden",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",),
         ("any",)
-    ], b'{"version":3,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"forbidden\\":"]]]}')
+    ], b'{"version":4,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"forbidden\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

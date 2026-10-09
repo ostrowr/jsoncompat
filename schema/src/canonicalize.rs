@@ -1496,16 +1496,16 @@ fn lower_equal_bounds_to_enum(
         return Ok(None);
     }
     if type_name == "integer"
-        && !crate::exact::decimal(minimum)
+        && !crate::Decimal::from_value(minimum)
             .expect("validated bound")
             .is_integer()
     {
         return Ok(Some(Value::Object(unsatisfiable_object(schema))));
     }
     if let Some(multiple_of) = schema.get("multipleOf")
-        && !(crate::exact::decimal(minimum).expect("validated bound")
-            / crate::exact::decimal(multiple_of).expect("validated divisor"))
-        .is_integer()
+        && !crate::Decimal::from_value(minimum)
+            .expect("validated bound")
+            .is_multiple_of(&crate::Decimal::from_value(multiple_of).expect("validated divisor"))
     {
         return Ok(Some(Value::Object(unsatisfiable_object(schema))));
     }

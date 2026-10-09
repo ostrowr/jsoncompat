@@ -48,13 +48,13 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBranch0, _jsoncompat_init_1, b'x\xdaM\xc8;\x0e\x00\x10\x0c\x00\xd0\xdd)\x9a\xce\x06\xb3S8\x03\xe9@\x82\x86."\xee\xee3\x19\xdf\x9b\x0a\x00s,\xaeU\xa6&\x91:Z0\xfa.\xff5\xd7;\x19LGX}\xa2 \xa8\xd6\x06}$\x13v', _namespace)
     dc.install_model(GeneratedSchemaBranch02, _jsoncompat_init_2, b'x\xdaM\xc8;\x0e\x00\x10\x0c\x00\xd0\xdd)\x9a\xce\x16\xabS8\x03\xe9@\x82\x86."\xee\xee3\x19\xdf\x9b\x0a\x00s,\xaeU\xa6&\x91:Z0\xfa.\xff5\xd7;\x19LGX}\xa2 \xa8\xd6\x06}O\x13w', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch0, 2), (GeneratedSchemaBranch02, 4)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2]}]},{"types":["object"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4]}]},{"types":["object"],"choices":null,"rules":[{"object_length":{"min":1,"max":null}}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2]}]},{"types":["object"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":[{"any":[3,4]}]},{"types":["object"],"choices":null,"rules":[{"object_length":{"min":1,"max":null}}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (2, 4, 5,), None, None),
-        ('model', GeneratedSchemaBranch0, (), 3, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}}]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch0, (), 3, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}}]}],"patterns":[]}'),
         ("any",),
-        ('model', GeneratedSchemaBranch02, (), 3, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":1,"max":null}}]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch02, (), 3, b'{"version":3,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"object_length":{"min":1,"max":null}}]}],"patterns":[]}'),
         ("str",)
-    ], b'{"version":3,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,false,false],"json_keys":[[2,[]],[4,[]]]}')
+    ], b'{"version":4,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,false,false,false],"json_keys":[[2,[]],[4,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch0, GeneratedSchemaBranch02,), globals())

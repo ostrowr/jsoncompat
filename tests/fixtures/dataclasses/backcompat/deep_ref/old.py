@@ -47,11 +47,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaA, _jsoncompat_init_1, b'x\xda}\x8c;\x0e\x80 \x10D{OA\xd0\x92\x04k;\xa9=\x86\x80[\xb8\x1a\xd8\xc6\x10\xee\xee\xe2/T\x16\x9bl\xde\xcc\x9b\xd4\x08!\xbb`\x9d\x1c\x84l\xf5l\x1d \x10l\x18\xb5\x91\xaa\x84\x15\xe2Nb\xc4p\xfc\xde\x1f\xfd\xca\xb3\xba\x0dS\x1b+\xe0d\xd1\xd3\xc2\xb0W/\xa5c\xb7e\'R\x00\xf4\x8f\xde\x94\xcb\'\x19\x80)\xbf', _namespace)
     dc.install_model(GeneratedSchemaB, _jsoncompat_init_2, b'x\xda\xab\xe6RPP\xca\xcd\xcc\xf3I\xcdK/\xc9P\xb2R0\xd0\x01\x89\x94T\x16\xa4\x029J\xc5%E\x99y\xe9J\\\xb5\x00\xe4\xcb\x0br', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaA, 1), (GeneratedSchemaB, 3)], [
-        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaA, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaA, 2, b'{"version":3,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("str",),
-        ('root', GeneratedSchemaB, 2, b'{"version":2,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
+        ('root', GeneratedSchemaB, 2, b'{"version":3,"nodes":[{"types":["string"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":4,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaA, GeneratedSchemaB,), globals())

@@ -81,7 +81,7 @@ impl NodeExt for Node {
                         .as_ref()
                         .map_or_else(
                             || compare_integer(*number, value),
-                            |limit| fraction::BigFraction::from(*number).partial_cmp(limit),
+                            |limit| json_schema_ast::Decimal::from_i64(*number).partial_cmp(limit),
                         )
                         .is_some_and(|order| match order {
                             Ordering::Equal => !exclusive,
@@ -143,7 +143,11 @@ impl<'a> InstanceView<'a> for View<'a> {
     }
     #[inline]
     fn equals(self, value: &Value) -> bool {
-        self.0.equals(value)
+        if value.is_number() || value.is_array() || value.is_object() {
+            json_schema_ast::json_values_equal(&self.0.to_owned(), value)
+        } else {
+            self.0.equals(value)
+        }
     }
     fn to_owned(self) -> Value {
         self.0.to_owned()

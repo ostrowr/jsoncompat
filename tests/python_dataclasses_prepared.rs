@@ -64,6 +64,13 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
             json!({"type": "object", "properties": {"a\"b\\c\n🐲": {"type": "integer"}}, "required": ["a\"b\\c\n🐲"], "additionalProperties": false}),
         ),
     ];
+    schemas.push(("tiny_minimum", json!({"minimum":0})));
+    schemas.push(("tiny_not", json!({"not":{"minimum":0}})));
+    schemas.push((
+        "tiny_if",
+        json!({"if":{"minimum":0},"then":false,"else":true}),
+    ));
+    schemas.push(("tiny_integer", json!({"type":"integer"})));
     schemas.push(("duplicate_oneof", json!({"oneOf":[true,true,true]})));
     schemas.push((
         "duplicate_leaf_oneof",

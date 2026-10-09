@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 pub mod instance;
 use instance::{ArrayView, InstanceRef, InstanceView, NumberView, ObjectView};
+use json_schema_ast::Decimal;
 use num_cmp::NumCmp;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ mod annotations;
 mod pattern;
 use pattern::Pattern;
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const MAX_DEPTH: usize = 512;
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -67,8 +68,7 @@ impl JsonType {
                 .as_number()
                 .is_some_and(|number| match number.serde() {
                     Some(number) if !number.is_i64() && !number.is_u64() => {
-                        exact_instance_number(value)
-                            .is_some_and(|value| value.denom().is_some_and(num_traits::One::is_one))
+                        exact_instance_number(value).is_some_and(|value| value.is_integer())
                     }
                     _ => number.is_integer(),
                 }),
@@ -113,7 +113,7 @@ pub enum Rule {
         max: Option<u64>,
     },
     Unique,
-    MultipleOf(fraction::BigFraction),
+    MultipleOf(Decimal),
     UnevaluatedProperties(NodeId),
     UnevaluatedItems(NodeId),
     Pattern(PatternId),
@@ -132,7 +132,7 @@ pub enum Rule {
     Bound {
         value: Number,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        exact: Option<fraction::BigFraction>,
+        exact: Option<Decimal>,
         lower: bool,
         exclusive: bool,
     },
@@ -180,10 +180,10 @@ impl Node {
     }
 }
 
-fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &fraction::BigFraction) -> bool {
+fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &Decimal) -> bool {
     value.as_number().is_none_or(|number| {
         // Keep machine-sized integer divisibility exact and allocation-free.
-        if divisor.denom().is_some_and(num_traits::One::is_one)
+        if divisor.is_integer()
             && let Some(divisor) = divisor.to_u64().filter(|value| *value != 0)
         {
             if let Some(number) = number.as_i64() {
@@ -193,11 +193,7 @@ fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &fraction::BigFraction
                 return number % divisor == 0;
             }
         }
-        exact_instance_number(value).is_some_and(|number| {
-            (&number / divisor)
-                .denom()
-                .is_some_and(num_traits::One::is_one)
-        })
+        exact_instance_number(value).is_some_and(|number| number.is_multiple_of(divisor))
     })
 }
 
@@ -274,7 +270,7 @@ impl PreparedSchema {
         let exact_json_numbers = builder.nodes.iter().any(|node| {
             node.rules.iter().any(|rule| {
                 matches!(rule, Rule::Bound { exact: Some(_), .. })
-                    || matches!(rule, Rule::MultipleOf(divisor) if !divisor.denom().is_some_and(num_traits::One::is_one))
+                    || matches!(rule, Rule::MultipleOf(divisor) if !divisor.is_integer())
             }) || node
                 .choices
                 .as_ref()
@@ -623,30 +619,14 @@ fn needs_exact_json_number(value: &Value) -> bool {
 
 // Persist exact large/decimal boundaries in the build artifact. Ordinary
 // machine-sized integer constraints keep their allocation-free fast path.
-fn exact_decimal(text: &str) -> Option<fraction::BigFraction> {
-    if let Some((mantissa, exponent)) = text.split_once(['e', 'E']) {
-        let exponent: i32 = exponent.parse().ok()?;
-        if exponent.unsigned_abs() > 10_000 {
-            return None;
-        }
-        let mantissa: fraction::BigFraction = mantissa.parse().ok()?;
-        let power = fraction::BigFraction::from(
-            num_bigint::BigUint::from(10_u8).pow(exponent.unsigned_abs()),
-        );
-        Some(if exponent < 0 {
-            mantissa / power
-        } else {
-            mantissa * power
-        })
-    } else {
-        text.parse().ok()
-    }
+fn exact_decimal(text: &str) -> Option<Decimal> {
+    Decimal::try_from(text.to_owned()).ok()
 }
 
 fn compare_bound<'a>(
     value: impl InstanceView<'a>,
     limit: &Number,
-    exact: Option<&fraction::BigFraction>,
+    exact: Option<&Decimal>,
 ) -> Option<Ordering> {
     let number = value.as_number()?;
     let Some(exact) = exact else {
@@ -656,15 +636,15 @@ fn compare_bound<'a>(
     number.partial_cmp(exact)
 }
 
-fn exact_instance_number<'a>(value: impl InstanceView<'a>) -> Option<fraction::BigFraction> {
+fn exact_instance_number<'a>(value: impl InstanceView<'a>) -> Option<Decimal> {
     let number = value.as_number()?;
     Some(if let Some(value) = number.as_i64() {
-        fraction::BigFraction::from(value)
+        Decimal::from_i64(value)
     } else if let Some(value) = number.as_u64() {
-        fraction::BigFraction::from(value)
+        Decimal::from_u64(value)
     } else {
         match number.big_integer() {
-            Some(value) => fraction::BigFraction::from(value.clone()),
+            Some(value) => exact_decimal(&value.to_string())?,
             // Use the decimal representation of a Python float, just as the
             // public value validator does; preserve raw JSON decimal lexemes.
             _ => exact_decimal(&value.to_owned().to_string())?,
