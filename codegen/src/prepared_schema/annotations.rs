@@ -4,7 +4,9 @@
 //! property or item was evaluated at this instance location; child-instance
 //! annotations never leak into the parent.
 
-use super::{Evaluation, InstanceRef, MAX_DEPTH, NodeId, PreparedSchema, Rule};
+use super::{
+    ArrayView, Evaluation, InstanceView, MAX_DEPTH, NodeId, ObjectView, PreparedSchema, Rule,
+};
 
 #[derive(Clone, Copy)]
 pub(super) enum Location<'a> {
@@ -14,10 +16,10 @@ pub(super) enum Location<'a> {
 
 impl PreparedSchema {
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn evaluates(
+    pub(super) fn evaluates<'a>(
         &self,
         id: NodeId,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         location: Location<'_>,
         depth: usize,
         context: &mut Evaluation,

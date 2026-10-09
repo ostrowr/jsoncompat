@@ -18,6 +18,10 @@ check:
   pnpm --prefix web/jsoncompatdotcom run ci
   pnpm --prefix web/jsoncompatdotcom run build
 
+# Build the packaged dependency closure, including unpublished local versions.
+check-packages:
+  cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked
+
 regen-dataclasses-fixtures:
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas
 

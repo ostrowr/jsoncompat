@@ -943,9 +943,7 @@ version = "0.4.3"
 dependencies = [
  "fancy-regex 0.17.0",
  "fraction",
- "jiter",
  "json_schema_ast",
- "jsonschema 0.45.0",
  "miniz_oxide",
  "num-bigint",
  "num-cmp",
@@ -976,12 +974,14 @@ name = "jsoncompat_py"
 version = "0.4.3"
 dependencies = [
  "anyhow",
+ "fraction",
  "jiter",
  "json_schema_ast",
  "json_schema_fuzz",
  "jsoncompat",
  "jsoncompat_codegen",
  "jsonschema 0.45.0",
+ "num-bigint",
  "pyo3",
  "pyo3-build-config",
  "rand",

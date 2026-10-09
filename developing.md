@@ -42,7 +42,7 @@ The benchmark fixtures under [benches/fixtures](benches/fixtures) are fixed on p
 | `src/` | `jsoncompat` | Compatibility checking and the CLI |
 | `openapi/` | `jsoncompat_openapi` | OpenAPI document validation and lowering into synthetic request/response schemas |
 | `fuzz/` | `json_schema_fuzz` | Schema-guided JSON value generation |
-| `python/` | `jsoncompat_py` | PyO3 bindings |
+| `pybindings/` | `jsoncompat_py` | PyO3 bindings |
 | `wasm/` | `jsoncompat_wasm` | `wasm-bindgen` bindings |
 | `web/` | website | Documentation site and interactive frontend |
 
@@ -225,7 +225,7 @@ The repository has several public-facing READMEs:
 
 - [readme.md](readme.md) is the general end-user entrypoint;
 - [openapi/README.md](openapi/README.md) is the OpenAPI usage guide;
-- [python/README.md](python/README.md), [wasm/README.md](wasm/README.md), [schema/README.md](schema/README.md), and [fuzz/README.md](fuzz/README.md) describe installable packages from a caller's perspective;
+- [pybindings/README.md](pybindings/README.md), [wasm/README.md](wasm/README.md), [schema/README.md](schema/README.md), and [fuzz/README.md](fuzz/README.md) describe installable packages from a caller's perspective;
 - [web/jsoncompatdotcom/README.md](web/jsoncompatdotcom/README.md) only covers running and validating the website locally.
 
 Keep repo architecture, internal invariants, test design, fixture policy, and
@@ -236,7 +236,7 @@ entrypoints.
 
 `just release` dry-runs the patch-release flow.
 
-PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. Merging to `main` deploys the website.
+PyPI and npm releases are triggered in CI by manually dispatching the `CI` workflow on a tag. Cargo publishing is still manual. `just check-packages` builds every publishable archive using Cargo’s staged registry; CI runs the same gate before release. Merging to `main` deploys the website.
 
 The Python wheel release jobs target CPython 3.12–3.15, including the
 free-threaded 3.14t builds, on Linux (manylinux and musllinux), Windows, and
@@ -257,3 +257,5 @@ To run the same source-install check locally with Maturin installed:
 maturin sdist --manifest-path pybindings/Cargo.toml --out target/sdist
 python3 pybindings/tests/check_sdist.py target/sdist/*.tar.gz
 ```
+
+Prepared validation programs use a generic borrowed-value interface in `codegen/src/prepared_schema/instance.rs`. The Python extension implements it for its parser and Python views. The published codegen crate must not depend on the Python validator fork.

@@ -20,5 +20,3 @@ regex-automata = "0.4.14"
 regex-syntax = "0.8.11"
 fancy-regex = "0.17.0"
 fraction = { version = "0.15.3", features = ["with-serde-support"] }
-jiter = "0.15.0"
-jsonschema = { git = "https://github.com/ostrowr/jsonschema", rev = "42dabfa9706d113e7c27bae924d8c27b674a8acf", default-features = false, features = ["jiter"] }

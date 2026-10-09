@@ -7,7 +7,8 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use jsonschema::{InstanceRef, NumberRef};
+pub mod instance;
+use instance::{ArrayView, InstanceRef, InstanceView, NumberView, ObjectView};
 use num_cmp::NumCmp;
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -58,17 +59,19 @@ pub enum JsonType {
 
 impl JsonType {
     #[inline]
-    pub fn accepts(self, value: InstanceRef<'_>) -> bool {
+    pub fn accepts<'a>(self, value: impl InstanceView<'a>) -> bool {
         match self {
             Self::Null => value.is_null(),
             Self::Boolean => value.is_boolean(),
-            Self::Integer => value.as_number().is_some_and(|number| match number {
-                NumberRef::Serde(number) if !number.is_i64() && !number.is_u64() => {
-                    exact_instance_number(value)
-                        .is_some_and(|value| value.denom().is_some_and(num_traits::One::is_one))
-                }
-                _ => number.is_integer(),
-            }),
+            Self::Integer => value
+                .as_number()
+                .is_some_and(|number| match number.serde() {
+                    Some(number) if !number.is_i64() && !number.is_u64() => {
+                        exact_instance_number(value)
+                            .is_some_and(|value| value.denom().is_some_and(num_traits::One::is_one))
+                    }
+                    _ => number.is_integer(),
+                }),
             Self::Number => value.is_number(),
             Self::String => value.is_string(),
             Self::Array => value.is_array(),
@@ -136,67 +139,6 @@ pub enum Rule {
 }
 
 impl Node {
-    /// The parser and writer already know the concrete scalar representation.
-    /// Avoid re-dispatching through all supported instance backends per rule.
-    #[inline]
-    pub fn accepts_jiter_leaf(&self, value: &jiter::JsonValue<'_>) -> bool {
-        match value {
-            jiter::JsonValue::Str(text) => {
-                self.types
-                    .as_ref()
-                    .is_none_or(|types| types.iter().any(|kind| matches!(kind, JsonType::String)))
-                    && self.choices.as_ref().is_none_or(|choices| {
-                        choices
-                            .iter()
-                            .any(|choice| choice.as_str() == Some(text.as_ref()))
-                    })
-                    && self.rules.iter().all(|rule| match rule {
-                        Rule::False => false,
-                        Rule::StringLength { min, max } => string_length_valid(text, *min, *max),
-                        Rule::Bound { .. } | Rule::MultipleOf(_) => true,
-                        _ => unreachable!("leaf guards contain only scalar constraints"),
-                    })
-            }
-            jiter::JsonValue::Int(number) => {
-                self.types.as_ref().is_none_or(|types| {
-                    types
-                        .iter()
-                        .any(|kind| matches!(kind, JsonType::Integer | JsonType::Number))
-                }) && self.choices.as_ref().is_none_or(|choices| {
-                    choices.iter().any(|choice| {
-                        choice.as_number().is_some_and(|choice| {
-                            compare_integer(*number, choice) == Some(Ordering::Equal)
-                        })
-                    })
-                }) && self.rules.iter().all(|rule| match rule {
-                    Rule::False => false,
-                    Rule::Bound {
-                        value,
-                        exact,
-                        lower,
-                        exclusive,
-                    } => exact
-                        .as_ref()
-                        .map_or_else(
-                            || compare_integer(*number, value),
-                            |limit| fraction::BigFraction::from(*number).partial_cmp(limit),
-                        )
-                        .is_some_and(|order| match order {
-                            Ordering::Equal => !exclusive,
-                            Ordering::Greater => *lower,
-                            Ordering::Less => !lower,
-                        }),
-                    Rule::MultipleOf(divisor) => {
-                        multiple_of(InstanceRef::from_jiter(value), divisor)
-                    }
-                    Rule::StringLength { .. } => true,
-                    _ => unreachable!("leaf guards contain only scalar constraints"),
-                })
-            }
-            _ => self.accepts_leaf(InstanceRef::from_jiter(value)),
-        }
-    }
-
     pub fn is_leaf(&self) -> bool {
         self.rules.iter().all(|rule| {
             matches!(
@@ -207,7 +149,7 @@ impl Node {
     }
 
     #[inline]
-    pub fn accepts_leaf(&self, value: InstanceRef<'_>) -> bool {
+    pub fn accepts_leaf_view<'a>(&self, value: impl InstanceView<'a>) -> bool {
         self.types
             .as_ref()
             .is_none_or(|types| types.iter().any(|kind| kind.accepts(value)))
@@ -238,7 +180,7 @@ impl Node {
     }
 }
 
-fn multiple_of(value: InstanceRef<'_>, divisor: &fraction::BigFraction) -> bool {
+fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &fraction::BigFraction) -> bool {
     value.as_number().is_none_or(|number| {
         // Keep machine-sized integer divisibility exact and allocation-free.
         if divisor.denom().is_some_and(num_traits::One::is_one)
@@ -382,11 +324,11 @@ impl PreparedSchema {
         Ok(program)
     }
 
-    pub fn is_valid_instance(&self, value: InstanceRef<'_>) -> bool {
-        value.is_json() && self.is_valid_instance_assuming_json(value)
+    pub fn is_valid_view<'a>(&self, value: impl InstanceView<'a>) -> bool {
+        value.is_json() && self.is_valid_json_view(value)
     }
 
-    pub fn is_valid_instance_assuming_json(&self, value: InstanceRef<'_>) -> bool {
+    pub fn is_valid_json_view<'a>(&self, value: impl InstanceView<'a>) -> bool {
         let mut context = Evaluation::default();
         let valid = self.accepts(NodeId(0), value, 0, &mut context);
         valid && !context.incomplete
@@ -404,10 +346,10 @@ impl PreparedSchema {
         }
     }
 
-    fn accepts(
+    fn accepts<'a>(
         &self,
         id: NodeId,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         depth: usize,
         context: &mut Evaluation,
     ) -> bool {
@@ -478,10 +420,10 @@ impl PreparedSchema {
         valid
     }
 
-    fn accepts_child(
+    fn accepts_child<'a>(
         &self,
         node: NodeId,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         depth: usize,
         context: &mut Evaluation,
     ) -> bool {
@@ -491,10 +433,10 @@ impl PreparedSchema {
         valid
     }
 
-    fn accepts_rule(
+    fn accepts_rule<'a>(
         &self,
         rule: &Rule,
-        value: InstanceRef<'_>,
+        value: impl InstanceView<'a>,
         depth: usize,
         context: &mut Evaluation,
     ) -> bool {
@@ -658,7 +600,7 @@ struct Evaluation {
     incomplete: bool,
 }
 
-fn string_length_valid(value: &str, min: u64, max: Option<u64>) -> bool {
+pub fn string_length_valid(value: &str, min: u64, max: Option<u64>) -> bool {
     if max.is_none() && min <= 1 {
         return min == 0 || !value.is_empty();
     }
@@ -701,8 +643,8 @@ fn exact_decimal(text: &str) -> Option<fraction::BigFraction> {
     }
 }
 
-fn compare_bound(
-    value: InstanceRef<'_>,
+fn compare_bound<'a>(
+    value: impl InstanceView<'a>,
     limit: &Number,
     exact: Option<&fraction::BigFraction>,
 ) -> Option<Ordering> {
@@ -714,15 +656,15 @@ fn compare_bound(
     number.partial_cmp(exact)
 }
 
-fn exact_instance_number(value: InstanceRef<'_>) -> Option<fraction::BigFraction> {
+fn exact_instance_number<'a>(value: impl InstanceView<'a>) -> Option<fraction::BigFraction> {
     let number = value.as_number()?;
     Some(if let Some(value) = number.as_i64() {
         fraction::BigFraction::from(value)
     } else if let Some(value) = number.as_u64() {
         fraction::BigFraction::from(value)
     } else {
-        match number {
-            NumberRef::BigInteger(value) => fraction::BigFraction::from(value.clone()),
+        match number.big_integer() {
+            Some(value) => fraction::BigFraction::from(value.clone()),
             // Use the decimal representation of a Python float, just as the
             // public value validator does; preserve raw JSON decimal lexemes.
             _ => exact_decimal(&value.to_owned().to_string())?,
@@ -730,8 +672,8 @@ fn exact_instance_number(value: InstanceRef<'_>) -> Option<fraction::BigFraction
     })
 }
 
-fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
-    if let NumberRef::Serde(number) = value
+fn compare_number<'a>(value: impl NumberView<'a>, limit: &Number) -> Option<Ordering> {
+    if let Some(number) = value.serde()
         && !number.is_i64()
         && !number.is_u64()
     {
@@ -750,7 +692,7 @@ fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
             }
         }};
     }
-    if let NumberRef::BigInteger(value) = value {
+    if let Some(value) = value.big_integer() {
         if let Some(value) = value.to_i64() {
             return compare!(value);
         }
@@ -774,7 +716,7 @@ fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
     }
 }
 
-fn compare_integer(value: i64, limit: &Number) -> Option<Ordering> {
+pub fn compare_integer(value: i64, limit: &Number) -> Option<Ordering> {
     if let Some(limit) = limit.as_i64() {
         Some(value.cmp(&limit))
     } else if let Some(limit) = limit.as_u64() {
@@ -1182,11 +1124,7 @@ mod tests {
                         },
                     ] {
                         program.nodes[0].rules = vec![rule];
-                        assert!(
-                            !program.is_valid_instance_assuming_json(InstanceRef::from_serde(
-                                &Value::Null
-                            ))
-                        );
+                        assert!(!program.is_valid_json_view(InstanceRef::from_serde(&Value::Null)));
                     }
                 }
             })

@@ -6,8 +6,8 @@
 //! `ValueError`.
 
 mod model_converter;
+mod prepared_schema;
 mod unicode;
-use jsoncompat_codegen::prepared_schema;
 
 use std::collections::HashSet;
 use std::rc::Rc;

@@ -1,7 +1,7 @@
 //! Build-time proof that conversion checks imply schema validation.
 use super::plan::{ConversionNode, ModelConverterPlan, NodeId, ScalarKind};
+use crate::prepared_schema::instance::{InstanceRef as JsonInstanceRef, InstanceView};
 use crate::prepared_schema::{JsonType, NodeId as SchemaNodeId, PreparedSchema, Rule};
-use jsonschema::InstanceRef as JsonInstanceRef;
 use std::collections::HashSet;
 
 impl ModelConverterPlan {

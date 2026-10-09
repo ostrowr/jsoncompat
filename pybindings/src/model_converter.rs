@@ -28,7 +28,7 @@ use pyo3::types::{
 #[cfg(not(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED)))))]
 use pyo3::{exceptions::PyAttributeError, types::PyModule};
 
-use super::prepared_schema::PreparedSchema;
+use super::prepared_schema::{NodeExt, PreparedSchema};
 
 mod prepared;
 mod streaming;

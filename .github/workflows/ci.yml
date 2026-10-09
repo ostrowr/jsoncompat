@@ -114,6 +114,20 @@ jobs:
           cargo build -p jsoncompat_py --locked
           UV_NO_SYNC=1 cargo test --locked --test python_dataclasses_prepared --test python_dataclasses_differential --test python_dataclasses_runtime --test codegen_cli
 
+  rust-packages:
+    name: Package and verify Rust release crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # stable
+        with:
+          toolchain: stable
+      # Cargo stages workspace packages in a temporary registry and builds the
+      # archives against one another, without workspace path/git dependencies.
+      - name: Build every published archive
+        run: cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked
+
   python-linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
