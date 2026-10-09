@@ -29,10 +29,10 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdaM\xc91\x0a\x800\x0c\x85\xe1=\xa7\x08\x99=\x81\x97\x11\x9bf\xa8\xa0\x0d1\x0eRrw\x83\x83\xb8<x\xdf?\x00\x91\xd4\xba\x8ay\x93\x93f\x1c)ilR\x9b/\xbcZ\xfd0\xd9o\x95\xfct\\{\x11\xa3\x97#7&\xf8\xd5^6a\'\x88\x07\x02\xc0\x1a ', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('model', GeneratedSchema, (("credit_card", "credit_card", 1, True),), 2, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["credit_card",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchema, (("credit_card", "credit_card", 1, True),), 2, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["credit_card",1]],"patterns":[],"required":[],"additional":null}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
         ("any",)
-    ], b'{"version":2,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"credit_card\\":"]]]}')
+    ], b'{"version":3,"base_nodes":3,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false],"json_keys":[[0,["\\"credit_card\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

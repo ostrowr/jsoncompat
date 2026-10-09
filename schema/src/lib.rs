@@ -70,8 +70,9 @@ pub fn compile(schema: &Value) -> Result<JSONSchema, CompileError> {
     compile_schema_value(prepare_for_validation(schema)?.as_ref())
 }
 
-/// Prepare an equivalent backend input without traversing annotation-only
-/// content references. Referenced resources inside contentSchema remain usable.
+/// Prepare an equivalent backend input with statically resolved resource scopes
+/// and without annotation-only content assertions. Referenced resources inside
+/// contentSchema remain usable.
 pub fn prepare_for_validation(schema: &Value) -> Result<std::borrow::Cow<'_, Value>, CompileError> {
     fn has_content(schema: &Value) -> bool {
         schema.get("contentSchema").is_some()
@@ -79,9 +80,12 @@ pub fn prepare_for_validation(schema: &Value) -> Result<std::borrow::Cow<'_, Val
                 .iter()
                 .any(|(_, child)| has_content(child))
     }
-    if !has_content(schema) {
+    if !has_content(schema) && !references::needs_linking(schema) {
         return Ok(std::borrow::Cow::Borrowed(schema));
     }
+    // Resolve dynamic scope before handing the graph to either backend. Native
+    // dynamic-reference compilation can otherwise discard sibling assertions
+    // (for example prefixItems beside a dynamically overridden reference).
     jsonschema::draft202012::meta::validate(schema).map_err(|source| {
         CompileError::ValidatorRejectedSchema {
             source: Box::new(source.to_owned()),

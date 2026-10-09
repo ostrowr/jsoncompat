@@ -47,11 +47,11 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaA, _jsoncompat_init_1, b'x\xda}\x8b\xb1\x0a\x800\x0cD\xf7~E\x89\x8e\x85\xeen\xf6S\xc4\x142\x18\xa5\xd6AJ\xff\xddDE:9\x1c\x1c\xef\xee\x15c-\xf4\x09#\x0c\x16:?c$\xa6L+\xef>\x80\xd3\xb1A\xf2)\x82\x04\x8e_\xfd\xd1\xef\xbd\xba\xc7\x08\xad\x91\xcf\x0d\xd5\xe0c\x990\xbdG\xa3\xa9\x17\xbb\xa2$G', _namespace)
     dc.install_model(GeneratedSchemaB, _jsoncompat_init_2, b'x\xda\xab\xe6RPP*\xa9,HU\xb2RP\xca+\xcdMJ-R\xe2\xaa\x05\x00F\xc3\x06z', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaA, 1), (GeneratedSchemaB, 3)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaA, 2, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":null,"choices":null,"rules":[{"ref":2}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaA, 2, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"ref":1}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
-        ('root', GeneratedSchemaB, 2, b'{"version":1,"nodes":[{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}')
-    ], b'{"version":2,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
+        ('root', GeneratedSchemaB, 2, b'{"version":2,"nodes":[{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}')
+    ], b'{"version":3,"base_nodes":4,"guard_nodes":[],"guards":[],"conversion_validates":[true,true,false,true],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaA, GeneratedSchemaB,), globals())

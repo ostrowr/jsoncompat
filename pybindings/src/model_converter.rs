@@ -32,6 +32,7 @@ use super::prepared_schema::PreparedSchema;
 
 mod prepared;
 mod streaming;
+pub(crate) use streaming::rounded_integer_float;
 
 // Keep recursive conversion comfortably inside the smallest native thread
 // stacks used by supported platforms. In particular, Windows debug builds can
@@ -1220,7 +1221,11 @@ impl ModelConverterPy {
         py: Python<'_>,
         value: &Bound<'_, PyAny>,
     ) -> PyResult<String> {
-        self.checked_output.set(true);
+        // Ambiguous branch guards need not describe the complete root
+        // language. Let the prepared general program validate emitted JSON
+        // whenever the generator could not prove the complete inline path.
+        self.checked_output
+            .set(self.conversion_validates[self.root.0.0]);
         self.serialize_model_trusted(py, value)
     }
 
@@ -1276,12 +1281,16 @@ impl ModelConverterPy {
         if union_selection != UnionSelection::FirstRepresentable
             && let Some(guard) = &self.leaf_guards[node_id.0]
         {
-            let normalized = self
-                .normalize_output_leaf(py, node, value)?
-                .expect("leaf guard has a scalar converter");
+            let ConversionNode::Scalar { kind } = node else {
+                unreachable!("prepared guards reference scalar converters")
+            };
+            // A wrong scalar type is a branch mismatch, not a raised Python
+            // exception: an enclosing union must still try its other branches.
+            let normalized = convert_scalar(py, *kind, value)?;
             if !guard.accepts_leaf(JsonInstanceRef::from_python(normalized.bind(py))) {
                 return Err(ConversionFailure::Mismatch(ConversionMismatch::Literal));
             }
+            return Ok(normalized);
         }
         if matches!(
             node,

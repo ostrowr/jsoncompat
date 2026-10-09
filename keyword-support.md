@@ -57,10 +57,12 @@ source document. Canonical output uses the reserved extension
 
 ## Practical limits
 
-Numbers use `serde_json`'s signed/unsigned 64-bit integer and finite floating
-point representation. Rational arithmetic is exact for the decimal value of
-that representation; it cannot recover digits rounded by an earlier JSON parse.
-Arbitrary-precision JSON parsing is not enabled.
+JSON input preserves arbitrary-precision decimal numbers. Numeric assertions
+compare their decimal values exactly. Python floats have already been rounded;
+the value API validates their serialized decimal representation. A wire decimal
+can be valid yet round across a bound during Python conversion: deserialization
+accepts the original value, and checked serialization rejects an invalid rounded
+value. It cannot recover digits lost before the API was called.
 
 Unevaluated-location expansion is capped at 128 cases and a depth of 64.
 Resource/dynamic-scope expansion is capped at 4,096 graph instances. General
@@ -80,3 +82,18 @@ The fixtures audit labels independently, compare raw/canonical/IR membership,
 exercise both compatibility directions, and cross-check claimed inclusion
 against composed witness spaces. They are a regression corpus, not a proof of
 exhaustiveness over every possible schema.
+
+Generated Python dataclasses resolve embedded resource identifiers, anchors, and
+dynamic scopes during code generation. Inline guards and the prepared general
+validator share no runtime schema compiler. Asserted formats/custom vocabularies,
+unavailable resources, and unsupported regex operations fail during generation;
+they are never silently converted to annotations. Standard `format` remains an
+annotation. See [the Python runtime details](pybindings/README.md).
+
+The differential E2E suite additionally compares each generated fixture and an
+adversarial schema-composition matrix against validation of the original schema.
+It tests string/bytes decoding, Python-value construction, and checked encoding
+separately, with inline guards enabled and forcibly removed. Test-only poisoned
+programs verify that both paths are actually exercised. Hand-labeled witnesses,
+seeded mutations, exhaustive bounded regex strings, deep invalid model mutations,
+large schemas, and large values supplement the existing fixture corpus.

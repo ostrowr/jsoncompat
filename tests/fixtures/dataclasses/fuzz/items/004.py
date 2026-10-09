@@ -26,13 +26,13 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdam\x8e;\x0e\x80 \x10\x05{OA\x88\xa5\xbaJ\xe9mP\xf1\x97\xa0fY\x0bc\xbc\xbb\xf8\xa3\x10\xca\x9d\x99\x97\xec\x1e1\xc6cS\xf7JK^2\xde\x13-\xa6\x04\x18\xcd<\xa5\x0f\xcef\xec\xa0A\xd9\x12\x88\\\xe4i!\xe0\xed\x93k<\x90\xd2\xc6Nw{xg\x00\x04\x91\x85\xb4-\xea\xfa`Zu\xa5\x90;u$\x91\xd7HD\xb9}\x89\x0bB\xfa\x95\xbe\xba\xc5\x1f\x1f\'\x17JD\xf7', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":["number"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('list', 2),
         ('list', 3),
         ('list', 4),
         ('list', 5),
         ("float",)
-    ], b'{"version":2,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false,false,false],"json_keys":[]}')
+    ], b'{"version":3,"base_nodes":6,"guard_nodes":[],"guards":[],"conversion_validates":[true,false,false,false,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

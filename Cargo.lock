@@ -1047,6 +1047,7 @@ dependencies = [
  "getrandom 0.3.4",
  "idna",
  "itoa",
+ "num-bigint",
  "num-cmp",
  "num-traits",
  "percent-encoding",

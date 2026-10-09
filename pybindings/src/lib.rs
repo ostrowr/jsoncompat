@@ -46,6 +46,7 @@ fn validated_python_schema(raw: &JsonValue) -> Result<PythonSchema, String> {
     let document = validated_schema(raw)?;
     let mut options = jsonschema::draft202012::options();
     for keyword in [
+        "type",
         "minimum",
         "maximum",
         "exclusiveMinimum",
@@ -671,24 +672,40 @@ fn construct_model_json_bytes_checked(
     // Retain arbitrary-precision JSON numbers for schemas with exact bounds.
     // This decision is built into the artifact, never discovered on first use.
     if converter.schema()?.requires_exact_json_numbers() {
-        let exact: JsonValue = serde_json::from_slice(payload)
-            .map_err(|error| PyValueError::new_err(error.to_string()))?;
-        if !converter
-            .schema()?
-            .is_valid_instance_assuming_json(JSONInstanceRef::from_serde(&exact))
-        {
-            return Ok(None);
-        }
+        return construct_exact_model_json(py, payload, converter);
     }
+
     if converter.can_validate_while_parsing() {
         return converter.construct_stream(py, payload, true);
     }
     let parsed =
         JiterJsonValue::parse(payload, false).map_err(|error| map_json_error(payload, &error))?;
+    if model_converter::rounded_integer_float(&parsed) {
+        return construct_exact_model_json(py, payload, converter);
+    }
     // Jiter has already enforced JSON scalar syntax and finite numbers; the
     // model converter that immediately follows rejects duplicate keys at every
     // object node. Avoid repeating those shape checks here.
     converter.construct_jiter_checked(py, &parsed)
+}
+
+fn construct_exact_model_json(
+    py: Python<'_>,
+    payload: &[u8],
+    converter: &ModelConverterPy,
+) -> PyResult<Option<Py<PyAny>>> {
+    let exact: JsonValue = serde_json::from_slice(payload)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    if !converter
+        .schema()?
+        .is_valid_instance_assuming_json(JSONInstanceRef::from_serde(&exact))
+    {
+        return Ok(None);
+    }
+    // Validate the wire value once, before conversion rounds decimal numbers.
+    // Conversion still rejects duplicate keys and non-JSON shapes. Checked
+    // serialization separately validates the actual stored Python value.
+    converter.construct_stream(py, payload, false)
 }
 
 #[pymethods]

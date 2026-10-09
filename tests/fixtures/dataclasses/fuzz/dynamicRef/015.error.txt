@@ -1,1 +1,1 @@
-invalid schema at 'GeneratedSchema': unsupported reference 'http://localhost:1234/draft2020-12/strict-extendible-allof-defs-first.json': only local JSON Pointer $ref targets of the form '#/...'
+invalid schema at 'GeneratedSchema': local $ref 'http://localhost:1234/draft2020-12/extendible-dynamic-ref.json' does not resolve to a schema node in the current document

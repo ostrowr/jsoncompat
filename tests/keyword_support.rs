@@ -425,3 +425,64 @@ fn generation_has_a_configurable_structural_work_budget() {
     let value = ValueGenerator::generate(&schema, GenerationConfig::new(4), &mut rng).unwrap();
     assert_eq!(value, json!(["x"]));
 }
+
+#[test]
+fn raw_decimal_lexemes_preserve_membership_and_numeric_equality() {
+    for (schema, accepted, rejected) in [
+        (
+            json!({"type":"integer"}),
+            "1.0",
+            "1.000000000000000000000000000000001",
+        ),
+        (
+            json!({"type":"number","minimum":1}),
+            "1.0",
+            "0.999999999999999999999999999999999",
+        ),
+        (
+            json!({"type":"number","exclusiveMaximum":0.1}),
+            "0.099999999999999999999999999999999",
+            "0.1",
+        ),
+        (
+            json!({"const":1}),
+            "1.0",
+            "1.000000000000000000000000000000001",
+        ),
+        (
+            json!({"type":"integer","multipleOf":3}),
+            "18446744073709551615",
+            "18446744073709551616",
+        ),
+    ] {
+        membership(
+            schema,
+            &[
+                (serde_json::from_str(accepted).unwrap(), true),
+                (serde_json::from_str(rejected).unwrap(), false),
+            ],
+        );
+    }
+    membership(
+        json!({"type":"array","uniqueItems":true}),
+        &[
+            (
+                serde_json::from_str("[1,1.000000000000000000000000000000001]").unwrap(),
+                true,
+            ),
+            (json!([1, 1.0]), false),
+        ],
+    );
+}
+
+#[test]
+fn dynamic_ref_keeps_sibling_prefix_constraints() {
+    let cases: Value = serde_json::from_str(
+        &std::fs::read_to_string("tests/fixtures/fuzz/unevaluatedItems.json").unwrap(),
+    )
+    .unwrap();
+    membership(
+        cases[18]["schema"].clone(),
+        &[(json!(["foo", "bar"]), true), (json!([null, "bar"]), false)],
+    );
+}

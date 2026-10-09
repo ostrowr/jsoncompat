@@ -17,7 +17,7 @@ mod annotations;
 mod pattern;
 use pattern::Pattern;
 
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const MAX_DEPTH: usize = 512;
 
 #[derive(Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -62,7 +62,13 @@ impl JsonType {
         match self {
             Self::Null => value.is_null(),
             Self::Boolean => value.is_boolean(),
-            Self::Integer => value.as_number().is_some_and(NumberRef::is_integer),
+            Self::Integer => value.as_number().is_some_and(|number| match number {
+                NumberRef::Serde(number) if !number.is_i64() && !number.is_u64() => {
+                    exact_instance_number(value)
+                        .is_some_and(|value| value.denom().is_some_and(num_traits::One::is_one))
+                }
+                _ => number.is_integer(),
+            }),
             Self::Number => value.is_number(),
             Self::String => value.is_string(),
             Self::Array => value.is_array(),
@@ -104,7 +110,7 @@ pub enum Rule {
         max: Option<u64>,
     },
     Unique,
-    MultipleOf(f64),
+    MultipleOf(fraction::BigFraction),
     UnevaluatedProperties(NodeId),
     UnevaluatedItems(NodeId),
     Pattern(PatternId),
@@ -181,7 +187,7 @@ impl Node {
                             Ordering::Less => !lower,
                         }),
                     Rule::MultipleOf(divisor) => {
-                        multiple_of(InstanceRef::from_jiter(value), *divisor)
+                        multiple_of(InstanceRef::from_jiter(value), divisor)
                     }
                     Rule::StringLength { .. } => true,
                     _ => unreachable!("leaf guards contain only scalar constraints"),
@@ -226,27 +232,30 @@ impl Node {
                         Ordering::Less => !lower,
                     })
                 }),
-                Rule::MultipleOf(divisor) => multiple_of(value, *divisor),
+                Rule::MultipleOf(divisor) => multiple_of(value, divisor),
                 _ => unreachable!("leaf guards contain only scalar constraints"),
             })
     }
 }
 
-fn multiple_of(value: InstanceRef<'_>, divisor: f64) -> bool {
+fn multiple_of(value: InstanceRef<'_>, divisor: &fraction::BigFraction) -> bool {
     value.as_number().is_none_or(|number| {
-        let Some(number) = number.as_f64() else {
-            return false;
-        };
-        if divisor.fract() == 0.0 {
-            return number.fract() == 0.0 && number % divisor == 0.0;
+        // Keep machine-sized integer divisibility exact and allocation-free.
+        if divisor.denom().is_some_and(num_traits::One::is_one)
+            && let Some(divisor) = divisor.to_u64().filter(|value| *value != 0)
+        {
+            if let Some(number) = number.as_i64() {
+                return i128::from(number) % i128::from(divisor) == 0;
+            }
+            if let Some(number) = number.as_u64() {
+                return number % divisor == 0;
+            }
         }
-        if number == 0.0 {
-            return true;
-        }
-        number >= divisor
-            && (fraction::BigFraction::from(number) / fraction::BigFraction::from(divisor))
+        exact_instance_number(value).is_some_and(|number| {
+            (&number / divisor)
                 .denom()
-                .is_none_or(num_traits::One::is_one)
+                .is_some_and(num_traits::One::is_one)
+        })
     })
 }
 
@@ -307,11 +316,10 @@ impl PreparedSchema {
         document
             .validate_source_schema()
             .map_err(|error| error.to_string())?;
-        jsonschema::draft202012::options()
-            .build(document.source_schema_json())
-            .map_err(|error| {
-                format!("schema failed Draft 2020-12 validator compilation: {error}")
-            })?;
+        let linked = document
+            .linked_schema_json()
+            .map_err(|error| error.to_string())?;
+        let schema = linked.as_ref();
         let mut builder = Builder {
             root: schema,
             nodes: Vec::new(),
@@ -322,13 +330,13 @@ impl PreparedSchema {
         };
         builder.add(schema, "#")?;
         let exact_json_numbers = builder.nodes.iter().any(|node| {
-            node.rules
-                .iter()
-                .any(|rule| matches!(rule, Rule::Bound { exact: Some(_), .. }))
-                || node
-                    .choices
-                    .as_ref()
-                    .is_some_and(|choices| choices.iter().any(needs_exact_json_number))
+            node.rules.iter().any(|rule| {
+                matches!(rule, Rule::Bound { exact: Some(_), .. })
+                    || matches!(rule, Rule::MultipleOf(divisor) if !divisor.denom().is_some_and(num_traits::One::is_one))
+            }) || node
+                .choices
+                .as_ref()
+                .is_some_and(|choices| choices.iter().any(needs_exact_json_number))
         });
         Ok(Self {
             version: VERSION,
@@ -602,7 +610,7 @@ impl PreparedSchema {
             Rule::UnevaluatedProperties(_) | Rule::UnevaluatedItems(_) => {
                 unreachable!("handled at the containing node")
             }
-            Rule::MultipleOf(divisor) => multiple_of(value, *divisor),
+            Rule::MultipleOf(divisor) => multiple_of(value, divisor),
             Rule::Unique => value.as_array().is_none_or(|array| {
                 let mut seen = Vec::with_capacity(array.len());
                 for value in array.iter() {
@@ -702,23 +710,34 @@ fn compare_bound(
     let Some(exact) = exact else {
         return compare_number(number, limit);
     };
-    let number = if let Some(value) = number.as_i64() {
+    let number = exact_instance_number(value)?;
+    number.partial_cmp(exact)
+}
+
+fn exact_instance_number(value: InstanceRef<'_>) -> Option<fraction::BigFraction> {
+    let number = value.as_number()?;
+    Some(if let Some(value) = number.as_i64() {
         fraction::BigFraction::from(value)
     } else if let Some(value) = number.as_u64() {
         fraction::BigFraction::from(value)
     } else {
         match number {
             NumberRef::BigInteger(value) => fraction::BigFraction::from(value.clone()),
-            NumberRef::Float(value) => fraction::BigFraction::from(value),
-            // Preserve arbitrary Python integers and serde decimal numbers;
-            // converting these through f64 loses bits at exclusive boundaries.
+            // Use the decimal representation of a Python float, just as the
+            // public value validator does; preserve raw JSON decimal lexemes.
             _ => exact_decimal(&value.to_owned().to_string())?,
         }
-    };
-    number.partial_cmp(exact)
+    })
 }
 
 fn compare_number(value: NumberRef<'_>, limit: &Number) -> Option<Ordering> {
+    if let NumberRef::Serde(number) = value
+        && !number.is_i64()
+        && !number.is_u64()
+    {
+        return exact_decimal(&number.to_string())?
+            .partial_cmp(&exact_decimal(&limit.to_string())?);
+    }
     macro_rules! compare {
         ($value:expr) => {{
             let value = $value;
@@ -843,7 +862,7 @@ impl Builder<'_> {
         for key in object.keys() {
             if matches!(
                 key.as_str(),
-                "$dynamicRef" | "$recursiveRef" | "$vocabulary"
+                "$dynamicRef" | "$recursiveRef" | "$vocabulary" | "x-jsoncompat-format-assertion"
             ) || (key == "$id" && path != "#")
             {
                 return Err(format!(
@@ -1055,8 +1074,15 @@ impl Builder<'_> {
                 });
             }
         }
-        if let Some(value) = object.get("multipleOf").and_then(Value::as_f64) {
-            node.rules.push(Rule::MultipleOf(value));
+        if let Some(Value::Number(value)) = object.get("multipleOf") {
+            // Canonical integer schemas may spell the implicit integer
+            // lattice as multipleOf: 1. It adds neither validation nor an
+            // annotation, so omit it from the runtime program.
+            if !(value.as_u64() == Some(1) && node.types.as_deref() == Some(&[JsonType::Integer])) {
+                node.rules.push(Rule::MultipleOf(
+                    exact_decimal(&value.to_string()).ok_or("unsupported multipleOf exponent")?,
+                ));
+            }
         }
         if object.get("uniqueItems") == Some(&Value::Bool(true)) {
             node.rules.push(Rule::Unique);
@@ -1069,6 +1095,9 @@ impl Builder<'_> {
             if object.contains_key(min_key) || object.contains_key(max_key) {
                 let min = count(object.get(min_key))?.unwrap_or(0);
                 let max = count(object.get(max_key))?;
+                if min == 0 && max.is_none() {
+                    continue;
+                }
                 node.rules.push(match min_key {
                     "minLength" => Rule::StringLength { min, max },
                     "minItems" => Rule::ArrayLength { min, max },

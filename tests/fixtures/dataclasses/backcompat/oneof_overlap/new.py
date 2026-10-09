@@ -8,7 +8,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 @typing.final
 class GeneratedSchema(dc.DataclassRootModel):
-    root: (str | typing.Literal[False] | typing.Literal[True]) = dc.root_field()
+    root: (float | int | str) = dc.root_field()
 
     __slots__ = ("root",)
 
@@ -23,14 +23,14 @@ def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema,) = _models
-    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdam\x8a1\x0a\xc0 \x10\x04{_\xb1\\\x9d\x17\xe4\x13y@H\x91\xc0%\x04\xe4N\xd4F\xc4\xbf{\x88\xa5\xcd\xc0\x0cS\x1d@*|\xbc\xb4\xe34\x01\xea\xa0\xe5\\\x02[\xa5\x94\xe3/\x1f\x8d\xdc\xb6\xf5\xf3\xa8z\xbeeN\xc6\xcb\xb5\x0e\xe0\xcb\x15{', _namespace)
+    dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda}\x8a1\x0a\x800\x10\x04\xfb\xbcb\xb9\xda\x17\xf8\x09\x1f 6\xc2\x19RxJ<\x8b\x10\xf2\xf7\x1c)R\x854\x033Lv\x00=\xc2\xdbE+v\x13 7Z\xd6\xf4\xb2U\xfa4\x06\xf1\xd4rY\xc6\x8f\xfc\xf7\xc9q\xfe\x04Q\xf6}2\x1e\xaeTqW\x1d\xb8', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2]}]},{"types":["string"],"choices":null,"rules":[]},{"types":["boolean"],"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,2,3]}]},{"types":["string"],"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[]}'),
         ('union', (2, 3, 4,), None, None),
-        ("str",),
-        ('literal', (False,)),
-        ('literal', (True,))
-    ], b'{"version":2,"base_nodes":5,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false],"json_keys":[]}')
+        ("float",),
+        ("int",),
+        ("str",)
+    ], b'{"version":3,"base_nodes":5,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

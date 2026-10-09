@@ -45,21 +45,21 @@ def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
     (GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda-\x8c;\x0e\x80 \x0c\x86wOA\x88\xa3Ze\xf4\x18\xae\xc6\x01\xa5\xbe\x12A\x01\'\xc2\xdd\xad\xe8\xd2\xf4\xfb_!c\x8c\xe7nZ\xf1\x90\xbce|\xf5\xfet-\xc0\xee\x8c.?\xb92v\x01e\xe5\xecA\xd4\xa2.\x1b\x01\x7f\xbex\xcb\x0aO\xd4\x0a\xb5\xef\xf0\xba7\x8b\x8af\x02\x19d\x8d\xd2\x12\xf4\x09\x08gcx\xfa\x07\xba1\x8b\x0f/\xd9"\xff', _namespace)
-    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xdaM\x8e\xb1\x0e\xc20\x0cD\xf7~E\x141R\x122\xf6+\x10+bH\x1b\x97\xa6R\x93\xe0\x98\x01E\xfdw\xdc\x94\xa1\x8b\xe5\xbb{g\xb94B\xc8S\x1e&X\xac\xec\x84\x9c\x88R\xee\x94\x9as\x0c\xedn_"\xbe\x94C;\x922\xda\xe8\xf6j\xd4\x9f?oe\x07\x09\x82\x83@wx\x7f<\x82\xe33\x85\x03\x8ez\x8b,\x1eU\xb0\x1cc\x94u\x7f\xf2\\ky\xf1\xe1\x861\x01\x92\x87\xcc\xac\xaen:Ze\'\xe9\x9b`{0\xf63\x0c$\x9b\xf5\x07\xf1\xf45\x9e', _namespace)
+    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_1, b'x\xdaM\x8b;\x0e\x80 \x10D{NA\xb6\xb6\xb0\xf6\x14\xc6\xd6X\x88\x8c\x09&\x02\xe2Z\x18\xc2\xdd]\xb1\xb1\x99\xcc\x9bOVZ\x93E\x84\xb7\xf0<\xe0\xb8\\\x82\xa5Ng)\xa42s\x12\x18+\x08\xae!P\xf5\x93hi\xde\xf3\xee|\x9fBDb\x87S\xb6mM\xe3?\xca\xdf\x92\xef\x08!\x0af\xc3\xc2\xa4\xca\x03j\xb9"\xb5', _namespace)
     dc.install_model(GeneratedSchemaItem, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 5)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"dependencies":[["bar",["foo"]]]}]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"dependencies":[["bar",["foo"]]]}]}],"patterns":[]}'),
         ('union', (2, 4, 6, 7, 8, 9, 10,), None, None),
-        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"dependencies":[["bar",["foo"]]]},{"object_length":{"min":0,"max":null}}]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (), 3, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}},{"dependencies":[["bar",["foo"]]]}]}],"patterns":[]}'),
         ("any",),
         ('list', 5),
-        ('root', GeneratedSchemaItem, 3, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaItem, 3, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
         ("str",),
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":2,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
+    ], b'{"version":3,"base_nodes":11,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false],"json_keys":[[2,[]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

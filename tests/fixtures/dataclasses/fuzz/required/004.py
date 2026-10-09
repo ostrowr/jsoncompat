@@ -81,24 +81,24 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     dc.install_model(GeneratedSchemaBranch2Proto, _jsoncompat_init_1, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.install_model(GeneratedSchemaBranch2Constructor, _jsoncompat_init_2, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.install_model(GeneratedSchemaBranch2ToString, _jsoncompat_init_3, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
-    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_4, b'x\xdam\xcf\xcd\x0e\x820\x0c\xc0\xf1;OA\x88Gp\x887\x9e\xc2\xc4\xa31\x0b\x8e\x0a#a\x9d]9\x18\xc2\xbb[>\x0eJ<\xf6\xb7\xf5\x9ft\x8c\xe289\x04\xd3B_%e\x9c\xb4\xcc>\x94Ju\x01]\xb6\xf2\x11\xa9Q5UOVE^\xe4\xd9\xa9P\xdb\xfft^\xee\xad\xbb\x10z \xb6\x10$q^\xd4\x7f\xd3("\xa6\xb5(\xa3\xd6BL\x03\xa4+\x1btAF\xc3H\xbf\x0f\x8cW&\xeb\x9aM\x05\xa7\xa5M\xf0\x1a,A-~\xdb\x97\xff4\xf75\x19\xefK\x87\xdf\x1e\xe6\x9b\xf1\xd1\x81\xe1$\x9a>\xe7%O\x95', _namespace)
+    dc.install_model(GeneratedSchemaBranch2, _jsoncompat_init_4, b'x\xdam\xcc\xbb\x0a\x840\x10\x85\xe1\xde\xa7\x08\xa9\xed\xb6\xdb\xa7X\xd8R$`\x1c$\x82\x998\x8e\x85\x88\xef\xee\xf1R\xa8X\x9e\xef\xc0?g\xc6\xd8.\xc4\x9fp"\xd1@\x83\xfd\x9aO\xbei\xba\xd2\x0c\x819\x07Uv\x0e\xa42R~\xb0\xe78`ze\xb9\x1f\xca\x7f\x95\x10\x9bS\x81\xcb\xde\x16\xea\xc7 T\xc3\x8bg\xf9\xa5\xf9\xaca\x96{G\xa7DhX\xaeZ\xf2j\xb3e\x05>\x05<\xac', _namespace)
     dc.install_model(GeneratedSchemaItem, _jsoncompat_init_5, b'x\xda+)*M\x05\x00\x04y\x01\xc1', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0), (GeneratedSchemaBranch2Proto, 3), (GeneratedSchemaBranch2Constructor, 5), (GeneratedSchemaBranch2ToString, 6), (GeneratedSchemaBranch2, 2), (GeneratedSchemaItem, 8)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":["__proto__","toString","constructor"],"additional":null}}]}],"patterns":[]}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":["__proto__","toString","constructor"],"additional":null}}]}],"patterns":[]}'),
         ('union', (2, 7, 9, 10, 11, 12, 13,), None, None),
-        ('model', GeneratedSchemaBranch2, (("__proto__", "field___proto__", 3, False), ("constructor", "constructor", 5, False), ("toString", "toString", 6, False),), 4, b'{"version":1,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["__proto__",1],["constructor",1],["toString",1]],"patterns":[],"required":["__proto__","constructor","toString"],"additional":null}},{"object_length":{"min":3,"max":null}}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaBranch2Proto, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('model', GeneratedSchemaBranch2, (("__proto__", "field___proto__", 3, False), ("constructor", "constructor", 5, False), ("toString", "toString", 6, False),), 4, b'{"version":2,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["__proto__",1],["constructor",1],["toString",1]],"patterns":[],"required":["__proto__","constructor","toString"],"additional":null}},{"object_length":{"min":3,"max":null}}]},{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaBranch2Proto, 4, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("any",),
-        ('root', GeneratedSchemaBranch2Constructor, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
-        ('root', GeneratedSchemaBranch2ToString, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaBranch2Constructor, 4, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaBranch2ToString, 4, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ('list', 8),
-        ('root', GeneratedSchemaItem, 4, b'{"version":1,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
+        ('root', GeneratedSchemaItem, 4, b'{"version":2,"nodes":[{"types":null,"choices":null,"rules":[]}],"patterns":[]}'),
         ("float",),
         ("str",),
         ('literal', (False,)),
         ('literal', (True,)),
         ("null",)
-    ], b'{"version":2,"base_nodes":14,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,true,false,true,true,false,true,false,false,false,false,false],"json_keys":[[2,["\\"__proto__\\":","\\"constructor\\":","\\"toString\\":"]]]}')
+    ], b'{"version":3,"base_nodes":14,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,true,true,false,true,true,false,true,false,false,false,false,false],"json_keys":[[2,["\\"__proto__\\":","\\"constructor\\":","\\"toString\\":"]]]}')
 
 
 _jsoncompat_bind((GeneratedSchema, GeneratedSchemaBranch2Proto, GeneratedSchemaBranch2Constructor, GeneratedSchemaBranch2ToString, GeneratedSchemaBranch2, GeneratedSchemaItem,), globals())

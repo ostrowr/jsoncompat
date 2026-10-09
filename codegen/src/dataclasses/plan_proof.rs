@@ -94,12 +94,13 @@ impl ModelConverterPlan {
                         Rule::All(ids) => ids
                             .iter()
                             .all(|id| self.implies_prepared_schema(node_id, schema, *id, active)),
-                        Rule::Any(ids) => ids
-                            .iter()
-                            .any(|id| self.implies_prepared_schema(node_id, schema, *id, active)),
+                        // Inline output guards must describe the selected
+                        // branch exclusively. With overlapping anyOf branches,
+                        // an instance made on the trusted path can violate its
+                        // selected branch while satisfying another branch.
                         // Equal checks may share a node, but oneOf counts
                         // branch occurrences, including repeated schemas.
-                        Rule::One(ids) => {
+                        Rule::Any(ids) | Rule::One(ids) => {
                             ids.iter().enumerate().any(|(selected_index, selected)| {
                                 self.implies_prepared_schema(node_id, schema, *selected, active)
                                     && ids
@@ -180,6 +181,19 @@ impl ModelConverterPlan {
                             }
                             _ => false,
                         },
+                        Rule::ObjectLength { min, max } => match node {
+                            ConversionNode::Model { fields, extra, .. } => {
+                                fields
+                                    .iter()
+                                    .filter(|field| !field.presence.is_omittable())
+                                    .count() as u64
+                                    >= *min
+                                    && max.is_none_or(|max| {
+                                        extra.is_none() && fields.len() as u64 <= max
+                                    })
+                            }
+                            _ => false,
+                        },
                         Rule::Array { prefix, items } => match node {
                             ConversionNode::List { item } => {
                                 prefix.iter().all(|constraint| {
@@ -223,6 +237,43 @@ impl ModelConverterPlan {
                 .iter()
                 .all(|branch| self.excludes_prepared_schema(*branch, schema, schema_id, active)),
             _ => {
+                let types_disjoint = constraint.types.as_ref().is_some_and(|types| {
+                    if let ConversionNode::Literal { values } = node {
+                        return values.iter().all(|value| {
+                            types
+                                .iter()
+                                .all(|kind| !kind.accepts(JsonInstanceRef::from_serde(value)))
+                        });
+                    }
+                    let node_type = match node {
+                        ConversionNode::Scalar {
+                            kind: ScalarKind::String,
+                        } => Some(JsonType::String),
+                        ConversionNode::Scalar {
+                            kind: ScalarKind::Integer | ScalarKind::Number,
+                        } => Some(JsonType::Number),
+                        ConversionNode::Scalar {
+                            kind: ScalarKind::Boolean,
+                        } => Some(JsonType::Boolean),
+                        ConversionNode::Scalar {
+                            kind: ScalarKind::Null,
+                        } => Some(JsonType::Null),
+                        ConversionNode::List { .. } => Some(JsonType::Array),
+                        ConversionNode::Model { .. } | ConversionNode::Dict { .. } => {
+                            Some(JsonType::Object)
+                        }
+                        _ => None,
+                    };
+                    node_type.is_some_and(|node_type| {
+                        types.iter().all(|kind| {
+                            *kind != node_type
+                                && !matches!(
+                                    (kind, node_type),
+                                    (JsonType::Integer, JsonType::Number)
+                                )
+                        })
+                    })
+                });
                 let literals_disjoint = if let ConversionNode::Literal { values } = node {
                     constraint.choices.as_ref().is_some_and(|choices| {
                         values.iter().all(|value| {
@@ -234,7 +285,8 @@ impl ModelConverterPlan {
                 } else {
                     false
                 };
-                literals_disjoint
+                types_disjoint
+                    || literals_disjoint
                     || constraint.rules.iter().any(|rule| match rule {
                         Rule::False => true,
                         Rule::Ref(child) => {

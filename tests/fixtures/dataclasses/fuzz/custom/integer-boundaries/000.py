@@ -8,7 +8,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 @typing.final
 class GeneratedSchema(dc.DataclassRootModel):
-    root: typing.Literal[9223372036854775806] = dc.root_field()
+    root: int = dc.root_field()
 
     __slots__ = ("root",)
 
@@ -25,9 +25,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xdau\xceA\x0e\x820\x10\x05\xd0=\xa7h\x1a\x97\xe2\xd4\xa9P\xe4\x0e\x1e\xa2\xc1\x11jl!\xed`0\xc6\xbb+\xc8\x96\xed\xcf\xfb?\xff\x9d\x09!w\xa9\xe9\xc8[Y\x0b\xd91\x0f\xa9\x06\xb8\xa7>\xe4\xff\xf8\xd0\xc7\x16\xae\xd1\xde\x18P\xa1\xca\x8f\x08\xab\xdf\xcfe\x9a\x9a\xc7\x98\xdc\x93.vr~\xf4\xbf\x953\xa2\xd6\x06\x95.\xab\xe2dLQ)\xb3P\xef\xc2\xa6(\x17\xc1\xaf\x81\xe6\x1b.0\xb5\x14e\xf6\xf9\x02\x0e$-q', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[{"bound":{"value":9223372036854775806,"lower":true,"exclusive":false}},{"bound":{"value":9223372036854775807,"lower":false,"exclusive":true}}]}],"patterns":[]}'),
-        ('literal', (9223372036854775806,))
-    ], b'{"version":2,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,false],"json_keys":[]}')
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[{"bound":{"value":9223372036854775806,"lower":true,"exclusive":false}},{"bound":{"value":9223372036854775807,"lower":false,"exclusive":true}}]}],"patterns":[]}'),
+        ("int",)
+    ], b'{"version":3,"base_nodes":2,"guard_nodes":[{"original":1,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":9223372036854775806,"lower":true,"exclusive":false}},{"bound":{"value":9223372036854775807,"lower":false,"exclusive":true}}]}}],"guards":[{"owner":0,"field":null,"guard":0}],"conversion_validates":[true,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

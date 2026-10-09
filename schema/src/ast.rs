@@ -193,6 +193,19 @@ impl SchemaDocument {
         })
     }
 
+    /// Resolve embedded resources and dynamic scopes to local JSON Pointers.
+    ///
+    /// Unlike canonicalization, this preserves validation keywords and branch
+    /// multiplicity. Build-time consumers can compile the resulting graph
+    /// without implementing URI resolution or dynamic-scope lookup at runtime.
+    pub fn linked_schema_json(&self) -> Result<std::borrow::Cow<'_, Value>> {
+        if crate::references::needs_linking(&self.raw) {
+            crate::references::link(&self.raw).map(std::borrow::Cow::Owned)
+        } else {
+            Ok(std::borrow::Cow::Borrowed(&self.raw))
+        }
+    }
+
     /// Return the original JSON Schema document supplied at construction time.
     ///
     /// The compatibility crate uses this to detect valid-but-unmodeled
@@ -399,6 +412,13 @@ impl SchemaNode {
                         &Value::String(string_value.to_owned()),
                     )
             }),
+            SchemaNodeKind::Number { .. } | SchemaNodeKind::Integer { .. }
+                if value.is_number() && value.as_i64().is_none() && value.as_u64().is_none() =>
+            {
+                // Preserve decimal lexemes and integers outside machine range.
+                // The ordinary integer path below remains allocation-free.
+                crate::ExactNumber::from_node(self).is_some_and(|number| number.accepts(value))
+            }
             SchemaNodeKind::Number {
                 bounds,
                 multiple_of,

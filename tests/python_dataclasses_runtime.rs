@@ -1948,20 +1948,10 @@ for bad in [dict(value,mapping={1:2}),dict(value,sequence=["x"]),dict(value,choi
 #[test]
 fn unsupported_schemas_fail_during_generation() {
     let error = generate_dataclass_models(&json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://test.json-schema.org/lazy-schema/root",
-        "title": "LazySchema",
-        "type": "array",
-        "items": { "$dynamicRef": "#items" },
-        "$defs": {
-            "foo": {
-                "$dynamicAnchor": "items",
-                "type": "string"
-            }
-        }
+        "type": "array", "items": {"$ref": "https://example.com/unavailable"}
     }))
-    .expect_err("unsupported references must fail before publishing models");
-    assert!(error.to_string().contains("unsupported reference"));
+    .expect_err("unavailable references must fail before publishing models");
+    assert!(error.to_string().contains("reference"));
 }
 
 #[test]

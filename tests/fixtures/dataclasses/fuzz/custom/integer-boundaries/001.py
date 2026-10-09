@@ -25,9 +25,9 @@ def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: d
     (GeneratedSchema,) = _models
     dc.install_model(GeneratedSchema, _jsoncompat_init_0, b'x\xda5\xccK\x0a\x80 \x14\x85\xe1y\xab\x10i\x98\xddt\xd8n\xa4L\x0d|\xa07(\xa2\xbd\x97h\xd3\x8f\xf3\x9f\xbb#\x84\xf6y1\xcaI:\x13j\x10c\x9e\x01\xf6\x1c<\xab<\x86\xa4aMrC\x10\x93\x98\x18\x17\xd0\xf6C\x89\x9d<\xad;\xdc\x17\xf3\x91W\xb1\xbe\x09\xfb\x09\xaf\xa8\xca\xbd\xf5\xa8\xb4J\xb4{^\x9e\xe3#7', _namespace)
     dc.bind_module(1, [(GeneratedSchema, 0)], [
-        ('root', GeneratedSchema, 1, b'{"version":1,"nodes":[{"types":["integer"],"choices":null,"rules":[{"bound":{"value":-1.1,"exact":{"Rational":["Minus",[[11],[10]]]},"lower":true,"exclusive":false}},{"bound":{"value":1.1,"exact":{"Rational":["Plus",[[11],[10]]]},"lower":false,"exclusive":false}}]}],"patterns":[],"exact_json_numbers":true}'),
+        ('root', GeneratedSchema, 1, b'{"version":2,"nodes":[{"types":["integer"],"choices":null,"rules":[{"bound":{"value":-1.1,"exact":{"Rational":["Minus",[[11],[10]]]},"lower":true,"exclusive":false}},{"bound":{"value":1.1,"exact":{"Rational":["Plus",[[11],[10]]]},"lower":false,"exclusive":false}}]}],"patterns":[],"exact_json_numbers":true}'),
         ("int",)
-    ], b'{"version":2,"base_nodes":2,"guard_nodes":[{"original":1,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":-1.1,"exact":{"Rational":["Minus",[[11],[10]]]},"lower":true,"exclusive":false}},{"bound":{"value":1.1,"exact":{"Rational":["Plus",[[11],[10]]]},"lower":false,"exclusive":false}}]}}],"guards":[{"owner":0,"field":null,"guard":0}],"conversion_validates":[true,false,false],"json_keys":[]}')
+    ], b'{"version":3,"base_nodes":2,"guard_nodes":[{"original":1,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":-1.1,"exact":{"Rational":["Minus",[[11],[10]]]},"lower":true,"exclusive":false}},{"bound":{"value":1.1,"exact":{"Rational":["Plus",[[11],[10]]]},"lower":false,"exclusive":false}}]}}],"guards":[{"owner":0,"field":null,"guard":0}],"conversion_validates":[true,false,false],"json_keys":[]}')
 
 
 _jsoncompat_bind((GeneratedSchema,), globals())

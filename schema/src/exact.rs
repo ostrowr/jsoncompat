@@ -41,6 +41,64 @@ pub struct ExactNumber {
 }
 
 impl ExactNumber {
+    /// Recover exact numeric constraints from an ordinary or retained IR node.
+    pub fn from_node(schema: &crate::SchemaNode) -> Option<Self> {
+        use crate::{NumberBound, SchemaNodeKind};
+        use serde_json::json;
+        let mut object = serde_json::Map::new();
+        match schema.kind() {
+            SchemaNodeKind::Validation(constraint) => return constraint.number().cloned(),
+            SchemaNodeKind::Integer {
+                bounds,
+                multiple_of,
+                enumeration,
+            } => {
+                object.insert("type".into(), json!("integer"));
+                if let Some(value) = bounds.lower() {
+                    object.insert("minimum".into(), json!(value));
+                }
+                if let Some(value) = bounds.upper() {
+                    object.insert("maximum".into(), json!(value));
+                }
+                if let Some(value) = multiple_of {
+                    object.insert("multipleOf".into(), json!(value.as_f64()));
+                }
+                if let Some(values) = enumeration {
+                    object.insert("enum".into(), json!(values));
+                }
+            }
+            SchemaNodeKind::Number {
+                bounds,
+                multiple_of,
+                enumeration,
+            } => {
+                object.insert("type".into(), json!("number"));
+                for (bound, inclusive, exclusive) in [
+                    (bounds.lower(), "minimum", "exclusiveMinimum"),
+                    (bounds.upper(), "maximum", "exclusiveMaximum"),
+                ] {
+                    match bound {
+                        NumberBound::Unbounded => {}
+                        NumberBound::Inclusive(value) => {
+                            object.insert(inclusive.into(), json!(value));
+                        }
+                        NumberBound::Exclusive(value) => {
+                            object.insert(exclusive.into(), json!(value));
+                        }
+                    }
+                }
+                if let Some(value) = multiple_of {
+                    object.insert("multipleOf".into(), json!(value.as_f64()));
+                }
+                if let Some(values) = enumeration {
+                    object.insert("enum".into(), json!(values));
+                }
+            }
+            _ => return None,
+        }
+        ExactNumber::from_schema(&object)
+    }
+
     pub fn from_schema(object: &Map<String, Value>) -> Option<Self> {
         if object.keys().any(|key| {
             !matches!(
@@ -286,7 +344,7 @@ pub(crate) fn configure(
             })?;
             let small = bound
                 .to_f64()
-                .filter(|value| value.abs() <= 9_007_199_254_740_991.0);
+                .filter(|value| bound.is_integer() && value.abs() <= 9_007_199_254_740_991.0);
             Ok(Box::new(NumericKeyword {
                 keyword,
                 bound,
@@ -318,14 +376,14 @@ impl jsonschema::Keyword for NumericKeyword {
             }
             if self.keyword != "multipleOf"
                 && let Some(value) = instance
-                    .as_f64()
-                    .filter(|value| value.abs() <= 9_007_199_254_740_991.0)
+                    .as_i64()
+                    .filter(|value| value.unsigned_abs() <= 9_007_199_254_740_991)
             {
                 return match self.keyword {
-                    "minimum" => value >= bound,
-                    "maximum" => value <= bound,
-                    "exclusiveMinimum" => value > bound,
-                    "exclusiveMaximum" => value < bound,
+                    "minimum" => value >= bound as i64,
+                    "maximum" => value <= bound as i64,
+                    "exclusiveMinimum" => value > bound as i64,
+                    "exclusiveMaximum" => value < bound as i64,
                     _ => unreachable!(),
                 };
             }
