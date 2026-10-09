@@ -95,3 +95,24 @@ fn exact_equality_and_divisibility_survive_nested_containers() {
         );
     }
 }
+
+#[test]
+fn numeric_schema_bounds_never_collapse_in_the_proof_graph() {
+    for bound in ["1e-10001", "1e2147483648", "0.10000000000000001"] {
+        let number: Value = serde_json::from_str(bound).unwrap();
+        let raw = json!({"type":"number","minimum":number});
+        let schema = json_schema_ast::SchemaDocument::from_json(&raw).unwrap();
+        for value in [json!(0), json!(1), json!(0.1), number.clone()] {
+            assert_eq!(
+                schema.root().unwrap().accepts_value(&value),
+                schema.is_valid(&value).unwrap(),
+                "bound={bound}, value={value}"
+            );
+            verify(&raw, &value, schema.is_valid(&value).unwrap());
+        }
+        let zero =
+            json_schema_ast::SchemaDocument::from_json(&json!({"type":"number","minimum":0}))
+                .unwrap();
+        assert!(!jsoncompat::check_compat(&schema, &zero, jsoncompat::Role::Serializer).unwrap());
+    }
+}

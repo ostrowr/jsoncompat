@@ -334,8 +334,19 @@ pub(crate) fn needs_exact_number(object: &Map<String, Value>) -> bool {
     .any(|key| {
         object
             .get(key)
-            .and_then(Value::as_f64)
-            .is_some_and(|value| value.abs() > 9_007_199_254_740_991.0)
+            .and_then(Value::as_number)
+            .is_some_and(|number| {
+                let exact = crate::Decimal::from_number(number);
+                number
+                    .as_f64()
+                    .and_then(serde_json::Number::from_f64)
+                    .is_none_or(|rounded| {
+                        exact != crate::Decimal::from_number(&rounded)
+                            || rounded
+                                .as_f64()
+                                .is_some_and(|value| value.abs() > 9_007_199_254_740_991.0)
+                    })
+            })
     })
 }
 
