@@ -20,7 +20,13 @@ check:
 
 # Build the packaged dependency closure, including unpublished local versions.
 check-packages:
-  cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked
+  #!/usr/bin/env bash
+  set -euo pipefail
+  # Cargo caches unpacked staged crates by registry path and version. A fresh
+  # registry path prevents reusing an older archive after same-version edits.
+  package_target=$(mktemp -d "${TMPDIR:-/tmp}/jsoncompat-packages.XXXXXX")
+  trap 'rm -rf "$package_target"' EXIT
+  cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked --target-dir "$package_target"
 
 regen-dataclasses-fixtures:
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas

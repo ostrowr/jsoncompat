@@ -126,7 +126,7 @@ jobs:
       # Cargo stages workspace packages in a temporary registry and builds the
       # archives against one another, without workspace path/git dependencies.
       - name: Build every published archive
-        run: cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked
+        run: cargo package --workspace --exclude jsoncompat_py --exclude jsoncompat_wasm --locked --target-dir "$(mktemp -d)"
 
   python-linux:
     runs-on: ${{ matrix.platform.runner }}
