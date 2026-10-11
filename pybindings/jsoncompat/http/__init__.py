@@ -1,7 +1,9 @@
 """API-scoped OpenAPI requests bound to application-owned HTTP transports."""
 
+from ._binding import PreparedRequest as PreparedRequest
 from ._binding import bind as bind
 from ._binding import bind_async as bind_async
+from ._binding import prepare as prepare
 from ._metadata import API as API
 from ._metadata import AsyncClient as AsyncClient
 from ._metadata import AsyncFetch as AsyncFetch
@@ -19,6 +21,7 @@ from ._metadata import Path as Path
 from ._metadata import Query as Query
 from ._metadata import RawResponse as RawResponse
 from ._metadata import Request as Request
+from ._metadata import RequestOptions as RequestOptions
 from ._metadata import Response as Response
 from ._metadata import ResponseError as ResponseError
 from ._metadata import SecurityRequirement as SecurityRequirement

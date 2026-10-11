@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import types
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import (
@@ -42,9 +42,12 @@ from ._metadata import (
     Query,
     RawResponse,
     Request,
+    RequestOptions,
     Response,
     ResponseError,
+    ResponseT,
 )
+from ._options import apply_options
 from ._parameters import check_header, decode_header, encode_parameter
 
 
@@ -490,9 +493,11 @@ class _SyncClient(Generic[ApiT]):
         self._fetch = fetch
         self._plans = _prepare_api(api)
 
-    def request[R](self, request: Request[ApiT, R], /) -> R:
-        operation = _select(self._api, self._plans, request)
-        return cast(R, operation.decode(self._fetch(operation.encode(request))))
+    def request[R](
+        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+    ) -> R:
+        call = _prepare_request(self._api, self._plans, request, options)
+        return call.decode(self._fetch(call.request))
 
 
 class _AsyncClient(Generic[ApiT]):
@@ -503,14 +508,54 @@ class _AsyncClient(Generic[ApiT]):
         self._fetch = fetch
         self._plans = _prepare_api(api)
 
-    async def request[R](self, request: Request[ApiT, R], /) -> R:
-        operation = _select(self._api, self._plans, request)
-        return cast(R, operation.decode(await self._fetch(operation.encode(request))))
+    async def request[R](
+        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+    ) -> R:
+        call = _prepare_request(self._api, self._plans, request, options)
+        return call.decode(await self._fetch(call.request))
 
 
 def _require_api(api: object) -> None:
     if not isinstance(api, type) or api is API or not issubclass(api, API):
-        raise ContractError("bind expects an explicit generated API class")
+        raise ContractError("expected an explicit generated API class")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedRequest(Generic[ApiT, ResponseT]):
+    """A wire request with its API identity and validated response decoder.
+
+    Create with prepare(). Preparation performs no I/O; decode() can be called
+    after any caller-owned transport returns a buffered RawResponse.
+    """
+
+    api: type[ApiT]
+    request: EncodedRequest
+    _decode: Callable[[RawResponse], ResponseT] = dataclasses.field(repr=False)
+
+    def decode(self, response: RawResponse, /) -> ResponseT:
+        return self._decode(response)
+
+
+def _prepare_request[A: API, R](
+    api: type[A],
+    plans: Mapping[type[DataclassModel], _Operation],
+    request: Request[A, R],
+    options: RequestOptions | None,
+) -> PreparedRequest[A, R]:
+    operation = _select(api, plans, request)
+    encoded = apply_options(operation.encode(request), options)
+    # The registered operation's validated response models define R.
+    return PreparedRequest(
+        api, encoded, cast(Callable[[RawResponse], R], operation.decode)
+    )
+
+
+def prepare[A: API, R](
+    api: type[A], request: Request[A, R], /, *, options: RequestOptions | None = None
+) -> PreparedRequest[A, R]:
+    """Encode a registered request and retain its typed decoder, without I/O."""
+    _require_api(api)
+    return _prepare_request(api, _prepare_api(api), request, options)
 
 
 def bind[A: API](api: type[A], /, *, fetch: Fetch) -> Client[A]:

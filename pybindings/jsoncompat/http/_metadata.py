@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import types
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Generic, Literal, Protocol, TypeVar
+from typing import Generic, Literal, Protocol, TypeVar, cast
 
 from typing_extensions import TypeForm
 
@@ -112,11 +113,15 @@ class Request(DataclassModel, Generic[ApiT, ResponseT]):
 
 
 class Client(Protocol[ApiT]):
-    def request[R](self, request: Request[ApiT, R], /) -> R: ...
+    def request[R](
+        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+    ) -> R: ...
 
 
 class AsyncClient(Protocol[ApiT]):
-    async def request[R](self, request: Request[ApiT, R], /) -> R: ...
+    async def request[R](
+        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+    ) -> R: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +160,55 @@ class EncodedRequest:
     headers: HeaderPairs
     body: bytes | None
     operation: Endpoint
+
+
+def _strings(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise TypeError("expected a sequence of strings")
+    values = tuple(cast(Sequence[object], value))
+    if not all(isinstance(item, str) for item in values):
+        raise TypeError("expected a sequence of strings")
+    return cast(tuple[str, ...], values)
+
+
+def snapshot_pairs(value: object) -> HeaderPairs:
+    if isinstance(value, Mapping):
+        items = tuple(cast(Mapping[object, object], value).items())
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        items = tuple(cast(Sequence[object], value))
+    else:
+        raise TypeError("expected a mapping or sequence of string pairs")
+    result: list[tuple[str, str]] = []
+    for item in items:
+        pair = _strings(item)
+        if len(pair) != 2:
+            raise TypeError("expected pairs of two strings")
+        result.append((pair[0], pair[1]))
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RequestOptions:
+    """Per-call wire overrides. Inputs are snapshotted; the transform runs last.
+
+    Header names match case-insensitively. Extra headers replace existing names;
+    extra query pairs append. Remove query names first to replace their values.
+    Removals affect generated fields, not defaults added later by a transport.
+    """
+
+    extra_headers: Mapping[str, str] | Sequence[tuple[str, str]] = ()
+    remove_headers: Sequence[str] = ()
+    extra_query: Mapping[str, str] | Sequence[tuple[str, str]] = ()
+    remove_query: Sequence[str] = ()
+    transform: Callable[[EncodedRequest], EncodedRequest] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "extra_headers", snapshot_pairs(self.extra_headers))
+        object.__setattr__(self, "remove_headers", _strings(self.remove_headers))
+        object.__setattr__(self, "extra_query", snapshot_pairs(self.extra_query))
+        object.__setattr__(self, "remove_query", _strings(self.remove_query))
+        if self.transform is not None and not callable(self.transform):
+            raise TypeError("transform must be callable")
 
 
 @dataclass(frozen=True, slots=True)

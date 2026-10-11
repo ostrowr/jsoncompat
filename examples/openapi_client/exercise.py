@@ -1,7 +1,7 @@
 """The same typed workflow works with any conforming client."""
 
 from jsoncompat import MISSING
-from jsoncompat.http import AsyncClient, Client
+from jsoncompat.http import AsyncClient, Client, RequestOptions
 from petstore import (
     CreatePet201,
     CreatePetRequest,
@@ -49,7 +49,10 @@ def exercise(client: Client[PetstoreAPI]) -> None:
     assert (
         isinstance(created, CreatePet201) and created.headers.location == "/pets/p_123"
     )
-    found = client.request(GetPetRequest(pet_id="p_123", include_history=False))
+    found = client.request(
+        GetPetRequest(pet_id="p_123", include_history=False),
+        options=RequestOptions(extra_headers={"X-Trace-ID": "sync-example"}),
+    )
     assert isinstance(found, GetPet200)
     assert [pair[1] for pair in found.raw_headers if pair[0].lower() == "x-trace"] == [
         "first",
@@ -122,7 +125,10 @@ async def exercise_async(client: AsyncClient[PetstoreAPI]) -> None:
     assert (
         isinstance(created, CreatePet201) and created.headers.location == "/pets/p_123"
     )
-    found = await client.request(GetPetRequest(pet_id="p_123", include_history=False))
+    found = await client.request(
+        GetPetRequest(pet_id="p_123", include_history=False),
+        options=RequestOptions(extra_headers={"X-Trace-ID": "async-example"}),
+    )
     assert isinstance(found, GetPet200)
     assert [pair[1] for pair in found.raw_headers if pair[0].lower() == "x-trace"] == [
         "first",

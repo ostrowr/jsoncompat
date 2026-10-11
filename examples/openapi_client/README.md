@@ -22,6 +22,7 @@ account, external service, or real credential is needed.
 uv run --project pybindings --group http-examples python examples/openapi_client/aiohttp_client.py
 uv run --project pybindings --group http-examples python examples/openapi_client/httpx_client.py
 uv run --project pybindings --group http-examples python examples/openapi_client/requests_client.py
+uv run --project pybindings --group http-examples python examples/openapi_client/prepared_client.py
 ```
 
 The HTTPX example exercises both synchronous and asynchronous clients.
@@ -47,7 +48,28 @@ with httpx.Client(headers={"Authorization": "Bearer example-token"}) as session:
 
 Run `server.py` separately to use the snippet with a persistent server; it
 prints its dynamically assigned URL. Substitute that URL in the snippet.
-The three runnable examples above handle this automatically.
+The runnable examples above handle this automatically.
+
+## Per-call overrides and transport controls
+
+The sync and async clients accept `options=RequestOptions(...)`. Use
+`extra_headers` to replace headers case-insensitively, `remove_headers` to remove
+generated headers, `extra_query` to append query pairs, and `remove_query` to
+remove existing names before appending. Inputs are snapshotted, duplicates are
+preserved, and changes do not leak into later calls. Removals do not suppress
+headers added subsequently by a session or authentication handler.
+
+For unusual wire changes, `transform` accepts a synchronous function from
+`EncodedRequest` to `EncodedRequest`, applied after those overrides. API identity
+checks, request validation, and the original response decoder remain in place.
+
+[`prepared_client.py`](prepared_client.py) demonstrates the lower-level API:
+`prepare(PetstoreAPI, request, options=...)` returns an immutable typed call,
+`call.request` is sent through a caller-owned fetcher with native HTTPX timeout
+settings, and `call.decode(raw)` validates the response. Preparation performs no
+network I/O; the same call works with a synchronous or asynchronous fetcher.
+Raw responses can also be inspected without decoding. See the
+[full contract](../../pybindings/README.md#per-call-overrides-and-prepared-requests).
 
 ## What the spec exercises
 

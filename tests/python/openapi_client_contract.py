@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import unittest
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
@@ -20,9 +20,11 @@ from jsoncompat.http import (
     Query,
     RawResponse,
     Request,
+    RequestOptions,
     ResponseError,
     bind,
     bind_async,
+    prepare,
 )
 from jsoncompat.http._binding import _prepare_api
 from jsoncompat.http._parameters import decode_header, encode_parameter
@@ -274,7 +276,12 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(len(self.fetch.requests), 1)
         self.assertEqual(len(other_fetch.requests), 1)
         self.assertEqual(
-            tuple(inspect.signature(self.client.request).parameters), ("request",)
+            tuple(inspect.signature(self.client.request).parameters),
+            ("request", "options"),
+        )
+        self.assertIs(
+            inspect.signature(self.client.request).parameters["options"].kind,
+            inspect.Parameter.KEYWORD_ONLY,
         )
 
     def test_security_and_servers_are_metadata(self):
@@ -367,6 +374,239 @@ class BindingTests(unittest.TestCase):
             bind(fetch=self.fetch)
 
 
+class PreparationTests(unittest.TestCase):
+    def setUp(self):
+        self.fetch = Recorder()
+        self.client = bind(api.PetstoreAPI, fetch=self.fetch)
+
+    def test_options_snapshot_mutable_inputs(self):
+        headers = {"X-Trace-ID": "original"}
+        query = [["preview", "true"]]
+        removed = ["Accept"]
+        options = RequestOptions(
+            extra_headers=headers, extra_query=query, remove_headers=removed
+        )
+        headers["X-Trace-ID"] = "changed"
+        query[0][1] = "changed"
+        removed.clear()
+        call = prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x"), options=options)
+        self.assertEqual(call.request.headers, (("X-Trace-ID", "original"),))
+        self.assertEqual(call.request.target, "/pets/x?preview=true")
+        with self.assertRaises(FrozenInstanceError):
+            options.extra_headers = {}
+        with self.assertRaises(FrozenInstanceError):
+            call.request = call.request
+
+    def test_headers_replace_case_insensitively_preserve_repetitions_and_do_not_leak(
+        self,
+    ):
+        request = api.GetPetRequest(pet_id="x", if_none_match='"old"')
+        options = RequestOptions(
+            extra_headers=(
+                ("if-none-match", '"new"'),
+                ("X-Repeat", "a"),
+                ("x-repeat", "b"),
+            ),
+            remove_headers=("ACCEPT", "IF-NONE-MATCH"),
+        )
+        result = self.client.request(request, options=options)
+        self.assertIs(type(result), api.GetPet200)
+        self.assertEqual(self.fetch.requests[-1].headers, options.extra_headers)
+        self.assertEqual(request.if_none_match, '"old"')
+        self.client.request(request)
+        self.assertIn(("If-None-Match", '"old"'), self.fetch.requests[-1].headers)
+        self.assertIn("Accept", dict(self.fetch.requests[-1].headers))
+        self.assertNotIn("X-Repeat", dict(self.fetch.requests[-1].headers))
+
+    def test_query_append_and_remove_preserve_original_encoding(self):
+        request = api.ListPetsRequest(
+            tags=["a&b", "x y"], offset=0, filter=api.PetFilter(species="cat")
+        )
+        original = prepare(api.PetstoreAPI, request).request.target
+        call = prepare(
+            api.PetstoreAPI,
+            request,
+            options=RequestOptions(
+                extra_query=(("tags", "猫 +%/"), ("tags", ""), ("feature name", "a&b"))
+            ),
+        )
+        self.assertEqual(
+            call.request.target,
+            original + "&tags=%E7%8C%AB%20%2B%25%2F&tags=&feature%20name=a%26b",
+        )
+        replaced = prepare(
+            api.PetstoreAPI,
+            request,
+            options=RequestOptions(
+                remove_query=("tags", "offset", "filter[species]"),
+                extra_query={"tags": "new"},
+            ),
+        )
+        self.assertEqual(replaced.request.target, "/pets?tags=new")
+        case_sensitive = prepare(
+            api.PetstoreAPI, request, options=RequestOptions(remove_query=("Tags",))
+        )
+        self.assertEqual(case_sensitive.request.target, original)
+        empty = prepare(
+            api.PetstoreAPI,
+            api.GetPetRequest(pet_id="x", include_history=False),
+            options=RequestOptions(remove_query=("includeHistory",)),
+        )
+        self.assertEqual(empty.request.target, "/pets/x")
+
+    def test_transform_runs_last_and_keeps_the_selected_decoder(self):
+        seen = []
+
+        def transform(request):
+            seen.append(request)
+            return replace(
+                request,
+                method="PATCH",
+                target="/custom?raw=%2f+ok",
+                body=b'{"experimental":true}',
+                headers=request.headers + (("Content-Type", "application/json"),),
+            )
+
+        options = RequestOptions(
+            extra_headers={"X-Trace-ID": "trace"},
+            extra_query={"preview": "true"},
+            remove_headers=("Accept",),
+            transform=transform,
+        )
+        model = api.GetPetRequest(pet_id="x")
+        call = prepare(api.PetstoreAPI, model, options=options)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0].target, "/pets/x?preview=true")
+        self.assertEqual(seen[0].headers, (("X-Trace-ID", "trace"),))
+        self.assertEqual(self.fetch.requests, [])
+        self.assertIs(call.api, api.PetstoreAPI)
+        self.assertEqual(call.request.body, b'{"experimental":true}')
+        self.assertEqual(call.request.target, "/custom?raw=%2f+ok")
+        self.assertIs(type(call.decode(self.fetch(call.request))), api.GetPet200)
+        self.assertIs(type(self.client.request(model, options=options)), api.GetPet200)
+        self.assertEqual(self.fetch.requests[0], self.fetch.requests[1])
+
+    def test_identity_transform_preserves_parameter_encoding(self):
+        model = api.SearchPetsRequest(
+            criteria=api.SearchCriteria(name="a&b"),
+            fields=["name", "species"],
+            x_flags=["a", "b"],
+        )
+        original = prepare(api.PetstoreAPI, model)
+        transformed = prepare(
+            api.PetstoreAPI,
+            model,
+            options=RequestOptions(transform=lambda request: request),
+        )
+        self.assertEqual(transformed.request, original.request)
+        self.assertIn("name|species", transformed.request.target)
+
+    def test_prepared_decoder_validates_after_cache_eviction_and_preserves_raw_failures(
+        self,
+    ):
+        call = prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x"))
+        _prepare_api.cache_clear()
+        self.assertIs(type(call.decode(response())), api.GetPet200)
+        self.assertIs(type(call.decode(response(404, PROBLEM))), api.GetPet404)
+        for raw in (response(599), response(body=b"not json"), response(body=b"{}")):
+            with self.assertRaises(ResponseError) as caught:
+                call.decode(raw)
+            self.assertIs(caught.exception.response, raw)
+        with self.assertRaises(TypeError):
+            call.decode(b"not a RawResponse")
+        self.assertEqual(self.fetch.requests, [])
+
+    def test_identity_and_model_validation_precede_transforms(self):
+        def unexpected(request):
+            self.fail("transform ran before validation")
+
+        options = RequestOptions(transform=unexpected)
+        for model, error in (
+            (other_api.GetPetRequest(pet_id="x"), TypeError),
+            (api.GetPetRequest(pet_id="", skip_validation=True), ValidationError),
+            (api.GetPetRequest, TypeError),
+        ):
+            with self.assertRaises(error):
+                prepare(api.PetstoreAPI, model, options=options)
+        with self.assertRaises(ContractError):
+            prepare(API, api.GetPetRequest(pet_id="x"), options=options)
+
+    def test_invalid_options_fail_before_fetching(self):
+        for kwargs in (
+            {"extra_headers": {"X": 1}},
+            {"extra_query": (("x", None),)},
+            {"extra_headers": ["ab"]},
+            {"remove_headers": "Accept"},
+            {"remove_query": (1,)},
+            {"transform": 1},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(TypeError):
+                RequestOptions(**kwargs)
+        for options in (
+            {},
+            RequestOptions(extra_headers={"Bad Name": "x"}),
+            RequestOptions(extra_headers={"X": "bad\r\nvalue"}),
+            RequestOptions(extra_headers={"X": "猫"}),
+            RequestOptions(remove_headers=("Bad Name",)),
+        ):
+            with (
+                self.subTest(options=options),
+                self.assertRaises((TypeError, ValueError)),
+            ):
+                self.client.request(api.GetPetRequest(pet_id="x"), options=options)
+        self.assertEqual(self.fetch.requests, [])
+
+    def test_malformed_transforms_fail_before_fetching(self):
+        transforms = [
+            lambda request: None,
+            lambda request: replace(
+                request, operation=replace(request.operation, path="/other")
+            ),
+            lambda request: replace(request, method="GET\r\nX"),
+            lambda request: replace(request, body="not bytes"),
+            lambda request: replace(request, headers=(("X", "bad\nvalue"),)),
+        ]
+        for target in (
+            "https://other.example/",
+            "//other.example/",
+            "/a#fragment",
+            "/a b",
+            "/猫",
+            "/bad%",
+            "/bad%2g",
+            "/a/../b",
+            "/bad\\path",
+            "/bad\r\n",
+        ):
+            transforms.append(
+                lambda request, target=target: replace(request, target=target)
+            )
+        for transform in transforms:
+            with (
+                self.subTest(transform=transform),
+                self.assertRaises((TypeError, ValueError)),
+            ):
+                self.client.request(
+                    api.GetPetRequest(pet_id="x"),
+                    options=RequestOptions(transform=transform),
+                )
+        self.assertEqual(self.fetch.requests, [])
+
+    def test_transform_exception_propagates(self):
+        failure = RuntimeError("could not customize")
+
+        def transform(request):
+            raise failure
+
+        with self.assertRaises(RuntimeError) as caught:
+            self.client.request(
+                api.GetPetRequest(pet_id="x"),
+                options=RequestOptions(transform=transform),
+            )
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(self.fetch.requests, [])
+
+
 class ParameterTests(unittest.TestCase):
     def test_path_styles(self):
         cases = [
@@ -449,6 +689,45 @@ class ParameterTests(unittest.TestCase):
 
 
 class AsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_concurrent_options_are_isolated_and_preparation_is_transport_independent(
+        self,
+    ):
+        wires = []
+        gate = asyncio.Event()
+
+        async def fetch(request):
+            wires.append(request)
+            if len(wires) == 2:
+                gate.set()
+            await gate.wait()
+            return response()
+
+        client = bind_async(api.PetstoreAPI, fetch=fetch)
+        model = api.GetPetRequest(pet_id="x")
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                client.request(
+                    model, options=RequestOptions(extra_headers={"X-Trace-ID": "one"})
+                ),
+                client.request(
+                    model, options=RequestOptions(extra_headers={"X-Trace-ID": "two"})
+                ),
+            ),
+            timeout=5,
+        )
+        self.assertTrue(all(type(result) is api.GetPet200 for result in results))
+        self.assertEqual(
+            [dict(wire.headers)["X-Trace-ID"] for wire in wires], ["one", "two"]
+        )
+        call = prepare(api.PetstoreAPI, model)
+        self.assertIs(type(call.decode(await fetch(call.request))), api.GetPet200)
+        self.assertNotIn("X-Trace-ID", dict(wires[-1].headers))
+        with self.assertRaises(TypeError):
+            await client.request(
+                other_api.GetPetRequest(pet_id="x"), options=RequestOptions()
+            )
+        self.assertEqual(len(wires), 3)
+
     async def test_awaited_dispatch_and_typed_response(self):
         requests = []
 

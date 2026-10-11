@@ -384,7 +384,8 @@ class names. At runtime the binder checks exact registered request classes
 before encoding or fetching, including when callers bypass static checking.
 
 `Client[A]` and `AsyncClient[A]` are shared structural protocols. A custom client
-or test double implements `request[R](self, request: Request[A, R], /) -> R`;
+or test double implements
+`request[R](self, request: Request[A, R], /, *, options: RequestOptions | None = None) -> R`;
 there are no generated operation methods or per-service client protocols.
 Sessions, authentication, retries, and cleanup stay outside this interface.
 Generated packages include a `py.typed` marker; include it when publishing them.
@@ -424,6 +425,81 @@ scheme definitions. The binder does not select servers, acquire credentials,
 apply authentication, retry, follow redirects, or close sessions. Configure these
 in the transport. The [complete examples](../examples/openapi_client/README.md)
 show adapters using caller-owned aiohttp, HTTPX, and requests sessions.
+
+### Per-call overrides and prepared requests
+
+Use `RequestOptions` for fields missing from a spec or an exceptional call:
+
+```python
+from jsoncompat.http import RequestOptions
+
+result = client.request(
+    GetPetRequest(pet_id="p_123", include_history=False),
+    options=RequestOptions(
+        extra_headers={"X-Trace-ID": "trace-123"},
+        remove_headers=("Accept",),
+        remove_query=("includeHistory",),
+        extra_query=(("includeHistory", "true"), ("preview", "beta")),
+    ),
+)
+```
+
+The same keyword works on async clients. Header/query inputs accept mappings
+or sequences of string pairs; sequences retain duplicates and order. Options
+snapshot their inputs into immutable tuples, and affect only this call:
+
+- Header removal and replacement match names case-insensitively. Extra headers
+  replace all generated occurrences of the same name and are appended after
+  removal, so an explicit extra wins over removal of that name.
+- Query removals match case-sensitive, decoded wire names, including expanded
+  names such as `filter[species]`. Extra pairs append after removal, with names
+  and values percent-encoded. Remove a name and add new pairs to replace it.
+  Existing query segments retain their exact encoding.
+- Overrides apply after schema validation and serialization. They deliberately
+  permit values outside the request schema. They cannot supply missing required
+  model fields or bypass API registration checks.
+- Removals affect the generated request. Session defaults, authentication, and
+  automatically added headers are controlled by the fetcher and may add them back.
+
+For further customization, `RequestOptions(transform=...)` takes a synchronous
+`Callable[[EncodedRequest], EncodedRequest]`. It runs once, after the overrides
+and before fetching. Use `dataclasses.replace` to change the method, encoded
+origin-relative target, headers, or buffered body. The result is checked for
+valid wire structure and portable ASCII headers; it must retain the original
+`operation` metadata. The selected response contract remains unchanged. Transform
+exceptions propagate unchanged. Authentication requiring a final absolute URL
+or asynchronous credential refresh belongs in the fetcher.
+
+`prepare` exposes encoding and decoding independently of transport I/O:
+
+```python
+from jsoncompat.http import prepare
+
+call = prepare(
+    PetstoreAPI,
+    GetPetRequest(pet_id="p_123"),
+    options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
+)  # PreparedRequest[PetstoreAPI, GetPetResponse]
+
+# Your fetcher defines its own typed transport options.
+raw = await my_fetch(call.request, timeout=5, follow_redirects=False)
+result = call.decode(raw)  # GetPetResponse
+```
+
+Preparation is synchronous and performs no I/O. The immutable result contains
+the explicit API identity (`call.api`), encoded request (`call.request`), and
+the selected operation's validated decoder. A caller may inspect `RawResponse`
+without decoding, or call `decode` later; only decoding promises the typed
+response. Invalid or undeclared responses still raise `ResponseError`, retaining
+the raw response. Both bound clients use this same preparation/decoding path.
+
+See [prepared_client.py](../examples/openapi_client/prepared_client.py) for a
+runnable example with native HTTPX timeout settings. Timeouts, authentication,
+redirects, routing, retries, tracing, and cleanup remain caller-owned. These
+interfaces use buffered bytes; streaming uploads, downloads, and SSE require
+separate transport/lifetime abstractions and are not enabled by a request option.
+
+### Response validation and supported encodings
 
 Response models contain `status`, a typed `body`, typed `headers`, and
 `raw_headers` preserving repeated header values. Responses with content also have

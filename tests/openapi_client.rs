@@ -145,6 +145,7 @@ fn all_example_transports_work_against_the_local_server() {
         "aiohttp_client.py",
         "httpx_client.py",
         "requests_client.py",
+        "prepared_client.py",
         "wire.py",
     ] {
         success(
@@ -162,13 +163,13 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
     success(work.generate(&example(), &["--models-per-module", "1"]));
     success(work.generate_package(&example(), "Petstore", "other_petstore", &[]));
     copy_python_examples(&work.0);
-    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","petstore","other_petstore","transports.py","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py"]}).to_string()).unwrap();
+    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","petstore","other_petstore","transports.py","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py"]}).to_string()).unwrap();
     fs::write(
         work.0.join("valid.py"),
         r#"
 from typing import assert_type
 from petstore import PetstoreAPI, GetPetRequest, GetPetResponse, GetPet200, ListPetsRequest
-from jsoncompat.http import API, AsyncClient, Client, Request, bind, bind_async, EncodedRequest, RawResponse
+from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, RequestOptions, bind, bind_async, prepare, EncodedRequest, RawResponse
 from jsoncompat import MISSING
 
 def fetch(request: EncodedRequest, /) -> RawResponse:
@@ -178,15 +179,23 @@ async def async_fetch(request: EncodedRequest, /) -> RawResponse:
 client = bind(PetstoreAPI, fetch=fetch)
 assert_type(client, Client[PetstoreAPI])
 assert_type(client.request(GetPetRequest(pet_id="a")), GetPetResponse)
+options = RequestOptions(extra_headers={"X-Trace-ID": "trace"}, extra_query=(("preview", "true"),))
+assert_type(client.request(GetPetRequest(pet_id="a"), options=options), GetPetResponse)
+call = prepare(PetstoreAPI, GetPetRequest(pet_id="a"), options=options)
+assert_type(call, PreparedRequest[PetstoreAPI, GetPetResponse])
+assert_type(call.request, EncodedRequest)
+assert_type(call.api, type[PetstoreAPI])
+assert_type(call.decode(fetch(call.request)), GetPetResponse)
 request=ListPetsRequest()
 if request.limit is not MISSING:
     assert_type(request.limit, int)
 async def example() -> GetPetResponse:
     client=bind_async(PetstoreAPI, fetch=async_fetch)
     assert_type(client, AsyncClient[PetstoreAPI])
-    return await client.request(GetPetRequest(pet_id="a"))
+    assert_type(await client.request(GetPetRequest(pet_id="a"), options=options), GetPetResponse)
+    return call.decode(await async_fetch(call.request))
 class Fake:
-    def request[R](self, request: Request[PetstoreAPI, R], /) -> R:
+    def request[R](self, request: Request[PetstoreAPI, R], /, *, options: RequestOptions | None = None) -> R:
         raise NotImplementedError
 reader: Client[PetstoreAPI] = Fake()
 response=reader.request(GetPetRequest(pet_id="a"))
@@ -204,11 +213,11 @@ assert_type(execute(client, GetPetRequest(pet_id="a")), GetPetResponse)
             .unwrap(),
     );
     let invalid = r#"
-from petstore import PetstoreAPI, GetPetRequest, DeletePet204
+from petstore import PetstoreAPI, GetPetRequest, GetPetResponse, DeletePet204
 from other_petstore import PetstoreAPI as OtherAPI, GetPetRequest as OtherRequest
-from jsoncompat.http import API, AsyncClient, Client, Request, Response, bind, operation
+from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, RequestOptions, Response, bind, operation, prepare
 from typing_extensions import TypeForm
-from valid import async_fetch, client, execute, fetch
+from valid import async_fetch, call, client, execute, fetch
 
 bind(PetstoreAPI, fetch=async_fetch)  # must fail
 client.request(GetPetRequest(pet_id=123))  # must fail
@@ -224,6 +233,22 @@ bind(object, fetch=fetch)  # must fail
 client.request(GetPetRequest)  # must fail
 client.get_pet(GetPetRequest(pet_id="x"))  # must fail
 operation(GetPetRequest, TypeForm(DeletePet204), method="DELETE", path="/pets/{petId}", responses=(Response(204, DeletePet204),))  # must fail
+prepare(PetstoreAPI, OtherRequest(pet_id="x"))  # must fail
+prepare(OtherAPI, GetPetRequest(pet_id="x"))  # must fail
+prepare(GetPetRequest(pet_id="x"))  # must fail
+prepared_other: PreparedRequest[OtherAPI, GetPetResponse] = call  # must fail
+prepared_widened: PreparedRequest[API, GetPetResponse] = call  # must fail
+prepared_wrong_response: PreparedRequest[PetstoreAPI, DeletePet204] = call  # must fail
+prepared_bare: PreparedRequest = call  # must fail
+decoded_wrong: DeletePet204 = call.decode(fetch(call.request))  # must fail
+call.decode(b"invalid")  # must fail
+call.request = call.request  # must fail
+RequestOptions(extra_headers={"X-Trace-ID": 123})  # must fail
+RequestOptions(extra_query=(("preview", True),))  # must fail
+RequestOptions(transform=lambda request: "invalid")  # must fail
+RequestOptions(transform=async_fetch)  # must fail
+client.request(GetPetRequest(pet_id="x"), options={"extra_headers": {}})  # must fail
+client.request(GetPetRequest(pet_id="x"), RequestOptions())  # must fail
 async def wrong_async(client: AsyncClient[PetstoreAPI]) -> None:
     await client.request(OtherRequest(pet_id="x"))  # must fail
 "#;
