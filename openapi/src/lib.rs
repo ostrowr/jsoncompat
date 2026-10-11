@@ -6,6 +6,10 @@ mod validation;
 use validation::*;
 mod schema_groups;
 pub use schema_groups::ComponentSchemaGroup;
+mod operations;
+pub use operations::{
+    ApiBody, ApiMedia, ApiOperation, ApiParameter, ApiResponse, ParameterEncoding,
+};
 
 use email_address::EmailAddress;
 use json_pointer::JsonPointer;
@@ -959,6 +963,30 @@ impl<'a> OpenApiOperationLowerer<'a> {
         &self,
         key: &OperationKey,
     ) -> Result<Option<LoweredOperation>, OpenApiLoweringError> {
+        let Some(resolved) = self.resolve_operation(key)? else {
+            return Ok(None);
+        };
+        Ok(Some(LoweredOperation {
+            request: lower_request_schema(
+                &self.resolver,
+                resolved.operation,
+                &resolved.pointer,
+                &resolved.parameters,
+            )?,
+            response: lower_response_schema(
+                &self.resolver,
+                resolved.operation,
+                &resolved.pointer,
+                &key.method,
+                &key.path,
+            )?,
+        }))
+    }
+
+    fn resolve_operation(
+        &self,
+        key: &OperationKey,
+    ) -> Result<Option<ResolvedOperation<'_>>, OpenApiLoweringError> {
         let paths_pointer = JsonPointer::root().child("paths");
         let Some(paths) = self.document.as_object().get("paths") else {
             return Ok(None);
@@ -1009,22 +1037,20 @@ impl<'a> OpenApiOperationLowerer<'a> {
             &operation_pointer.child("parameters"),
         )?;
 
-        Ok(Some(LoweredOperation {
-            request: lower_request_schema(
-                &self.resolver,
-                operation,
-                &operation_pointer,
-                &parameters,
-            )?,
-            response: lower_response_schema(
-                &self.resolver,
-                operation,
-                &operation_pointer,
-                &method,
-                &key.path,
-            )?,
+        Ok(Some(ResolvedOperation {
+            operation,
+            path_item,
+            pointer: operation_pointer,
+            parameters,
         }))
     }
+}
+
+struct ResolvedOperation<'a> {
+    operation: &'a Map<String, Value>,
+    path_item: &'a Map<String, Value>,
+    pointer: JsonPointer,
+    parameters: BTreeMap<(ParameterLocation, String), Parameter>,
 }
 
 fn reject_unsupported_document_contract_surfaces(
@@ -1077,12 +1103,12 @@ enum FieldValue {
         serialization: SchemaSerialization,
     },
     Content {
-        media_schema: Value,
+        media: ApiMedia,
     },
 }
 
 #[derive(Debug, Clone)]
-enum SchemaSerialization {
+pub enum SchemaSerialization {
     PathParameter {
         style: ParameterStyle,
         explode: bool,
@@ -1103,7 +1129,7 @@ enum SchemaSerialization {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ParameterLocation {
+pub enum ParameterLocation {
     Path,
     Query,
     Header,
@@ -1124,7 +1150,7 @@ impl ParameterLocation {
         }
     }
 
-    const fn field_name(self) -> &'static str {
+    pub const fn field_name(self) -> &'static str {
         match self {
             Self::Path => "path",
             Self::Query => "query",
@@ -1142,7 +1168,7 @@ impl ParameterLocation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ParameterStyle {
+pub enum ParameterStyle {
     Matrix,
     Label,
     Simple,
@@ -1206,7 +1232,7 @@ impl ParameterStyle {
         )
     }
 
-    const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Matrix => "matrix",
             Self::Label => "label",
@@ -1731,8 +1757,8 @@ fn contract_field_schema(field: &ContractField) -> Value {
             required.push(Value::String("value".to_owned()));
             add_schema_serialization_properties(serialization, &mut properties, &mut required);
         }
-        FieldValue::Content { media_schema } => {
-            properties.insert("value".to_owned(), media_schema.clone());
+        FieldValue::Content { media } => {
+            properties.insert("value".to_owned(), media.envelope(std::iter::empty()));
             required.push(Value::String("value".to_owned()));
         }
     }
@@ -2431,6 +2457,19 @@ fn lower_content_variants(
     pointer: &JsonPointer,
     media_type_key_kind: MediaTypeKeyKind,
 ) -> Result<Vec<Value>, OpenApiError> {
+    let media = parse_content_variants(resolver, content, pointer, media_type_key_kind)?;
+    Ok(media
+        .iter()
+        .map(|entry| entry.envelope(media.iter()))
+        .collect())
+}
+
+fn parse_content_variants(
+    resolver: &Resolver<'_>,
+    content: &Value,
+    pointer: &JsonPointer,
+    media_type_key_kind: MediaTypeKeyKind,
+) -> Result<Vec<ApiMedia>, OpenApiError> {
     let content = content
         .as_object()
         .ok_or_else(|| invalid_value(pointer, "an object"))?;
@@ -2452,12 +2491,6 @@ fn lower_content_variants(
     let mut variants = Vec::with_capacity(content.len());
     for (media_type, raw_media, media_type_selector) in &media_entries {
         let media_pointer = pointer.child(*media_type);
-        let media_type_schema = media_type_selector.contract_schema(
-            media_entries
-                .iter()
-                .map(|(_, _, selector)| selector)
-                .filter(|candidate| candidate.is_more_specific_than(media_type_selector)),
-        );
         let media = raw_media
             .as_object()
             .ok_or_else(|| invalid_value(&media_pointer, "an object"))?;
@@ -2480,15 +2513,16 @@ fn lower_content_variants(
             .map(|schema| rewrite_schema_refs_for_lowering(schema, &media_pointer.child("schema")))
             .transpose()?
             .unwrap_or(Value::Bool(true));
-        variants.push(json!({
-            "type": "object",
-            "properties": {
-                "content_type": media_type_schema,
-                "value": schema
-            },
-            "required": ["content_type", "value"],
-            "additionalProperties": false
-        }));
+        variants.push(ApiMedia {
+            media_type: media_type_selector.as_str(),
+            parameters: media_type
+                .parse::<Mime>()
+                .expect("validated MIME")
+                .params()
+                .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
+                .collect(),
+            schema,
+        });
     }
     Ok(variants)
 }
@@ -2540,7 +2574,7 @@ impl MediaTypeSelector {
             .parse::<Mime>()
             .map_err(|_| invalid_value(pointer, key_kind.expected_description()))?;
         let media_type_kind = parsed.type_().as_str();
-        let media_subtype_kind = parsed.subtype().as_str();
+        let media_subtype_kind = parsed.essence_str().split_once('/').expect("parsed MIME").1;
         if media_type_kind == "*" && media_subtype_kind != "*" {
             return Err(invalid_value(pointer, key_kind.expected_description()));
         }
@@ -2923,11 +2957,7 @@ fn lower_field_value(
             &pointer.child("schema"),
         )?),
         (None, Some(content)) => Ok(FieldValue::Content {
-            media_schema: lower_single_content_variant(
-                resolver,
-                content,
-                &pointer.child("content"),
-            )?,
+            media: parse_single_content_variant(resolver, content, &pointer.child("content"))?,
         }),
         (Some(_), Some(_)) => Err(invalid_value(
             pointer,
@@ -2940,11 +2970,11 @@ fn lower_field_value(
     }
 }
 
-fn lower_single_content_variant(
+fn parse_single_content_variant(
     resolver: &Resolver<'_>,
     content: &Value,
     pointer: &JsonPointer,
-) -> Result<Value, OpenApiError> {
+) -> Result<ApiMedia, OpenApiError> {
     let content = content
         .as_object()
         .ok_or_else(|| invalid_value(pointer, "an object containing exactly one media type"))?;
@@ -2954,12 +2984,13 @@ fn lower_single_content_variant(
             "an object containing exactly one media type",
         ));
     }
-    Ok(any_of(lower_content_variants(
+    Ok(parse_content_variants(
         resolver,
         &Value::Object(content.clone()),
         pointer,
         MediaTypeKeyKind::ConcreteOnly,
-    )?))
+    )?
+    .remove(0))
 }
 
 fn any_of(mut variants: Vec<Value>) -> Value {

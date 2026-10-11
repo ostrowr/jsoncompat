@@ -143,6 +143,10 @@ python-bench-profile depth="5" fanout="4" iterations="100" repeats="5": _build-p
 
 # ---- Basic python smoke test ----
 
+# Opt-in internet E2E: generate a fresh contract and test all four HTTP transports.
+python-http-live:
+  cargo test --test openapi_client --locked jsonplaceholder_live_all_transports -- --ignored --nocapture
+
 python-demo:
   env -u VIRTUAL_ENV uv run --reinstall-package jsoncompat examples/python/basic/demo.py
 

@@ -3,6 +3,15 @@ use std::process::Command;
 
 #[allow(dead_code)]
 pub fn python_command() -> Command {
+    python_command_inner(None)
+}
+
+#[allow(dead_code)]
+pub fn python_command_with_group(group: &str) -> Command {
+    python_command_inner(Some(group))
+}
+
+fn python_command_inner(group: Option<&str>) -> Command {
     let mut command = Command::new("uv");
     configure_uv_environment(&mut command);
     configure_utf8_python_io(&mut command);
@@ -12,7 +21,11 @@ pub fn python_command() -> Command {
         .arg("--project")
         .arg(repo_pybindings_path())
         .arg("--all-extras")
-        .arg("--locked")
+        .arg("--locked");
+    if let Some(group) = group {
+        command.arg("--group").arg(group);
+    }
+    command
         .arg("python")
         .env("JSONCOMPAT_NATIVE_PROFILE", "debug");
     add_repo_python_path(&mut command);
@@ -21,6 +34,15 @@ pub fn python_command() -> Command {
 
 #[allow(dead_code)]
 pub fn pyright_command() -> Command {
+    pyright_command_inner(None)
+}
+
+#[allow(dead_code)]
+pub fn pyright_command_with_group(group: &str) -> Command {
+    pyright_command_inner(Some(group))
+}
+
+fn pyright_command_inner(group: Option<&str>) -> Command {
     let mut command = Command::new("uv");
     configure_uv_environment(&mut command);
     configure_utf8_python_io(&mut command);
@@ -30,10 +52,11 @@ pub fn pyright_command() -> Command {
         .arg("--project")
         .arg(repo_pybindings_path())
         .arg("--all-extras")
-        .arg("--locked")
-        .arg("--with")
-        .arg("pyright==1.1.408")
-        .arg("pyright");
+        .arg("--locked");
+    if let Some(group) = group {
+        command.arg("--group").arg(group);
+    }
+    command.arg("--with").arg("pyright==1.1.408").arg("pyright");
     add_repo_python_path(&mut command);
     command
 }

@@ -3,7 +3,7 @@
 use super::codegen::write_atomic;
 use anyhow::{Context, Result, bail, ensure};
 use jsoncompat::{OpenApiDocument, SchemaDocument, SchemaOptions};
-use jsoncompat_codegen::generate_dataclass_declarations;
+use jsoncompat_codegen::{DataclassFieldMetadata, generate_dataclass_declarations_with_metadata};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -22,6 +22,8 @@ struct Manifest {
     compiler: String,
     modules: BTreeMap<String, String>,
     files: BTreeMap<String, String>,
+    #[serde(default)]
+    exports: BTreeMap<String, String>,
 }
 struct Staging(PathBuf);
 impl Drop for Staging {
@@ -37,10 +39,26 @@ pub(super) fn generate(
     renames: &[String],
     models_per_module: NonZeroUsize,
     options: &SchemaOptions,
+    protocol: Option<&str>,
 ) -> Result<()> {
     let document = OpenApiDocument::from_json(raw)?;
-    let groups = document
-        .component_schema_groups(&components.iter().cloned().collect(), models_per_module)?;
+    let protocol = protocol
+        .map(|name| super::codegen_protocol::ProtocolPackage::prepare(&document, raw, name))
+        .transpose()?;
+    let empty_schemas = serde_json::Map::new();
+    let empty_metadata = DataclassFieldMetadata::default();
+    let metadata = protocol
+        .as_ref()
+        .map(|p| &p.metadata)
+        .unwrap_or(&empty_metadata);
+    let groups = document.component_schema_groups_with_schemas(
+        &components.iter().cloned().collect(),
+        models_per_module,
+        protocol
+            .as_ref()
+            .map(|p| &p.schemas)
+            .unwrap_or(&empty_schemas),
+    )?;
     ensure!(
         !groups.is_empty(),
         "OpenAPI document has no selected component schemas"
@@ -60,6 +78,13 @@ pub(super) fn generate(
         );
     }
     for name in groups.iter().flat_map(|group| group.schemas.keys()) {
+        ensure!(
+            !protocol
+                .as_ref()
+                .is_some_and(|p| p.schemas.contains_key(name))
+                || !overrides.contains_key(name),
+            "--rename applies to component schemas, not generated operation model {name}"
+        );
         let model = overrides.remove(name).unwrap_or_else(|| class_name(name));
         ensure!(
             used.insert(model.clone()),
@@ -79,16 +104,23 @@ pub(super) fn generate(
         Manifest::default()
     };
     ensure!(
-        previous.version <= 1,
+        previous.version <= 2,
         "unsupported package manifest; use a new output directory"
     );
     ensure!(
         previous.files.keys().all(|name| safe_filename(name)),
         "package manifest contains an invalid output filename"
     );
+    ensure!(
+        previous
+            .exports
+            .keys()
+            .all(|name| super::codegen_protocol::identifier(name)),
+        "package manifest contains an invalid export name"
+    );
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
     let mut manifest = Manifest {
-        version: 1,
+        version: 2,
         compiler,
         ..Default::default()
     };
@@ -119,8 +151,7 @@ pub(super) fn generate(
             .collect();
         for name in group.schemas.keys() {
             let model = &names[name];
-            exports.insert(model.clone(), module_name.clone());
-            stub.push_str(&format!("from .{module_name} import {model} as {model}\n"));
+            add_export(&mut exports, model, &module_name)?;
         }
         for (name, schema) in &mut group.schemas {
             if schema.is_boolean() {
@@ -134,7 +165,13 @@ pub(super) fn generate(
             .map(|pointer| json!({"$ref":pointer}))
             .collect();
         let input = json!({"$schema":group.dialect, "$defs":group.schemas, "anyOf":selected});
-        let input_digest = digest(&serde_json::to_vec(&json!([input, declarations, options]))?);
+        let input_digest = digest(&serde_json::to_vec(&json!([
+            input,
+            declarations,
+            options,
+            metadata.imports,
+            metadata.fields
+        ]))?);
         let cached = previous.compiler == manifest.compiler
             && previous.modules.get(&module_name) == Some(&input_digest)
             && [&public_file, &private_file].iter().all(|file| {
@@ -142,16 +179,23 @@ pub(super) fn generate(
                     fs::read(destination.join(file)).is_ok_and(|bytes| digest(&bytes) == *expected)
                 })
             });
-        if cached {
+        let nested_exports = if cached {
             for file in [public_file, private_file] {
                 manifest
                     .files
                     .insert(file.clone(), previous.files[&file].clone());
             }
+            previous
+                .exports
+                .iter()
+                .filter(|(_, module)| *module == &module_name)
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>()
         } else {
             let schema = SchemaDocument::from_json_with_options(&input, options)?;
-            let module = generate_dataclass_declarations(&schema, &declarations)
-                .with_context(|| format!("generating {module_name}"))?;
+            let module =
+                generate_dataclass_declarations_with_metadata(&schema, &declarations, metadata)
+                    .with_context(|| format!("generating {module_name}"))?;
             stage(
                 &staging,
                 &mut manifest,
@@ -165,18 +209,52 @@ pub(super) fn generate(
                 &module.private_file(),
             )?;
             rebuilt += 1;
+            module.models
+        };
+        if protocol.is_some() {
+            for name in nested_exports {
+                add_export(&mut exports, &name, &module_name)?;
+            }
         }
         manifest.modules.insert(module_name, input_digest);
+    }
+    let model_count = exports.len();
+    if let Some(protocol) = protocol {
+        let (source, public) = protocol.source(&exports)?;
+        stage(&staging, &mut manifest, "protocols.py", &source)?;
+        for name in public {
+            exports.insert(name, "protocols".into());
+        }
     }
     let mut routing =
         String::from("# Generated export locations; no model imports occur here.\nMODELS = {\n");
     for (model, module) in &exports {
         routing.push_str(&format!("    {model:?}: {module:?},\n"));
+        stub.push_str(&format!("from .{module} import {model} as {model}\n"));
     }
     routing.push_str("}\n");
     stage(&staging, &mut manifest, "_exports.py", &routing)?;
     stage(&staging, &mut manifest, "__init__.pyi", &stub)?;
-    stage(&staging, &mut manifest, "__init__.py", INITIALIZER)?;
+    stage(&staging, &mut manifest, "py.typed", "")?;
+    manifest.exports = exports.clone();
+    let public_names = exports
+        .keys()
+        .map(|name| format!("{name:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let type_exports = stub
+        .lines()
+        .filter(|line| line.starts_with("from "))
+        .map(|line| format!("    {line}\n"))
+        .collect::<String>();
+    stage(
+        &staging,
+        &mut manifest,
+        "__init__.py",
+        &format!(
+            "{INITIALIZER}\nif _TYPE_CHECKING:\n{type_exports}\n__all__ = ({public_names},)\n"
+        ),
+    )?;
     // Finish every build before modifying the existing package. Unmanaged
     // files are never replaced. Deploy the resulting directory as one unit.
     for file in manifest.files.keys() {
@@ -212,11 +290,20 @@ pub(super) fn generate(
     )?;
     eprintln!(
         "Generated {} models in {} modules ({} rebuilt) at {}",
-        exports.len(),
+        model_count,
         manifest.modules.len(),
         rebuilt,
         destination.display()
     );
+    Ok(())
+}
+fn add_export(exports: &mut BTreeMap<String, String>, name: &str, module: &str) -> Result<()> {
+    if let Some(previous) = exports.insert(name.into(), module.into()) {
+        ensure!(
+            previous == module,
+            "generated model export {name} collides across modules; rename the component or operation"
+        );
+    }
     Ok(())
 }
 fn digest(bytes: &[u8]) -> String {
@@ -237,9 +324,9 @@ fn safe_filename(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-        && (name.ends_with(".py") || name.ends_with(".pyi"))
+        && (name.ends_with(".py") || name.ends_with(".pyi") || name == "py.typed")
 }
-fn class_name(name: &str) -> String {
+pub(super) fn class_name(name: &str) -> String {
     let mut result = String::new();
     for word in name
         .split(|c: char| !c.is_ascii_alphanumeric())
@@ -259,9 +346,8 @@ fn class_name(name: &str) -> String {
 }
 const INITIALIZER: &str = r#""""Generated model package. Import a model by name; unrelated modules stay unloaded."""
 from importlib import import_module as _import_module
+from typing import TYPE_CHECKING as _TYPE_CHECKING
 from ._exports import MODELS as _MODELS
-
-__all__ = tuple(_MODELS)
 
 def __getattr__(name: str):
     module = _MODELS.get(name)

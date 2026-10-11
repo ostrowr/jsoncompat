@@ -2,7 +2,7 @@ mod plan;
 mod plan_proof;
 mod render;
 mod types;
-pub use render::DataclassModule;
+pub use render::{DataclassFieldMetadata, DataclassModule};
 use types::Annotation;
 
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
@@ -734,6 +734,20 @@ pub fn generate_dataclass_declarations(
     document: &SchemaDocument,
     declarations: &BTreeMap<String, String>,
 ) -> Result<DataclassModule, DataclassError> {
+    generate_dataclass_declarations_with_metadata(
+        document,
+        declarations,
+        &DataclassFieldMetadata::default(),
+    )
+}
+
+/// Generate declarations with additional public annotation metadata. Expressions
+/// are trusted Python source supplied by a generator, never schema text.
+pub fn generate_dataclass_declarations_with_metadata(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassFieldMetadata,
+) -> Result<DataclassModule, DataclassError> {
     document.validate_source_schema()?;
     let canonical = document.canonical_schema_json()?;
     let mut refs = collect_named_refs(canonical)?;
@@ -833,7 +847,7 @@ pub fn generate_dataclass_declarations(
         .values()
         .next()
         .ok_or_else(|| invalid_schema("#".into(), "at least one declaration is required"))?;
-    render::module(&builder.classes, root)
+    render::module_with_metadata(&builder.classes, root, metadata)
 }
 
 fn unconstrained_codegen_schema(canonical: &Value) -> Value {

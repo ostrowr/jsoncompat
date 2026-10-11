@@ -337,13 +337,127 @@ Name collisions fail with a diagnostic. Reference-connected models stay together
 including mutually recursive models, so class identities do not depend on import
 order. A connected group may exceed `--models-per-module`. Resource identifiers
 and anchor references conservatively keep all components in one group to retain
-scope. This command emits schema models, not an HTTP client or server.
+scope. Without `--protocol`, this command emits component schema models only.
 
 An output manifest fingerprints the compiler, schemas, options, and managed
 files. Unchanged groups reuse their artifacts; edited schemas rebuild affected
 groups. Regeneration removes obsolete managed files, preserves unrelated files,
 and refuses to overwrite unmanaged files. Deploy the complete directory as one
 build artifact; generation is not a live-reload or concurrent-writer protocol.
+
+## OpenAPI client protocols
+
+```sh
+jsoncompat codegen --openapi openapi.json --protocol Petstore --output petstore
+```
+
+This adds `protocols.py` to the generated package and exports `Petstore` and
+`AsyncPetstore`. Each operation takes one immutable generated input model as a
+positional argument and returns a union of generated response models:
+
+```python
+from petstore import Petstore, GetPetInput, GetPet200
+from jsoncompat.http import EncodedRequest, RawResponse, bind
+
+def fetch(request: EncodedRequest, /) -> RawResponse:
+    # Adapt your existing session here. Return the status, all header pairs,
+    # and body bytes, including declared HTTP error responses.
+    ...
+
+client = bind(Petstore, fetch=fetch)
+result = client.get_pet(GetPetInput(pet_id="p_123"))
+if isinstance(result, GetPet200):
+    print(result.body.name, result.headers.etag)
+```
+
+`bind_async(AsyncPetstore, fetch=async_fetch)` is the asynchronous equivalent.
+Both factories preserve the protocol type for type checking and completion.
+Generated packages include a `py.typed` marker; include it when publishing the package.
+A published protocol is structural: consumers can supply their own implementation
+or fake without inheriting from it or using the binder. Only operation methods
+belong on the service protocol; keep session management on the transport.
+
+The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
+`Cookie`, `Body`) and `@endpoint` method metadata. Binding validates method
+signatures, field mappings, and response declarations, creates concrete methods,
+and caches the resulting class for up to 128 protocol/mode combinations.
+Subsequent requests use the prepared dispatch plans. Model validation programs
+remain prepared during generation; binding does not compile schemas. Treat
+published metadata as immutable after binding. Protocol inheritance is supported;
+additional members must also be annotated operations.
+
+Operation names use snake-cased `operationId`, or a deterministic method/path
+fallback. Collisions fail generation. Inputs flatten parameters into Python
+fields; location prefixes disambiguate collisions. `--rename` continues to rename
+component models. Operation schemas participate in the same reference graph as
+components, preserving shared class identity. Inline nested model classes are
+also exported from the package, so callers can construct them without depending
+on numbered module names. `--component` selects additional
+component roots; every operation and its model dependencies remain included.
+
+Input constructors, including `Input(**mapping)`, preserve `MISSING`. Omitted
+parameters are not sent; an omitted optional body produces `body=None` and no
+Content-Type header. A JSON body containing Python `None` produces `b"null"`.
+For several request media types, `body` is a union of generated
+`OperationBodyApplicationJson`, `OperationBodyTextPlain`, etc. models, each
+containing `content_type` and `value`. `input.serialize()` serializes the logical
+input object; the HTTP encoder distributes its fields across the request.
+
+`EncodedRequest` contains the method, an encoded origin-relative `target`, header
+pairs, optional body bytes, and its `Endpoint`. Transports choose the base URL
+and must preserve the encoded target. Endpoint metadata exposes effective server
+URLs/default variables and security requirements; `SECURITY_SCHEMES` exports the
+scheme definitions. The binder does not select servers, acquire credentials,
+apply authentication, retry, follow redirects, or close sessions. Configure these
+in the transport. The [complete examples](../examples/openapi_client/README.md)
+show adapters using caller-owned aiohttp, HTTPX, and requests sessions.
+
+Response models contain `status`, a typed `body`, typed `headers`, and
+`raw_headers` preserving repeated header values. Responses with content also have
+`content_type`; responses declaring no content have `body=None`. Several media
+representations produce distinct response variants. Explicit statuses take
+precedence over ranges, then `default`. Exact statuses have literal Python types;
+range/default statuses remain integers with generated runtime constraints.
+Narrow with `isinstance(result, Operation200)` to access a variant's body.
+
+Declared errors such as 404 are returned as values. Undeclared statuses/media,
+malformed bodies, missing required response headers, and schema failures raise
+`ResponseError`, which retains the `RawResponse` and chains the underlying error.
+Invalid protocol metadata raises `ContractError` at binding. Invalid input models
+or unrepresentable parameters fail before fetching. Transport exceptions and async
+cancellation propagate unchanged. Do not call a transport's `raise_for_status`
+before returning its `RawResponse`.
+`RawResponse.body` contains bytes after HTTP transport decoding (including
+decompression), before JSON or text parsing.
+
+Supported bodies are buffered JSON (`application/json`, concrete
+`application/*+json`) and UTF-8 `text/plain` with string schemas. Media parameters
+may specify a UTF-8 charset. Response selection ignores charset/case; other media
+parameters in the spec are rejected. Headers use case-insensitive names.
+Schema-style response headers support strings, integers, numbers, booleans,
+and arrays of one of those types; JSON-content headers also support structured
+values. Scalar headers reject repetitions, arrays combine repeated lines, and
+`Set-Cookie` arrays retain each whole line. Undeclared headers remain in
+`raw_headers`.
+
+Path styles `simple`, `label`, and `matrix`, query `form`, `deepObject`,
+`spaceDelimited`/`pipeDelimited` arrays with `explode=false`, header `simple`,
+and cookie `form` are supported. Schema-style parameters must have non-null
+scalar or flat array/object values; nested or null values need JSON `content`.
+Booleans use `true`/`false`, numbers use JSON syntax, and URL data is percent
+encoded separately from structural separators. Empty exploded query arrays or
+objects produce no query pairs. Dot segments in an expanded path and invalid
+HTTP header names/values are rejected before network I/O. Request header values
+use ASCII for portability across transports; JSON-content headers escape Unicode.
+Adapters decode raw response header bytes as Latin-1 without losing repeated values.
+
+Generation rejects unsupported features rather than dropping operations:
+multipart/form bodies, binary or streaming transports, wildcard media,
+`allowReserved`, `allowEmptyValue`, and the existing unsupported OpenAPI lowering
+surfaces (including callbacks, webhooks, path-item references, response links,
+and remote references). `readOnly`/`writeOnly` retain the existing JSON Schema
+annotation behavior; the generator does not manufacture directional schema
+variants. Applications with these requirements should adapt the spec explicitly.
 
 ## Offline resources and format policy
 

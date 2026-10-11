@@ -152,6 +152,20 @@ reference-connected models share identities and independent models stay in
 bounded modules. `--component` selects roots and `--rename` resolves name
 collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
+Generate annotated client protocols alongside the models with `--protocol`:
+
+```sh
+jsoncompat codegen --openapi openapi.json --protocol Petstore --output petstore
+```
+
+The package exports `Petstore`, `AsyncPetstore`, operation input models, and
+response unions. `jsoncompat.http.bind(Petstore, fetch=...)` supplies all operation
+methods from their annotations; applications provide one fetcher and own the
+HTTP client, credentials, timeouts, and connection pool. Existing clients and
+test doubles can also implement the protocol directly. See the
+[aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md) and
+[protocol runtime contract](pybindings/README.md#openapi-client-protocols).
+
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;
 - `deserialize(...)` / `serialize(...)` for JSON, YAML, and MessagePack wire

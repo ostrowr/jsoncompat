@@ -27,6 +27,9 @@ pub(crate) struct CodegenArgs {
     /// Generate a Python package from OpenAPI component schemas.
     #[arg(long, requires = "output")]
     openapi: bool,
+    /// Also generate sync and async annotated HTTP protocols with this class name.
+    #[arg(long, requires = "openapi", value_name = "NAME")]
+    protocol: Option<String>,
     /// Select component schemas (dependencies are included). Defaults to all.
     #[arg(long = "component", requires = "openapi")]
     components: Vec<String>,
@@ -68,6 +71,7 @@ pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
             &args.rename,
             args.models_per_module,
             &options,
+            args.protocol.as_deref(),
         );
     }
     anyhow::ensure!(

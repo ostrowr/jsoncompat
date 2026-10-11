@@ -21,7 +21,33 @@ impl OpenApiDocument {
         selected: &BTreeSet<String>,
         models_per_module: NonZeroUsize,
     ) -> Result<Vec<ComponentSchemaGroup>, OpenApiError> {
-        let available = load_component_schema_defs_for_validation(self)?;
+        self.component_schema_groups_with_schemas(selected, models_per_module, &Map::new())
+    }
+
+    /// Include synthetic operation schemas in the same reference graph as the
+    /// components. Extra schemas must already use lowered `#/$defs/` references.
+    pub fn component_schema_groups_with_schemas(
+        &self,
+        selected: &BTreeSet<String>,
+        models_per_module: NonZeroUsize,
+        extra: &Map<String, Value>,
+    ) -> Result<Vec<ComponentSchemaGroup>, OpenApiError> {
+        let mut available = load_component_schema_defs_for_validation(self)?;
+        for (name, schema) in extra {
+            if available.contains_key(name) {
+                return Err(invalid_value(
+                    &JsonPointer::root().child(name),
+                    "a unique generated schema name",
+                ));
+            }
+            available.insert(
+                name.clone(),
+                ComponentSchemaDef {
+                    schema: schema.clone(),
+                    dependencies: super::collect_component_schema_names(schema),
+                },
+            );
+        }
         let dialect = self.supported_schema_dialect()?.uri().to_owned();
         for name in selected {
             if !available.contains_key(name) {
@@ -44,6 +70,7 @@ impl OpenApiDocument {
         } else {
             selected.iter().cloned().collect()
         };
+        pending.extend(extra.keys().cloned());
         let mut included = BTreeSet::new();
         while let Some(name) = pending.pop() {
             if !included.insert(name.clone()) {

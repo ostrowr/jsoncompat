@@ -22,6 +22,8 @@ mod ci;
 mod codegen;
 #[path = "jsoncompat/codegen_package.rs"]
 mod codegen_package;
+#[path = "jsoncompat/codegen_protocol.rs"]
+mod codegen_protocol;
 #[path = "jsoncompat/compat.rs"]
 mod compat;
 #[path = "jsoncompat/demo.rs"]
