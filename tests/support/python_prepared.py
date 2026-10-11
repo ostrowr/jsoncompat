@@ -144,7 +144,7 @@ class PreparedTests(unittest.TestCase):
             self.assertIn("name='x'", repr(item))
             self.assertEqual(item, module.Constrained(name="x", count=1))
             self.assertEqual(hash(item), hash(module.Constrained(name="x", count=1)))
-            self.assertIs(module.Constrained.__init__.__kwdefaults__["optional"], dc.JSONCOMPAT_MISSING)
+            self.assertIs(module.Constrained.__init__.__kwdefaults__["optional"], dc.MISSING)
             self.assertIsNone(module.Constrained.__dataclass_fields__._materialized)
             self.assertEqual(
                 module.Constrained.deserialize('{"name":"x","count":1}').serialize(),
@@ -175,7 +175,7 @@ class PreparedTests(unittest.TestCase):
         self.assertNotIn("__jsoncompat_prepared_schema__", model.__dict__)
         signature = inspect.signature(model)
         self.assertEqual(signature.parameters["name"].kind, inspect.Parameter.KEYWORD_ONLY)
-        self.assertEqual(signature.parameters["optional"].default, dc.JSONCOMPAT_MISSING)
+        self.assertEqual(signature.parameters["optional"].default, dc.MISSING)
         self.assertTrue(all(field.kw_only for field in dataclasses.fields(model)))
         self.assertEqual([field.name for field in dataclasses.fields(model)], ["count", "name", "optional"])
         item = model(name="hello", count=2)
@@ -185,7 +185,7 @@ class PreparedTests(unittest.TestCase):
         self.assertEqual(dataclasses.replace(item, count=3).count, 3)
         self.assertEqual(
             dataclasses.asdict(item),
-            {"name": "hello", "count": 2, "optional": dc.JSONCOMPAT_MISSING},
+            {"name": "hello", "count": 2, "optional": dc.MISSING},
         )
         with self.assertRaises(dataclasses.FrozenInstanceError):
             item.name = "changed"
@@ -228,7 +228,7 @@ class PreparedTests(unittest.TestCase):
         self.assertTrue(all(a is b for a, b in zip(fields, dataclasses.fields(model))))
         self.assertEqual([field.type for field in fields], [model.__annotations__[field.name] for field in fields])
         optional = next(field for field in fields if field.name == "optional")
-        self.assertIs(optional.default, dc.JSONCOMPAT_MISSING)
+        self.assertIs(optional.default, dc.MISSING)
         self.assertEqual(dict(optional.metadata), {
             dc.JSONCOMPAT_FIELD_KIND_METADATA: "property",
             dc.JSONCOMPAT_JSON_NAME_METADATA: "optional",

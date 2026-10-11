@@ -17,11 +17,12 @@ from typing import (
 )
 
 from jsoncompat import (
-    JSONCOMPAT_MISSING,
+    MISSING,
     JsonValue,
-    JsoncompatMissingType,
+    MissingType,
     ModelRuntime,
     bind_prepared_model_runtimes,
+    is_missing,
 )
 
 from .serialization import SerializationFormat, deserialize_value, serialize_value
@@ -33,9 +34,9 @@ __all__ = [
     "FrozenDict",
     "FrozenList",
     "JSONCOMPAT_EXTRA_FIELD",
-    "JSONCOMPAT_MISSING",
+    "MISSING",
     "JsonValue",
-    "JsoncompatMissingType",
+    "MissingType",
     "ReaderDataclassModel",
     "ReaderDataclassRootModel",
     "Omittable",
@@ -43,6 +44,7 @@ __all__ = [
     "WriterDataclassModel",
     "extra_field",
     "field",
+    "is_missing",
     "root_field",
 ]
 
@@ -60,7 +62,7 @@ JSONCOMPAT_ADDITIONAL_T = TypeVar("JSONCOMPAT_ADDITIONAL_T")
 _DATACLASS_MODEL_T = TypeVar("_DATACLASS_MODEL_T", bound="DataclassModel")
 
 
-type Omittable[T] = T | JsoncompatMissingType
+type Omittable[T] = T | MissingType
 
 
 class FrozenList[T](tuple[T, ...]):
@@ -296,7 +298,7 @@ class _DataclassModelMeta(type):
         )
 
 
-_NATIVE_MISSING = JSONCOMPAT_MISSING
+_NATIVE_MISSING = MissingType.MISSING
 
 
 @overload
@@ -304,7 +306,7 @@ def field(json_name: str) -> Any: ...
 
 
 @overload
-def field(json_name: str, *, default: JsoncompatMissingType) -> Any: ...
+def field(json_name: str, *, default: MissingType) -> Any: ...
 
 
 def field(json_name: str, *, default: Any = dataclasses.MISSING) -> Any:
@@ -455,8 +457,8 @@ class DataclassAdditionalModel[JSONCOMPAT_ADDITIONAL_T](DataclassModel):
     def get_additional_property(
         self,
         json_name: str,
-    ) -> JSONCOMPAT_ADDITIONAL_T | JsoncompatMissingType:
-        return self.__jsoncompat_extra__.get(json_name, JSONCOMPAT_MISSING)
+    ) -> JSONCOMPAT_ADDITIONAL_T | MissingType:
+        return self.__jsoncompat_extra__.get(json_name, _NATIVE_MISSING)
 
 
 class DataclassRootModel(DataclassModel):

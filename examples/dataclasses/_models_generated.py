@@ -6,7 +6,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 __all__ = ("bind_models",)
 
-_jsoncompat_missing = dc.JsoncompatMissingType()
+_jsoncompat_missing = dc.MissingType.MISSING
 
 def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, customer: typing.Any, id: typing.Any, items: typing.Any, note: typing.Any = _jsoncompat_missing, status: typing.Any) -> None:
     self.__post_init__(skip_validation)

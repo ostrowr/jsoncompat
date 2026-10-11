@@ -161,6 +161,9 @@ wheels = [
 [[package]]
 name = "jsoncompat"
 source = { editable = "." }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
 
 [package.optional-dependencies]
 msgpack = [
@@ -180,6 +183,7 @@ benchmark = [
 requires-dist = [
     { name = "msgpack", marker = "extra == 'msgpack'", specifier = ">=1.1.1" },
     { name = "pyyaml", marker = "extra == 'yaml'", specifier = ">=6.0.2" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'", specifier = ">=4.10" },
 ]
 provides-extras = ["msgpack", "yaml"]
 

@@ -161,8 +161,9 @@ collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-pack
 - `__jsoncompat_extra__` for schema-admitted object properties that are not
   declared under `properties`, including `additionalProperties` and
   `patternProperties`;
-- `JSONCOMPAT_MISSING` for omitted optional fields so absent and explicit
-  `null` stay distinguishable.
+- `MISSING` for omitted optional fields so absent and explicit
+  `null` stay distinguishable. Check with `is MISSING` / `is not MISSING`, or
+  `is_missing(...)`; all support type narrowing.
 
 When the schema structure makes it honest, code generation also keeps Python
 annotations narrow rather than collapsing to `Any`, including primitive local

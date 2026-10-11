@@ -18,4 +18,6 @@ uv run examples/dataclasses/demo.py
 
 The demo covers checked construction, nested generated types, Python JSON
 values, JSON/YAML/MessagePack round trips, omitted versus explicit `null`, the
-trusted path, and invalid-input rejection.
+trusted path, and invalid-input rejection. `describe_note` uses `is MISSING`
+to narrow an omitted-or-nullable field without casts, and `dataclasses.replace`
+demonstrates setting and clearing it.

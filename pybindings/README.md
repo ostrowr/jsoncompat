@@ -86,6 +86,41 @@ ordinary generated model that both serializes and deserializes. The
 [canonical stamped-schema example](../examples/stamp/demo.py) covers versioned
 writer/reader envelopes and historical schemas.
 
+## Omitted fields
+
+An optional field has type `Omittable[T]`: it contains either a `T` or
+`MISSING`. Use `is MISSING` or `is not MISSING` to check whether the field was
+omitted. These identity comparisons narrow the type in both branches:
+
+```python
+from jsoncompat import MISSING
+from models import Order
+
+def describe_note(order: Order) -> str:
+    if order.note is MISSING:
+        return "No note supplied"
+    if order.note is None:
+        return "Note explicitly cleared"
+    return order.note.upper()  # Narrowed to str; no cast needed.
+```
+
+`MISSING` is the sole member of `MissingType`, a standard Python enum. It is
+also exported from `jsoncompat.codegen.dataclasses`, and preserves its identity
+through copying, pickling, and reloading the top-level package. The optional
+`is_missing(value)` helper is available from both modules and also narrows both
+branches.
+
+`None`, `False`, zero, empty strings, and empty collections are all present
+values. Test presence explicitly: `bool(MISSING)` raises `TypeError` with a
+reminder to use an identity comparison.
+
+Pass `MISSING` to a constructor or `dataclasses.replace` to omit a
+field again. `to_value()` and `serialize()` leave omitted properties out; an
+explicit `None` remains JSON `null` when the schema permits it.
+
+When upgrading, replace `JSONCOMPAT_MISSING` and `JsoncompatMissingType` imports
+with `MISSING` and `MissingType`, and regenerate models with the new generator.
+
 ## Generated model artifacts
 
 Generation produces models ready to import. The Rust generator resolves model

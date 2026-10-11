@@ -29,7 +29,8 @@ class InstalledDistributionTests(unittest.TestCase):
     def test_typing_files_are_packaged(self) -> None:
         package = resources.files("jsoncompat")
         self.assertTrue((package / "py.typed").is_file())
-        self.assertIn("JSONCOMPAT_MISSING:", (package / "_native.pyi").read_text())
+        self.assertIn("MISSING as MISSING", (package / "_native.pyi").read_text())
+        self.assertTrue((package / "_missing.py").is_file())
 
     def test_native_schema_apis(self) -> None:
         schema = '{"type":"integer","minimum":1,"maximum":10}'

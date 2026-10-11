@@ -18,7 +18,7 @@ const READER_MODEL_CLASS: &str = "ReaderDataclassModel";
 const READER_ROOT_MODEL_CLASS: &str = "ReaderDataclassRootModel";
 const WRITER_MODEL_CLASS: &str = "WriterDataclassModel";
 const EXTRA_FIELD_NAME: &str = "__jsoncompat_extra__";
-const MISSING_TYPE_NAME: &str = "JsoncompatMissingType";
+const MISSING_TYPE_NAME: &str = "MissingType";
 const OMITTABLE_TYPE_NAME: &str = "Omittable";
 const DATACLASSES_RUNTIME_MODULE: &str = "dc";
 const CODEGEN_ANY_KEY: &str = "__jsoncompat_codegen_any";
@@ -2222,9 +2222,9 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("class Labels(dc.DataclassAdditionalModel[\"str\"]):"));
-        assert!(source.contains(
-            "count: dc.Omittable[int] = dc.field(\"count\", default=dc.JSONCOMPAT_MISSING)"
-        ));
+        assert!(
+            source.contains("count: dc.Omittable[int] = dc.field(\"count\", default=dc.MISSING)")
+        );
         assert!(source.contains(
             "__jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field(default_factory=dict)"
         ));
@@ -2595,7 +2595,7 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains(
-            "nickname: dc.Omittable[str | None] = dc.field(\"nickname\", default=dc.JSONCOMPAT_MISSING)"
+            "nickname: dc.Omittable[str | None] = dc.field(\"nickname\", default=dc.MISSING)"
         ));
         assert!(!source.contains("__jsoncompat_object_spec__"));
         assert!(!source.contains("dc.object_spec("));

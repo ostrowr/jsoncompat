@@ -9,7 +9,7 @@ from jsoncompat.codegen import dataclasses as dc
 
 @typing.final
 class GeneratedSchema(dc.DataclassAdditionalModel["str"]):
-    couponCode: dc.Omittable[str | None] = dc.field("couponCode", default=dc.JSONCOMPAT_MISSING)
+    couponCode: dc.Omittable[str | None] = dc.field("couponCode", default=dc.MISSING)
     currency: (typing.Literal["EUR"] | typing.Literal["GBP"] | typing.Literal["USD"]) = dc.field("currency")
     customer: GeneratedSchemaCustomer = dc.field("customer")
     event: (typing.Literal["checkout.completed"] | typing.Literal["checkout.failed"]) = dc.field("event")
@@ -24,7 +24,7 @@ class GeneratedSchemaCustomer(dc.DataclassModel):
     email: str = dc.field("email")
     id: str = dc.field("id")
     segment: (typing.Literal["enterprise"] | typing.Literal["self_serve"] | typing.Literal["startup"]) = dc.field("segment")
-    trialDaysRemaining: dc.Omittable[int] = dc.field("trialDaysRemaining", default=dc.JSONCOMPAT_MISSING)
+    trialDaysRemaining: dc.Omittable[int] = dc.field("trialDaysRemaining", default=dc.MISSING)
 
     __slots__ = ("email", "id", "segment", "trialDaysRemaining",)
 
@@ -43,7 +43,7 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaCustomer", "GeneratedSchemaItem", 
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-_jsoncompat_missing = dc.JsoncompatMissingType()
+_jsoncompat_missing = dc.MissingType.MISSING
 
 def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, couponCode: typing.Any = _jsoncompat_missing, currency: typing.Any, customer: typing.Any, event: typing.Any, items: typing.Any, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
     self.__post_init__(skip_validation)
