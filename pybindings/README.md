@@ -89,7 +89,9 @@ writer/reader envelopes and historical schemas.
 ## Omitted fields
 
 An optional field has type `Omittable[T]`: it contains either a `T` or
-`MISSING`. Use `is MISSING` or `is not MISSING` to check whether the field was
+`MISSING`. This also applies to `Model(**data)`: optional fields absent from the
+mapping become `MISSING`, while omitted required fields raise an error.
+Use `is MISSING` or `is not MISSING` to check whether the field was
 omitted. These identity comparisons narrow the type in both branches:
 
 ```python

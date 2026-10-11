@@ -753,6 +753,84 @@ assert model_type(value=dc.MISSING).to_value() == {"value": False}
 }
 
 #[test]
+fn unpacked_python_mappings_preserve_missing_and_present_fields() {
+    let source = generate_dataclass_models(&json!({
+        "title": "Person",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "nickname": {"type": ["string", "null"]},
+            "enabled": {"type": "boolean"},
+        },
+        "required": ["name"],
+        "additionalProperties": false,
+    }))
+    .expect("generate mapping-unpacking dataclass");
+    let module_path = write_temp_module("unpacked_mapping", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+
+from jsoncompat import MISSING
+
+spec = importlib.util.spec_from_file_location("unpacked_mapping_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+for skip_validation in (False, True):
+    data = {"name": "Ada"}
+    person = module.Person(**data, skip_validation=skip_validation)
+    assert person.name == "Ada"
+    assert person.nickname is MISSING
+    assert person.enabled is MISSING
+    assert person.to_value(skip_validation=skip_validation) == data
+    assert json.loads(person.serialize(skip_validation=skip_validation)) == data
+
+    for nickname in (None, "", "Ace"):
+        data = {"name": "Ada", "nickname": nickname, "enabled": False}
+        person = module.Person(**data, skip_validation=skip_validation)
+        assert person.nickname is not MISSING
+        assert person.nickname == nickname
+        assert person.enabled is False
+        assert person.to_value(skip_validation=skip_validation) == data
+        assert json.loads(person.serialize(skip_validation=skip_validation)) == data
+
+    data = {"name": "Ada", "nickname": MISSING}
+    person = module.Person(**data, skip_validation=skip_validation)
+    assert person.nickname is MISSING
+    assert person.to_value(skip_validation=skip_validation) == {"name": "Ada"}
+    assert json.loads(person.serialize(skip_validation=skip_validation)) == {"name": "Ada"}
+
+    for invalid in (
+        {"nickname": "Ada"},  # Required name was not supplied.
+        {"name": "Ada", "enabled": None},  # Null is not valid for enabled.
+    ):
+        try:
+            module.Person(**invalid, skip_validation=skip_validation)
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError(f"mapping unpacking accepted invalid fields: {invalid!r}")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run mapping-unpacking constructor test");
+    assert!(
+        output.status.success(),
+        "mapping-unpacking constructor test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn native_unavailable_missing_singleton_is_an_enum_and_reload_stable() {
     let package_root = write_isolated_jsoncompat_package("fallback_missing_singleton");
     let expected_init = package_root.join("jsoncompat").join("__init__.py");
