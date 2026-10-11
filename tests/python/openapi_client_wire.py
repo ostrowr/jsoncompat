@@ -1,18 +1,29 @@
 """Check what reaches the socket, including escaping libraries may normalize."""
 
 import asyncio
+import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
+from unittest.mock import patch
 
 import aiohttp
 import httpx
 import requests
 from jsoncompat.http import RequestOptions, bind, bind_async, prepare
 from petstore import GetPetRequest, PetPatch, PetstoreAPI, UpdatePetRequest
-from transports import AiohttpFetch, AsyncHttpxFetch, HttpxFetch, RequestsFetch
+from transports import (
+    AiohttpFetch,
+    AiohttpOptions,
+    AsyncHttpxFetch,
+    HttpxFetch,
+    HttpxOptions,
+    RequestsFetch,
+    RequestsOptions,
+)
 
 seen = Queue()
+slow_requests = Queue()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -28,6 +39,13 @@ class Handler(BaseHTTPRequestHandler):
         self.respond()
 
     def respond(self):
+        if self.path == "/api/pets/slow":
+            # The caller releases this handler after its timeout. The upper
+            # bound also makes an ignored timeout fail instead of hanging.
+            release = slow_requests.get(timeout=5)
+            release.wait(timeout=5)
+            self.close_connection = True
+            return
         seen.put(
             (
                 self.path,
@@ -128,17 +146,75 @@ async def asynchronous(client, fetch):
     check_get(await client.request(GET))
 
 
+def sync_timeout(client, fetch, transport, exception):
+    release = Event()
+    slow_requests.put(release)
+    default = (
+        fetch.timeout if isinstance(fetch, RequestsFetch) else fetch.session.timeout
+    )
+    with patch.object(fetch.session, "request", wraps=fetch.session.request) as send:
+        try:
+            with unittest.TestCase().assertRaises(exception):
+                client.request(GetPetRequest(pet_id="slow"), transport=transport)
+        finally:
+            release.set()
+        check_get(client.request(GET))
+        disabled = type(transport)(timeout=None)
+        check_get(client.request(GET, transport=disabled))
+        assert send.call_args_list[0].kwargs["timeout"] is transport.timeout
+        assert send.call_args_list[1].kwargs["timeout"] == default
+        assert send.call_args_list[2].kwargs["timeout"] is None
+    assert (
+        fetch.timeout if isinstance(fetch, RequestsFetch) else fetch.session.timeout
+    ) == default
+
+
+async def async_timeout(client, fetch, transport, exception):
+    release = Event()
+    slow_requests.put(release)
+    default = fetch.session.timeout
+    with patch.object(fetch.session, "request", wraps=fetch.session.request) as send:
+        try:
+            with unittest.TestCase().assertRaises(exception):
+                await client.request(GetPetRequest(pet_id="slow"), transport=transport)
+        finally:
+            release.set()
+        check_get(await client.request(GET))
+        disabled = (
+            AiohttpOptions(timeout=aiohttp.ClientTimeout(total=None))
+            if isinstance(fetch, AiohttpFetch)
+            else HttpxOptions(timeout=None)
+        )
+        check_get(await client.request(GET, transport=disabled))
+        assert send.call_args_list[0].kwargs["timeout"] is transport.timeout
+        assert send.call_args_list[1].kwargs["timeout"] == default
+        assert send.call_args_list[2].kwargs["timeout"] is disabled.timeout
+    assert fetch.session.timeout == default
+
+
 async def async_checks(url):
     async with aiohttp.ClientSession(
         headers={"Authorization": "Bearer demo"}, timeout=aiohttp.ClientTimeout(total=5)
     ) as session:
         fetch = AiohttpFetch(session, url)
         await asynchronous(bind_async(PetstoreAPI, fetch=fetch), fetch)
+        await async_timeout(
+            bind_async(PetstoreAPI, fetch=fetch),
+            fetch,
+            AiohttpOptions(timeout=aiohttp.ClientTimeout(total=0.1)),
+            TimeoutError,
+        )
     async with httpx.AsyncClient(
         headers={"Authorization": "Bearer demo"}, timeout=5, trust_env=False
     ) as session:
         fetch = AsyncHttpxFetch(session, url)
         await asynchronous(bind_async(PetstoreAPI, fetch=fetch), fetch)
+        await async_timeout(
+            bind_async(PetstoreAPI, fetch=fetch),
+            fetch,
+            HttpxOptions(timeout=httpx.Timeout(5, read=0.1)),
+            httpx.ReadTimeout,
+        )
 
 
 with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
@@ -151,15 +227,27 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
             session.headers["Authorization"] = "Bearer demo"
             fetch = RequestsFetch(session, url, timeout=5)
             sync(bind(PetstoreAPI, fetch=fetch), fetch)
+            sync_timeout(
+                bind(PetstoreAPI, fetch=fetch),
+                fetch,
+                RequestsOptions(timeout=(5, 0.1)),
+                requests.ReadTimeout,
+            )
         with httpx.Client(
             headers={"Authorization": "Bearer demo"}, timeout=5, trust_env=False
         ) as session:
             fetch = HttpxFetch(session, url)
             sync(bind(PetstoreAPI, fetch=fetch), fetch)
+            sync_timeout(
+                bind(PetstoreAPI, fetch=fetch),
+                fetch,
+                HttpxOptions(timeout=httpx.Timeout(5, read=0.1)),
+                httpx.ReadTimeout,
+            )
         asyncio.run(async_checks(url))
     finally:
         server.shutdown()
         thread.join()
 print(
-    "all transports preserve encoded URLs, body omission, and repeated response headers"
+    "all transports preserve wire data and apply per-call timeouts without changing defaults"
 )

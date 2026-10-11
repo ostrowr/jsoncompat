@@ -8,6 +8,16 @@ carries its API and response types, preserving inference and rejecting cross-API
 calls. Each transport implements one fetch function; sessions, pools, timeouts,
 credentials, retries, and cleanup remain application decisions.
 
+The complete [fetcher contract](../../pybindings/README.md#the-fetcher-contract)
+documents exactly what `bind` requires. A sync adapter satisfies `Fetch[Options]`
+by implementing
+`__call__(self, request: EncodedRequest, /, *, transport: Options | None = None) -> RawResponse`;
+an async adapter satisfies `AsyncFetch[Options]` with `async def` instead. Plain
+functions work too. The binder always passes `transport` by keyword, including
+`None`, which selects adapter defaults. The adapter returns every HTTP status,
+body bytes, and all header pairs for decoding. No generated operation methods
+or protocol inheritance are needed.
+
 From the repository root, generate the package:
 
 ```sh
@@ -50,7 +60,89 @@ Run `server.py` separately to use the snippet with a persistent server; it
 prints its dynamically assigned URL. Substitute that URL in the snippet.
 The runnable examples above handle this automatically.
 
-## Per-call overrides and transport controls
+## Per-call transport options
+
+All three adapters live in [`transports.py`](transports.py). Their option types
+are example-owned frozen dataclasses; they are not generated or provided by
+jsoncompat. Each has one required `timeout` field. The binder infers that type
+from the fetcher's signature and forwards the exact value to the adapter.
+
+With an existing session and base URL, one call can override the timeout:
+
+```python
+# aiohttp: ClientTimeout supports total/connect/socket timeouts.
+import aiohttp
+from jsoncompat.http import bind_async
+from petstore import PetstoreAPI, GetPetRequest
+from transports import AiohttpFetch, AiohttpOptions
+
+client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
+# AsyncClient[PetstoreAPI, AiohttpOptions]
+result = await client.request(
+    GetPetRequest(pet_id="p_123"),
+    transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
+)
+```
+
+```python
+# requests: a scalar or a (connect, read) timeout in seconds.
+from jsoncompat.http import bind
+from petstore import PetstoreAPI, GetPetRequest
+from transports import RequestsFetch, RequestsOptions
+
+client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
+# Client[PetstoreAPI, RequestsOptions]
+result = client.request(
+    GetPetRequest(pet_id="p_123"),
+    transport=RequestsOptions(timeout=(1, 2)),
+)
+```
+
+```python
+# HTTPX: a Timeout object or a scalar in seconds.
+import httpx
+from jsoncompat.http import bind
+from petstore import PetstoreAPI, GetPetRequest
+from transports import HttpxFetch, HttpxOptions
+
+client = bind(PetstoreAPI, fetch=HttpxFetch(session, base_url))
+# Client[PetstoreAPI, HttpxOptions]
+result = client.request(
+    GetPetRequest(pet_id="p_123"),
+    transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1)),
+)
+```
+
+For async HTTPX, use `AsyncHttpxFetch`, `bind_async`, and `await`; it shares
+`HttpxOptions`. All of these calls infer `GetPetResponse`. Passing
+`RequestsOptions` to the aiohttp client, for example, is a static type error.
+
+Omitting `transport` or passing `None` uses the existing aiohttp/HTTPX session's
+timeout or the requests adapter's configured default. Passing
+`HttpxOptions(timeout=None)` or `RequestsOptions(timeout=None)` disables the
+timeout for that call; aiohttp uses `ClientTimeout(total=None)`. The adapters
+do not mutate session settings. Timeout units and meanings come from the
+[aiohttp](https://docs.aiohttp.org/en/stable/client_reference.html#aiohttp.ClientTimeout),
+[requests](https://requests.readthedocs.io/en/latest/user/advanced/#timeouts),
+and [HTTPX](https://www.python-httpx.org/advanced/timeouts/) libraries; a requests
+read timeout is not a total request deadline.
+
+[`aiohttp_client.py`](aiohttp_client.py), [`requests_client.py`](requests_client.py),
+and [`httpx_client.py`](httpx_client.py) are complete runnable examples. Each
+performs a typed call with a native timeout override, then passes the same client
+to the shared ten-operation workflow. That workflow explicitly accepts
+`Client[PetstoreAPI, Never]` or `AsyncClient[PetstoreAPI, Never]`, importing
+`Never` from `typing`. This keeps its boundary independent of the adapter while
+retaining the exact API and response types. Functions needing native settings
+can instead declare, for example, `AsyncClient[PetstoreAPI, AiohttpOptions]`.
+Python 3.12 type parameters have no defaults, so both arguments are explicit.
+
+Add other controls to your own adapter's option type as needed. The binder
+performs no runtime inspection or validation of transport options; the adapter
+owns those semantics. Sessions, pooling, credentials, retries, and lifetimes
+remain caller-owned.
+
+## Wire overrides and prepared requests
 
 The sync and async clients accept `options=RequestOptions(...)`. Use
 `extra_headers` to replace headers case-insensitively, `remove_headers` to remove
@@ -58,6 +150,8 @@ generated headers, `extra_query` to append query pairs, and `remove_query` to
 remove existing names before appending. Inputs are snapshotted, duplicates are
 preserved, and changes do not leak into later calls. Removals do not suppress
 headers added subsequently by a session or authentication handler.
+You can pass `options=` and `transport=` together; only `options` changes the
+encoded request, and the transport option object is never serialized.
 
 For unusual wire changes, `transform` accepts a synchronous function from
 `EncodedRequest` to `EncodedRequest`, applied after those overrides. API identity
@@ -103,6 +197,8 @@ for details and error behavior.
 
 Validation: `cargo test --test openapi_client` generates fresh packages, checks
 static typing and wire serialization, and runs all three examples over loopback.
+Socket tests also hold a response open and confirm that each adapter's per-call
+timeout raises its native exception while leaving the session usable.
 
 ## Live JSONPlaceholder smoke test
 
@@ -123,6 +219,9 @@ the same six checks (24 requests total):
   survive in the response.
 - Read the original post again to verify the patch did not persist.
 - Read a nonexistent post and receive a typed 404 with an empty JSON object.
+
+Each transport passes its native timeout option on the first read and also
+exercises ordinary calls without transport options.
 
 [`jsonplaceholder.json`](jsonplaceholder.json) is our small OpenAPI 3.1 contract
 for the [documented posts API](https://jsonplaceholder.typicode.com/#guide),

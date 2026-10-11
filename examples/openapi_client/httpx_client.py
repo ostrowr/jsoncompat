@@ -5,9 +5,9 @@ import asyncio
 import httpx
 from exercise import exercise, exercise_async
 from jsoncompat.http import bind, bind_async
-from petstore import PetstoreAPI
+from petstore import Health200, HealthRequest, PetstoreAPI
 from server import serve
-from transports import AsyncHttpxFetch, HttpxFetch
+from transports import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 
 
 async def async_main(base_url: str) -> None:
@@ -15,6 +15,10 @@ async def async_main(base_url: str) -> None:
         headers={"Authorization": "Bearer example-token"}, timeout=10, trust_env=False
     ) as session:
         client = bind_async(PetstoreAPI, fetch=AsyncHttpxFetch(session, base_url))
+        result = await client.request(
+            HealthRequest(), transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1))
+        )
+        assert isinstance(result, Health200)
         await exercise_async(client)
 
 
@@ -26,6 +30,11 @@ def main() -> None:
             trust_env=False,
         ) as session:
             client = bind(PetstoreAPI, fetch=HttpxFetch(session, base_url))
+            result = client.request(
+                HealthRequest(),
+                transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1)),
+            )
+            assert isinstance(result, Health200)
             exercise(client)
         asyncio.run(async_main(base_url))
     print("httpx: all ten operations passed, sync and async")

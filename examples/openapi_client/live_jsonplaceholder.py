@@ -26,7 +26,15 @@ from jsonplaceholder import (
     Post,
     PostPatch,
 )
-from transports import AiohttpFetch, AsyncHttpxFetch, HttpxFetch, RequestsFetch
+from transports import (
+    AiohttpFetch,
+    AiohttpOptions,
+    AsyncHttpxFetch,
+    HttpxFetch,
+    HttpxOptions,
+    RequestsFetch,
+    RequestsOptions,
+)
 
 BASE_URL = "https://jsonplaceholder.typicode.com"
 TIMEOUT = 20
@@ -88,8 +96,10 @@ def check_missing(response: GetPostResponse) -> None:
     assert response.body.to_value() == {}
 
 
-def exercise(client: Client[JsonPlaceholderAPI]) -> None:
-    original = check_get(client.request(GetPostRequest(post_id=1)))
+def exercise[Options](
+    client: Client[JsonPlaceholderAPI, Options], transport: Options
+) -> None:
+    original = check_get(client.request(GetPostRequest(post_id=1), transport=transport))
     check_list(client.request(ListPostsRequest(user_id=1)))
     check_create(client.request(new_post()))
     check_patch(client.request(patch_post()), original)
@@ -98,8 +108,12 @@ def exercise(client: Client[JsonPlaceholderAPI]) -> None:
     check_missing(client.request(GetPostRequest(post_id=999999)))
 
 
-async def exercise_async(client: AsyncClient[JsonPlaceholderAPI]) -> None:
-    original = check_get(await client.request(GetPostRequest(post_id=1)))
+async def exercise_async[Options](
+    client: AsyncClient[JsonPlaceholderAPI, Options], transport: Options
+) -> None:
+    original = check_get(
+        await client.request(GetPostRequest(post_id=1), transport=transport)
+    )
     check_list(await client.request(ListPostsRequest(user_id=1)))
     check_create(await client.request(new_post()))
     check_patch(await client.request(patch_post()), original)
@@ -114,12 +128,16 @@ class LiveSyncTests(unittest.TestCase):
                 bind(
                     JsonPlaceholderAPI,
                     fetch=RequestsFetch(session, BASE_URL, timeout=TIMEOUT),
-                )
+                ),
+                RequestsOptions(timeout=(TIMEOUT, TIMEOUT)),
             )
 
     def test_httpx(self) -> None:
         with httpx.Client(timeout=TIMEOUT) as session:
-            exercise(bind(JsonPlaceholderAPI, fetch=HttpxFetch(session, BASE_URL)))
+            exercise(
+                bind(JsonPlaceholderAPI, fetch=HttpxFetch(session, BASE_URL)),
+                HttpxOptions(timeout=httpx.Timeout(TIMEOUT)),
+            )
 
 
 class LiveAsyncTests(unittest.IsolatedAsyncioTestCase):
@@ -128,13 +146,17 @@ class LiveAsyncTests(unittest.IsolatedAsyncioTestCase):
             timeout=aiohttp.ClientTimeout(total=TIMEOUT), trust_env=True
         ) as session:
             await exercise_async(
-                bind_async(JsonPlaceholderAPI, fetch=AiohttpFetch(session, BASE_URL))
+                bind_async(JsonPlaceholderAPI, fetch=AiohttpFetch(session, BASE_URL)),
+                AiohttpOptions(timeout=aiohttp.ClientTimeout(total=TIMEOUT)),
             )
 
     async def test_httpx(self) -> None:
         async with httpx.AsyncClient(timeout=TIMEOUT) as session:
             await exercise_async(
-                bind_async(JsonPlaceholderAPI, fetch=AsyncHttpxFetch(session, BASE_URL))
+                bind_async(
+                    JsonPlaceholderAPI, fetch=AsyncHttpxFetch(session, BASE_URL)
+                ),
+                HttpxOptions(timeout=httpx.Timeout(TIMEOUT)),
             )
 
 

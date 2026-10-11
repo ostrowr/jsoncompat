@@ -5,9 +5,9 @@ import asyncio
 import aiohttp
 from exercise import exercise_async
 from jsoncompat.http import bind_async
-from petstore import PetstoreAPI
+from petstore import Health200, HealthRequest, PetstoreAPI
 from server import serve
-from transports import AiohttpFetch
+from transports import AiohttpFetch, AiohttpOptions
 
 
 async def main() -> None:
@@ -17,6 +17,11 @@ async def main() -> None:
             timeout=aiohttp.ClientTimeout(total=10),
         ) as session:
             client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
+            result = await client.request(
+                HealthRequest(),
+                transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
+            )
+            assert isinstance(result, Health200)
             await exercise_async(client)
     print("aiohttp: all ten operations passed")
 

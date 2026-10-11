@@ -112,15 +112,32 @@ class Request(DataclassModel, Generic[ApiT, ResponseT]):
         return types.GenericAlias(cls, item)
 
 
-class Client(Protocol[ApiT]):
+class Client[A: API, Options](Protocol):
+    """API-scoped calls with adapter-defined transport options.
+
+    Use Client[MyAPI, Never] at transport-independent application boundaries.
+    """
+
     def request[R](
-        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+        self,
+        request: Request[A, R],
+        /,
+        *,
+        options: RequestOptions | None = None,
+        transport: Options | None = None,
     ) -> R: ...
 
 
-class AsyncClient(Protocol[ApiT]):
+class AsyncClient[A: API, Options](Protocol):
+    """Async counterpart of Client; transport options belong to the adapter."""
+
     async def request[R](
-        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+        self,
+        request: Request[A, R],
+        /,
+        *,
+        options: RequestOptions | None = None,
+        transport: Options | None = None,
     ) -> R: ...
 
 
@@ -220,12 +237,24 @@ class RawResponse:
     body: bytes
 
 
-class Fetch(Protocol):
-    def __call__(self, request: EncodedRequest, /) -> RawResponse: ...
+class Fetch[Options](Protocol):
+    """Send a buffered request. The binder always passes transport by keyword.
+
+    None selects adapter defaults. Return every HTTP status, preserving repeated
+    response headers and decoded body bytes; propagate transport exceptions.
+    """
+
+    def __call__(
+        self, request: EncodedRequest, /, *, transport: Options | None = None
+    ) -> RawResponse: ...
 
 
-class AsyncFetch(Protocol):
-    async def __call__(self, request: EncodedRequest, /) -> RawResponse: ...
+class AsyncFetch[Options](Protocol):
+    """Async counterpart of Fetch; cancellation must propagate to the caller."""
+
+    async def __call__(
+        self, request: EncodedRequest, /, *, transport: Options | None = None
+    ) -> RawResponse: ...
 
 
 class ContractError(ValueError):

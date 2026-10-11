@@ -485,34 +485,44 @@ def _select(
     return plan
 
 
-class _SyncClient(Generic[ApiT]):
+class _SyncClient[A: API, Options]:
     __slots__ = ("_api", "_fetch", "_plans")
 
-    def __init__(self, api: type[ApiT], fetch: Fetch) -> None:
+    def __init__(self, api: type[A], fetch: Fetch[Options]) -> None:
         self._api = api
         self._fetch = fetch
         self._plans = _prepare_api(api)
 
     def request[R](
-        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+        self,
+        request: Request[A, R],
+        /,
+        *,
+        options: RequestOptions | None = None,
+        transport: Options | None = None,
     ) -> R:
         call = _prepare_request(self._api, self._plans, request, options)
-        return call.decode(self._fetch(call.request))
+        return call.decode(self._fetch(call.request, transport=transport))
 
 
-class _AsyncClient(Generic[ApiT]):
+class _AsyncClient[A: API, Options]:
     __slots__ = ("_api", "_fetch", "_plans")
 
-    def __init__(self, api: type[ApiT], fetch: AsyncFetch) -> None:
+    def __init__(self, api: type[A], fetch: AsyncFetch[Options]) -> None:
         self._api = api
         self._fetch = fetch
         self._plans = _prepare_api(api)
 
     async def request[R](
-        self, request: Request[ApiT, R], /, *, options: RequestOptions | None = None
+        self,
+        request: Request[A, R],
+        /,
+        *,
+        options: RequestOptions | None = None,
+        transport: Options | None = None,
     ) -> R:
         call = _prepare_request(self._api, self._plans, request, options)
-        return call.decode(await self._fetch(call.request))
+        return call.decode(await self._fetch(call.request, transport=transport))
 
 
 def _require_api(api: object) -> None:
@@ -558,13 +568,21 @@ def prepare[A: API, R](
     return _prepare_request(api, _prepare_api(api), request, options)
 
 
-def bind[A: API](api: type[A], /, *, fetch: Fetch) -> Client[A]:
-    """Bind an explicit API. Only its registered requests can reach this fetcher."""
+def bind[A: API, Options](
+    api: type[A], /, *, fetch: Fetch[Options]
+) -> Client[A, Options]:
+    """Bind an explicit API, inferring transport options from the fetcher.
+
+    Only registered requests reach fetch(request, transport=transport).
+    The adapter owns the option type, defaults, and runtime validation.
+    """
     _require_api(api)
     return _SyncClient(api, fetch)
 
 
-def bind_async[A: API](api: type[A], /, *, fetch: AsyncFetch) -> AsyncClient[A]:
+def bind_async[A: API, Options](
+    api: type[A], /, *, fetch: AsyncFetch[Options]
+) -> AsyncClient[A, Options]:
     """Bind an explicit API to an async fetcher, preserving cancellation."""
     _require_api(api)
     return _AsyncClient(api, fetch)

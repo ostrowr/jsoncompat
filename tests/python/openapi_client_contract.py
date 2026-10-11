@@ -43,9 +43,11 @@ class Recorder:
     def __init__(self, reply=None):
         self.reply = response() if reply is None else reply
         self.requests = []
+        self.transports = []
 
-    def __call__(self, request):
+    def __call__(self, request, /, *, transport=None):
         self.requests.append(request)
+        self.transports.append(transport)
         return self.reply
 
 
@@ -251,13 +253,53 @@ class BindingTests(unittest.TestCase):
     def test_transport_exceptions_propagate(self):
         failure = TimeoutError("transport timeout")
 
-        def fetch(request):
+        def fetch(request, /, *, transport=None):
             raise failure
 
         client = bind(api.PetstoreAPI, fetch=fetch)
         with self.assertRaises(TimeoutError) as caught:
             client.request(api.GetPetRequest(pet_id="x"))
         self.assertIs(caught.exception, failure)
+
+    def test_transport_options_are_forwarded_by_identity_for_one_call(self):
+        model = api.GetPetRequest(pet_id="p_123")
+        transport = object()  # The binder imposes no option class or schema.
+        result = self.client.request(
+            model,
+            transport=transport,
+            options=RequestOptions(extra_headers={"X-Trace-ID": "one"}),
+        )
+        self.assertIs(type(result), api.GetPet200)
+        self.assertIs(self.fetch.transports[-1], transport)
+        self.assertIn(("X-Trace-ID", "one"), self.fetch.requests[-1].headers)
+        self.client.request(model)
+        self.assertIsNone(self.fetch.transports[-1])
+        self.assertNotIn(("X-Trace-ID", "one"), self.fetch.requests[-1].headers)
+        self.client.request(model, transport=None)
+        self.assertEqual(self.fetch.transports, [transport, None, None])
+        with self.assertRaises(TypeError):
+            self.client.request(
+                other_api.GetPetRequest(pet_id="x"), transport=transport
+            )
+        invalid = api.GetPetRequest(pet_id="", skip_validation=True)
+        with self.assertRaises(ValidationError):
+            self.client.request(invalid, transport=transport)
+        self.assertEqual(len(self.fetch.transports), 3)
+
+    def test_fetch_type_errors_propagate_without_retry(self):
+        calls = []
+        failure = TypeError("raised inside the fetcher")
+
+        def fetch(request, /, *, transport=None):
+            calls.append((request, transport))
+            raise failure
+
+        client = bind(api.PetstoreAPI, fetch=fetch)
+        with self.assertRaises(TypeError) as caught:
+            client.request(api.GetPetRequest(pet_id="x"))
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(calls[0][1])
 
     def test_cached_plans_and_fetcher_isolation(self):
         other_fetch = Recorder(response(404, PROBLEM))
@@ -277,7 +319,7 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(len(other_fetch.requests), 1)
         self.assertEqual(
             tuple(inspect.signature(self.client.request).parameters),
-            ("request", "options"),
+            ("request", "options", "transport"),
         )
         self.assertIs(
             inspect.signature(self.client.request).parameters["options"].kind,
@@ -693,10 +735,13 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         wires = []
+        transports = []
+        first, second = object(), object()
         gate = asyncio.Event()
 
-        async def fetch(request):
+        async def fetch(request, /, *, transport=None):
             wires.append(request)
+            transports.append(transport)
             if len(wires) == 2:
                 gate.set()
             await gate.wait()
@@ -707,10 +752,14 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         results = await asyncio.wait_for(
             asyncio.gather(
                 client.request(
-                    model, options=RequestOptions(extra_headers={"X-Trace-ID": "one"})
+                    model,
+                    options=RequestOptions(extra_headers={"X-Trace-ID": "one"}),
+                    transport=first,
                 ),
                 client.request(
-                    model, options=RequestOptions(extra_headers={"X-Trace-ID": "two"})
+                    model,
+                    options=RequestOptions(extra_headers={"X-Trace-ID": "two"}),
+                    transport=second,
                 ),
             ),
             timeout=5,
@@ -719,19 +768,25 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [dict(wire.headers)["X-Trace-ID"] for wire in wires], ["one", "two"]
         )
+        self.assertIs(transports[0], first)
+        self.assertIs(transports[1], second)
+        await client.request(model)
+        self.assertIsNone(transports[-1])
         call = prepare(api.PetstoreAPI, model)
         self.assertIs(type(call.decode(await fetch(call.request))), api.GetPet200)
         self.assertNotIn("X-Trace-ID", dict(wires[-1].headers))
         with self.assertRaises(TypeError):
             await client.request(
-                other_api.GetPetRequest(pet_id="x"), options=RequestOptions()
+                other_api.GetPetRequest(pet_id="x"),
+                options=RequestOptions(),
+                transport=first,
             )
-        self.assertEqual(len(wires), 3)
+        self.assertEqual(len(wires), 4)
 
     async def test_awaited_dispatch_and_typed_response(self):
         requests = []
 
-        async def fetch(request):
+        async def fetch(request, /, *, transport=None):
             requests.append(request)
             await asyncio.sleep(0)
             return response()
@@ -746,15 +801,23 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
 
     async def test_cancellation_and_transport_failure(self):
-        for failure in [asyncio.CancelledError(), TimeoutError("deadline")]:
+        for failure in [
+            asyncio.CancelledError(),
+            TimeoutError("deadline"),
+            TypeError("raised inside the fetcher"),
+        ]:
+            calls = []
+            settings = object()
 
-            async def fetch(request):
+            async def fetch(request, /, *, transport=None):
+                calls.append(transport)
                 raise failure
 
             client = bind_async(api.PetstoreAPI, fetch=fetch)
             with self.assertRaises(type(failure)) as caught:
-                await client.request(api.GetPetRequest(pet_id="x"))
+                await client.request(api.GetPetRequest(pet_id="x"), transport=settings)
             self.assertIs(caught.exception, failure)
+            self.assertEqual(calls, [settings])
 
 
 if __name__ == "__main__":

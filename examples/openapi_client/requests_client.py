@@ -3,9 +3,9 @@
 import requests
 from exercise import exercise
 from jsoncompat.http import bind
-from petstore import PetstoreAPI
+from petstore import Health200, HealthRequest, PetstoreAPI
 from server import serve
-from transports import RequestsFetch
+from transports import RequestsFetch, RequestsOptions
 
 
 def main() -> None:
@@ -13,6 +13,10 @@ def main() -> None:
         session.trust_env = False
         session.headers["Authorization"] = "Bearer example-token"
         client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
+        result = client.request(
+            HealthRequest(), transport=RequestsOptions(timeout=(1, 2))
+        )
+        assert isinstance(result, Health200)
         exercise(client)
     print("requests: all ten operations passed")
 

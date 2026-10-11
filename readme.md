@@ -167,10 +167,13 @@ function and own sessions, authentication, pooling, and retries. See the
 [runnable aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md)
 and [HTTP runtime contract](pybindings/README.md#api-scoped-http-requests).
 
-Per-call `RequestOptions` supports header/query overrides and a typed wire
-transform. `prepare(PetstoreAPI, request)` exposes the encoded request and its typed
-response decoder separately, so applications can use native transport controls
-or inspect raw responses. See [prepared requests](pybindings/README.md#per-call-overrides-and-prepared-requests).
+Per-call `transport=` accepts the fetcher's own typed options, such as a native
+timeout. `options=RequestOptions(...)` supports header/query overrides and a wire
+transform. The [fetcher contract](pybindings/README.md#the-fetcher-contract)
+documents the complete sync/async protocols and explicit
+`Client[MyAPI, Options]` types. `prepare(PetstoreAPI, request)` also exposes the
+encoded request and its typed response decoder for direct transport calls and
+raw response inspection. See [per-call controls](pybindings/README.md#per-call-overrides-and-prepared-requests).
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;

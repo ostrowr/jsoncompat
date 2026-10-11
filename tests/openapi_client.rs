@@ -163,21 +163,27 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
     success(work.generate(&example(), &["--models-per-module", "1"]));
     success(work.generate_package(&example(), "Petstore", "other_petstore", &[]));
     copy_python_examples(&work.0);
-    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","petstore","other_petstore","transports.py","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py"]}).to_string()).unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/python/openapi_client_transport_typing.py"),
+        work.0.join("transport_typing.py"),
+    )
+    .unwrap();
+    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","transports.py","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py"]}).to_string()).unwrap();
     fs::write(
         work.0.join("valid.py"),
         r#"
-from typing import assert_type
+from typing import Never, assert_type
 from petstore import PetstoreAPI, GetPetRequest, GetPetResponse, GetPet200, ListPetsRequest
 from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, RequestOptions, bind, bind_async, prepare, EncodedRequest, RawResponse
 from jsoncompat import MISSING
 
-def fetch(request: EncodedRequest, /) -> RawResponse:
+def fetch(request: EncodedRequest, /, *, transport: None = None) -> RawResponse:
     raise NotImplementedError
-async def async_fetch(request: EncodedRequest, /) -> RawResponse:
+async def async_fetch(request: EncodedRequest, /, *, transport: None = None) -> RawResponse:
     raise NotImplementedError
-client = bind(PetstoreAPI, fetch=fetch)
-assert_type(client, Client[PetstoreAPI])
+client: Client[PetstoreAPI, Never] = bind(PetstoreAPI, fetch=fetch)
+assert_type(client, Client[PetstoreAPI, Never])
 assert_type(client.request(GetPetRequest(pet_id="a")), GetPetResponse)
 options = RequestOptions(extra_headers={"X-Trace-ID": "trace"}, extra_query=(("preview", "true"),))
 assert_type(client.request(GetPetRequest(pet_id="a"), options=options), GetPetResponse)
@@ -190,18 +196,18 @@ request=ListPetsRequest()
 if request.limit is not MISSING:
     assert_type(request.limit, int)
 async def example() -> GetPetResponse:
-    client=bind_async(PetstoreAPI, fetch=async_fetch)
-    assert_type(client, AsyncClient[PetstoreAPI])
+    client: AsyncClient[PetstoreAPI, Never] = bind_async(PetstoreAPI, fetch=async_fetch)
+    assert_type(client, AsyncClient[PetstoreAPI, Never])
     assert_type(await client.request(GetPetRequest(pet_id="a"), options=options), GetPetResponse)
     return call.decode(await async_fetch(call.request))
 class Fake:
-    def request[R](self, request: Request[PetstoreAPI, R], /, *, options: RequestOptions | None = None) -> R:
+    def request[R](self, request: Request[PetstoreAPI, R], /, *, options: RequestOptions | None = None, transport: Never | None = None) -> R:
         raise NotImplementedError
-reader: Client[PetstoreAPI] = Fake()
+reader: Client[PetstoreAPI, Never] = Fake()
 response=reader.request(GetPetRequest(pet_id="a"))
 if isinstance(response, GetPet200):
     assert_type(response.body.name, str)
-def execute[A: API, R](client: Client[A], request: Request[A, R]) -> R:
+def execute[A: API, R](client: Client[A, Never], request: Request[A, R]) -> R:
     return client.request(request)
 assert_type(execute(client, GetPetRequest(pet_id="a")), GetPetResponse)
 "#,
@@ -213,18 +219,22 @@ assert_type(execute(client, GetPetRequest(pet_id="a")), GetPetResponse)
             .unwrap(),
     );
     let invalid = r#"
+from typing import Never
 from petstore import PetstoreAPI, GetPetRequest, GetPetResponse, DeletePet204
 from other_petstore import PetstoreAPI as OtherAPI, GetPetRequest as OtherRequest
 from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, RequestOptions, Response, bind, operation, prepare
 from typing_extensions import TypeForm
 from valid import async_fetch, call, client, execute, fetch
+from transport_typing import fetch as typed_fetch, async_fetch as typed_async_fetch
+from transports import AiohttpOptions, HttpxOptions, RequestsOptions
+from jsoncompat.http import EncodedRequest, RawResponse, Fetch, AsyncFetch, bind_async
 
 bind(PetstoreAPI, fetch=async_fetch)  # must fail
 client.request(GetPetRequest(pet_id=123))  # must fail
 client.request(OtherRequest(pet_id="x"))  # must fail
 execute(client, OtherRequest(pet_id="x"))  # must fail
-widened: Client[API] = client  # must fail
-wrong: Client[OtherAPI] = client  # must fail
+widened: Client[API, Never] = client  # must fail
+wrong: Client[OtherAPI, Never] = client  # must fail
 bare: Client = client  # must fail
 bare_request: Request = GetPetRequest(pet_id="x")  # must fail
 wrong_response: DeletePet204 = client.request(GetPetRequest(pet_id="x"))  # must fail
@@ -249,8 +259,33 @@ RequestOptions(transform=lambda request: "invalid")  # must fail
 RequestOptions(transform=async_fetch)  # must fail
 client.request(GetPetRequest(pet_id="x"), options={"extra_headers": {}})  # must fail
 client.request(GetPetRequest(pet_id="x"), RequestOptions())  # must fail
-async def wrong_async(client: AsyncClient[PetstoreAPI]) -> None:
+async def wrong_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
     await client.request(OtherRequest(pet_id="x"))  # must fail
+    await client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
+
+typed_client = bind(PetstoreAPI, fetch=typed_fetch)
+typed_client.request(GetPetRequest(pet_id="x"), transport=RequestsOptions(timeout=2))  # must fail
+typed_client.request(GetPetRequest(pet_id="x"), transport={"timeout": 2})  # must fail
+client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
+missing_options: Client[PetstoreAPI] = typed_client  # must fail
+wrong_options: Client[PetstoreAPI, AiohttpOptions] = typed_client  # must fail
+all_options: Client[PetstoreAPI, object] = typed_client  # must fail
+wide_api: Client[API, HttpxOptions] = typed_client  # must fail
+bare_fetch: Fetch = typed_fetch  # must fail
+bare_async_fetch: AsyncFetch = typed_async_fetch  # must fail
+
+def no_keyword(request: EncodedRequest, /) -> RawResponse:
+    raise NotImplementedError
+def required_option(request: EncodedRequest, /, *, transport: HttpxOptions) -> RawResponse:
+    raise NotImplementedError
+bind(PetstoreAPI, fetch=no_keyword)  # must fail
+bind(PetstoreAPI, fetch=required_option)  # must fail
+bind_async(PetstoreAPI, fetch=typed_fetch)  # must fail
+async def invalid_options() -> None:
+    typed_async = bind_async(PetstoreAPI, fetch=typed_async_fetch)
+    await typed_async.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
+    await typed_async.request(OtherRequest(pet_id="x"))  # must fail
+    missing: AsyncClient[PetstoreAPI] = typed_async  # must fail
 "#;
     fs::write(work.0.join("invalid.py"), invalid).unwrap();
     let output = python_env::pyright_command_with_group("http-examples")
@@ -272,6 +307,7 @@ async def wrong_async(client: AsyncClient[PetstoreAPI]) -> None:
                 .unwrap()
                 .iter()
                 .any(|diagnostic| diagnostic["severity"] == "error"
+                    && diagnostic["rule"] != "reportUnusedVariable"
                     && diagnostic["range"]["start"]["line"] == line),
             "missing expected type error on {source}: {diagnostics}"
         );
@@ -363,7 +399,7 @@ fn default_only_responses_and_component_renames_preserve_contracts() {
                 r#"
 from petstore import PetstoreAPI, PingRequest, PingDefault, Outcome
 from jsoncompat.http import bind, RawResponse
-def fetch(request): return RawResponse(418, (("Content-Type","application/json"),), b'{"ok":false}')
+def fetch(request, /, *, transport=None): return RawResponse(418, (("Content-Type","application/json"),), b'{"ok":false}')
 result=bind(PetstoreAPI,fetch=fetch).request(PingRequest())
 assert isinstance(result,PingDefault) and isinstance(result.body,Outcome)
 assert result.status == 418 and result.body.ok is False

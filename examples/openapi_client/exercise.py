@@ -1,5 +1,7 @@
 """The same typed workflow works with any conforming client."""
 
+from typing import Never
+
 from jsoncompat import MISSING
 from jsoncompat.http import AsyncClient, Client, RequestOptions
 from petstore import (
@@ -35,7 +37,7 @@ from petstore import (
 )
 
 
-def exercise(client: Client[PetstoreAPI]) -> None:
+def exercise(client: Client[PetstoreAPI, Never]) -> None:
     page = client.request(
         ListPetsRequest(
             limit=10, tags=["cat", "a&b"], filter=PetFilter(adopted=False), locale="en"
@@ -111,7 +113,7 @@ def exercise(client: Client[PetstoreAPI]) -> None:
     assert isinstance(client.request(DeletePetRequest(pet_id="p_123")), DeletePet204)
 
 
-async def exercise_async(client: AsyncClient[PetstoreAPI]) -> None:
+async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
     page = await client.request(
         ListPetsRequest(
             limit=10, tags=["cat", "a&b"], filter=PetFilter(adopted=False), locale="en"

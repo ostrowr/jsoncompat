@@ -357,38 +357,132 @@ Every request inherits `Request[PetstoreAPI, ItsResponse]`. One shared client
 method handles every operation and preserves its inferred response type:
 
 ```python
+from typing import Never
+
 from petstore import PetstoreAPI, GetPetRequest, GetPet200, GetPetResponse
 from jsoncompat.http import Client, EncodedRequest, RawResponse, bind
 
-def fetch(request: EncodedRequest, /) -> RawResponse:
+def fetch(
+    request: EncodedRequest, /, *, transport: None = None
+) -> RawResponse:
     # Adapt your existing session here. Return the status, all header pairs,
     # and body bytes, including declared HTTP error responses.
     ...
 
-client = bind(PetstoreAPI, fetch=fetch)  # Client[PetstoreAPI]
+client: Client[PetstoreAPI, Never] = bind(PetstoreAPI, fetch=fetch)
 result = client.request(GetPetRequest(pet_id="p_123"))  # GetPetResponse
 if isinstance(result, GetPet200):
     print(result.body.name, result.headers.etag)
 
-def get_pet(client: Client[PetstoreAPI], pet_id: str) -> GetPetResponse:
+def get_pet(client: Client[PetstoreAPI, Never], pet_id: str) -> GetPetResponse:
     return client.request(GetPetRequest(pet_id=pet_id))
 ```
 
-`bind_async(PetstoreAPI, fetch=async_fetch)` returns `AsyncClient[PetstoreAPI]`;
-use `await client.request(...)`. Both factories require the API class explicitly.
+`bind_async(PetstoreAPI, fetch=async_fetch)` provides the async equivalent;
+use `await client.request(...)`. Both factories require the API class explicitly
+and infer the transport option type from the fetcher's signature.
 The API type parameter is invariant: clients and requests cannot widen to a
 common API base or accept another API's requests. Strict type checking also
-rejects bare `Client` annotations without an API argument. Each generated API
+rejects `Client` annotations without both type arguments. Each generated API
 class is a distinct identity, even when two packages have identical schemas and
 class names. At runtime the binder checks exact registered request classes
 before encoding or fetching, including when callers bypass static checking.
 
-`Client[A]` and `AsyncClient[A]` are shared structural protocols. A custom client
-or test double implements
-`request[R](self, request: Request[A, R], /, *, options: RequestOptions | None = None) -> R`;
+`Client[A, Options]` and `AsyncClient[A, Options]` are shared structural protocols;
 there are no generated operation methods or per-service client protocols.
 Sessions, authentication, retries, and cleanup stay outside this interface.
 Generated packages include a `py.typed` marker; include it when publishing them.
+
+### The fetcher contract
+
+To bind to a generated API, implement **one callable** matching `Fetch[Options]`
+or `AsyncFetch[Options]`, exported by `jsoncompat.http`. These are the complete
+protocols, using Python 3.12 syntax:
+
+```python
+from typing import Protocol
+from jsoncompat.http import EncodedRequest, RawResponse
+
+class Fetch[Options](Protocol):
+    def __call__(
+        self, request: EncodedRequest, /, *, transport: Options | None = None
+    ) -> RawResponse: ...
+
+class AsyncFetch[Options](Protocol):
+    async def __call__(
+        self, request: EncodedRequest, /, *, transport: Options | None = None
+    ) -> RawResponse: ...
+```
+
+A function, closure, or callable instance works; no inheritance or registration
+is required. Use `bind(MyAPI, fetch=my_fetch)` or
+`bind_async(MyAPI, fetch=my_async_fetch)`. The generated API class supplies the
+operation registry; the fetcher does not need to inspect request models or
+implement operation methods.
+
+The binder calls `fetch(encoded_request, transport=transport)` exactly once per
+valid call, always passing the keyword, including `None` when omitted. The
+fetcher must accept that keyword with a default. A fetcher with no per-call
+controls declares `transport: None = None` and explicitly annotates its bound
+client as `Client[MyAPI, Never]` (or `AsyncClient[MyAPI, Never]`). This supplies
+the option type when there is no concrete type to infer from the callback.
+A callback accepting only `request` does not satisfy the contract.
+
+The adapter's responsibilities are:
+
+- Join its configured base URL with `request.target`, an already encoded
+  origin-relative path and query. Preserve any base URL prefix and existing
+  percent escapes; do not re-encode the target or pass it as separate `params`.
+- Send `request.method`, `request.headers` (ordered string pairs), and
+  `request.body` (`bytes | None`) without serializing again. `None` means an
+  omitted body. Preserve repeated header pairs, or reject them explicitly if
+  the HTTP library cannot represent them.
+- Return `RawResponse(status, headers, body)` with an integer HTTP status,
+  all response header pairs including duplicates, and fully buffered bytes
+  after HTTP decompression but before JSON/text parsing. Consume and release
+  the response according to the HTTP library's lifetime rules.
+- Return declared HTTP error statuses for the binder to decode; do not call
+  `raise_for_status`. Choose a redirect policy deliberately: following redirects
+  hides the intermediate responses from the generated contract. Our examples
+  disable redirects.
+- Own sessions, pools, credentials, timeout defaults, retries, and cleanup.
+  Propagate transport errors and async cancellation. The binder does not retry,
+  catch a fetcher's `TypeError` to guess its signature, or close sessions.
+
+`request.operation` exposes endpoint, server, and security metadata if the
+adapter needs it. The binder does not choose servers or implement authentication.
+The adapter interprets `transport=None` as its defaults; otherwise it receives
+the exact supplied object. jsoncompat does not copy, inspect, or runtime-validate
+transport options. Their type is checked statically, and the adapter owns any
+runtime validation. Prefer immutable option values when sharing concurrent calls.
+
+The resulting client has this structural interface (the async version uses
+`async def` with the same parameters and result annotation):
+
+```python
+from jsoncompat.http import API, Request, RequestOptions
+
+class Client[A: API, Options](Protocol):
+    def request[R](
+        self,
+        request: Request[A, R],
+        /,
+        *,
+        options: RequestOptions | None = None,
+        transport: Options | None = None,
+    ) -> R: ...
+```
+
+Implement that method directly for a custom client or test double. At a boundary
+that needs native controls, annotate `Client[PetstoreAPI, MyOptions]`. At a
+transport-independent boundary, use `Client[PetstoreAPI, Never]` (or
+`AsyncClient[PetstoreAPI, Never]`). Such a function accepts clients with any
+concrete option type but can only pass `transport=None` or omit it. The API
+parameter stays invariant; the option parameter is inferred as contravariant.
+Both parameters are explicit because Python 3.12 does not support defaults in
+type parameter lists.
+
+### Generated metadata and dispatch
 
 The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
 `Cookie`, `Body`) and an operation registry in `api.py`. Each entry pairs a request
@@ -427,6 +521,39 @@ in the transport. The [complete examples](../examples/openapi_client/README.md)
 show adapters using caller-owned aiohttp, HTTPX, and requests sessions.
 
 ### Per-call overrides and prepared requests
+
+Use `transport=` for adapter-specific settings such as a single-call timeout.
+`Options` can be any adapter-defined type; jsoncompat has no aiohttp, requests,
+or HTTPX dependency. For example, using the
+[aiohttp adapter](../examples/openapi_client/transports.py):
+
+```python
+import aiohttp
+from jsoncompat.http import bind_async, RequestOptions
+from petstore import PetstoreAPI, GetPetRequest
+from transports import AiohttpFetch, AiohttpOptions
+
+async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+    client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
+    # Inferred: AsyncClient[PetstoreAPI, AiohttpOptions]
+    result = await client.request(
+        GetPetRequest(pet_id="p_123"),
+        transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
+        options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
+    )  # GetPetResponse
+    # Later calls without transport= still use the session's 30-second timeout.
+```
+
+`AiohttpOptions` is an example-owned frozen dataclass with one required
+`timeout: aiohttp.ClientTimeout` field. You can define richer options for
+authentication, routing, retries, tracing, or other native settings without
+changing generated models or the binder. `options=` controls the wire request;
+`transport=` goes only to the fetcher and is never serialized into headers,
+query parameters, or a body. Both work together while preserving response
+inference and API checks. Passing another adapter's options is a type error.
+
+See the [runnable aiohttp, requests, and HTTPX examples](../examples/openapi_client/README.md#per-call-transport-options)
+for complete adapters and calls using native timeout types.
 
 Use `RequestOptions` for fields missing from a spec or an exceptional call:
 
