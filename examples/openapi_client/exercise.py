@@ -1,87 +1,87 @@
 """The same typed workflow works with any conforming client."""
 
 from jsoncompat import MISSING
+from jsoncompat.http import AsyncClient, Client
 from petstore import (
-    AsyncPetstore,
     CreatePet201,
-    CreatePetInput,
+    CreatePetRequest,
     DeletePet204,
-    DeletePetInput,
-    GetGroupPetsInput,
+    DeletePetRequest,
+    GetGroupPetsRequest,
     GetPet200,
     GetPet304,
     GetPet404,
-    GetPetInput,
     GetPetNote200ApplicationJson,
-    GetPetNoteInput,
+    GetPetNoteRequest,
+    GetPetRequest,
     Health200,
-    HealthInput,
+    HealthRequest,
     ListPets200,
-    ListPetsInput,
+    ListPetsRequest,
     PetCreate,
     PetFilter,
     PetPatch,
-    Petstore,
+    PetstoreAPI,
     SearchCriteria,
     SearchPets200,
-    SearchPetsInput,
+    SearchPetsRequest,
     SetPetNote200,
     SetPetNoteBodyApplicationJson,
     SetPetNoteBodyTextPlain,
-    SetPetNoteInput,
+    SetPetNoteRequest,
     UpdatePet200,
     UpdatePet412,
-    UpdatePetInput,
+    UpdatePetRequest,
 )
 
 
-def exercise(client: Petstore) -> None:
-    page = client.list_pets(
-        ListPetsInput(
+def exercise(client: Client[PetstoreAPI]) -> None:
+    page = client.request(
+        ListPetsRequest(
             limit=10, tags=["cat", "a&b"], filter=PetFilter(adopted=False), locale="en"
         )
     )
     assert isinstance(page, ListPets200) and page.headers.x_total_count == 1
     assert page.body.items[0].nickname is MISSING
-    created = client.create_pet(
-        CreatePetInput(body=PetCreate(name="Mochi", species="cat"))
+    created = client.request(
+        CreatePetRequest(body=PetCreate(name="Mochi", species="cat"))
     )
     assert (
         isinstance(created, CreatePet201) and created.headers.location == "/pets/p_123"
     )
-    found = client.get_pet(GetPetInput(pet_id="p_123", include_history=False))
+    found = client.request(GetPetRequest(pet_id="p_123", include_history=False))
     assert isinstance(found, GetPet200)
     assert [pair[1] for pair in found.raw_headers if pair[0].lower() == "x-trace"] == [
         "first",
         "second",
     ]
-    cached = client.get_pet(
-        GetPetInput(pet_id="p_123", if_none_match=found.headers.etag)
+    cached = client.request(
+        GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
     )
     assert isinstance(cached, GetPet304) and cached.body is None
-    missing = client.get_pet(GetPetInput(pet_id="unknown"))
+    missing = client.request(GetPetRequest(pet_id="unknown"))
     assert isinstance(missing, GetPet404) and missing.body.code == "not_found"
-    updated = client.update_pet(
-        UpdatePetInput(
+    updated = client.request(
+        UpdatePetRequest(
             pet_id="p_123", body=PetPatch(nickname=None), if_match=found.headers.etag
         )
     )
     assert isinstance(updated, UpdatePet200) and updated.body.nickname is None
-    conflict = client.update_pet(UpdatePetInput(pet_id="p_123", if_match='"stale"'))
+    conflict = client.request(UpdatePetRequest(pet_id="p_123", if_match='"stale"'))
     assert isinstance(conflict, UpdatePet412)
-    note = client.get_pet_note(GetPetNoteInput(pet_id="p_123"))
+    note = client.request(GetPetNoteRequest(pet_id="p_123"))
     assert (
         isinstance(note, GetPetNote200ApplicationJson) and note.body == "A friendly cat"
     )
-    saved = client.set_pet_note(
-        SetPetNoteInput(
+    saved = client.request(
+        SetPetNoteRequest(
             pet_id="p_123",
             body=SetPetNoteBodyTextPlain(content_type="text/plain", value="Hello!"),
         )
     )
     assert isinstance(saved, SetPetNote200) and saved.body == "Hello!"
-    cleared = client.set_pet_note(
-        SetPetNoteInput(
+    cleared = client.request(
+        SetPetNoteRequest(
             pet_id="p_123",
             body=SetPetNoteBodyApplicationJson(
                 content_type="application/json", value=None
@@ -89,8 +89,8 @@ def exercise(client: Petstore) -> None:
         )
     )
     assert isinstance(cleared, SetPetNote200) and cleared.body is None
-    matches = client.search_pets(
-        SearchPetsInput(
+    matches = client.request(
+        SearchPetsRequest(
             criteria=SearchCriteria(name="Mochi"),
             fields=["name", "species"],
             x_flags=["a", "b"],
@@ -101,66 +101,64 @@ def exercise(client: Petstore) -> None:
         "species",
     ]
     assert (
-        client.get_group_pets(
-            GetGroupPetsInput(group_id="shelter", pet_ids=[1, 2])
-        ).status
+        client.request(GetGroupPetsRequest(group_id="shelter", pet_ids=[1, 2])).status
         == 200
     )
-    assert isinstance(client.health(HealthInput()), Health200)
-    assert isinstance(client.delete_pet(DeletePetInput(pet_id="p_123")), DeletePet204)
+    assert isinstance(client.request(HealthRequest()), Health200)
+    assert isinstance(client.request(DeletePetRequest(pet_id="p_123")), DeletePet204)
 
 
-async def exercise_async(client: AsyncPetstore) -> None:
-    page = await client.list_pets(
-        ListPetsInput(
+async def exercise_async(client: AsyncClient[PetstoreAPI]) -> None:
+    page = await client.request(
+        ListPetsRequest(
             limit=10, tags=["cat", "a&b"], filter=PetFilter(adopted=False), locale="en"
         )
     )
     assert isinstance(page, ListPets200) and page.headers.x_total_count == 1
     assert page.body.items[0].nickname is MISSING
-    created = await client.create_pet(
-        CreatePetInput(body=PetCreate(name="Mochi", species="cat"))
+    created = await client.request(
+        CreatePetRequest(body=PetCreate(name="Mochi", species="cat"))
     )
     assert (
         isinstance(created, CreatePet201) and created.headers.location == "/pets/p_123"
     )
-    found = await client.get_pet(GetPetInput(pet_id="p_123", include_history=False))
+    found = await client.request(GetPetRequest(pet_id="p_123", include_history=False))
     assert isinstance(found, GetPet200)
     assert [pair[1] for pair in found.raw_headers if pair[0].lower() == "x-trace"] == [
         "first",
         "second",
     ]
     assert isinstance(
-        await client.get_pet(
-            GetPetInput(pet_id="p_123", if_none_match=found.headers.etag)
+        await client.request(
+            GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
         ),
         GetPet304,
     )
-    missing = await client.get_pet(GetPetInput(pet_id="unknown"))
+    missing = await client.request(GetPetRequest(pet_id="unknown"))
     assert isinstance(missing, GetPet404) and missing.body.code == "not_found"
-    updated = await client.update_pet(
-        UpdatePetInput(
+    updated = await client.request(
+        UpdatePetRequest(
             pet_id="p_123", body=PetPatch(nickname=None), if_match=found.headers.etag
         )
     )
     assert isinstance(updated, UpdatePet200) and updated.body.nickname is None
     assert isinstance(
-        await client.update_pet(UpdatePetInput(pet_id="p_123", if_match='"stale"')),
+        await client.request(UpdatePetRequest(pet_id="p_123", if_match='"stale"')),
         UpdatePet412,
     )
     assert isinstance(
-        await client.get_pet_note(GetPetNoteInput(pet_id="p_123")),
+        await client.request(GetPetNoteRequest(pet_id="p_123")),
         GetPetNote200ApplicationJson,
     )
-    saved = await client.set_pet_note(
-        SetPetNoteInput(
+    saved = await client.request(
+        SetPetNoteRequest(
             pet_id="p_123",
             body=SetPetNoteBodyTextPlain(content_type="text/plain", value="Hello!"),
         )
     )
     assert isinstance(saved, SetPetNote200) and saved.body == "Hello!"
-    cleared = await client.set_pet_note(
-        SetPetNoteInput(
+    cleared = await client.request(
+        SetPetNoteRequest(
             pet_id="p_123",
             body=SetPetNoteBodyApplicationJson(
                 content_type="application/json", value=None
@@ -168,8 +166,8 @@ async def exercise_async(client: AsyncPetstore) -> None:
         )
     )
     assert isinstance(cleared, SetPetNote200) and cleared.body is None
-    matches = await client.search_pets(
-        SearchPetsInput(
+    matches = await client.request(
+        SearchPetsRequest(
             criteria=SearchCriteria(name="Mochi"),
             fields=["name", "species"],
             x_flags=["a", "b"],
@@ -180,11 +178,9 @@ async def exercise_async(client: AsyncPetstore) -> None:
         "species",
     ]
     assert (
-        await client.get_group_pets(
-            GetGroupPetsInput(group_id="shelter", pet_ids=[1, 2])
-        )
+        await client.request(GetGroupPetsRequest(group_id="shelter", pet_ids=[1, 2]))
     ).status == 200
-    assert isinstance(await client.health(HealthInput()), Health200)
+    assert isinstance(await client.request(HealthRequest()), Health200)
     assert isinstance(
-        await client.delete_pet(DeletePetInput(pet_id="p_123")), DeletePet204
+        await client.request(DeletePetRequest(pet_id="p_123")), DeletePet204
     )

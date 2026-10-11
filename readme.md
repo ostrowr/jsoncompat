@@ -152,19 +152,20 @@ reference-connected models share identities and independent models stay in
 bounded modules. `--component` selects roots and `--rename` resolves name
 collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
-Generate annotated client protocols alongside the models with `--protocol`:
+Generate API-scoped HTTP requests alongside the models with `--api`:
 
-```sh
-jsoncompat codegen --openapi openapi.json --protocol Petstore --output petstore
+```bash
+jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
-The package exports `Petstore`, `AsyncPetstore`, operation input models, and
-response unions. `jsoncompat.http.bind(Petstore, fetch=...)` supplies all operation
-methods from their annotations; applications provide one fetcher and own the
-HTTP client, credentials, timeouts, and connection pool. Existing clients and
-test doubles can also implement the protocol directly. See the
-[aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md) and
-[protocol runtime contract](pybindings/README.md#openapi-client-protocols).
+The package exports `PetstoreAPI`, typed request models, and response unions.
+`jsoncompat.http.bind(PetstoreAPI, fetch=...)` implements one shared
+`client.request(GetPetRequest(...))` method with an inferred `GetPetResponse`.
+`bind_async` provides the async equivalent. API boundaries are enforced by
+invariant types and runtime registration checks. Callers supply one fetch
+function and own sessions, authentication, pooling, and retries. See the
+[runnable aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md)
+and [HTTP runtime contract](pybindings/README.md#api-scoped-http-requests).
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;

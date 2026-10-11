@@ -1,17 +1,18 @@
-# OpenAPI protocols with caller-owned HTTP clients
+# API-scoped requests with caller-owned HTTP clients
 
 This example generates a publishable Python contract from a ten-operation
-OpenAPI 3.1 Petstore. The generated package contains validated models and sync
-and async `Protocol` declarations. `jsoncompat.http.bind` and `bind_async`
-provide the implementation by reflecting the annotations once per protocol.
-Each transport implements only one fetch function; sessions, pools, timeouts,
+OpenAPI 3.1 Petstore. The generated package contains validated request/response
+models and a nominal `PetstoreAPI` identity. `jsoncompat.http.bind` and
+`bind_async` provide one shared `client.request(request)` method. Every request
+carries its API and response types, preserving inference and rejecting cross-API
+calls. Each transport implements one fetch function; sessions, pools, timeouts,
 credentials, retries, and cleanup remain application decisions.
 
 From the repository root, generate the package:
 
 ```sh
 cargo run --bin jsoncompat -- codegen --openapi examples/openapi_client/openapi.json \
-  --protocol Petstore --output examples/openapi_client/petstore
+  --api Petstore --output examples/openapi_client/petstore
 ```
 
 Then run any example. Each starts and stops its own local HTTP server; no
@@ -26,18 +27,18 @@ uv run --project pybindings --group http-examples python examples/openapi_client
 The HTTPX example exercises both synchronous and asynchronous clients.
 Generated files are ignored here: regenerate them from `openapi.json`. To
 publish a contract, include the entire generated directory and depend on a
-jsoncompat version supporting this protocol runtime.
+jsoncompat version supporting this HTTP runtime.
 
 ```python
 import httpx
-from petstore import Petstore, GetPetInput, GetPet200, GetPet404
+from petstore import PetstoreAPI, GetPetRequest, GetPet200, GetPet404
 from jsoncompat.http import bind
 from transports import HttpxFetch
 
 with httpx.Client(headers={"Authorization": "Bearer example-token"}) as session:
-    client = bind(Petstore, fetch=HttpxFetch(session, "http://127.0.0.1:8000"))
-    request = GetPetInput(pet_id="p_123")
-    result = client.get_pet(request)
+    client = bind(PetstoreAPI, fetch=HttpxFetch(session, "http://127.0.0.1:8000"))
+    request = GetPetRequest(pet_id="p_123")
+    result = client.request(request)
     if isinstance(result, GetPet200):
         print(result.body.name, result.headers.etag)
     elif isinstance(result, GetPet404):
@@ -75,7 +76,7 @@ The binder currently buffers bodies. JSON and UTF-8 `text/plain` are supported;
 multipart, streaming, binary bodies, wildcard media, `allowReserved`, and
 `allowEmptyValue` are rejected during generation. Schema-style parameters
 support non-null scalars and flat arrays/objects; JSON-content parameters support
-nested and nullable values. See the [runtime contract](../../pybindings/README.md#openapi-client-protocols)
+nested and nullable values. See the [runtime contract](../../pybindings/README.md#api-scoped-http-requests)
 for details and error behavior.
 
 Validation: `cargo test --test openapi_client` generates fresh packages, checks
@@ -89,7 +90,7 @@ Run all four transports against the public HTTPS API:
 just python-http-live
 ```
 
-This generates a fresh `JsonPlaceholder` / `AsyncJsonPlaceholder` package in a
+This generates a fresh `JsonPlaceholderAPI` request/response package in a
 temporary directory, then runs aiohttp, HTTPX sync/async, and requests through
 the same six checks (24 requests total):
 
@@ -115,7 +116,7 @@ and adapters. To inspect the generated package or run an individual transport:
 ```sh
 cargo run --locked --bin jsoncompat -- codegen \
   --openapi examples/openapi_client/jsonplaceholder.json \
-  --protocol JsonPlaceholder --output examples/openapi_client/jsonplaceholder
+  --api JsonPlaceholder --output examples/openapi_client/jsonplaceholder
 uv run --project pybindings --group http-examples --locked python \
   examples/openapi_client/live_jsonplaceholder.py LiveAsyncTests.test_aiohttp
 ```

@@ -1,16 +1,16 @@
-"""Reflect a protocol once and bind its HTTP operations to a caller-owned fetcher."""
+"""Prepare API-scoped request dispatch once for caller-owned HTTP fetchers."""
 
 from __future__ import annotations
 
 import dataclasses
-import inspect
 import re
 import types
-from collections.abc import Callable, Coroutine
+from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import lru_cache, update_wrapper
+from functools import lru_cache
 from typing import (
     Annotated,
+    Generic,
     TypeAliasType,
     Union,
     cast,
@@ -20,24 +20,28 @@ from typing import (
 )
 from urllib.parse import quote
 
-from typing_extensions import TypeForm, get_protocol_members, is_protocol
-
 from jsoncompat import JsonValue, deserialize_json_value, serialize_json_value
 from jsoncompat.codegen.dataclasses import DataclassModel
 
 from ._metadata import (
+    API,
+    ApiT,
+    AsyncClient,
     AsyncFetch,
     Body,
+    Client,
     ContractError,
     Cookie,
     EncodedRequest,
     Endpoint,
     Fetch,
     Header,
+    Operation,
     Parameter,
     Path,
     Query,
     RawResponse,
+    Request,
     Response,
     ResponseError,
 )
@@ -324,14 +328,18 @@ def _return_models(value: object) -> set[type[DataclassModel]]:
     return {_model(value)}
 
 
-def _prepare(method: Callable[..., object], asynchronous: bool) -> _Operation:
-    endpoint = getattr(method, "__jsoncompat_endpoint__", None)
-    if not isinstance(endpoint, Endpoint):
-        raise ContractError(f"{method.__name__} needs @endpoint metadata")
-    if inspect.iscoroutinefunction(method) != asynchronous:
+def _prepare(spec: Operation, api: type[API]) -> _Operation:
+    model = _model(spec.request)
+    bases = [
+        base for base in types.get_original_bases(model) if get_origin(base) is Request
+    ]
+    if len(bases) != 1 or get_args(bases[0])[0] is not api:
         raise ContractError(
-            "bind requires sync methods; bind_async requires async methods"
+            f"{model.__name__} must be a Request scoped to {api.__name__}"
         )
+    endpoint = cast(object, spec.endpoint)
+    if not isinstance(endpoint, Endpoint):
+        raise ContractError("operation needs Endpoint metadata")
     if endpoint.method not in {
         "GET",
         "PUT",
@@ -351,18 +359,6 @@ def _prepare(method: Callable[..., object], asynchronous: bool) -> _Operation:
         raise ContractError("endpoint path must be an origin-relative path template")
     if re.search(r"[{}]", re.sub(r"\{[^{}]+\}", "", endpoint.path)):
         raise ContractError("unbalanced path template")
-    signature = inspect.signature(method)
-    parameters = tuple(signature.parameters.values())
-    if (
-        len(parameters) != 2
-        or any(p.kind is not inspect.Parameter.POSITIONAL_ONLY for p in parameters)
-        or any(p.default is not inspect.Parameter.empty for p in parameters)
-    ):
-        raise ContractError(
-            "operation signatures must be (self, request: Input, /) -> Response"
-        )
-    hints = get_type_hints(method, include_extras=True)
-    model = _model(hints.get(parameters[1].name))
     fields = _fields(model)
     paths = [
         field.metadata.name for field in fields if isinstance(field.metadata, Path)
@@ -428,10 +424,10 @@ def _prepare(method: Callable[..., object], asynchronous: bool) -> _Operation:
             raise ContractError("invalid generated response envelope")
         header_model = _model(response_hints.get("headers"))
         plans.append(_ResponsePlan(response, _fields(header_model, headers=True)))
-    if not plans or _return_models(hints.get("return")) != {
+    if not plans or _return_models(spec.response) != {
         plan.response.model for plan in plans
     }:
-        raise ContractError("return annotation must match all declared response models")
+        raise ContractError("response type must match all declared response models")
     accepted = tuple(
         dict.fromkeys(
             plan.response.content_type
@@ -457,88 +453,73 @@ def _prepare(method: Callable[..., object], asynchronous: bool) -> _Operation:
     )
 
 
-class _SyncClient:
-    __slots__ = ("_fetch",)
-
-    def __init__(self, fetch: Fetch) -> None:
-        self._fetch = fetch
-
-    def dispatch(
-        self, operation: _Operation, request: DataclassModel
-    ) -> DataclassModel:
-        return operation.decode(self._fetch(operation.encode(request)))
-
-
-class _AsyncClient:
-    __slots__ = ("_fetch",)
-
-    def __init__(self, fetch: AsyncFetch) -> None:
-        self._fetch = fetch
-
-    async def dispatch(
-        self, operation: _Operation, request: DataclassModel
-    ) -> DataclassModel:
-        return operation.decode(await self._fetch(operation.encode(request)))
-
-
-def _sync_method(
-    operation: _Operation,
-) -> Callable[[_SyncClient, DataclassModel], DataclassModel]:
-    def call(self: _SyncClient, request: DataclassModel, /) -> DataclassModel:
-        return _SyncClient.dispatch(self, operation, request)
-
-    return call
-
-
-def _async_method(
-    operation: _Operation,
-) -> Callable[
-    [_AsyncClient, DataclassModel], Coroutine[object, object, DataclassModel]
-]:
-    async def call(self: _AsyncClient, request: DataclassModel, /) -> DataclassModel:
-        return await _AsyncClient.dispatch(self, operation, request)
-
-    return call
-
-
 @lru_cache(maxsize=128)
-def _implementation(
-    protocol: type[object], asynchronous: bool
-) -> type[_SyncClient] | type[_AsyncClient]:
-    if not is_protocol(protocol):
-        raise ContractError("bind expects a Protocol class")
-    members = get_protocol_members(protocol)
-    if not members:
-        raise ContractError("a service protocol must contain operations")
-    methods: dict[str, object] = {"__slots__": (), "__module__": protocol.__module__}
-    for name in sorted(members):
-        method = getattr(protocol, name, None)
-        if name.startswith("_") or not inspect.isfunction(method):
-            raise ContractError(f"unsupported protocol member {name}")
-        operation = _prepare(method, asynchronous)
-        if asynchronous:
-            implementation = update_wrapper(_async_method(operation), method)
-        else:
-            implementation = update_wrapper(_sync_method(operation), method)
-        methods[name] = implementation
-    base = _AsyncClient if asynchronous else _SyncClient
-    return cast(
-        type[_SyncClient] | type[_AsyncClient],
-        type(f"Bound{protocol.__name__}", (base,), methods),
-    )
+def _prepare_api(api: type[API]) -> Mapping[type[DataclassModel], _Operation]:
+    operations = cast(object, api.operations())
+    if not isinstance(operations, tuple) or not operations:
+        raise ContractError("API must register a nonempty tuple of operations")
+    plans: dict[type[DataclassModel], _Operation] = {}
+    for spec in cast(tuple[object, ...], operations):
+        if not isinstance(spec, Operation):
+            raise ContractError("API operations must contain Operation declarations")
+        plan = _prepare(spec, api)
+        if plan.input_model in plans:
+            raise ContractError(f"duplicate operation for {plan.input_model.__name__}")
+        plans[plan.input_model] = plan
+    return types.MappingProxyType(plans)
 
 
-def bind[T](protocol: TypeForm[T], /, *, fetch: Fetch) -> T:
-    """Bind a synchronous generated protocol. Fetcher ownership remains with the caller."""
-    if not isinstance(protocol, type):
-        raise ContractError("bind expects a Protocol class")
-    implementation = cast(type[_SyncClient], _implementation(protocol, False))
-    return cast(T, implementation(fetch))
+def _select(
+    api: type[API],
+    plans: Mapping[type[DataclassModel], _Operation],
+    request: DataclassModel,
+) -> _Operation:
+    plan = plans.get(type(request))
+    if plan is None:
+        raise TypeError(
+            f"{type(request).__name__} is not a registered request for {api.__name__}"
+        )
+    return plan
 
 
-def bind_async[T](protocol: TypeForm[T], /, *, fetch: AsyncFetch) -> T:
-    """Bind an asynchronous protocol, preserving transport exceptions and cancellation."""
-    if not isinstance(protocol, type):
-        raise ContractError("bind_async expects a Protocol class")
-    implementation = cast(type[_AsyncClient], _implementation(protocol, True))
-    return cast(T, implementation(fetch))
+class _SyncClient(Generic[ApiT]):
+    __slots__ = ("_api", "_fetch", "_plans")
+
+    def __init__(self, api: type[ApiT], fetch: Fetch) -> None:
+        self._api = api
+        self._fetch = fetch
+        self._plans = _prepare_api(api)
+
+    def request[R](self, request: Request[ApiT, R], /) -> R:
+        operation = _select(self._api, self._plans, request)
+        return cast(R, operation.decode(self._fetch(operation.encode(request))))
+
+
+class _AsyncClient(Generic[ApiT]):
+    __slots__ = ("_api", "_fetch", "_plans")
+
+    def __init__(self, api: type[ApiT], fetch: AsyncFetch) -> None:
+        self._api = api
+        self._fetch = fetch
+        self._plans = _prepare_api(api)
+
+    async def request[R](self, request: Request[ApiT, R], /) -> R:
+        operation = _select(self._api, self._plans, request)
+        return cast(R, operation.decode(await self._fetch(operation.encode(request))))
+
+
+def _require_api(api: object) -> None:
+    if not isinstance(api, type) or api is API or not issubclass(api, API):
+        raise ContractError("bind expects an explicit generated API class")
+
+
+def bind[A: API](api: type[A], /, *, fetch: Fetch) -> Client[A]:
+    """Bind an explicit API. Only its registered requests can reach this fetcher."""
+    _require_api(api)
+    return _SyncClient(api, fetch)
+
+
+def bind_async[A: API](api: type[A], /, *, fetch: AsyncFetch) -> AsyncClient[A]:
+    """Bind an explicit API to an async fetcher, preserving cancellation."""
+    _require_api(api)
+    return _AsyncClient(api, fetch)

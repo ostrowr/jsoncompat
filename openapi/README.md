@@ -82,13 +82,13 @@ Use `from models import ComponentName`. See the
 [package build contract](../pybindings/README.md#openapi-model-packages) for
 selection, naming, incremental regeneration, lazy imports, and reference grouping.
 
-## Python client protocols
+## Python HTTP requests
 
-`jsoncompat codegen --openapi api.json --protocol Service --output service`
-generates validated models plus synchronous `Service` and asynchronous
-`AsyncService` protocols. The shared Python binder reflects endpoint and field
-annotations and dispatches through a caller-supplied fetcher. Model identities,
-parameter overrides, and reference resolution use the existing OpenAPI parser.
-See the [Python runtime documentation](../pybindings/README.md#openapi-client-protocols)
-and [aiohttp, HTTPX, and requests examples](../examples/openapi_client/README.md)
-for the supported wire formats and transport contract.
+`jsoncompat codegen --openapi api.json --api Service --output service`
+generates validated operation requests and responses with a nominal `ServiceAPI`
+identity. The shared Python client exposes `request(Request[ServiceAPI, R]) -> R`
+and rejects requests from other APIs. It prepares endpoint and field metadata
+once, then delegates HTTP I/O to a caller-owned fetch function. This uses the
+same operation resolution and component-schema graph as compatibility lowering.
+See the [Python runtime documentation](../pybindings/README.md#api-scoped-http-requests)
+and [aiohttp, HTTPX, and requests examples](../examples/openapi_client/README.md).

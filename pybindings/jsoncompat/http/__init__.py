@@ -1,55 +1,26 @@
-"""Annotated OpenAPI protocols bound to application-owned HTTP transports."""
+"""API-scoped OpenAPI requests bound to application-owned HTTP transports."""
 
 from ._binding import bind as bind
 from ._binding import bind_async as bind_async
-from ._metadata import (
-    AsyncFetch as AsyncFetch,
-)
-from ._metadata import (
-    Body as Body,
-)
-from ._metadata import (
-    ContractError as ContractError,
-)
-from ._metadata import (
-    Cookie as Cookie,
-)
-from ._metadata import (
-    EncodedRequest as EncodedRequest,
-)
-from ._metadata import (
-    Endpoint as Endpoint,
-)
-from ._metadata import (
-    Fetch as Fetch,
-)
-from ._metadata import (
-    Header as Header,
-)
-from ._metadata import (
-    HeaderPairs as HeaderPairs,
-)
-from ._metadata import (
-    Path as Path,
-)
-from ._metadata import (
-    Query as Query,
-)
-from ._metadata import (
-    RawResponse as RawResponse,
-)
-from ._metadata import (
-    Response as Response,
-)
-from ._metadata import (
-    ResponseError as ResponseError,
-)
-from ._metadata import (
-    SecurityRequirement as SecurityRequirement,
-)
-from ._metadata import (
-    Server as Server,
-)
-from ._metadata import (
-    endpoint as endpoint,
-)
+from ._metadata import API as API
+from ._metadata import AsyncClient as AsyncClient
+from ._metadata import AsyncFetch as AsyncFetch
+from ._metadata import Body as Body
+from ._metadata import Client as Client
+from ._metadata import ContractError as ContractError
+from ._metadata import Cookie as Cookie
+from ._metadata import EncodedRequest as EncodedRequest
+from ._metadata import Endpoint as Endpoint
+from ._metadata import Fetch as Fetch
+from ._metadata import Header as Header
+from ._metadata import HeaderPairs as HeaderPairs
+from ._metadata import Operation as Operation
+from ._metadata import Path as Path
+from ._metadata import Query as Query
+from ._metadata import RawResponse as RawResponse
+from ._metadata import Request as Request
+from ._metadata import Response as Response
+from ._metadata import ResponseError as ResponseError
+from ._metadata import SecurityRequirement as SecurityRequirement
+from ._metadata import Server as Server
+from ._metadata import operation as operation

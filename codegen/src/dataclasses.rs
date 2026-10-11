@@ -2,7 +2,7 @@ mod plan;
 mod plan_proof;
 mod render;
 mod types;
-pub use render::{DataclassFieldMetadata, DataclassModule};
+pub use render::{DataclassMetadata, DataclassModule};
 use types::Annotation;
 
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
@@ -737,7 +737,7 @@ pub fn generate_dataclass_declarations(
     generate_dataclass_declarations_with_metadata(
         document,
         declarations,
-        &DataclassFieldMetadata::default(),
+        &DataclassMetadata::default(),
     )
 }
 
@@ -746,7 +746,7 @@ pub fn generate_dataclass_declarations(
 pub fn generate_dataclass_declarations_with_metadata(
     document: &SchemaDocument,
     declarations: &BTreeMap<String, String>,
-    metadata: &DataclassFieldMetadata,
+    metadata: &DataclassMetadata,
 ) -> Result<DataclassModule, DataclassError> {
     document.validate_source_schema()?;
     let canonical = document.canonical_schema_json()?;

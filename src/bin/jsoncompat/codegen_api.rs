@@ -1,7 +1,6 @@
-//! Generate models and annotated contracts; HTTP method implementations live in
-//! the shared Python binder and are never emitted per service.
+//! Generate API identities, typed requests, and operation metadata for one shared client.
 use anyhow::{Context, Result, ensure};
-use jsoncompat_codegen::DataclassFieldMetadata;
+use jsoncompat_codegen::DataclassMetadata;
 use jsoncompat_openapi::{
     ApiMedia, ApiOperation, ApiParameter, OpenApiDocument, OpenApiOperationLowerer,
     ParameterEncoding, ParameterLocation, SchemaSerialization,
@@ -10,34 +9,34 @@ use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-pub(super) struct ProtocolPackage {
+pub(super) struct ApiPackage {
     pub schemas: Map<String, Value>,
-    pub metadata: DataclassFieldMetadata,
+    pub metadata: DataclassMetadata,
     name: String,
     operations: Vec<Operation>,
     security_schemes: Value,
 }
 struct Operation {
-    method_name: String,
     input: String,
     response_alias: String,
     responses: Vec<(String, String, Option<String>)>,
     contract: ApiOperation,
 }
 
-impl ProtocolPackage {
+impl ApiPackage {
     pub fn prepare(document: &OpenApiDocument, raw: &Value, name: &str) -> Result<Self> {
         ensure!(
             identifier(name)
                 && !name.starts_with('_')
                 && name.chars().next().is_some_and(char::is_uppercase),
-            "--protocol must be a public Python class name, such as Petstore"
+            "--api must be a public Python class name, such as Petstore"
         );
         let lowerer = OpenApiOperationLowerer::new(document)?;
         let mut package = Self {
             schemas: Map::new(),
-            metadata: DataclassFieldMetadata {
+            metadata: DataclassMetadata {
                 imports: "from jsoncompat import http as _jsoncompat_http\n".into(),
+                base_imports: "from . import _api as _jsoncompat_api\nif typing.TYPE_CHECKING:\n    from . import api as _jsoncompat_api_types\n".into(),
                 ..Default::default()
             },
             name: name.into(),
@@ -54,7 +53,6 @@ impl ProtocolPackage {
             definitions.extend(group.schemas);
         }
         let definitions = json!({"$defs":definitions});
-        let mut names = BTreeSet::new();
         let mut ids = BTreeSet::new();
         for key in lowerer.operation_keys()? {
             let contract = lowerer
@@ -71,10 +69,6 @@ impl ProtocolPackage {
             let operation_name = contract.operation_id.as_deref().unwrap_or(&fallback);
             let method_name = snake_name(operation_name);
             ensure!(
-                !method_name.starts_with('_') && names.insert(method_name.clone()),
-                "operation names collide at {method_name}; assign distinct operationIds"
-            );
-            ensure!(
                 !key.path.starts_with("//")
                     && !key.path.contains(['?', '#', '\\'])
                     && !key.path.chars().any(char::is_control),
@@ -82,7 +76,7 @@ impl ProtocolPackage {
                 key.path
             );
             let prefix = super::codegen_package::class_name(operation_name);
-            let input = format!("{prefix}Input");
+            let input = format!("{prefix}Request");
             let response_alias = format!("{prefix}Response");
             let mut properties = Map::new();
             let mut required = Vec::new();
@@ -226,7 +220,7 @@ impl ProtocolPackage {
                         ensure!(
                             contract.key.method != "HEAD"
                                 && !matches!(response.selector.as_str(), "204" | "304"),
-                            "{} response {} must not declare content for protocol generation",
+                            "{} response {} must not declare content for API generation",
                             contract.key.method,
                             response.selector
                         );
@@ -254,8 +248,14 @@ impl ProtocolPackage {
                     ));
                 }
             }
+            package.metadata.bases.insert(
+                input.clone(),
+                format!(
+                    "_jsoncompat_http.Request[_jsoncompat_api.{name}API, {}]",
+                    py(&format!("_jsoncompat_api_types.{response_alias}"))
+                ),
+            );
             package.operations.push(Operation {
-                method_name,
                 input,
                 response_alias,
                 responses,
@@ -264,7 +264,7 @@ impl ProtocolPackage {
         }
         ensure!(
             !package.operations.is_empty(),
-            "--protocol requires at least one path operation"
+            "--api requires at least one path operation"
         );
         Ok(package)
     }
@@ -275,23 +275,26 @@ impl ProtocolPackage {
         );
         Ok(())
     }
+    pub fn identity_source(&self) -> String {
+        format!(
+            "# Generated nominal API identity; importing it does not load models.\nfrom typing import final\nfrom jsoncompat import http as _http\n\n@final\nclass {}API(_http.API):\n    __slots__ = ()\n\n    @classmethod\n    def operations(cls) -> tuple[_http.Operation, ...]:\n        from .api import OPERATIONS\n        return OPERATIONS\n",
+            self.name
+        )
+    }
     pub fn source(&self, exports: &BTreeMap<String, String>) -> Result<(String, Vec<String>)> {
         let mut names: BTreeSet<String> = exports.keys().cloned().collect();
         let mut public = Vec::new();
-        for name in std::iter::once(self.name.clone())
-            .chain(std::iter::once(format!("Async{}", self.name)))
+        for name in std::iter::once(format!("{}API", self.name))
             .chain(std::iter::once("SECURITY_SCHEMES".into()))
             .chain(self.operations.iter().map(|o| o.response_alias.clone()))
         {
-            ensure!(
-                names.insert(name.clone()),
-                "protocol export collides at {name}"
-            );
+            ensure!(names.insert(name.clone()), "API export collides at {name}");
             public.push(name);
         }
         let mut source = String::from(
-            "# Generated annotated protocols. HTTP implementation is supplied by jsoncompat.http.bind.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\n",
+            "# Generated operation registry. Dispatch is supplied by jsoncompat.http.bind.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\n",
         );
+        writeln!(source, "from ._api import {0}API as {0}API", self.name)?;
         let imported: BTreeSet<_> = self
             .operations
             .iter()
@@ -326,115 +329,102 @@ impl ProtocolPackage {
                     .join(" | ")
             )?;
         }
-        for asynchronous in [false, true] {
+        writeln!(
+            source,
+            "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = ("
+        )?;
+        for operation in &self.operations {
+            let contract = &operation.contract;
+            let responses = operation
+                .responses
+                .iter()
+                .map(|(status, model, media)| {
+                    format!(
+                        "_http.Response({}, {model}, {})",
+                        status
+                            .parse::<u16>()
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|_| py(status)),
+                        media
+                            .as_ref()
+                            .map(|m| py(m))
+                            .unwrap_or_else(|| "None".into())
+                    )
+                })
+                .collect::<Vec<_>>();
+            let security = contract
+                .security
+                .as_array()
+                .context("security requirements")?
+                .iter()
+                .map(|requirement| {
+                    let items = requirement
+                        .as_object()
+                        .context("security requirement object")?
+                        .iter()
+                        .map(|(name, scopes)| {
+                            let scopes = scopes
+                                .as_array()
+                                .context("security scopes")?
+                                .iter()
+                                .map(|s| s.as_str().map(py).context("security scope string"))
+                                .collect::<Result<Vec<_>>>()?;
+                            Ok(format!(
+                                "_http.SecurityRequirement({}, {})",
+                                py(name),
+                                tuple(&scopes)
+                            ))
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(tuple(&items))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let servers = contract
+                .servers
+                .as_array()
+                .context("servers array")?
+                .iter()
+                .map(|server| {
+                    let variables = server
+                        .get("variables")
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .flatten()
+                        .map(|(name, variable)| {
+                            Ok(format!(
+                                "({}, {})",
+                                py(name),
+                                py(variable["default"]
+                                    .as_str()
+                                    .context("server variable default")?)
+                            ))
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(format!(
+                        "_http.Server({}, {})",
+                        py(server["url"].as_str().context("server URL")?),
+                        tuple(&variables)
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?;
             writeln!(
                 source,
-                "\nclass {}{}(_typing.Protocol):",
-                if asynchronous { "Async" } else { "" },
-                self.name
+                "    _http.operation({}, _TypeForm({}), method={}, path={}, responses={}, operation_id={}, security={}, servers={}),",
+                operation.input,
+                operation.response_alias,
+                py(&contract.key.method),
+                py(&contract.key.path),
+                tuple(&responses),
+                contract
+                    .operation_id
+                    .as_ref()
+                    .map(|s| py(s))
+                    .unwrap_or_else(|| "None".into()),
+                tuple(&security),
+                tuple(&servers)
             )?;
-            for operation in &self.operations {
-                let contract = &operation.contract;
-                let responses = operation
-                    .responses
-                    .iter()
-                    .map(|(status, model, media)| {
-                        format!(
-                            "_http.Response({}, {model}, {})",
-                            status
-                                .parse::<u16>()
-                                .map(|n| n.to_string())
-                                .unwrap_or_else(|_| py(status)),
-                            media
-                                .as_ref()
-                                .map(|m| py(m))
-                                .unwrap_or_else(|| "None".into())
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let security = contract
-                    .security
-                    .as_array()
-                    .context("security requirements")?
-                    .iter()
-                    .map(|requirement| {
-                        let items = requirement
-                            .as_object()
-                            .context("security requirement object")?
-                            .iter()
-                            .map(|(name, scopes)| {
-                                let scopes = scopes
-                                    .as_array()
-                                    .context("security scopes")?
-                                    .iter()
-                                    .map(|s| s.as_str().map(py).context("security scope string"))
-                                    .collect::<Result<Vec<_>>>()?;
-                                Ok(format!(
-                                    "_http.SecurityRequirement({}, {})",
-                                    py(name),
-                                    tuple(&scopes)
-                                ))
-                            })
-                            .collect::<Result<Vec<_>>>()?;
-                        Ok(tuple(&items))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let servers = contract
-                    .servers
-                    .as_array()
-                    .context("servers array")?
-                    .iter()
-                    .map(|server| {
-                        let variables = server
-                            .get("variables")
-                            .and_then(Value::as_object)
-                            .into_iter()
-                            .flatten()
-                            .map(|(name, variable)| {
-                                Ok(format!(
-                                    "({}, {})",
-                                    py(name),
-                                    py(variable["default"]
-                                        .as_str()
-                                        .context("server variable default")?)
-                                ))
-                            })
-                            .collect::<Result<Vec<_>>>()?;
-                        Ok(format!(
-                            "_http.Server({}, {})",
-                            py(server["url"].as_str().context("server URL")?),
-                            tuple(&variables)
-                        ))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                writeln!(
-                    source,
-                    "    @_http.endpoint(method={}, path={}, responses={}, operation_id={}, security={}, servers={})",
-                    py(&contract.key.method),
-                    py(&contract.key.path),
-                    tuple(&responses),
-                    contract
-                        .operation_id
-                        .as_ref()
-                        .map(|s| py(s))
-                        .unwrap_or_else(|| "None".into()),
-                    tuple(&security),
-                    tuple(&servers)
-                )?;
-                writeln!(
-                    source,
-                    "    {}def {}(self, request: {}, /) -> {}:",
-                    if asynchronous { "async " } else { "" },
-                    operation.method_name,
-                    operation.input,
-                    operation.response_alias
-                )?;
-                if let Some(description) = &contract.description {
-                    writeln!(source, "        {}", py(description))?;
-                }
-                writeln!(source, "        ...\n")?;
-            }
         }
+        writeln!(source, ")\n")?;
         writeln!(
             source,
             "__all__ = {}",
@@ -527,7 +517,7 @@ fn validate_media(media: &ApiMedia, definitions: &Value) -> Result<()> {
             || media.media_type == "text/plain"
             || (media.media_type.starts_with("application/")
                 && media.media_type.ends_with("+json")),
-        "protocol generation supports JSON and text/plain media types; unsupported {}",
+        "API generation supports JSON and text/plain media types; unsupported {}",
         media.media_type
     );
     if media.media_type == "text/plain" {
@@ -585,7 +575,7 @@ fn parameter_metadata(
                 } => {
                     ensure!(
                         !allow_reserved && !allow_empty_value,
-                        "allowReserved and allowEmptyValue are not supported by protocol generation"
+                        "allowReserved and allowEmptyValue are not supported by API generation"
                     );
                     ensure!(
                         !matches!(style.as_str(), "spaceDelimited" | "pipeDelimited") || !explode,
@@ -646,7 +636,7 @@ fn validate_media_parameters(parameters: &BTreeMap<String, String>) -> Result<()
             .iter()
             .all(|(name, value)| name.eq_ignore_ascii_case("charset")
                 && matches!(value.to_ascii_lowercase().as_str(), "utf-8" | "utf8")),
-        "protocol generation supports only an optional UTF-8 charset media parameter"
+        "API generation supports only an optional UTF-8 charset media parameter"
     );
     Ok(())
 }

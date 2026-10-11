@@ -9,7 +9,7 @@ import aiohttp
 import httpx
 import requests
 from jsoncompat.http import bind, bind_async
-from petstore import AsyncPetstore, GetPetInput, PetPatch, Petstore, UpdatePetInput
+from petstore import GetPetRequest, PetPatch, PetstoreAPI, UpdatePetRequest
 from transports import AiohttpFetch, AsyncHttpxFetch, HttpxFetch, RequestsFetch
 
 seen = Queue()
@@ -46,9 +46,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
-GET = GetPetInput(pet_id="a/b ?#%é", include_history=False, if_none_match='"r0"')
-PATCH = UpdatePetInput(pet_id="p", body=PetPatch(nickname=None))
-OMITTED = UpdatePetInput(pet_id="p")
+GET = GetPetRequest(pet_id="a/b ?#%é", include_history=False, if_none_match='"r0"')
+PATCH = UpdatePetRequest(pet_id="p", body=PetPatch(nickname=None))
+OMITTED = UpdatePetRequest(pet_id="p")
 
 
 def check_get(result):
@@ -74,18 +74,18 @@ def check_patch(present):
 
 
 def sync(client):
-    check_get(client.get_pet(GET))
-    client.update_pet(PATCH)
+    check_get(client.request(GET))
+    client.request(PATCH)
     check_patch(True)
-    client.update_pet(OMITTED)
+    client.request(OMITTED)
     check_patch(False)
 
 
 async def asynchronous(client):
-    check_get(await client.get_pet(GET))
-    await client.update_pet(PATCH)
+    check_get(await client.request(GET))
+    await client.request(PATCH)
     check_patch(True)
-    await client.update_pet(OMITTED)
+    await client.request(OMITTED)
     check_patch(False)
 
 
@@ -93,13 +93,11 @@ async def async_checks(url):
     async with aiohttp.ClientSession(
         headers={"Authorization": "Bearer demo"}, timeout=aiohttp.ClientTimeout(total=5)
     ) as session:
-        await asynchronous(bind_async(AsyncPetstore, fetch=AiohttpFetch(session, url)))
+        await asynchronous(bind_async(PetstoreAPI, fetch=AiohttpFetch(session, url)))
     async with httpx.AsyncClient(
         headers={"Authorization": "Bearer demo"}, timeout=5, trust_env=False
     ) as session:
-        await asynchronous(
-            bind_async(AsyncPetstore, fetch=AsyncHttpxFetch(session, url))
-        )
+        await asynchronous(bind_async(PetstoreAPI, fetch=AsyncHttpxFetch(session, url)))
 
 
 with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
@@ -110,11 +108,11 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         with requests.Session() as session:
             session.trust_env = False
             session.headers["Authorization"] = "Bearer demo"
-            sync(bind(Petstore, fetch=RequestsFetch(session, url, timeout=5)))
+            sync(bind(PetstoreAPI, fetch=RequestsFetch(session, url, timeout=5)))
         with httpx.Client(
             headers={"Authorization": "Bearer demo"}, timeout=5, trust_env=False
         ) as session:
-            sync(bind(Petstore, fetch=HttpxFetch(session, url)))
+            sync(bind(PetstoreAPI, fetch=HttpxFetch(session, url)))
         asyncio.run(async_checks(url))
     finally:
         server.shutdown()

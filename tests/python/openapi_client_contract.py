@@ -3,25 +3,28 @@
 import asyncio
 import inspect
 import unittest
-from typing import Protocol
+from contextlib import contextmanager
+from dataclasses import replace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
+import other_petstore as other_api
 import petstore as api
 from jsoncompat import MISSING, ValidationError
 from jsoncompat.http import (
+    API,
     ContractError,
     Cookie,
     Header,
     Path,
     Query,
     RawResponse,
-    Response,
+    Request,
     ResponseError,
     bind,
     bind_async,
-    endpoint,
 )
+from jsoncompat.http._binding import _prepare_api
 from jsoncompat.http._parameters import decode_header, encode_parameter
 
 PET = b'{"id":"p_123","name":"Mochi","species":"cat","tags":[]}'
@@ -44,13 +47,23 @@ class Recorder:
         return self.reply
 
 
+@contextmanager
+def operations(*specs):
+    _prepare_api.cache_clear()
+    try:
+        with patch.object(api.PetstoreAPI, "operations", return_value=specs):
+            yield
+    finally:
+        _prepare_api.cache_clear()
+
+
 class BindingTests(unittest.TestCase):
     def setUp(self):
         self.fetch = Recorder()
-        self.client = bind(api.Petstore, fetch=self.fetch)
+        self.client = bind(api.PetstoreAPI, fetch=self.fetch)
 
     def test_shared_models_and_missing(self):
-        result = self.client.get_pet(api.GetPetInput(**{"pet_id": "p_123"}))
+        result = self.client.request(api.GetPetRequest(**{"pet_id": "p_123"}))
         self.assertIs(type(result), api.GetPet200)
         self.assertIs(type(result.body), api.Pet)
         self.assertIs(result.body.nickname, MISSING)
@@ -58,7 +71,7 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(self.fetch.requests[-1].target, "/pets/p_123")
 
     def test_encoded_path_and_false_query(self):
-        self.client.get_pet(api.GetPetInput(pet_id="a/b ?#%é", include_history=False))
+        self.client.request(api.GetPetRequest(pet_id="a/b ?#%é", include_history=False))
         self.assertEqual(
             self.fetch.requests[-1].target,
             "/pets/a%2Fb%20%3F%23%25%C3%A9?includeHistory=false",
@@ -68,8 +81,8 @@ class BindingTests(unittest.TestCase):
         self.fetch.reply = response(
             body=b'{"items":[],"nextOffset":null}', headers=(("X-Total-Count", "0"),)
         )
-        result = self.client.list_pets(
-            api.ListPetsInput(
+        result = self.client.request(
+            api.ListPetsRequest(
                 limit=1,
                 offset=0,
                 tags=["a&b", "x y"],
@@ -98,8 +111,8 @@ class BindingTests(unittest.TestCase):
             body=b"[]",
             headers=(("X-Selected-Fields", "name"), ("X-Selected-Fields", "species")),
         )
-        result = self.client.search_pets(
-            api.SearchPetsInput(
+        result = self.client.request(
+            api.SearchPetsRequest(
                 criteria=api.SearchCriteria(name="a&b"),
                 fields=["name", "species"],
                 x_flags=["a", "b"],
@@ -114,16 +127,16 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(result.headers.x_selected_fields, ["name", "species"])
 
     def test_absent_and_explicit_null_body(self):
-        self.client.update_pet(api.UpdatePetInput(pet_id="p_123"))
+        self.client.request(api.UpdatePetRequest(pet_id="p_123"))
         self.assertIsNone(self.fetch.requests[-1].body)
         self.assertNotIn("Content-Type", dict(self.fetch.requests[-1].headers))
-        self.client.update_pet(
-            api.UpdatePetInput(pet_id="p_123", body=api.PetPatch(nickname=None))
+        self.client.request(
+            api.UpdatePetRequest(pet_id="p_123", body=api.PetPatch(nickname=None))
         )
         self.assertEqual(self.fetch.requests[-1].body, b'{"nickname":null}')
         self.fetch.reply = response(body=b"null")
-        self.client.set_pet_note(
-            api.SetPetNoteInput(
+        self.client.request(
+            api.SetPetNoteRequest(
                 pet_id="p_123",
                 body=api.SetPetNoteBodyApplicationJson(
                     content_type="application/json", value=None
@@ -134,8 +147,8 @@ class BindingTests(unittest.TestCase):
 
     def test_body_media_variants(self):
         self.fetch.reply = response(body=b'"hi"')
-        self.client.set_pet_note(
-            api.SetPetNoteInput(
+        self.client.request(
+            api.SetPetNoteRequest(
                 pet_id="p_123",
                 body=api.SetPetNoteBodyTextPlain(
                     content_type="text/plain", value="héllo"
@@ -149,21 +162,21 @@ class BindingTests(unittest.TestCase):
         self.fetch.reply = RawResponse(
             200, (("content-type", "Text/Plain; charset=UTF-8"),), "héllo".encode()
         )
-        result = self.client.get_pet_note(api.GetPetNoteInput(pet_id="p_123"))
+        result = self.client.request(api.GetPetNoteRequest(pet_id="p_123"))
         self.assertIs(type(result), api.GetPetNote200TextPlain)
         self.assertEqual(result.body, "héllo")
         self.fetch.reply = response(body=b"null")
-        result = self.client.get_pet_note(api.GetPetNoteInput(pet_id="p_123"))
+        result = self.client.request(api.GetPetNoteRequest(pet_id="p_123"))
         self.assertIs(type(result), api.GetPetNote200ApplicationJson)
         self.assertIsNone(result.body)
 
     def test_no_content_and_conditional_response(self):
-        for method, input_model, status, expected in [
-            ("delete_pet", api.DeletePetInput, 204, api.DeletePet204),
-            ("get_pet", api.GetPetInput, 304, api.GetPet304),
+        for input_model, status, expected in [
+            (api.DeletePetRequest, 204, api.DeletePet204),
+            (api.GetPetRequest, 304, api.GetPet304),
         ]:
             self.fetch.reply = RawResponse(status, (), b"")
-            result = getattr(self.client, method)(input_model(pet_id="p_123"))
+            result = self.client.request(input_model(pet_id="p_123"))
             self.assertIs(type(result), expected)
             self.assertIsNone(result.body)
 
@@ -175,12 +188,12 @@ class BindingTests(unittest.TestCase):
             (418, b"", api.HealthDefault),
         ]:
             self.fetch.reply = response(status, body)
-            result = self.client.health(api.HealthInput())
+            result = self.client.request(api.HealthRequest())
             self.assertIs(type(result), expected)
             self.assertEqual(result.status, status)
         self.fetch.reply = response(404, PROBLEM)
         self.assertIsInstance(
-            self.client.get_pet(api.GetPetInput(pet_id="missing")), api.GetPet404
+            self.client.request(api.GetPetRequest(pet_id="missing")), api.GetPet404
         )
 
     def test_response_contract_errors_retain_raw_response(self):
@@ -205,31 +218,31 @@ class BindingTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.fetch.reply = raw
                 with self.assertRaises(ResponseError) as caught:
-                    self.client.get_pet(api.GetPetInput(pet_id="p_123"))
+                    self.client.request(api.GetPetRequest(pet_id="p_123"))
                 self.assertIs(caught.exception.response, raw)
                 self.assertIsNotNone(caught.exception.__cause__)
         self.fetch.reply = RawResponse(204, (), b"unexpected")
         with self.assertRaises(ResponseError):
-            self.client.delete_pet(api.DeletePetInput(pet_id="p_123"))
+            self.client.request(api.DeletePetRequest(pet_id="p_123"))
 
     def test_raw_headers_preserve_duplicates(self):
         self.fetch.reply = response(
             headers=(("Set-Cookie", "a=1"), ("Set-Cookie", "b=2"))
         )
-        result = self.client.get_pet(api.GetPetInput(pet_id="p_123"))
+        result = self.client.request(api.GetPetRequest(pet_id="p_123"))
         self.assertEqual(
             result.raw_headers[-2:], (("Set-Cookie", "a=1"), ("Set-Cookie", "b=2"))
         )
 
     def test_validation_precedes_network(self):
-        bad = api.GetPetInput(pet_id="", skip_validation=True)
+        bad = api.GetPetRequest(pet_id="", skip_validation=True)
         with self.assertRaises(ValidationError):
-            self.client.get_pet(bad)
+            self.client.request(bad)
         with self.assertRaises(TypeError):
-            self.client.get_pet(api.DeletePetInput(pet_id="x"))
+            self.client.request(object())
         with self.assertRaises(ValueError):
-            self.client.get_pet(
-                api.GetPetInput(pet_id="x", if_none_match="a\r\ninjected: true")
+            self.client.request(
+                api.GetPetRequest(pet_id="x", if_none_match="a\r\ninjected: true")
             )
         self.assertEqual(self.fetch.requests, [])
 
@@ -239,33 +252,33 @@ class BindingTests(unittest.TestCase):
         def fetch(request):
             raise failure
 
-        client = bind(api.Petstore, fetch=fetch)
+        client = bind(api.PetstoreAPI, fetch=fetch)
         with self.assertRaises(TimeoutError) as caught:
-            client.get_pet(api.GetPetInput(pet_id="x"))
+            client.request(api.GetPetRequest(pet_id="x"))
         self.assertIs(caught.exception, failure)
 
-    def test_cached_methods_and_fetcher_isolation(self):
+    def test_cached_plans_and_fetcher_isolation(self):
         other_fetch = Recorder(response(404, PROBLEM))
         with patch(
             "jsoncompat.http._binding.get_type_hints",
             side_effect=AssertionError("unexpected reflection"),
         ):
-            other = bind(api.Petstore, fetch=other_fetch)
+            other = bind(api.PetstoreAPI, fetch=other_fetch)
             self.assertIs(type(other), type(self.client))
             self.assertIsInstance(
-                other.get_pet(api.GetPetInput(pet_id="x")), api.GetPet404
+                other.request(api.GetPetRequest(pet_id="x")), api.GetPet404
             )
             self.assertIsInstance(
-                self.client.get_pet(api.GetPetInput(pet_id="x")), api.GetPet200
+                self.client.request(api.GetPetRequest(pet_id="x")), api.GetPet200
             )
         self.assertEqual(len(self.fetch.requests), 1)
         self.assertEqual(len(other_fetch.requests), 1)
         self.assertEqual(
-            tuple(inspect.signature(self.client.get_pet).parameters), ("request",)
+            tuple(inspect.signature(self.client.request).parameters), ("request",)
         )
 
     def test_security_and_servers_are_metadata(self):
-        self.client.get_pet(api.GetPetInput(pet_id="x"))
+        self.client.request(api.GetPetRequest(pet_id="x"))
         endpoint = self.fetch.requests[-1].operation
         self.assertEqual(endpoint.security[0][0].scheme, "bearerAuth")
         self.assertEqual(endpoint.servers[0].variables, (("port", "8000"),))
@@ -273,9 +286,7 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(api.SECURITY_SCHEMES["bearerAuth"]["scheme"], "bearer")
 
     def test_first_bind_reuses_prepared_models(self):
-        class Fresh(api.Petstore, Protocol):
-            pass
-
+        _prepare_api.cache_clear()
         with (
             patch("zlib.decompress", side_effect=AssertionError("schema expansion")),
             patch(
@@ -283,63 +294,77 @@ class BindingTests(unittest.TestCase):
                 side_effect=AssertionError("schema compilation"),
             ),
         ):
-            client = bind(Fresh, fetch=self.fetch)
-            result = client.get_pet(api.GetPetInput(pet_id="p_123"))
+            client = bind(api.PetstoreAPI, fetch=self.fetch)
+            result = client.request(api.GetPetRequest(pet_id="p_123"))
         self.assertIsInstance(result, api.GetPet200)
+        self.assertFalse(hasattr(client, "get_pet"))
 
     def test_static_path_encoding_and_dot_segment_rejection(self):
-        class UnicodePath(Protocol):
-            @endpoint(
-                method="GET",
-                path="/préfix%20x/{petId}",
-                responses=(Response(200, api.GetPet200, "application/json"),),
-            )
-            def get(self, request: api.GetPetInput, /) -> api.GetPet200: ...
-
-        client = bind(UnicodePath, fetch=self.fetch)
-        client.get(api.GetPetInput(pet_id="a/b"))
-        self.assertEqual(self.fetch.requests[-1].target, "/pr%C3%A9fix%20x/a%2Fb")
-        for value in (".", ".."):
-            with self.assertRaises(ValueError):
-                client.get(api.GetPetInput(pet_id=value))
-
-    def test_inherited_protocol_methods(self):
-        class Derived(api.Petstore, Protocol):
-            pass
-
-        client = bind(Derived, fetch=self.fetch)
-        self.assertIsInstance(
-            client.get_pet(api.GetPetInput(pet_id="x")), api.GetPet200
+        spec = next(
+            s for s in api.PetstoreAPI.operations() if s.request is api.GetPetRequest
         )
+        spec = replace(
+            spec, endpoint=replace(spec.endpoint, path="/préfix%20x/{petId}")
+        )
+        with operations(spec):
+            client = bind(api.PetstoreAPI, fetch=self.fetch)
+            client.request(api.GetPetRequest(pet_id="a/b"))
+            self.assertEqual(self.fetch.requests[-1].target, "/pr%C3%A9fix%20x/a%2Fb")
+            for value in (".", ".."):
+                with self.assertRaises(ValueError):
+                    client.request(api.GetPetRequest(pet_id=value))
 
-    def test_incomplete_protocols_fail_binding(self):
-        class Empty(Protocol):
-            pass
+    def test_api_identity_and_registration_precede_network(self):
+        self.assertEqual(api.PetstoreAPI.__name__, other_api.PetstoreAPI.__name__)
+        self.assertIsNot(api.PetstoreAPI, other_api.PetstoreAPI)
 
-        class MissingMetadata(Protocol):
-            def get(self, request: api.GetPetInput, /) -> api.GetPetResponse: ...
+        class Unregistered(Request[api.PetstoreAPI, api.GetPetResponse]):
+            __slots__ = ()
 
-        class ExtraMember(api.Petstore, Protocol):
-            name: str
+        for request in (
+            other_api.GetPetRequest(pet_id="x"),
+            object.__new__(Unregistered),
+            api.GetPetRequest,
+            object(),
+        ):
+            with (
+                self.subTest(request=request),
+                self.assertRaisesRegex(TypeError, "not a registered request"),
+            ):
+                self.client.request(request)
+        self.assertEqual(self.fetch.requests, [])
+        other = bind(other_api.PetstoreAPI, fetch=self.fetch)
+        result = other.request(other_api.GetPetRequest(pet_id="x"))
+        self.assertIs(type(result), other_api.GetPet200)
+        with self.assertRaises(TypeError):
+            other.request(api.GetPetRequest(pet_id="x"))
+        self.assertEqual(len(self.fetch.requests), 1)
 
-        class WrongReturn(Protocol):
-            @endpoint(
-                method="GET",
-                path="/pets/{petId}",
-                responses=(Response(200, api.GetPet200, "application/json"),),
-            )
-            def get(self, request: api.GetPetInput, /) -> api.GetPet404: ...
-
-        for protocol in [
-            Empty,
-            MissingMetadata,
-            ExtraMember,
-            WrongReturn,
-            object,
-            api.AsyncPetstore,
-        ]:
-            with self.subTest(protocol=protocol), self.assertRaises(ContractError):
-                bind(protocol, fetch=self.fetch)
+    def test_incomplete_api_contracts_fail_binding(self):
+        for identity in (API, object, api.PetstoreAPI()):
+            with self.subTest(identity=identity), self.assertRaises(ContractError):
+                bind(identity, fetch=self.fetch)
+        spec = next(
+            s for s in api.PetstoreAPI.operations() if s.request is api.GetPetRequest
+        )
+        malformed = [
+            (),
+            (object(),),
+            (spec, spec),
+            (other_api.PetstoreAPI.operations()[0],),
+            (replace(spec, response=api.GetPet404),),
+            (replace(spec, endpoint=replace(spec.endpoint, path="/missing/{wrong}")),),
+            (replace(spec, endpoint=replace(spec.endpoint, responses=())),),
+        ]
+        for specs in malformed:
+            with (
+                self.subTest(specs=specs),
+                operations(*specs),
+                self.assertRaises(ContractError),
+            ):
+                bind(api.PetstoreAPI, fetch=self.fetch)
+        with self.assertRaises(TypeError):
+            bind(fetch=self.fetch)
 
 
 class ParameterTests(unittest.TestCase):
@@ -432,13 +457,14 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
             return response()
 
-        client = bind_async(api.AsyncPetstore, fetch=fetch)
-        self.assertTrue(inspect.iscoroutinefunction(client.get_pet))
-        result = await client.get_pet(api.GetPetInput(pet_id="x"))
+        client = bind_async(api.PetstoreAPI, fetch=fetch)
+        self.assertTrue(inspect.iscoroutinefunction(client.request))
+        result = await client.request(api.GetPetRequest(pet_id="x"))
         self.assertIs(type(result), api.GetPet200)
         self.assertEqual(len(requests), 1)
-        with self.assertRaises(ContractError):
-            bind_async(api.Petstore, fetch=fetch)
+        with self.assertRaisesRegex(TypeError, "not a registered request"):
+            await client.request(other_api.GetPetRequest(pet_id="x"))
+        self.assertEqual(len(requests), 1)
 
     async def test_cancellation_and_transport_failure(self):
         for failure in [asyncio.CancelledError(), TimeoutError("deadline")]:
@@ -446,9 +472,9 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
             async def fetch(request):
                 raise failure
 
-            client = bind_async(api.AsyncPetstore, fetch=fetch)
+            client = bind_async(api.PetstoreAPI, fetch=fetch)
             with self.assertRaises(type(failure)) as caught:
-                await client.get_pet(api.GetPetInput(pet_id="x"))
+                await client.request(api.GetPetRequest(pet_id="x"))
             self.assertIs(caught.exception, failure)
 
 

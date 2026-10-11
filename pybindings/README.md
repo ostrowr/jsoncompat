@@ -337,7 +337,7 @@ Name collisions fail with a diagnostic. Reference-connected models stay together
 including mutually recursive models, so class identities do not depend on import
 order. A connected group may exceed `--models-per-module`. Resource identifiers
 and anchor references conservatively keep all components in one group to retain
-scope. Without `--protocol`, this command emits component schema models only.
+scope. Without `--api`, this command emits component schema models only.
 
 An output manifest fingerprints the compiler, schemas, options, and managed
 files. Unchanged groups reuse their artifacts; edited schemas rebuild affected
@@ -345,63 +345,76 @@ groups. Regeneration removes obsolete managed files, preserves unrelated files,
 and refuses to overwrite unmanaged files. Deploy the complete directory as one
 build artifact; generation is not a live-reload or concurrent-writer protocol.
 
-## OpenAPI client protocols
+## API-scoped HTTP requests
 
 ```sh
-jsoncompat codegen --openapi openapi.json --protocol Petstore --output petstore
+jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
-This adds `protocols.py` to the generated package and exports `Petstore` and
-`AsyncPetstore`. Each operation takes one immutable generated input model as a
-positional argument and returns a union of generated response models:
+This adds a nominal `PetstoreAPI` identity, operation request models such as
+`GetPetRequest`, response models, and response aliases to the generated package.
+Every request inherits `Request[PetstoreAPI, ItsResponse]`. One shared client
+method handles every operation and preserves its inferred response type:
 
 ```python
-from petstore import Petstore, GetPetInput, GetPet200
-from jsoncompat.http import EncodedRequest, RawResponse, bind
+from petstore import PetstoreAPI, GetPetRequest, GetPet200, GetPetResponse
+from jsoncompat.http import Client, EncodedRequest, RawResponse, bind
 
 def fetch(request: EncodedRequest, /) -> RawResponse:
     # Adapt your existing session here. Return the status, all header pairs,
     # and body bytes, including declared HTTP error responses.
     ...
 
-client = bind(Petstore, fetch=fetch)
-result = client.get_pet(GetPetInput(pet_id="p_123"))
+client = bind(PetstoreAPI, fetch=fetch)  # Client[PetstoreAPI]
+result = client.request(GetPetRequest(pet_id="p_123"))  # GetPetResponse
 if isinstance(result, GetPet200):
     print(result.body.name, result.headers.etag)
+
+def get_pet(client: Client[PetstoreAPI], pet_id: str) -> GetPetResponse:
+    return client.request(GetPetRequest(pet_id=pet_id))
 ```
 
-`bind_async(AsyncPetstore, fetch=async_fetch)` is the asynchronous equivalent.
-Both factories preserve the protocol type for type checking and completion.
-Generated packages include a `py.typed` marker; include it when publishing the package.
-A published protocol is structural: consumers can supply their own implementation
-or fake without inheriting from it or using the binder. Only operation methods
-belong on the service protocol; keep session management on the transport.
+`bind_async(PetstoreAPI, fetch=async_fetch)` returns `AsyncClient[PetstoreAPI]`;
+use `await client.request(...)`. Both factories require the API class explicitly.
+The API type parameter is invariant: clients and requests cannot widen to a
+common API base or accept another API's requests. Strict type checking also
+rejects bare `Client` annotations without an API argument. Each generated API
+class is a distinct identity, even when two packages have identical schemas and
+class names. At runtime the binder checks exact registered request classes
+before encoding or fetching, including when callers bypass static checking.
+
+`Client[A]` and `AsyncClient[A]` are shared structural protocols. A custom client
+or test double implements `request[R](self, request: Request[A, R], /) -> R`;
+there are no generated operation methods or per-service client protocols.
+Sessions, authentication, retries, and cleanup stay outside this interface.
+Generated packages include a `py.typed` marker; include it when publishing them.
 
 The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
-`Cookie`, `Body`) and `@endpoint` method metadata. Binding validates method
-signatures, field mappings, and response declarations, creates concrete methods,
-and caches the resulting class for up to 128 protocol/mode combinations.
-Subsequent requests use the prepared dispatch plans. Model validation programs
-remain prepared during generation; binding does not compile schemas. Treat
-published metadata as immutable after binding. Protocol inheritance is supported;
-additional members must also be annotated operations.
+`Cookie`, `Body`) and an operation registry in `api.py`. Each entry pairs a request
+class with its response type and HTTP endpoint metadata. `_api.py` holds the
+API identity separately so request/response model imports remain acyclic.
+Binding validates the API's registered operations and caches immutable dispatch
+plans for up to 128 API classes, shared by sync and async clients. Requests use
+those prepared plans. Model validation programs remain prepared during code
+generation; binding does not compile schemas. Treat published metadata as
+immutable after binding. API identities are final, and unregistered request
+types and inherited API identities are rejected by the shared binder.
 
-Operation names use snake-cased `operationId`, or a deterministic method/path
-fallback. Collisions fail generation. Inputs flatten parameters into Python
-fields; location prefixes disambiguate collisions. `--rename` continues to rename
-component models. Operation schemas participate in the same reference graph as
-components, preserving shared class identity. Inline nested model classes are
-also exported from the package, so callers can construct them without depending
-on numbered module names. `--component` selects additional
-component roots; every operation and its model dependencies remain included.
+Request and response names derive from `operationId`, or a deterministic
+method/path fallback. Collisions fail generation. Requests flatten parameters
+into Python fields; location prefixes disambiguate collisions. `--rename`
+continues to rename component models. Operation schemas participate in the same
+reference graph as components, preserving shared class identity. Inline nested
+model classes are also exported from the package. `--component` selects
+additional component roots; every operation and its dependencies remain included.
 
-Input constructors, including `Input(**mapping)`, preserve `MISSING`. Omitted
-parameters are not sent; an omitted optional body produces `body=None` and no
-Content-Type header. A JSON body containing Python `None` produces `b"null"`.
-For several request media types, `body` is a union of generated
+Request constructors, including `RequestModel(**mapping)`, preserve `MISSING`.
+Omitted parameters are not sent; an omitted optional body produces `body=None`
+and no Content-Type header. A JSON body containing Python `None` produces
+`b"null"`. For several request media types, `body` is a union of generated
 `OperationBodyApplicationJson`, `OperationBodyTextPlain`, etc. models, each
-containing `content_type` and `value`. `input.serialize()` serializes the logical
-input object; the HTTP encoder distributes its fields across the request.
+containing `content_type` and `value`. `request.serialize()` serializes the
+logical request object; the HTTP encoder distributes its fields across the wire.
 
 `EncodedRequest` contains the method, an encoded origin-relative `target`, header
 pairs, optional body bytes, and its `Endpoint`. Transports choose the base URL
@@ -423,7 +436,7 @@ Narrow with `isinstance(result, Operation200)` to access a variant's body.
 Declared errors such as 404 are returned as values. Undeclared statuses/media,
 malformed bodies, missing required response headers, and schema failures raise
 `ResponseError`, which retains the `RawResponse` and chains the underlying error.
-Invalid protocol metadata raises `ContractError` at binding. Invalid input models
+Invalid API metadata raises `ContractError` at binding. Invalid request models
 or unrepresentable parameters fail before fetching. Transport exceptions and async
 cancellation propagate unchanged. Do not call a transport's `raise_for_status`
 before returning its `RawResponse`.

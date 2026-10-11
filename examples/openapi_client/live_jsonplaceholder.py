@@ -9,21 +9,20 @@ import aiohttp
 import httpx
 import requests
 from jsoncompat import MISSING
-from jsoncompat.http import bind, bind_async
+from jsoncompat.http import AsyncClient, Client, bind, bind_async
 from jsonplaceholder import (
-    AsyncJsonPlaceholder,
     CreatePost201,
-    CreatePostInput,
+    CreatePostRequest,
     GetPost200,
     GetPost404,
-    GetPostInput,
+    GetPostRequest,
     GetPostResponse,
-    JsonPlaceholder,
+    JsonPlaceholderAPI,
     ListPosts200,
-    ListPostsInput,
+    ListPostsRequest,
     NewPost,
     PatchPost200,
-    PatchPostInput,
+    PatchPostRequest,
     Post,
     PostPatch,
 )
@@ -55,8 +54,8 @@ def check_list(response: ListPosts200) -> None:
     assert any(post.id == 1 for post in response.body)
 
 
-def new_post() -> CreatePostInput:
-    return CreatePostInput(body=NewPost(userId=1, title=TITLE, body=BODY))
+def new_post() -> CreatePostRequest:
+    return CreatePostRequest(body=NewPost(userId=1, title=TITLE, body=BODY))
 
 
 def check_create(response: CreatePost201) -> None:
@@ -69,11 +68,11 @@ def check_create(response: CreatePost201) -> None:
     }
 
 
-def patch_post() -> PatchPostInput:
+def patch_post() -> PatchPostRequest:
     patch = PostPatch(**TitleUpdate(title=TITLE))
     assert patch.body is MISSING and patch.userId is MISSING
     assert patch.to_value() == {"title": TITLE}
-    return PatchPostInput(post_id=1, body=patch)
+    return PatchPostRequest(post_id=1, body=patch)
 
 
 def check_patch(response: PatchPost200, original: Post) -> None:
@@ -89,23 +88,23 @@ def check_missing(response: GetPostResponse) -> None:
     assert response.body.to_value() == {}
 
 
-def exercise(client: JsonPlaceholder) -> None:
-    original = check_get(client.get_post(GetPostInput(post_id=1)))
-    check_list(client.list_posts(ListPostsInput(user_id=1)))
-    check_create(client.create_post(new_post()))
-    check_patch(client.patch_post(patch_post()), original)
+def exercise(client: Client[JsonPlaceholderAPI]) -> None:
+    original = check_get(client.request(GetPostRequest(post_id=1)))
+    check_list(client.request(ListPostsRequest(user_id=1)))
+    check_create(client.request(new_post()))
+    check_patch(client.request(patch_post()), original)
     # JSONPlaceholder simulates writes: a fresh read must still match the original.
-    assert check_get(client.get_post(GetPostInput(post_id=1))) == original
-    check_missing(client.get_post(GetPostInput(post_id=999999)))
+    assert check_get(client.request(GetPostRequest(post_id=1))) == original
+    check_missing(client.request(GetPostRequest(post_id=999999)))
 
 
-async def exercise_async(client: AsyncJsonPlaceholder) -> None:
-    original = check_get(await client.get_post(GetPostInput(post_id=1)))
-    check_list(await client.list_posts(ListPostsInput(user_id=1)))
-    check_create(await client.create_post(new_post()))
-    check_patch(await client.patch_post(patch_post()), original)
-    assert check_get(await client.get_post(GetPostInput(post_id=1))) == original
-    check_missing(await client.get_post(GetPostInput(post_id=999999)))
+async def exercise_async(client: AsyncClient[JsonPlaceholderAPI]) -> None:
+    original = check_get(await client.request(GetPostRequest(post_id=1)))
+    check_list(await client.request(ListPostsRequest(user_id=1)))
+    check_create(await client.request(new_post()))
+    check_patch(await client.request(patch_post()), original)
+    assert check_get(await client.request(GetPostRequest(post_id=1))) == original
+    check_missing(await client.request(GetPostRequest(post_id=999999)))
 
 
 class LiveSyncTests(unittest.TestCase):
@@ -113,14 +112,14 @@ class LiveSyncTests(unittest.TestCase):
         with requests.Session() as session:
             exercise(
                 bind(
-                    JsonPlaceholder,
+                    JsonPlaceholderAPI,
                     fetch=RequestsFetch(session, BASE_URL, timeout=TIMEOUT),
                 )
             )
 
     def test_httpx(self) -> None:
         with httpx.Client(timeout=TIMEOUT) as session:
-            exercise(bind(JsonPlaceholder, fetch=HttpxFetch(session, BASE_URL)))
+            exercise(bind(JsonPlaceholderAPI, fetch=HttpxFetch(session, BASE_URL)))
 
 
 class LiveAsyncTests(unittest.IsolatedAsyncioTestCase):
@@ -129,15 +128,13 @@ class LiveAsyncTests(unittest.IsolatedAsyncioTestCase):
             timeout=aiohttp.ClientTimeout(total=TIMEOUT), trust_env=True
         ) as session:
             await exercise_async(
-                bind_async(AsyncJsonPlaceholder, fetch=AiohttpFetch(session, BASE_URL))
+                bind_async(JsonPlaceholderAPI, fetch=AiohttpFetch(session, BASE_URL))
             )
 
     async def test_httpx(self) -> None:
         async with httpx.AsyncClient(timeout=TIMEOUT) as session:
             await exercise_async(
-                bind_async(
-                    AsyncJsonPlaceholder, fetch=AsyncHttpxFetch(session, BASE_URL)
-                )
+                bind_async(JsonPlaceholderAPI, fetch=AsyncHttpxFetch(session, BASE_URL))
             )
 
 

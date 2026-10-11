@@ -20,10 +20,10 @@ use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
 mod ci;
 #[path = "jsoncompat/codegen.rs"]
 mod codegen;
+#[path = "jsoncompat/codegen_api.rs"]
+mod codegen_api;
 #[path = "jsoncompat/codegen_package.rs"]
 mod codegen_package;
-#[path = "jsoncompat/codegen_protocol.rs"]
-mod codegen_protocol;
 #[path = "jsoncompat/compat.rs"]
 mod compat;
 #[path = "jsoncompat/demo.rs"]

@@ -3,7 +3,7 @@
 use super::codegen::write_atomic;
 use anyhow::{Context, Result, bail, ensure};
 use jsoncompat::{OpenApiDocument, SchemaDocument, SchemaOptions};
-use jsoncompat_codegen::{DataclassFieldMetadata, generate_dataclass_declarations_with_metadata};
+use jsoncompat_codegen::{DataclassMetadata, generate_dataclass_declarations_with_metadata};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -39,25 +39,19 @@ pub(super) fn generate(
     renames: &[String],
     models_per_module: NonZeroUsize,
     options: &SchemaOptions,
-    protocol: Option<&str>,
+    api: Option<&str>,
 ) -> Result<()> {
     let document = OpenApiDocument::from_json(raw)?;
-    let protocol = protocol
-        .map(|name| super::codegen_protocol::ProtocolPackage::prepare(&document, raw, name))
+    let api = api
+        .map(|name| super::codegen_api::ApiPackage::prepare(&document, raw, name))
         .transpose()?;
     let empty_schemas = serde_json::Map::new();
-    let empty_metadata = DataclassFieldMetadata::default();
-    let metadata = protocol
-        .as_ref()
-        .map(|p| &p.metadata)
-        .unwrap_or(&empty_metadata);
+    let empty_metadata = DataclassMetadata::default();
+    let metadata = api.as_ref().map(|p| &p.metadata).unwrap_or(&empty_metadata);
     let groups = document.component_schema_groups_with_schemas(
         &components.iter().cloned().collect(),
         models_per_module,
-        protocol
-            .as_ref()
-            .map(|p| &p.schemas)
-            .unwrap_or(&empty_schemas),
+        api.as_ref().map(|p| &p.schemas).unwrap_or(&empty_schemas),
     )?;
     ensure!(
         !groups.is_empty(),
@@ -79,9 +73,7 @@ pub(super) fn generate(
     }
     for name in groups.iter().flat_map(|group| group.schemas.keys()) {
         ensure!(
-            !protocol
-                .as_ref()
-                .is_some_and(|p| p.schemas.contains_key(name))
+            !api.as_ref().is_some_and(|p| p.schemas.contains_key(name))
                 || !overrides.contains_key(name),
             "--rename applies to component schemas, not generated operation model {name}"
         );
@@ -115,7 +107,7 @@ pub(super) fn generate(
         previous
             .exports
             .keys()
-            .all(|name| super::codegen_protocol::identifier(name)),
+            .all(|name| super::codegen_api::identifier(name)),
         "package manifest contains an invalid export name"
     );
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
@@ -170,7 +162,9 @@ pub(super) fn generate(
             declarations,
             options,
             metadata.imports,
-            metadata.fields
+            metadata.base_imports,
+            metadata.fields,
+            metadata.bases
         ]))?);
         let cached = previous.compiler == manifest.compiler
             && previous.modules.get(&module_name) == Some(&input_digest)
@@ -211,7 +205,7 @@ pub(super) fn generate(
             rebuilt += 1;
             module.models
         };
-        if protocol.is_some() {
+        if api.is_some() {
             for name in nested_exports {
                 add_export(&mut exports, &name, &module_name)?;
             }
@@ -219,11 +213,12 @@ pub(super) fn generate(
         manifest.modules.insert(module_name, input_digest);
     }
     let model_count = exports.len();
-    if let Some(protocol) = protocol {
-        let (source, public) = protocol.source(&exports)?;
-        stage(&staging, &mut manifest, "protocols.py", &source)?;
+    if let Some(api) = api {
+        let (source, public) = api.source(&exports)?;
+        stage(&staging, &mut manifest, "api.py", &source)?;
+        stage(&staging, &mut manifest, "_api.py", &api.identity_source())?;
         for name in public {
-            exports.insert(name, "protocols".into());
+            exports.insert(name, "api".into());
         }
     }
     let mut routing =

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import types
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Generic, Literal, Protocol, TypeVar
+
+from typing_extensions import TypeForm
 
 from jsoncompat.codegen.dataclasses import DataclassModel
 
@@ -83,7 +85,53 @@ class Endpoint:
     servers: tuple[Server, ...] = ()
 
 
-def endpoint[**P, R](
+class API:
+    """Nominal identity for one generated API. Pass the class explicitly to bind."""
+
+    __slots__ = ()
+
+    @classmethod
+    def operations(cls) -> tuple[Operation, ...]:
+        raise ContractError("API must declare its registered operations")
+
+
+# Keep both parameters invariant: API boundaries cannot widen, and operation
+# declarations must pair a request with its exact response type.
+ApiT = TypeVar("ApiT", bound=API)
+ResponseT = TypeVar("ResponseT")
+
+
+class Request(DataclassModel, Generic[ApiT, ResponseT]):
+    """A generated operation request, scoped to one API and response type."""
+
+    __slots__ = ()
+
+    def __class_getitem__(cls, item: object) -> types.GenericAlias:
+        # Avoid typing's global alias cache retaining generated API classes.
+        return types.GenericAlias(cls, item)
+
+
+class Client(Protocol[ApiT]):
+    def request[R](self, request: Request[ApiT, R], /) -> R: ...
+
+
+class AsyncClient(Protocol[ApiT]):
+    async def request[R](self, request: Request[ApiT, R], /) -> R: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Operation:
+    """One registered request/response pair and its HTTP metadata."""
+
+    request: type[DataclassModel]
+    response: object
+    endpoint: Endpoint
+
+
+def operation[A: API, R](
+    request: type[Request[A, R]],
+    response: TypeForm[R],
+    /,
     *,
     method: str,
     path: str,
@@ -91,21 +139,13 @@ def endpoint[**P, R](
     operation_id: str | None = None,
     security: tuple[tuple[SecurityRequirement, ...], ...] = (),
     servers: tuple[Server, ...] = (),
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Attach a contract while preserving the decorated method's signature."""
-    return _decorator(
-        Endpoint(method, path, responses, operation_id, security, servers)
+) -> Operation:
+    """Declare an operation while checking its request/response type pairing."""
+    return Operation(
+        request,
+        response,
+        Endpoint(method, path, responses, operation_id, security, servers),
     )
-
-
-def _decorator[**P, R](
-    metadata: Endpoint,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    def decorate(method: Callable[P, R]) -> Callable[P, R]:
-        setattr(method, "__jsoncompat_endpoint__", metadata)
-        return method
-
-    return decorate
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +175,7 @@ class AsyncFetch(Protocol):
 
 
 class ContractError(ValueError):
-    """An annotated protocol is incomplete or uses unsupported HTTP semantics."""
+    """An API contract is incomplete or uses unsupported HTTP semantics."""
 
 
 class ResponseError(ValueError):

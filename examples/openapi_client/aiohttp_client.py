@@ -5,7 +5,7 @@ import asyncio
 import aiohttp
 from exercise import exercise_async
 from jsoncompat.http import bind_async
-from petstore import AsyncPetstore
+from petstore import PetstoreAPI
 from server import serve
 from transports import AiohttpFetch
 
@@ -16,7 +16,7 @@ async def main() -> None:
             headers={"Authorization": "Bearer example-token"},
             timeout=aiohttp.ClientTimeout(total=10),
         ) as session:
-            client = bind_async(AsyncPetstore, fetch=AiohttpFetch(session, base_url))
+            client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
             await exercise_async(client)
     print("aiohttp: all ten operations passed")
 
