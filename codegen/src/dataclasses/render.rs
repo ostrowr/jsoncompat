@@ -77,7 +77,7 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
                         if field.required {
                             ""
                         } else {
-                            ", default=dc.JSONCOMPAT_MISSING"
+                            ", default=dc.MISSING"
                         }
                     ),
                     default: if field.required {
@@ -132,7 +132,7 @@ pub(super) fn module(classes: &[ClassSpec], root: &str) -> Result<DataclassModul
         .flat_map(fields)
         .any(|field| field.default == Some("_jsoncompat_missing"))
     {
-        String::from("_jsoncompat_missing = dc.JsoncompatMissingType()\n\n")
+        String::from("_jsoncompat_missing = dc.MissingType.MISSING\n\n")
     } else {
         String::new()
     };

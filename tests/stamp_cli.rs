@@ -156,7 +156,7 @@ fn codegen_dataclasses_accepts_plain_schema_from_stdin() {
 import importlib.util
 import sys
 
-from jsoncompat.codegen.dataclasses import JSONCOMPAT_MISSING
+from jsoncompat.codegen.dataclasses import MISSING
 
 spec = importlib.util.spec_from_file_location("plain_models", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
@@ -167,7 +167,7 @@ spec.loader.exec_module(module)
 model = module.JSONCOMPAT_MODEL
 user = model.from_value({"name": "Ada", "nickname": "ace"})
 assert user.name == "Ada"
-assert user.age is JSONCOMPAT_MISSING
+assert user.age is MISSING
 assert user.__jsoncompat_extra__ == {"nickname": "ace"}
 assert user.to_value() == {"name": "Ada", "nickname": "ace"}
 

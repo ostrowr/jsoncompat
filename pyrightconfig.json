@@ -3,6 +3,7 @@
     "pybindings"
   ],
   "include": [
+    "examples/dataclasses",
     "examples/stamp",
     "pybindings/jsoncompat",
     "tests/fixtures/dataclasses"

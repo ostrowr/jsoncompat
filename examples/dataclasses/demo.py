@@ -6,9 +6,10 @@
 # ///
 """Canonical generated-dataclass example for an ordinary JSON Schema."""
 
-from jsoncompat import JsonValue
+from dataclasses import replace
+
+from jsoncompat import MISSING, JsonValue
 from jsoncompat.codegen import SerializationFormat
-from jsoncompat.codegen.dataclasses import JSONCOMPAT_MISSING
 
 from models import Customer, Order, OrderItem
 
@@ -16,6 +17,14 @@ from models import Customer, Order, OrderItem
 def describe(order: Order) -> str:
     units = sum(item.quantity for item in order.items)
     return f"{order.id}: {units} units for {order.customer.name}"
+
+
+def describe_note(order: Order) -> str:
+    if order.note is MISSING:
+        return "No note supplied"
+    if order.note is None:
+        return "Note explicitly cleared"
+    return order.note.upper()
 
 
 def main() -> None:
@@ -29,7 +38,7 @@ def main() -> None:
         ],
         status="paid",
     )
-    assert order.note is JSONCOMPAT_MISSING
+    assert order.note is MISSING
 
     # Use to_value()/from_value() at Python JSON-value boundaries.
     value: JsonValue = order.to_value()
@@ -61,7 +70,8 @@ def main() -> None:
     print("MessagePack:", describe(msgpack_order))
 
     # Omitted and explicit null remain distinct.
-    assert json_order.note is JSONCOMPAT_MISSING
+    assert json_order.note is MISSING
+    assert describe_note(json_order) == "No note supplied"
     null_value: JsonValue = {
         "id": "order-124",
         "customer": {"name": "Grace", "email": "grace@example.com"},
@@ -71,7 +81,16 @@ def main() -> None:
         "status": "pending",
         "note": None,
     }
-    assert Order.from_value(null_value).note is None
+    null_order = Order.from_value(null_value)
+    assert null_order.note is None
+    assert describe_note(null_order) == "Note explicitly cleared"
+    assert describe_note(replace(order, note="deliver tomorrow")) == "DELIVER TOMORROW"
+    assert describe_note(replace(order, note="")) == ""
+    omitted_again = replace(null_order, note=MISSING)
+    assert omitted_again.note is MISSING
+    omitted_value = omitted_again.to_value()
+    assert isinstance(omitted_value, dict)
+    assert "note" not in omitted_value
     print("Omitted and null notes remain distinct")
 
     # Trusted callers can explicitly skip only the JSON Schema check.

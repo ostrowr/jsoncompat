@@ -17,7 +17,7 @@ class Order(dc.DataclassModel):
     customer: Customer = dc.field("customer")
     id: str = dc.field("id")
     items: collections.abc.Sequence[OrderItem] = dc.field("items")
-    note: dc.Omittable[str | None] = dc.field("note", default=dc.JSONCOMPAT_MISSING)
+    note: dc.Omittable[str | None] = dc.field("note", default=dc.MISSING)
     status: (typing.Literal["paid"] | typing.Literal["pending"]) = dc.field("status")
 
     __slots__ = ("customer", "id", "items", "note", "status",)

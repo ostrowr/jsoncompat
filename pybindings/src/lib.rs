@@ -329,19 +329,19 @@ struct ValidatorPy {
     schema: Rc<PythonSchema>,
 }
 
-#[pyclass(name = "JsoncompatMissingType", module = "jsoncompat._native", frozen)]
-struct JsoncompatMissingPy;
-
-static JSONCOMPAT_MISSING_SINGLETON: PyOnceLock<Py<JsoncompatMissingPy>> = PyOnceLock::new();
-
-fn typed_jsoncompat_missing(py: Python<'_>) -> PyResult<Py<JsoncompatMissingPy>> {
-    JSONCOMPAT_MISSING_SINGLETON
-        .get_or_try_init(py, || Py::new(py, JsoncompatMissingPy))
-        .map(|missing| missing.clone_ref(py))
-}
+static MISSING_SINGLETON: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 fn jsoncompat_missing(py: Python<'_>) -> PyResult<Py<PyAny>> {
-    typed_jsoncompat_missing(py).map(Py::into_any)
+    MISSING_SINGLETON
+        .get_or_try_init(py, || {
+            // Resolve the enum member, rather than a rebindable public alias.
+            Ok(py
+                .import("jsoncompat._missing")?
+                .getattr("MissingType")?
+                .getattr("MISSING")?
+                .unbind())
+        })
+        .map(|missing| missing.clone_ref(py))
 }
 
 #[pyclass(name = "_ModelPlan", module = "jsoncompat._native")]
@@ -365,30 +365,6 @@ struct ModelRuntimePy {
 #[pyclass(name = "Generator", module = "jsoncompat._native", unsendable)]
 struct GeneratorPy {
     schema: SchemaDocument,
-}
-
-#[pymethods]
-impl JsoncompatMissingPy {
-    #[new]
-    fn new(py: Python<'_>) -> PyResult<Py<Self>> {
-        typed_jsoncompat_missing(py)
-    }
-
-    fn __repr__(&self) -> &'static str {
-        "JSONCOMPAT_MISSING"
-    }
-
-    fn __copy__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        jsoncompat_missing(py)
-    }
-
-    fn __deepcopy__(&self, py: Python<'_>, _memo: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        jsoncompat_missing(py)
-    }
-
-    fn __reduce__(&self) -> &'static str {
-        "JSONCOMPAT_MISSING"
-    }
 }
 
 #[pymethods]
@@ -1173,10 +1149,11 @@ fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         py.get_type::<validation_error::ValidationError>(),
     )?;
     m.add_class::<GeneratorPy>()?;
-    m.add_class::<JsoncompatMissingPy>()?;
     m.add_class::<ModelRuntimePy>()?;
     m.add_class::<ValidatorPy>()?;
-    m.add("JSONCOMPAT_MISSING", jsoncompat_missing(py)?)?;
+    let missing = jsoncompat_missing(py)?;
+    m.add("MissingType", missing.bind(py).get_type())?;
+    m.add("MISSING", missing)?;
 
     let role_constants = PyModule::new(py, "Role")?;
     role_constants.add("SERIALIZER", "serializer")?;

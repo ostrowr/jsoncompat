@@ -23,7 +23,7 @@ class GeneratedSchemaFileMetadata(dc.DataclassAdditionalModel["str"]):
 
 @typing.final
 class GeneratedSchemaFile(dc.DataclassModel):
-    checksum: dc.Omittable[str | None] = dc.field("checksum", default=dc.JSONCOMPAT_MISSING)
+    checksum: dc.Omittable[str | None] = dc.field("checksum", default=dc.MISSING)
     kind: typing.Literal["file"] = dc.field("kind")
     labels: collections.abc.Sequence[str] = dc.field("labels")
     metadata: GeneratedSchemaFileMetadata = dc.field("metadata")
@@ -63,7 +63,7 @@ __all__ = ("GeneratedSchema", "GeneratedSchemaFileMetadata", "GeneratedSchemaFil
 
 # --- Generated implementation: regenerate this file to change it. ---
 
-_jsoncompat_missing = dc.JsoncompatMissingType()
+_jsoncompat_missing = dc.MissingType.MISSING
 
 def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
     self.__post_init__(skip_validation)

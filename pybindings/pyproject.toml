@@ -8,6 +8,7 @@ dynamic = ["version"]         # "version" pulled from Cargo.toml
 description = "JSON Schema compatibility checker for evolving schemas"
 readme = "README.md"
 requires-python = ">=3.12"
+dependencies = ["typing-extensions>=4.10; python_version < '3.13'"]
 
 [project.optional-dependencies]
 msgpack = ["msgpack>=1.1.1"]
