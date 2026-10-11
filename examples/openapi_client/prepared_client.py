@@ -1,35 +1,10 @@
 """Use a prepared request with HTTPX's own per-call transport controls."""
 
 import httpx
-from jsoncompat.http import EncodedRequest, RawResponse, RequestOptions, prepare
+from jsoncompat.http import RequestOptions, prepare
+from jsoncompat.http.httpx import HttpxFetch, HttpxOptions
 from petstore import GetPet200, GetPetRequest, PetstoreAPI
 from server import serve
-
-
-def fetch(
-    session: httpx.Client,
-    base_url: str,
-    request: EncodedRequest,
-    *,
-    timeout: httpx.Timeout,
-    follow_redirects: bool = False,
-) -> RawResponse:
-    response = session.request(
-        request.method,
-        base_url.rstrip("/") + request.target,
-        headers=request.headers,
-        content=request.body,
-        timeout=timeout,
-        follow_redirects=follow_redirects,
-    )
-    return RawResponse(
-        response.status_code,
-        tuple(
-            (key.decode("ascii"), value.decode("latin-1"))
-            for key, value in response.headers.raw
-        ),
-        response.content,
-    )
 
 
 def main() -> None:
@@ -45,9 +20,10 @@ def main() -> None:
         ),
     )
     with serve() as base_url, httpx.Client(trust_env=False) as session:
-        # Timeout policy belongs to this fetcher; no jsoncompat transport flags.
+        # Inspect the buffered response before deciding whether to decode it.
+        fetch = HttpxFetch(session, base_url)
         raw = fetch(
-            session, base_url, call.request, timeout=httpx.Timeout(5, connect=1)
+            call.request, transport=HttpxOptions(timeout=httpx.Timeout(5, connect=1))
         )
         assert raw.status == 200 and raw.body
         result = call.decode(raw)  # GetPetResponse, validated only when decoded.

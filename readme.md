@@ -163,7 +163,9 @@ The package exports `PetstoreAPI`, typed request models, and response unions.
 `client.request(GetPetRequest(...))` method with an inferred `GetPetResponse`.
 `bind_async` provides the async equivalent. API boundaries are enforced by
 invariant types and runtime registration checks. Callers supply one fetch
-function and own sessions, authentication, pooling, and retries. See the
+function and own sessions, authentication, pooling, and retries. Optional
+`jsoncompat[aiohttp]`, `jsoncompat[httpx]`, and `jsoncompat[requests]` integrations
+provide that fetcher for an existing session. See the
 [runnable aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md)
 and [HTTP runtime contract](pybindings/README.md#api-scoped-http-requests).
 

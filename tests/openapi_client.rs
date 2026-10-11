@@ -86,13 +86,13 @@ fn jsonplaceholder_spec_and_live_test_preserve_static_types() {
             "pythonVersion": "3.12",
             "typeCheckingMode": "strict",
             "extraPaths": [Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],
-            "include": ["jsonplaceholder", "live_jsonplaceholder.py", "transports.py"]
+            "include": ["jsonplaceholder", "live_jsonplaceholder.py"]
         })
         .to_string(),
     )
     .unwrap();
     success(
-        python_env::pyright_command_with_group("http-examples")
+        python_env::pyright_command()
             .current_dir(&work.0)
             .output()
             .unwrap(),
@@ -103,7 +103,7 @@ fn jsonplaceholder_spec_and_live_test_preserve_static_types() {
 #[ignore = "makes 24 HTTPS requests to JSONPlaceholder; run just python-http-live"]
 fn jsonplaceholder_live_all_transports() {
     let work = jsonplaceholder_example();
-    let status = python_env::python_command_with_group("http-examples")
+    let status = python_env::python_command()
         .current_dir(&work.0)
         .arg("live_jsonplaceholder.py")
         .status()
@@ -149,7 +149,7 @@ fn all_example_transports_work_against_the_local_server() {
         "wire.py",
     ] {
         success(
-            python_env::python_command_with_group("http-examples")
+            python_env::python_command()
                 .current_dir(&work.0)
                 .arg(file)
                 .output()
@@ -169,7 +169,7 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
         work.0.join("transport_typing.py"),
     )
     .unwrap();
-    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","transports.py","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py"]}).to_string()).unwrap();
+    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py"]}).to_string()).unwrap();
     fs::write(
         work.0.join("valid.py"),
         r#"
@@ -213,7 +213,7 @@ assert_type(execute(client, GetPetRequest(pet_id="a")), GetPetResponse)
 "#,
     ).unwrap();
     success(
-        python_env::pyright_command_with_group("http-examples")
+        python_env::pyright_command()
             .current_dir(&work.0)
             .output()
             .unwrap(),
@@ -226,7 +226,9 @@ from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, 
 from typing_extensions import TypeForm
 from valid import async_fetch, call, client, execute, fetch
 from transport_typing import fetch as typed_fetch, async_fetch as typed_async_fetch
-from transports import AiohttpOptions, HttpxOptions, RequestsOptions
+from jsoncompat.http.aiohttp import AiohttpOptions
+from jsoncompat.http.httpx import HttpxOptions
+from jsoncompat.http.requests import RequestsOptions
 from jsoncompat.http import EncodedRequest, RawResponse, Fetch, AsyncFetch, bind_async
 
 bind(PetstoreAPI, fetch=async_fetch)  # must fail
@@ -288,7 +290,7 @@ async def invalid_options() -> None:
     missing: AsyncClient[PetstoreAPI] = typed_async  # must fail
 "#;
     fs::write(work.0.join("invalid.py"), invalid).unwrap();
-    let output = python_env::pyright_command_with_group("http-examples")
+    let output = python_env::pyright_command()
         .current_dir(&work.0)
         .arg("--outputjson")
         .arg("invalid.py")

@@ -520,18 +520,69 @@ apply authentication, retry, follow redirects, or close sessions. Configure thes
 in the transport. The [complete examples](../examples/openapi_client/README.md)
 show adapters using caller-owned aiohttp, HTTPX, and requests sessions.
 
+### Optional HTTP integrations
+
+Install only the client library you use:
+
+| Install | Import | Fetcher and options |
+| --- | --- | --- |
+| `pip install 'jsoncompat[aiohttp]'` | `jsoncompat.http.aiohttp` | `AiohttpFetch`, `AiohttpOptions` |
+| `pip install 'jsoncompat[httpx]'` | `jsoncompat.http.httpx` | `HttpxFetch`, `AsyncHttpxFetch`, `HttpxOptions` |
+| `pip install 'jsoncompat[requests]'` | `jsoncompat.http.requests` | `RequestsFetch`, `RequestsOptions` |
+
+The requests extra includes `types-requests` for static checking. Core imports
+and generated packages work without any HTTP client installed. Importing one
+integration does not import the others. No adapter creates or closes a session:
+pass an existing session and an absolute API base URL (including any path prefix)
+to its constructor, then give the fetcher to `bind` or `bind_async`. The caller
+configures authentication, TLS, proxies, pooling, hooks, and session cleanup.
+
+```python
+import httpx
+from jsoncompat.http import bind
+from jsoncompat.http.httpx import HttpxFetch
+from petstore import PetstoreAPI, GetPetRequest, GetPet200
+
+with httpx.Client(timeout=30) as session:
+    client = bind(PetstoreAPI, fetch=HttpxFetch(session, "https://api.example.com/v1"))
+    result = client.request(GetPetRequest(pet_id="p_123"))
+    if isinstance(result, GetPet200):
+        print(result.body.name)
+    # session remains available for other native or generated requests here.
+```
+
+Calls buffer and release responses, preserving decompressed body bytes and
+repeated response headers. Redirects are returned without following them.
+Adapters return every HTTP status for typed decoding and do not call
+`raise_for_status`; aiohttp's session-level setting is disabled per call.
+Caller-configured hooks can still raise, and native I/O errors and cancellation
+propagate unchanged. Declared error responses remain values; no throwing API is
+added by these integrations.
+
+Aiohttp explicitly enables response decompression and suppresses its automatic
+Content-Type header so an omitted body stays omitted. Requests cannot transmit
+repeated request header names, so `RequestsFetch` rejects them rather than
+silently dropping values. Request defaults set on the session still apply.
+
+Without `transport=`, aiohttp and HTTPX inherit their session timeout.
+Requests has no session timeout setting, so `RequestsFetch(..., timeout=10)`
+sets a default in seconds; it also accepts `(connect, read)` or `None`.
+Per-call options never change these defaults. `timeout=None` disables timeouts
+for HTTPX and requests; for aiohttp use `ClientTimeout(total=None)`. These
+integrations currently expose only timeout overrides; other per-call transport
+policies belong in a custom fetcher implementing the same protocol.
+
 ### Per-call overrides and prepared requests
 
 Use `transport=` for adapter-specific settings such as a single-call timeout.
-`Options` can be any adapter-defined type; jsoncompat has no aiohttp, requests,
-or HTTPX dependency. For example, using the
-[aiohttp adapter](../examples/openapi_client/transports.py):
+`Options` can be any adapter-defined type. HTTP client dependencies are optional.
+For example, using the shipped aiohttp integration:
 
 ```python
 import aiohttp
 from jsoncompat.http import bind_async, RequestOptions
 from petstore import PetstoreAPI, GetPetRequest
-from transports import AiohttpFetch, AiohttpOptions
+from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 
 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
     client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
@@ -544,16 +595,16 @@ async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as ses
     # Later calls without transport= still use the session's 30-second timeout.
 ```
 
-`AiohttpOptions` is an example-owned frozen dataclass with one required
-`timeout: aiohttp.ClientTimeout` field. You can define richer options for
-authentication, routing, retries, tracing, or other native settings without
+`AiohttpOptions` is a frozen dataclass with one required
+`timeout: aiohttp.ClientTimeout` field. A custom fetcher can define richer options
+for authentication, routing, retries, tracing, or other native settings without
 changing generated models or the binder. `options=` controls the wire request;
 `transport=` goes only to the fetcher and is never serialized into headers,
 query parameters, or a body. Both work together while preserving response
 inference and API checks. Passing another adapter's options is a type error.
 
 See the [runnable aiohttp, requests, and HTTPX examples](../examples/openapi_client/README.md#per-call-transport-options)
-for complete adapters and calls using native timeout types.
+for calls using each integration's native timeout types.
 
 Use `RequestOptions` for fields missing from a spec or an exceptional call:
 

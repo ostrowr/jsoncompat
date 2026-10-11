@@ -618,8 +618,19 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+aiohttp = [
+    { name = "aiohttp" },
+    { name = "yarl" },
+]
+httpx = [
+    { name = "httpx" },
+]
 msgpack = [
     { name = "msgpack" },
+]
+requests = [
+    { name = "requests" },
+    { name = "types-requests" },
 ]
 yaml = [
     { name = "pyyaml" },
@@ -630,31 +641,24 @@ benchmark = [
     { name = "datamodel-code-generator" },
     { name = "pydantic", extra = ["email"] },
 ]
-http-examples = [
-    { name = "aiohttp" },
-    { name = "httpx" },
-    { name = "requests" },
-    { name = "types-requests" },
-]
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", marker = "extra == 'aiohttp'", specifier = ">=3.11,<4" },
+    { name = "httpx", marker = "extra == 'httpx'", specifier = ">=0.28,<1" },
     { name = "msgpack", marker = "extra == 'msgpack'", specifier = ">=1.1.1" },
     { name = "pyyaml", marker = "extra == 'yaml'", specifier = ">=6.0.2" },
+    { name = "requests", marker = "extra == 'requests'", specifier = ">=2.32,<3" },
+    { name = "types-requests", marker = "extra == 'requests'", specifier = ">=2.32,<3" },
     { name = "typing-extensions", specifier = ">=4.13" },
+    { name = "yarl", marker = "extra == 'aiohttp'", specifier = ">=1.17,<2" },
 ]
-provides-extras = ["msgpack", "yaml"]
+provides-extras = ["aiohttp", "httpx", "msgpack", "requests", "yaml"]
 
 [package.metadata.requires-dev]
 benchmark = [
     { name = "datamodel-code-generator", specifier = "==0.64.0" },
     { name = "pydantic", extras = ["email"], specifier = "==2.13.4" },
-]
-http-examples = [
-    { name = "aiohttp", specifier = ">=3.11,<4" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "requests", specifier = ">=2.32,<3" },
-    { name = "types-requests", specifier = ">=2.32" },
 ]
 
 [[package]]

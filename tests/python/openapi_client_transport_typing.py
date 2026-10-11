@@ -17,16 +17,10 @@ from jsoncompat.http import (
     bind,
     bind_async,
 )
+from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
+from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
+from jsoncompat.http.requests import RequestsFetch, RequestsOptions
 from petstore import GetPetRequest, GetPetResponse, PetstoreAPI
-from transports import (
-    AiohttpFetch,
-    AiohttpOptions,
-    AsyncHttpxFetch,
-    HttpxFetch,
-    HttpxOptions,
-    RequestsFetch,
-    RequestsOptions,
-)
 
 
 def portable(client: Client[PetstoreAPI, Never]) -> GetPetResponse:

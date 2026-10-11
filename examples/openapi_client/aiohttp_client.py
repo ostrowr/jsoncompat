@@ -5,9 +5,9 @@ import asyncio
 import aiohttp
 from exercise import exercise_async
 from jsoncompat.http import bind_async
+from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 from petstore import Health200, HealthRequest, PetstoreAPI
 from server import serve
-from transports import AiohttpFetch, AiohttpOptions
 
 
 async def main() -> None:

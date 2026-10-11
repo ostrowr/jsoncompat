@@ -10,6 +10,9 @@ import httpx
 import requests
 from jsoncompat import MISSING
 from jsoncompat.http import AsyncClient, Client, bind, bind_async
+from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
+from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
+from jsoncompat.http.requests import RequestsFetch, RequestsOptions
 from jsonplaceholder import (
     CreatePost201,
     CreatePostRequest,
@@ -25,15 +28,6 @@ from jsonplaceholder import (
     PatchPostRequest,
     Post,
     PostPatch,
-)
-from transports import (
-    AiohttpFetch,
-    AiohttpOptions,
-    AsyncHttpxFetch,
-    HttpxFetch,
-    HttpxOptions,
-    RequestsFetch,
-    RequestsOptions,
 )
 
 BASE_URL = "https://jsonplaceholder.typicode.com"

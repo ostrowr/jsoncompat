@@ -11,16 +11,13 @@ requires-python = ">=3.12"
 dependencies = ["typing-extensions>=4.13"]
 
 [project.optional-dependencies]
+aiohttp = ["aiohttp>=3.11,<4", "yarl>=1.17,<2"]
+httpx = ["httpx>=0.28,<1"]
+requests = ["requests>=2.32,<3", "types-requests>=2.32,<3"]
 msgpack = ["msgpack>=1.1.1"]
 yaml = ["PyYAML>=6.0.2"]
 
 [dependency-groups]
-http-examples = [
-    "aiohttp>=3.11,<4",
-    "httpx>=0.28,<1",
-    "requests>=2.32,<3",
-    "types-requests>=2.32",
-]
 benchmark = [
     "datamodel-code-generator==0.64.0",
     "pydantic[email]==2.13.4",

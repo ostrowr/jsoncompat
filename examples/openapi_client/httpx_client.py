@@ -5,9 +5,9 @@ import asyncio
 import httpx
 from exercise import exercise, exercise_async
 from jsoncompat.http import bind, bind_async
+from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 from petstore import Health200, HealthRequest, PetstoreAPI
 from server import serve
-from transports import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 
 
 async def async_main(base_url: str) -> None:

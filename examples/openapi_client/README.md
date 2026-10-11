@@ -29,10 +29,10 @@ Then run any example. Each starts and stops its own local HTTP server; no
 account, external service, or real credential is needed.
 
 ```sh
-uv run --project pybindings --group http-examples python examples/openapi_client/aiohttp_client.py
-uv run --project pybindings --group http-examples python examples/openapi_client/httpx_client.py
-uv run --project pybindings --group http-examples python examples/openapi_client/requests_client.py
-uv run --project pybindings --group http-examples python examples/openapi_client/prepared_client.py
+uv run --project pybindings --extra aiohttp python examples/openapi_client/aiohttp_client.py
+uv run --project pybindings --extra httpx python examples/openapi_client/httpx_client.py
+uv run --project pybindings --extra requests python examples/openapi_client/requests_client.py
+uv run --project pybindings --extra httpx python examples/openapi_client/prepared_client.py
 ```
 
 The HTTPX example exercises both synchronous and asynchronous clients.
@@ -44,7 +44,7 @@ jsoncompat version supporting this HTTP runtime.
 import httpx
 from petstore import PetstoreAPI, GetPetRequest, GetPet200, GetPet404
 from jsoncompat.http import bind
-from transports import HttpxFetch
+from jsoncompat.http.httpx import HttpxFetch
 
 with httpx.Client(headers={"Authorization": "Bearer example-token"}) as session:
     client = bind(PetstoreAPI, fetch=HttpxFetch(session, "http://127.0.0.1:8000"))
@@ -62,10 +62,11 @@ The runnable examples above handle this automatically.
 
 ## Per-call transport options
 
-All three adapters live in [`transports.py`](transports.py). Their option types
-are example-owned frozen dataclasses; they are not generated or provided by
-jsoncompat. Each has one required `timeout` field. The binder infers that type
-from the fetcher's signature and forwards the exact value to the adapter.
+The adapters ship as [optional integrations](../../pybindings/README.md#optional-http-integrations).
+Install `jsoncompat[aiohttp]`, `jsoncompat[httpx]`, or `jsoncompat[requests]`
+and import only the integration you use. Each option type is a frozen dataclass
+with one required `timeout` field. The binder infers that type from the fetcher's
+signature and forwards the exact value to the adapter.
 
 With an existing session and base URL, one call can override the timeout:
 
@@ -74,7 +75,7 @@ With an existing session and base URL, one call can override the timeout:
 import aiohttp
 from jsoncompat.http import bind_async
 from petstore import PetstoreAPI, GetPetRequest
-from transports import AiohttpFetch, AiohttpOptions
+from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 
 client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
 # AsyncClient[PetstoreAPI, AiohttpOptions]
@@ -88,7 +89,7 @@ result = await client.request(
 # requests: a scalar or a (connect, read) timeout in seconds.
 from jsoncompat.http import bind
 from petstore import PetstoreAPI, GetPetRequest
-from transports import RequestsFetch, RequestsOptions
+from jsoncompat.http.requests import RequestsFetch, RequestsOptions
 
 client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
 # Client[PetstoreAPI, RequestsOptions]
@@ -103,7 +104,7 @@ result = client.request(
 import httpx
 from jsoncompat.http import bind
 from petstore import PetstoreAPI, GetPetRequest
-from transports import HttpxFetch, HttpxOptions
+from jsoncompat.http.httpx import HttpxFetch, HttpxOptions
 
 client = bind(PetstoreAPI, fetch=HttpxFetch(session, base_url))
 # Client[PetstoreAPI, HttpxOptions]
@@ -160,8 +161,9 @@ checks, request validation, and the original response decoder remain in place.
 [`prepared_client.py`](prepared_client.py) demonstrates the lower-level API:
 `prepare(PetstoreAPI, request, options=...)` returns an immutable typed call,
 `call.request` is sent through a caller-owned fetcher with native HTTPX timeout
-settings, and `call.decode(raw)` validates the response. Preparation performs no
-network I/O; the same call works with a synchronous or asynchronous fetcher.
+settings using the shipped `HttpxFetch`, and `call.decode(raw)` validates the
+response. Preparation performs no network I/O; the same call works with a
+synchronous or asynchronous fetcher.
 Raw responses can also be inspected without decoding. See the
 [full contract](../../pybindings/README.md#per-call-overrides-and-prepared-requests).
 
@@ -178,11 +180,13 @@ Raw responses can also be inspected without decoding. See the
   variants, validation failures, and declared 400/404/412 errors as values.
 - Inherited security/server metadata, with credentials supplied by the transport.
 
-`transports.py` contains all library-specific code. The adapters preserve raw
-response bytes and repeated headers and do not call `raise_for_status`.
-Redirects are disabled so declared redirects remain visible to the contract;
-applications may choose a different redirect policy. Requests cannot send
-repeated request header names, so its adapter rejects those explicitly.
+The shipped adapters buffer decompressed response bytes, retain repeated headers,
+and release each response while keeping the caller's session open. They do not
+call `raise_for_status`; aiohttp's session-level setting is overridden per call.
+Caller-configured hooks may still raise. Redirects are disabled so declared
+redirects remain visible to the contract; use a custom fetcher for a different
+redirect policy. Requests cannot send repeated request header names, so its
+adapter rejects those explicitly.
 The aiohttp adapter disables automatic Content-Type headers so an omitted body
 stays omitted. Raw response header bytes are decoded with Latin-1 in every
 adapter. The example session configurations also disable environment proxies where
@@ -199,6 +203,8 @@ Validation: `cargo test --test openapi_client` generates fresh packages, checks
 static typing and wire serialization, and runs all three examples over loopback.
 Socket tests also hold a response open and confirm that each adapter's per-call
 timeout raises its native exception while leaving the session usable.
+The source-distribution check installs the built wheel into four clean environments:
+core without HTTP libraries, then each HTTP extra separately with a socket test.
 
 ## Live JSONPlaceholder smoke test
 
@@ -238,7 +244,7 @@ and adapters. To inspect the generated package or run an individual transport:
 cargo run --locked --bin jsoncompat -- codegen \
   --openapi examples/openapi_client/jsonplaceholder.json \
   --api JsonPlaceholder --output examples/openapi_client/jsonplaceholder
-uv run --project pybindings --group http-examples --locked python \
+uv run --project pybindings --all-extras --locked python \
   examples/openapi_client/live_jsonplaceholder.py LiveAsyncTests.test_aiohttp
 ```
 
