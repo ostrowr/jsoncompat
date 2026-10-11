@@ -7,7 +7,7 @@ Python bindings for checking compatibility of evolving JSON Schemas and generati
 Install from PyPI:
 
 ```bash
-pip install jsoncompat==0.4.3
+pip install jsoncompat==0.5.0
 ```
 
 Releases also provide a source distribution for platforms without a matching
