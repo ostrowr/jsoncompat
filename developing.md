@@ -86,18 +86,18 @@ invent declared properties from `required`, or discard successful `anyOf`/`if`
 annotations. When annotation expansion exceeds the proof engine’s scope,
 `analyze_compat` returns `Unknown` unless it finds a validated counterexample.
 
-All crates use the same published upstream `jsonschema` 0.45 package from
-crates.io. Python's schema validator delegates numeric/equality assertions to the shared compiler
-to preserve jsoncompat's semantics. Ordinary Python validator calls use
+All crates use the same published upstream `jsonschema` 0.58.6 package from
+crates.io, declared in the workspace dependencies. Python's schema validator
+delegates numeric/equality assertions to the shared compiler to preserve
+jsoncompat's semantics. Ordinary Python validator calls use
 `serde_json::Value`; the private borrowed-value entrypoint checks the JSON
 shape and materializes a value before calling upstream.
 
-Keep backend upgrades separate from removing the fork. Upstream 0.58.6 enables
-`serde_json/float_roundtrip` for accurate `f64` parsing, which is distinct from
-`arbitrary_precision`. In a seven-round release comparison, 0.58.6 increased
-raw validation time for 4,096 decimals by 43% and the native library by 19%.
-Sharing the core's 0.45 version avoids that parser feature and duplicate backend.
-Arbitrary precision remains opt-in in either version.
+Upstream enables `serde_json/float_roundtrip` for accurate `f64` parsing, which is distinct from
+`arbitrary_precision`. This dependency feature is unconditional even with
+`default-features = false`; decimal-heavy raw JSON parsing can be slower.
+Arbitrary precision remains opt-in. Sharing the backend version across Rust and
+Python avoids including two versions of the validator in the Python extension.
 
 Generated models keep their prepared evaluator and allocation-free Python,
 Jiter, and model-slot views in the unpublished extension. These application

@@ -27,6 +27,10 @@ members = [
     "wasm"      # -> json_schema_wasm bindings
 ]
 
+[workspace.dependencies]
+# Disable remote resolution so the same backend also works in WebAssembly.
+jsonschema = { version = "0.58.6", default-features = false }
+
 [dependencies]
 rand = "0.10.0"
 anyhow = "1.0.102"

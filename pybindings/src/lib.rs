@@ -80,11 +80,11 @@ fn validated_python_schema(raw: &JsonValue) -> Result<PythonSchema, String> {
 // The upstream backend delegates assertions with exact arithmetic to
 // the shared compiler, preserving identical semantics on every API surface.
 struct SharedAssertion(json_schema_ast::JSONSchema);
-impl jsonschema::Keyword for SharedAssertion {
-    fn is_valid(&self, instance: &JsonValue) -> bool {
+impl<'i> jsonschema::Keyword<'i> for SharedAssertion {
+    fn is_valid(&self, instance: &'i JsonValue) -> bool {
         self.0.is_valid(instance)
     }
-    fn validate<'i>(&self, instance: &'i JsonValue) -> Result<(), jsonschema::ValidationError<'i>> {
+    fn validate(&self, instance: &'i JsonValue) -> Result<(), jsonschema::ValidationError<'i>> {
         if self.is_valid(instance) {
             Ok(())
         } else {

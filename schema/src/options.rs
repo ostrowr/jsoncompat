@@ -172,11 +172,11 @@ pub(crate) fn configure(options: jsonschema::ValidationOptions) -> jsonschema::V
     })
 }
 struct AssertedFormat(jsonschema::Validator);
-impl jsonschema::Keyword for AssertedFormat {
-    fn is_valid(&self, instance: &Value) -> bool {
+impl<'i> jsonschema::Keyword<'i> for AssertedFormat {
+    fn is_valid(&self, instance: &'i Value) -> bool {
         self.0.is_valid(instance)
     }
-    fn validate<'i>(&self, instance: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
+    fn validate(&self, instance: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
         self.0.validate(instance)
     }
 }

@@ -24,7 +24,7 @@ jsoncompat_codegen = { path = "../codegen" }
 jsoncompat = { path = ".." }
 json_schema_ast = { path = "../schema" }
 json_schema_fuzz = { path = "../fuzz" }
-jsonschema = { version = "0.45", default-features = false }
+jsonschema.workspace = true
 
 [build-dependencies]
 pyo3-build-config = "0.28.3"
