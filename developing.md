@@ -169,6 +169,18 @@ Key suites:
 - `tests/dataclasses_backcompat.rs`, `tests/dataclasses_fuzz.rs`, and `tests/dataclasses_stamp_backcompat.rs` keep generated Python models aligned with plain schemas, fuzz fixtures, and stamped writer/reader histories;
 - `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` cover canonicalization and AST round-tripping.
 
+Both fuzz suites generate 1,000 values per supported fixture schema. To isolate
+the nested conditional/array case without reducing that coverage, run:
+
+```sh
+cargo test --test fuzz --test dataclasses_fuzz --locked -- --exact fixture::unevaluatedItems.json
+```
+
+The generator remembers exhausted intersection searches only within one candidate
+attempt, preventing nested retries from multiplying the same failed work. Its
+regression test bounds RNG work across fixed seeds instead of using a wall-clock
+deadline, so slower development machines exercise the same assertions as CI.
+
 Compatibility fixtures should stay small, synthetic, and net new. Do not add internal or production schemas to the public repository.
 
 When adding incompatible OpenAPI fixtures, keep the human-facing explanation precise as well as the verdict. The fixture contract should make it obvious which schema location broke compatibility.
