@@ -4,7 +4,7 @@ use super::{
     ClassKind, ClassSpec, DataclassModule,
     types::{Annotation, Kind},
 };
-use sha2::{Digest, Sha256};
+use crate::python_names::module_names;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
@@ -37,19 +37,22 @@ impl DataclassModule {
     /// Prepared data uses separate byte-constant chunks, without runtime source
     /// compilation or resource files that require packaging configuration.
     pub fn package_files(&self, module: &str) -> BTreeMap<String, String> {
-        let companion = format!("_{module}_generated");
-        let mut files = Files::default();
+        let mut files = Files {
+            prefix: module.replace('.', "/"),
+            ..Default::default()
+        };
+        let filenames = module_names(self.models.iter().map(String::as_str));
         // These imports supply the namespace used by get_type_hints after the
         // declarations move to separate modules. They are intentionally retained.
         let mut public = format!(
             "# Imports below also resolve forward annotations.\n# pyright: reportUnusedImport=false\n{}",
-            self.imports
+            package_imports(&self.imports)
         );
         let mut imports = String::new();
         let mut programs = Vec::new();
         for (i, name) in self.models.iter().enumerate() {
-            let stem = model_stem(name);
-            let declaration_module = format!("_{module}_type_{stem}");
+            let stem = &filenames[name];
+            let declaration_module = stem;
             // Forward annotations resolve against the public facade. The same
             // static imports make those names visible to type checkers.
             let references = &self.parts.references[i];
@@ -57,15 +60,19 @@ impl DataclassModule {
                 String::new()
             } else {
                 format!(
-                    "if typing.TYPE_CHECKING:\n    from .{module} import {}\n",
-                    references.iter().cloned().collect::<Vec<_>>().join(", ")
+                    "if typing.TYPE_CHECKING:\n{}",
+                    references
+                        .iter()
+                        .map(|name| format!("    from .{} import {name}\n", filenames[name]))
+                        .collect::<String>()
                 )
             };
             files.add(
-                &declaration_module,
+                declaration_module,
                 format!(
                     "{}{type_imports}{}\n__all__ = ({name:?},)\n",
-                    self.parts.imports[i], self.parts.declarations[i]
+                    package_imports(&self.parts.imports[i]),
+                    self.parts.declarations[i]
                 ),
             );
             writeln!(
@@ -74,14 +81,14 @@ impl DataclassModule {
             )
             .unwrap();
 
-            let initializer_module = format!("_{module}_init_{stem}");
+            let initializer_module = format!("_init_{stem}");
             let schema = files.blob(
-                &format!("_{module}_schema_{stem}"),
+                &format!("_schema_{stem}"),
                 &self.parts.sources[i],
                 "_schema",
             );
             let program = files.blob(
-                &format!("_{module}_program_{stem}"),
+                &format!("_program_{stem}"),
                 &self.parts.programs[i],
                 "_program",
             );
@@ -95,13 +102,19 @@ impl DataclassModule {
             .unwrap();
             programs.push(format!("_install_{name}(_models[{i}], _namespace)"));
         }
-        public.push_str(&self.parts.footer);
-        writeln!(public, "from .{companion} import bind_models as _jsoncompat_bind\n_jsoncompat_bind(({},), globals())\ndel _jsoncompat_bind", self.models.join(", ")).unwrap();
-        files.add(module, public);
+        // Large literal tuples exceed type-checker inference limits.
+        public.push_str(
+            &self
+                .parts
+                .footer
+                .replace("__all__ =", "__all__: tuple[str, ...] ="),
+        );
+        writeln!(public, "from ._binding import bind_models as _jsoncompat_bind\n_jsoncompat_bind(({},), globals())\ndel _jsoncompat_bind", self.models.join(", ")).unwrap();
+        files.add("__init__", public);
 
         let mut calls = String::new();
         for (i, nodes) in self.parts.descriptors.chunks(NODES_PER_MODULE).enumerate() {
-            let shard = format!("_{module}_nodes_{i:04}");
+            let shard = format!("_nodes_{i:04}");
             let descriptors = nodes
                 .iter()
                 .map(|s| format!("        {s},\n"))
@@ -110,7 +123,7 @@ impl DataclassModule {
             writeln!(imports, "from .{shard} import descriptors as _nodes_{i}").unwrap();
             writeln!(calls, "    _nodes_{i}(_models, _programs, _descriptors)").unwrap();
         }
-        imports.push_str(&files.blob(&format!("_{module}_plan"), &self.parts.plan, "_plan"));
+        imports.push_str(&files.blob("_plan", &self.parts.plan, "_plan"));
         let roots = self
             .parts
             .roots
@@ -119,20 +132,21 @@ impl DataclassModule {
             .map(|(i, node)| format!("(_models[{i}], {node})"))
             .collect::<Vec<_>>()
             .join(", ");
-        files.add(&companion, format!("{PRIVATE_IMPORTS}{imports}\n__all__ = (\"bind_models\",)\n\ndef bind_models(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:\n    _programs = [{}]\n    _descriptors: list[tuple[typing.Any, ...]] = []\n{calls}    dc.bind_module(1, [{roots}], _descriptors, _plan)\n", programs.join(", ")));
+        files.add("_binding", format!("{PRIVATE_IMPORTS}{imports}\n__all__ = (\"bind_models\",)\n\ndef bind_models(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:\n    _programs = [{}]\n    _descriptors: list[tuple[typing.Any, ...]] = []\n{calls}    dc.bind_module(1, [{roots}], _descriptors, _plan)\n", programs.join(", ")));
         files.sources
     }
 }
 
 #[derive(Default)]
 struct Files {
+    prefix: String,
     sources: BTreeMap<String, String>,
 }
 impl Files {
     fn add(&mut self, module: &str, source: String) {
         assert!(
             self.sources
-                .insert(format!("{module}.py"), source)
+                .insert(format!("{}/{module}.py", self.prefix), source)
                 .is_none()
         );
     }
@@ -156,11 +170,9 @@ impl Files {
     }
 }
 
-// A readable prefix plus a case-sensitive digest works on case-insensitive
-// filesystems and keeps even very long schema names within filename limits.
-fn model_stem(name: &str) -> String {
-    let digest = format!("{:x}", Sha256::digest(name.as_bytes()));
-    format!("{}_{}", &name[..name.len().min(64)], &digest[..16])
+// Declarations live two packages below the public API.
+fn package_imports(imports: &str) -> String {
+    imports.replace("from .", "from ...")
 }
 
 pub(super) fn references(class: &ClassSpec) -> BTreeSet<String> {

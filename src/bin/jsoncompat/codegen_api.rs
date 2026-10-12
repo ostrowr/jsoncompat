@@ -1,12 +1,12 @@
 //! Generate API identities, typed requests, and operation metadata for one shared client.
 use anyhow::{Context, Result, ensure};
 use jsoncompat_codegen::DataclassMetadata;
+use jsoncompat_codegen::python_names::module_names;
 use jsoncompat_openapi::{
     ApiMedia, ApiOperation, ApiParameter, OpenApiDocument, OpenApiOperationLowerer,
     ParameterEncoding, ParameterLocation, SchemaSerialization,
 };
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -354,16 +354,20 @@ impl ApiPackage {
             self.name
         )?;
         let mut files = BTreeMap::new();
+        files.insert(
+            "_operations/__init__.py".into(),
+            "# Generated operation metadata.\n".into(),
+        );
+        let filenames = module_names(
+            self.operations
+                .iter()
+                .map(|o| o.input.strip_suffix("Request").unwrap()),
+        );
         for operation in &self.operations {
-            let name = &operation.input;
-            let digest = format!("{:x}", Sha256::digest(name.as_bytes()));
-            let module = format!(
-                "_operation_{}_{}",
-                &name[..name.len().min(64)],
-                &digest[..16]
-            );
+            let name = operation.input.strip_suffix("Request").unwrap();
+            let module = format!("_operations.{}", filenames[name]);
             files.insert(
-                format!("{module}.py"),
+                format!("{}.py", module.replace('.', "/")),
                 Self::operation_source(std::slice::from_ref(operation), exports)?,
             );
             writeln!(
@@ -389,7 +393,7 @@ impl ApiPackage {
         writeln!(source, "_initialize_api({}API)\n", self.name)?;
         writeln!(
             source,
-            "__all__ = {}",
+            "__all__: tuple[str, ...] = {}",
             tuple(&public.iter().map(|s| py(s)).collect::<Vec<_>>())
         )?;
         files.insert("api.py".into(), source);
@@ -413,7 +417,7 @@ impl ApiPackage {
         for name in &imported {
             writeln!(
                 source,
-                "from .{} import {name} as {name}",
+                "from ..{} import {name} as {name}",
                 exports
                     .get(*name)
                     .with_context(|| format!("missing generated export {name}"))?
@@ -563,7 +567,7 @@ impl ApiPackage {
             }))
             .map(py)
             .collect::<Vec<_>>();
-        writeln!(source, "__all__ = {}", tuple(&public))?;
+        writeln!(source, "__all__: tuple[str, ...] = {}", tuple(&public))?;
         Ok(source)
     }
 }

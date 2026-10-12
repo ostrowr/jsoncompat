@@ -327,19 +327,25 @@ from my_models import Order, Customer
 
 The package exports component models by name. `__init__.pyi` makes those exports
 visible to type checkers. Each model always gets its own readable declaration
-file and private initializer file. Public `models_0000.py` modules re-export a
-reference group and bind its shared model identities. Package import loads only
-the export index; accessing a model loads its group. No model compilation moves
-to first access.
+file and private initializer file. The public `models.py` barrel exports models
+by name; `from my_models.models import Order` and `from my_models import Order`
+return the same class. Reference groups live under private `_models/<group>/`
+packages and bind their shared model identities. Package and barrel imports load
+only the export index; accessing a model loads its group. No model compilation
+moves to first access.
 
 File layout does not depend on a source-size budget: growing one model never
-merges or redistributes neighboring declarations. Names include a short digest
-to support long names and case-insensitive filesystems. Prepared validation data
+merges or redistributes neighboring declarations. Files use readable names such
+as `order.py`; only long or colliding names receive a short digest to remain
+portable across case-insensitive filesystems. Prepared validation data
 lives in separate Python modules, in 64 KiB byte chunks, and conversion graph
 metadata uses groups of 256 nodes. Even one large connected schema graph can
 therefore span many files. These are ordinary Python files: no extra package-data
 configuration, runtime source compilation, or Git LFS is needed for prepared data.
 Individual model declarations still stay whole.
+
+See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
+file sizes, generation/import costs, strict type checking, and current limits.
 
 `--component Order` selects a component and its dependencies; repeat the flag
 for several roots. `--rename Order=Purchase` changes a public class name.
@@ -350,6 +356,11 @@ and binding groups, not physical file sizes. A connected group may exceed it
 while still using separate files for every model. Resource identifiers
 and anchor references conservatively keep all components in one group to retain
 scope. Without `--api`, this command emits component schema models only.
+
+Operations live in `_operations/get_pet.py`, with public response aliases and
+client aliases in `api.py`. Numbered files are reserved for chunks of prepared
+data, where the number is a chunk index. Regenerating an older package migrates
+its managed files to this layout.
 
 An output manifest fingerprints the compiler, schemas, options, and managed
 files. Unchanged groups reuse their artifacts; edited schemas rebuild affected

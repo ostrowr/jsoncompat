@@ -161,6 +161,8 @@ jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 The generated package always uses separate files for each operation and model,
 so growing an API does not turn the client into one huge file. Keep the whole
 package together; your imports stay simple: `from petstore import GetPetRequest`.
+The public barrels are `models.py` and `api.py`; private operation files have
+names such as `_operations/get_pet.py`.
 
 Install the integration for your HTTP library, then bind your own session:
 

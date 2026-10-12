@@ -44,17 +44,38 @@ impl Drop for Work {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+fn package_sources(package: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, files: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, files);
+            } else if path.extension().is_some_and(|ext| ext == "py") {
+                files.insert(
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                    fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+    let mut files = std::collections::BTreeMap::new();
+    walk(package, package, &mut files);
+    files
+}
+fn declaration(name: &str) -> bool {
+    name.starts_with("_models/") && !name.rsplit('/').next().unwrap().starts_with('_')
+}
+fn operation_file(name: &str) -> bool {
+    name.starts_with("_operations/") && !name.ends_with("__init__.py")
+}
 fn model_sources(package: &Path) -> String {
-    fs::read_dir(package)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .contains("_type_")
-        })
-        .map(|path| fs::read_to_string(path).unwrap())
+    package_sources(package)
+        .into_iter()
+        .filter(|(name, _)| declaration(name))
+        .map(|(_, data)| String::from_utf8(data).unwrap())
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -676,35 +697,31 @@ fn operations_and_models_always_use_named_files_and_regenerate_without_repacking
     let mut spec = example();
     success(work.generate(&spec, &[]));
     let package = work.0.join("petstore");
-    let snapshot = || -> std::collections::BTreeMap<String, Vec<u8>> {
-        fs::read_dir(&package)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .filter(|path| path.extension().is_some_and(|ext| ext == "py"))
-            .map(|path| {
-                (
-                    path.file_name().unwrap().to_string_lossy().into_owned(),
-                    fs::read(path).unwrap(),
-                )
-            })
-            .collect()
-    };
+    let snapshot = || package_sources(&package);
     let before = snapshot();
+    assert!(before.contains_key("models.py"));
+    assert!(before.contains_key("_operations/get_pet.py"));
+    assert!(before.contains_key("_models/shared/pet.py"));
+    assert!(!before.keys().any(|name| name.contains("models_000")));
     let operations = before
         .keys()
-        .filter(|name| name.starts_with("_operation_"))
+        .filter(|name| operation_file(name))
         .cloned()
         .collect::<Vec<_>>();
     assert_eq!(operations.len(), 10);
     let declarations = before
         .keys()
-        .filter(|name| name.contains("_type_"))
+        .filter(|name| declaration(name))
         .collect::<Vec<_>>();
     assert_eq!(declarations.len(), 71);
     for name in declarations {
         assert!(
             !String::from_utf8_lossy(&before[name]).contains("import *"),
             "a model should import only its own annotation dependencies"
+        );
+        assert!(
+            !String::from_utf8_lossy(&before[name]).contains("from . import"),
+            "type-only dependencies must not recurse through the group barrel"
         );
         assert_eq!(
             String::from_utf8_lossy(&before[name])
@@ -781,13 +798,7 @@ fn large_shared_recursive_api_dispatches_across_all_generated_modules() {
         "the reference graph must stay connected"
     );
     let files = manifest["files"].as_object().unwrap();
-    assert_eq!(
-        files
-            .keys()
-            .filter(|name| name.starts_with("_operation_"))
-            .count(),
-        96
-    );
+    assert_eq!(files.keys().filter(|name| operation_file(name)).count(), 96);
     assert!(
         files.keys().any(|name| name.contains("_nodes_0001")),
         "exercise multiple conversion graph shards"
@@ -796,6 +807,39 @@ fn large_shared_recursive_api_dispatches_across_all_generated_modules() {
         files
             .keys()
             .all(|name| fs::metadata(package.join(name)).unwrap().len() < 512 * 1024)
+    );
+    // Large export tuples must retain explicit types after Pyright's literal
+    // inference cutoff, including the shared group and both public barrels.
+    fs::write(
+        work.0.join("large_consumer.py"),
+        r#"
+from typing import assert_type
+from petstore import Node, PetstoreClient, PutNode095Request, PutNode095200
+from petstore.models import Node as BarrelNode
+
+def update(client: PetstoreClient, tree: BarrelNode) -> Node:
+    response = client.request(PutNode095Request(id=95, body=tree)).unwrap()
+    assert_type(response, PutNode095200)
+    assert_type(response.body, Node)
+    return response.body
+"#,
+    )
+    .unwrap();
+    fs::write(
+        work.0.join("pyrightconfig.json"),
+        json!({
+            "pythonVersion":"3.12", "typeCheckingMode":"strict",
+            "extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],
+            "include":["petstore", "large_consumer.py"]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    success(
+        python_env::pyright_command()
+            .current_dir(&work.0)
+            .output()
+            .unwrap(),
     );
     success(python_env::python_command().current_dir(&work.0).arg("-c").arg(r#"
 import compileall, dataclasses, inspect, zlib

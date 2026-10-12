@@ -3,7 +3,9 @@
 use super::codegen::write_atomic;
 use anyhow::{Context, Result, bail, ensure};
 use jsoncompat::{OpenApiDocument, SchemaDocument, SchemaOptions};
-use jsoncompat_codegen::{DataclassMetadata, generate_dataclass_declarations_with_metadata};
+use jsoncompat_codegen::{
+    DataclassMetadata, generate_dataclass_declarations_with_metadata, python_names::module_names,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -98,7 +100,7 @@ pub(super) fn generate(
         Manifest::default()
     };
     ensure!(
-        previous.version <= 3,
+        previous.version <= 4,
         "unsupported package manifest; use a new output directory"
     );
     ensure!(
@@ -112,9 +114,12 @@ pub(super) fn generate(
             .all(|name| super::codegen_api::identifier(name)),
         "package manifest contains an invalid export name"
     );
+    for file in previous.files.keys() {
+        check_parents(destination, file)?;
+    }
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
     let mut manifest = Manifest {
-        version: 3,
+        version: 4,
         compiler,
         ..Default::default()
     };
@@ -128,8 +133,26 @@ pub(super) fn generate(
     let mut exports = BTreeMap::new();
     let mut stub = String::from("# Generated public model exports.\n");
     let mut rebuilt = 0;
-    for (index, mut group) in groups.into_iter().enumerate() {
-        let module_name = format!("models_{index:04}");
+    stage(
+        &staging,
+        &mut manifest,
+        "_models/__init__.py",
+        "# Private model binding groups.\n",
+    )?;
+    let group_names = module_names(
+        groups
+            .iter()
+            .map(|g| names[g.schemas.keys().next().unwrap()].as_str()),
+    );
+    let one_group = groups.len() == 1;
+    for mut group in groups {
+        let anchor = &names[group.schemas.keys().next().unwrap()];
+        let group_name = if one_group && group.schemas.len() > 1 {
+            "shared"
+        } else {
+            &group_names[anchor]
+        };
+        let module_name = format!("_models.{group_name}");
         let declarations: BTreeMap<_, _> = group
             .schemas
             .keys()
@@ -216,6 +239,30 @@ pub(super) fn generate(
         manifest.modules.insert(module_name, input_digest);
     }
     let model_count = exports.len();
+    let model_exports = exports.clone();
+    let model_stub = model_exports
+        .iter()
+        .map(|(name, module)| format!("from .{module} import {name} as {name}\n"))
+        .collect::<String>();
+    let model_names = model_exports
+        .keys()
+        .map(|s| format!("{s:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let model_type_exports = model_stub
+        .lines()
+        .map(|s| format!("    {s}\n"))
+        .collect::<String>();
+    let model_initializer = INITIALIZER.replace("EXPORTS as _MODELS", "MODELS as _MODELS");
+    stage(
+        &staging,
+        &mut manifest,
+        "models.py",
+        &format!(
+            "{model_initializer}\nif _TYPE_CHECKING:\n{model_type_exports}\n__all__: tuple[str, ...] = ({model_names},)\n"
+        ),
+    )?;
+    stage(&staging, &mut manifest, "models.pyi", &model_stub)?;
     if let Some(api) = api {
         let (files, public) = api.sources(&exports)?;
         for (file, source) in files {
@@ -227,9 +274,15 @@ pub(super) fn generate(
     }
     let mut routing =
         String::from("# Generated export locations; no model imports occur here.\nMODELS = {\n");
-    for (model, module) in &exports {
+    for (model, module) in &model_exports {
         routing.push_str(&format!("    {model:?}: {module:?},\n"));
+    }
+    routing.push_str("}\nEXPORTS = {**MODELS,\n");
+    for (model, module) in &exports {
         stub.push_str(&format!("from .{module} import {model} as {model}\n"));
+        if !model_exports.contains_key(model) {
+            routing.push_str(&format!("    {model:?}: {module:?},\n"));
+        }
     }
     routing.push_str("}\n");
     stage(&staging, &mut manifest, "_exports.py", &routing)?;
@@ -251,13 +304,14 @@ pub(super) fn generate(
         &mut manifest,
         "__init__.py",
         &format!(
-            "{INITIALIZER}\nif _TYPE_CHECKING:\n{type_exports}\n__all__ = ({public_names},)\n"
+            "{INITIALIZER}\nif _TYPE_CHECKING:\n{type_exports}\n__all__: tuple[str, ...] = ({public_names},)\n"
         ),
     )?;
     let manifest_source = serde_json::to_string_pretty(&manifest)?;
     // Finish every build before modifying the existing package. Unmanaged
     // files are never replaced. Deploy the resulting directory as one unit.
     for file in manifest.files.keys() {
+        check_parents(destination, file)?;
         ensure!(
             !destination.join(file).exists() || previous.files.contains_key(file),
             "refusing to replace unmanaged package file {}",
@@ -281,6 +335,30 @@ pub(super) fn generate(
         match fs::remove_file(destination.join(file)) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    // Only remove empty generated directories; preserve notes and bytecode.
+    let mut obsolete_dirs = BTreeSet::new();
+    for file in previous
+        .files
+        .keys()
+        .filter(|file| !manifest.files.contains_key(*file))
+    {
+        let mut parent = Path::new(file).parent();
+        while let Some(path) = parent.filter(|p| !p.as_os_str().is_empty()) {
+            obsolete_dirs.insert(path.to_path_buf());
+            parent = path.parent();
+        }
+    }
+    for directory in obsolete_dirs.iter().rev() {
+        match fs::remove_dir(destination.join(directory)) {
+            Ok(()) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+                ) => {}
             Err(error) => return Err(error.into()),
         }
     }
@@ -310,18 +388,40 @@ fn stage(directory: &Staging, manifest: &mut Manifest, name: &str, source: &str)
     if !safe_filename(name) {
         bail!("invalid generated filename {name}");
     }
-    fs::write(directory.0.join(name), source)?;
+    let target = directory.0.join(name);
+    fs::create_dir_all(target.parent().unwrap())?;
+    fs::write(target, source)?;
     manifest
         .files
         .insert(name.into(), digest(source.as_bytes()));
     Ok(())
 }
 fn safe_filename(name: &str) -> bool {
-    !name.starts_with('.')
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-        && (name.ends_with(".py") || name.ends_with(".pyi") || name == "py.typed")
+    let parts = name.split('/').collect::<Vec<_>>();
+    parts.iter().all(|part| {
+        !part.is_empty()
+            && !part.starts_with('.')
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    }) && (name.ends_with(".py") || name.ends_with(".pyi") || name == "py.typed")
+}
+fn check_parents(destination: &Path, file: &str) -> Result<()> {
+    let mut parent = destination.to_path_buf();
+    let path = Path::new(file);
+    for part in path.parent().into_iter().flat_map(Path::components) {
+        parent.push(part);
+        match fs::symlink_metadata(&parent) {
+            Ok(metadata) => ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "refusing to write generated files through non-directory or symlink {}",
+                parent.display()
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 pub(super) fn class_name(name: &str) -> String {
     let mut result = String::new();
@@ -344,13 +444,13 @@ pub(super) fn class_name(name: &str) -> String {
 const INITIALIZER: &str = r#""""Generated model package. Import a model by name; unrelated modules stay unloaded."""
 from importlib import import_module as _import_module
 from typing import TYPE_CHECKING as _TYPE_CHECKING
-from ._exports import MODELS as _MODELS
+from ._exports import EXPORTS as _MODELS
 
 def __getattr__(name: str):
     module = _MODELS.get(name)
     if module is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(_import_module(f".{module}", __name__), name)
+    value = getattr(_import_module(f".{module}", __package__), name)
     globals()[name] = value
     return value
 

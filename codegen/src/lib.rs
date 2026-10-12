@@ -8,6 +8,7 @@
 mod dataclasses;
 pub mod model_plan;
 pub mod prepared_schema;
+pub mod python_names;
 
 pub use dataclasses::{
     DataclassError, DataclassMetadata, DataclassModule, generate_dataclass_declarations,

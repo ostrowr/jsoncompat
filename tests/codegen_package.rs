@@ -75,22 +75,83 @@ fn api() -> Value {
     }}})
 }
 fn contents(directory: &Path) -> BTreeMap<String, Vec<u8>> {
-    fs::read_dir(directory)
-        .unwrap()
-        .filter_map(|entry| {
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
-            (path
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else if path
                 .extension()
-                .is_some_and(|ext| ext == "py" || ext == "pyi"))
-            .then(|| {
-                (
-                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                .is_some_and(|ext| ext == "py" || ext == "pyi")
+            {
+                out.insert(
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
                     fs::read(path).unwrap(),
-                )
-            })
-        })
-        .collect()
+                );
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(directory, directory, &mut out);
+    out
 }
+fn declaration(name: &str) -> bool {
+    name.starts_with("_models/") && !name.rsplit('/').next().unwrap().starts_with('_')
+}
+
+#[test]
+fn numbered_packages_migrate_without_removing_unmanaged_files() {
+    let work = Work::new();
+    work.write(&api());
+    let output = work.0.join("models");
+    fs::create_dir_all(&output).unwrap();
+    fs::write(output.join("models_0000.py"), "# old generated barrel\n").unwrap();
+    fs::write(output.join("notes.txt"), "keep me").unwrap();
+    fs::write(
+        output.join(".jsoncompat-manifest.json"),
+        json!({
+            "version": 3, "compiler": "previous compiler", "modules": {},
+            "files": {"models_0000.py": "previous digest"}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    success(work.generate(&[]));
+    assert!(!output.join("models_0000.py").exists());
+    assert!(output.join("models.py").exists());
+    assert_eq!(
+        fs::read_to_string(output.join("notes.txt")).unwrap(),
+        "keep me"
+    );
+    fs::write(output.join("_models/wide/notes.txt"), "nested note").unwrap();
+    success(work.generate(&["--component", "Order"]));
+    assert_eq!(
+        fs::read_to_string(output.join("_models/wide/notes.txt")).unwrap(),
+        "nested note"
+    );
+    assert!(!output.join("_models/other").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn nested_output_does_not_follow_directory_symlinks() {
+    let work = Work::new();
+    work.write(&api());
+    let output = work.0.join("models");
+    let outside = work.0.join("unmanaged");
+    fs::create_dir_all(&output).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    std::os::unix::fs::symlink(&outside, output.join("_models")).unwrap();
+    let result = work.generate(&[]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("symlink"));
+    assert!(fs::read_dir(outside).unwrap().next().is_none());
+    assert!(!output.join("__init__.py").exists());
+}
+
 #[test]
 fn package_builds_preserve_identity_recursion_laziness_and_incremental_outputs() {
     let work = Work::new();
@@ -111,8 +172,9 @@ assert compileall.compile_dir(str(Path(sys.argv[1]) / 'models'), quiet=1)
 def forbidden(*a, **k): raise AssertionError('runtime compilation or reflection')
 with patch.object(builtins, 'compile', forbidden), patch.object(dataclasses, 'dataclass', forbidden), patch.object(inspect, 'get_annotations', forbidden), patch.object(jsoncompat, 'validator_for', forbidden), patch.object(zlib, 'decompress', forbidden):
     import models
-    assert not any(name.startswith('models.models_') for name in sys.modules)
-    from models import Order, Customer
+    assert not any(name.startswith('models._models.') for name in sys.modules)
+    from models.models import Order, Customer
+    assert Order is models.Order and Customer is models.Customer
     value = {'customer': {'id': 7, 'orders': []}, 'total': 9}
     order = Order.deserialize(json.dumps(value))
     assert type(order.customer) is Customer
@@ -148,8 +210,8 @@ else: raise AssertionError('unknown export')
         .collect::<Vec<_>>();
     assert!(!changed.is_empty());
     assert!(
-        changed.iter().all(|name| name.contains("_schema_Wide_")
-            || name.contains("_program_Wide_")
+        changed.iter().all(|name| name.contains("_schema_wide_")
+            || name.contains("_program_wide_")
             || name.contains("_plan_")),
         "only Wide's prepared data and the shared decision plan should change: {changed:?}"
     );
@@ -163,7 +225,7 @@ else: raise AssertionError('unknown export')
         fs::read_to_string(work.0.join("models/notes.txt")).unwrap(),
         "keep me"
     );
-    assert!(!work.0.join("models/models_0002.py").exists());
+    assert!(!work.0.join("models/_models/wide/__init__.py").exists());
 }
 #[test]
 fn component_names_resources_and_failed_regeneration_are_explicit() {
@@ -230,7 +292,7 @@ fn split_model_artifacts_recover_missing_and_modified_chunks_and_remove_stale_on
     let before = contents(&package);
     let chunks = before
         .keys()
-        .filter(|name| name.contains("_program_Wide_"))
+        .filter(|name| name.contains("_program_wide_"))
         .collect::<Vec<_>>();
     assert!(
         chunks.len() > 1,
@@ -273,7 +335,7 @@ assert Wide.deserialize(Wide.from_value(payload).serialize()).to_value() == payl
     assert!(
         before
             .keys()
-            .filter(|name| name.contains("_type_"))
+            .filter(|name| declaration(name))
             .all(|name| after.contains_key(name)),
         "shrinking a model must retain the declaration layout"
     );
