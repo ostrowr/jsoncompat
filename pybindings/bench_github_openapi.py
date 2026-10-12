@@ -146,6 +146,7 @@ def inventory(package: Path) -> dict[str, object]:
         "declarations": sum(p.startswith("_models/") and not Path(p).name.startswith("_")
                             for _, p in sources),
         "schema_storage_bytes": sum(size for size, p in sources if Path(p).name.startswith("_schema_")),
+        "schema_chunk_files": sum(Path(p).name.startswith("_schema_") for _, p in sources),
     }
 
 

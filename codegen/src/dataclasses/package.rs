@@ -5,6 +5,7 @@ use super::{
     types::{Annotation, Kind},
 };
 use crate::python_names::module_names;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
@@ -82,11 +83,7 @@ impl DataclassModule {
             .unwrap();
 
             let initializer_module = format!("_init_{stem}");
-            let schema = files.blob(
-                &format!("_schema_{stem}"),
-                &self.parts.sources[i],
-                "_schema",
-            );
+            let schema = files.schema(&self.parts.sources[i]);
             let program = files.blob(
                 &format!("_program_{stem}"),
                 &self.parts.programs[i],
@@ -166,6 +163,40 @@ impl Files {
             parts.push(format!("{alias}_{i}"));
         }
         writeln!(imports, "{alias} = b''.join([{}])", parts.join(", ")).unwrap();
+        imports
+    }
+
+    fn schema(&mut self, bytes: &[u8]) -> String {
+        let mut imports = String::new();
+        let mut parts = Vec::new();
+        for (i, chunk) in bytes.chunks(DATA_CHUNK_BYTES).enumerate() {
+            // The digest covers the complete compressed chunk. Shared files
+            // live at package scope, so independent binding groups reuse them
+            // without importing each other's models or changing class identity.
+            let name = format!("_schema_{:x}", Sha256::digest(chunk));
+            self.sources
+                .entry(format!("_schemas/{name}.py"))
+                .or_insert_with(|| {
+                    format!(
+                        "# Generated shared schema data.\nDATA: bytes = {}\n",
+                        super::render::bytes(chunk)
+                    )
+                });
+            writeln!(
+                imports,
+                "from ..._schemas.{name} import DATA as _schema_{i}"
+            )
+            .unwrap();
+            parts.push(format!("_schema_{i},"));
+        }
+        // Keep chunk identities shared in memory as well as on disk. Joining
+        // belongs to explicit schema introspection, never model import.
+        writeln!(
+            imports,
+            "_schema: tuple[bytes, ...] = ({})",
+            parts.join(" ")
+        )
+        .unwrap();
         imports
     }
 }

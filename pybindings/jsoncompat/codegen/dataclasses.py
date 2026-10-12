@@ -595,13 +595,16 @@ class _SchemaSource:
 
     __slots__ = ("_compressed",)
 
-    def __init__(self, compressed: bytes) -> None:
+    def __init__(self, compressed: bytes | tuple[bytes, ...]) -> None:
         self._compressed = compressed
 
     def __get__(self, instance: object, owner: type[DataclassModel]) -> str:
         import zlib
 
-        schema = zlib.decompress(self._compressed).decode("utf-8")
+        compressed = self._compressed
+        if isinstance(compressed, tuple):
+            compressed = b"".join(compressed)
+        schema = zlib.decompress(compressed).decode("utf-8")
         setattr(owner, JSONCOMPAT_SCHEMA_FIELD, schema)
         return schema
 
@@ -609,10 +612,13 @@ class _SchemaSource:
 def install_model(
     model: type[DataclassModel],
     initializer: Callable[..., None],
-    schema_source: bytes,
+    schema_source: bytes | tuple[bytes, ...],
     namespace: dict[str, Any],
 ) -> None:
-    """Bind the constructor namespace and retain compressed schema source."""
+    """Bind the constructor and retain legacy bytes or shared compressed chunks.
+
+    Chunks are joined and decompressed only on explicit schema introspection.
+    """
     if not isinstance(initializer, types.FunctionType):
         raise TypeError("Generated initializer must be a Python function")
     # A companion can bind several separately imported copies of the models.

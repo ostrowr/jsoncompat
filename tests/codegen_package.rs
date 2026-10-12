@@ -27,6 +27,9 @@ impl Work {
             .join(format!("compiler{}", std::env::consts::EXE_SUFFIX))
     }
     fn generate(&self, extra: &[&str]) -> Output {
+        self.generate_with_group_size("2", extra)
+    }
+    fn generate_with_group_size(&self, size: &str, extra: &[&str]) -> Output {
         Command::new(self.compiler())
             .current_dir(&self.0)
             .args([
@@ -38,7 +41,7 @@ impl Work {
                 "--output",
                 "models",
                 "--models-per-module",
-                "2",
+                size,
             ])
             .args(extra)
             .output()
@@ -103,36 +106,126 @@ fn declaration(name: &str) -> bool {
 }
 
 #[test]
-fn numbered_packages_migrate_without_removing_unmanaged_files() {
+fn older_packages_migrate_without_removing_unmanaged_files() {
+    for (previous_version, previous_file) in [
+        (3, "models_0000.py"),
+        (4, "_models/wide/_schema_wide_0000.py"),
+    ] {
+        let work = Work::new();
+        work.write(&api());
+        let output = work.0.join("models");
+        fs::create_dir_all(&output).unwrap();
+        fs::create_dir_all(output.join(previous_file).parent().unwrap()).unwrap();
+        fs::write(output.join(previous_file), "# previous generated data\n").unwrap();
+        fs::write(output.join("notes.txt"), "keep me").unwrap();
+        fs::write(
+            output.join(".jsoncompat-manifest.json"),
+            json!({
+                "version": previous_version, "compiler": "previous compiler", "modules": {},
+                "files": {previous_file: "previous digest"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        success(work.generate(&[]));
+        assert!(!output.join(previous_file).exists());
+        assert!(output.join("models.py").exists());
+        assert_eq!(
+            fs::read_to_string(output.join("notes.txt")).unwrap(),
+            "keep me"
+        );
+        fs::write(output.join("_models/wide/notes.txt"), "nested note").unwrap();
+        success(work.generate(&["--component", "Order"]));
+        assert_eq!(
+            fs::read_to_string(output.join("_models/wide/notes.txt")).unwrap(),
+            "nested note"
+        );
+        assert!(!output.join("_models/other").exists());
+    }
+}
+
+#[test]
+fn schema_chunks_share_storage_across_independent_groups_and_cache_owners() {
     let work = Work::new();
-    work.write(&api());
-    let output = work.0.join("models");
-    fs::create_dir_all(&output).unwrap();
-    fs::write(output.join("models_0000.py"), "# old generated barrel\n").unwrap();
-    fs::write(output.join("notes.txt"), "keep me").unwrap();
-    fs::write(
-        output.join(".jsoncompat-manifest.json"),
-        json!({
-            "version": 3, "compiler": "previous compiler", "modules": {},
-            "files": {"models_0000.py": "previous digest"}
-        })
-        .to_string(),
-    )
-    .unwrap();
-    success(work.generate(&[]));
-    assert!(!output.join("models_0000.py").exists());
-    assert!(output.join("models.py").exists());
-    assert_eq!(
-        fs::read_to_string(output.join("notes.txt")).unwrap(),
-        "keep me"
+    let object = json!({"type":"object","properties":{"payload":record(3)},"required":["payload"]});
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Shared schemas","version":"1"},"components":{"schemas":{
+        "A":object, "B":object, "C":{"type":"string"}
+    }}}));
+    assert!(success(work.generate_with_group_size("1", &[])).contains("(3 rebuilt)"));
+    let package = work.0.join("models");
+    let before = contents(&package);
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(package.join(".jsoncompat-manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["version"], 5);
+    let a = manifest["module_files"]["_models.a"].as_array().unwrap();
+    let b = manifest["module_files"]["_models.b"].as_array().unwrap();
+    let shared = a
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|name| name.starts_with("_schemas/") && b.contains(&json!(name)))
+        .collect::<Vec<_>>();
+    assert!(
+        !shared.is_empty(),
+        "independent groups must reuse identical chunks"
     );
-    fs::write(output.join("_models/wide/notes.txt"), "nested note").unwrap();
-    success(work.generate(&["--component", "Order"]));
-    assert_eq!(
-        fs::read_to_string(output.join("_models/wide/notes.txt")).unwrap(),
-        "nested note"
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import json, sys, zlib
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+def forbidden(*a, **k): raise AssertionError('schema introspection during model use')
+with patch.object(zlib, 'decompress', forbidden):
+    from models import A
+    assert 'models._models.b' not in sys.modules
+    value = {'payload': {'f000': 0, 'f001': 1, 'f002': 2}}
+    first = A.from_value(value)
+    from models import B
+    second = B.from_value(value)
+    assert type(first.payload) is not type(second.payload)
+    assert json.loads(first.serialize()) == json.loads(second.serialize()) == value
+    a = vars(type(first.payload))['__jsoncompat_schema__']._compressed
+    b = vars(type(second.payload))['__jsoncompat_schema__']._compressed
+    assert isinstance(a, tuple) and isinstance(b, tuple) and a
+    assert len(a) == len(b) and all(x is y for x, y in zip(a, b))
+with patch.object(zlib, 'decompress', wraps=zlib.decompress) as decompress:
+    source = type(first.payload).__jsoncompat_schema__
+    assert type(first.payload).__jsoncompat_schema__ is source
+    assert decompress.call_count == 1
+    assert type(second.payload).__jsoncompat_schema__ == source
+    assert decompress.call_count == 2
+assert json.loads(source)['properties']['f002']['minimum'] == 0
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
     );
-    assert!(!output.join("_models/other").exists());
+    fs::remove_file(package.join(shared[0])).unwrap();
+    assert!(success(work.generate_with_group_size("1", &[])).contains("(2 rebuilt)"));
+    assert_eq!(contents(&package), before);
+    fs::write(package.join(shared[0]), "# corrupted chunk\n").unwrap();
+    assert!(success(work.generate_with_group_size("1", &[])).contains("(2 rebuilt)"));
+    assert_eq!(contents(&package), before);
+    fs::write(package.join("_schemas/notes.txt"), "caller owned").unwrap();
+    assert!(
+        success(work.generate_with_group_size("1", &["--component", "A"])).contains("(0 rebuilt)")
+    );
+    for file in &shared {
+        assert_eq!(fs::read(package.join(file)).unwrap(), before[*file]);
+    }
+    assert!(!package.join("_models/b/__init__.py").exists());
+    success(work.generate_with_group_size("1", &["--component", "C"]));
+    for file in &shared {
+        assert!(!package.join(file).exists(), "last owner removed: {file}");
+    }
+    assert_eq!(
+        fs::read_to_string(package.join("_schemas/notes.txt")).unwrap(),
+        "caller owned"
+    );
 }
 
 #[cfg(unix)]
@@ -199,8 +292,14 @@ else: raise AssertionError('unknown export')
     assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
     let after = contents(&work.0.join("models"));
     assert_eq!(
-        before.keys().collect::<Vec<_>>(),
-        after.keys().collect::<Vec<_>>(),
+        before
+            .keys()
+            .filter(|name| !name.starts_with("_schemas/"))
+            .collect::<Vec<_>>(),
+        after
+            .keys()
+            .filter(|name| !name.starts_with("_schemas/"))
+            .collect::<Vec<_>>(),
         "a constraint edit must not repack neighboring models"
     );
     let changed = before
@@ -210,7 +309,8 @@ else: raise AssertionError('unknown export')
         .collect::<Vec<_>>();
     assert!(!changed.is_empty());
     assert!(
-        changed.iter().all(|name| name.contains("_schema_wide_")
+        changed.iter().all(|name| name.starts_with("_schemas/")
+            || name.contains("_init_wide.py")
             || name.contains("_program_wide_")
             || name.contains("_plan_")),
         "only Wide's prepared data and the shared decision plan should change: {changed:?}"
@@ -321,6 +421,12 @@ assert get_type_hints(Order)['customer'] is Customer
 payload = json.loads(Path(sys.argv[1], 'payload.json').read_text())
 assert Wide.from_value(payload).to_value() == payload
 assert Wide.deserialize(Wide.from_value(payload).serialize()).to_value() == payload
+chunks = vars(Wide)['__jsoncompat_schema__']._compressed
+assert isinstance(chunks, tuple) and len(chunks) > 1
+assert all(len(chunk) <= 64 * 1024 for chunk in chunks)
+source = Wide.__jsoncompat_schema__
+assert Wide.__jsoncompat_schema__ is source
+assert payload['marker'] in json.dumps(json.loads(source)['properties']['marker'])
 "#,
             )
             .arg(&work.0)

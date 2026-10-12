@@ -344,6 +344,13 @@ therefore span many files. These are ordinary Python files: no extra package-dat
 configuration, runtime source compilation, or Git LFS is needed for prepared data.
 Individual model declarations still stay whole.
 
+Original schema chunks are shared across the entire package in `_schemas/`.
+Their filenames contain a SHA-256 digest of the compressed bytes, so identical
+chunks have one file and one in-memory byte string, even across independent
+model groups. Models retain references to those chunks; joining and decompressing
+them happens only when you explicitly read `Model.__jsoncompat_schema__`.
+Validation continues to use its prepared program.
+
 See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
 file sizes, generation/import costs, strict type checking, and current limits.
 
@@ -364,8 +371,10 @@ its managed files to this layout.
 
 An output manifest fingerprints the compiler, schemas, options, and managed
 files. Unchanged groups reuse their artifacts; edited schemas rebuild affected
-groups. Regeneration removes obsolete managed files, preserves unrelated files,
-and refuses to overwrite unmanaged files. Deploy the complete directory as one
+groups. A shared chunk stays until its last model group stops using it; missing
+or edited chunks rebuild every affected group. Regeneration removes obsolete
+managed files, preserves unrelated files, and refuses to overwrite unmanaged
+files. Deploy the complete directory as one
 build artifact; generation is not a live-reload or concurrent-writer protocol.
 
 ## API-scoped HTTP requests

@@ -23,6 +23,8 @@ struct Manifest {
     version: u32,
     compiler: String,
     modules: BTreeMap<String, String>,
+    // Shared schema chunks can belong to several groups. Their union in
+    // `files` keeps each chunk until its final owner stops referencing it.
     #[serde(default)]
     module_files: BTreeMap<String, Vec<String>>,
     files: BTreeMap<String, String>,
@@ -100,7 +102,7 @@ pub(super) fn generate(
         Manifest::default()
     };
     ensure!(
-        previous.version <= 4,
+        previous.version <= 5,
         "unsupported package manifest; use a new output directory"
     );
     ensure!(
@@ -119,7 +121,7 @@ pub(super) fn generate(
     }
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
     let mut manifest = Manifest {
-        version: 4,
+        version: 5,
         compiler,
         ..Default::default()
     };
@@ -138,6 +140,12 @@ pub(super) fn generate(
         &mut manifest,
         "_models/__init__.py",
         "# Private model binding groups.\n",
+    )?;
+    stage(
+        &staging,
+        &mut manifest,
+        "_schemas/__init__.py",
+        "# Shared compressed schema chunks; no model imports.\n",
     )?;
     let group_names = module_names(
         groups

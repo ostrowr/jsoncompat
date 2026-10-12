@@ -746,8 +746,12 @@ fn operations_and_models_always_use_named_files_and_regenerate_without_repacking
     }
     success(work.generate(&spec, &[]));
     let grown = snapshot();
+    // Stored schema contents can change; declaration and operation paths cannot.
     assert!(
-        before.keys().all(|name| grown.contains_key(name)),
+        before
+            .keys()
+            .filter(|name| !name.starts_with("_schemas/"))
+            .all(|name| grown.contains_key(name)),
         "adding an operation should not rename existing files"
     );
     for name in &operations {

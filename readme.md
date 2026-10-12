@@ -150,6 +150,7 @@ jsoncompat codegen --openapi openapi.json --output my_models --models-per-module
 Use `from my_models import Order`. The package loads model modules on demand;
 reference-connected models share identities. Each model has its own declaration
 and implementation files, with large prepared data stored separately.
+Identical schema chunks share storage across the package and in memory.
 `--component` selects roots and `--rename` resolves name collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
 Generate API-scoped HTTP requests alongside the models with `--api`:
