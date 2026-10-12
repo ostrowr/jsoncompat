@@ -52,7 +52,7 @@ const DATA_CHUNK_BYTES: usize = 64 * 1024;
 const NODES_PER_MODULE: usize = 256;
 
 impl DataclassModule {
-    /// Render a package group with one declaration and initializer module per
+    /// Render a package group with one combined declaration/initializer module per
     /// model. The layout is unconditional and named by model, not source size.
     /// Prepared data uses bounded byte-constant chunks, without runtime source
     /// compilation or resource files that require packaging configuration.
@@ -87,13 +87,17 @@ impl DataclassModule {
                         .collect::<String>()
                 )
             };
-            files.add(
-                declaration_module,
-                format!(
-                    "{}{type_imports}{}\n__all__ = ({name:?},)\n",
-                    package_imports(&self.parts.imports[i]),
-                    self.parts.declarations[i]
-                ),
+            let mut model_imports = package_imports(&self.parts.imports[i]);
+            let runtime_import = "from jsoncompat.codegen import dataclasses as dc\n";
+            // Empty requests can inherit only the HTTP base and therefore need
+            // no runtime import in their declaration. Their initializer does.
+            if !model_imports.contains(runtime_import) {
+                model_imports.push_str(runtime_import);
+            }
+            model_imports.push_str("from builtins import bytes as _jsoncompat_bytes\n");
+            let declaration = format!(
+                "{}{type_imports}{}\n__all__ = ({name:?},)\n",
+                model_imports, self.parts.declarations[i]
             );
             writeln!(
                 public,
@@ -101,19 +105,18 @@ impl DataclassModule {
             )
             .unwrap();
 
-            let initializer_module = format!("_init_{stem}");
             let schema = files.schema(&self.parts.sources[i]);
             let program = files.blob(
                 &format!("_program_{stem}"),
                 &self.parts.programs[i],
-                "_program",
+                "_jsoncompat_program",
             );
             let initializer = self.parts.initializers[i]
                 .replace(&format!("_jsoncompat_init_{i}("), "_jsoncompat_init(");
-            files.add(&initializer_module, format!("{PRIVATE_IMPORTS}{schema}{program}\n_jsoncompat_missing = dc.MissingType.MISSING\n\n{initializer}\ndef install(model: type[dc.DataclassModel], namespace: dict[str, typing.Any]) -> bytes:\n    dc.install_model(model, _jsoncompat_init, _schema, namespace)\n    return _program\n"));
+            files.add(declaration_module, format!("{declaration}\n# Prepared implementation; regenerated with the declaration above.\n{schema}{program}\n_jsoncompat_missing = dc.MissingType.MISSING\n\n{initializer}\ndef _jsoncompat_install(model: type[dc.DataclassModel], namespace: dict[str, typing.Any]) -> _jsoncompat_bytes:\n    dc.install_model(model, _jsoncompat_init, _jsoncompat_schema, namespace)\n    return _jsoncompat_program\n"));
             writeln!(
                 imports,
-                "from .{initializer_module} import install as _install_{name}"
+                "from .{declaration_module} import _jsoncompat_install as _install_{name}"
             )
             .unwrap();
             programs.push(format!("_install_{name}(_models[{i}], _namespace)"));
@@ -238,26 +241,30 @@ impl Files {
                 match chunk {
                     Chunk::Shared(name) => writeln!(
                         imports,
-                        "from ..._schemas.{name} import DATA as _schema_{alias}"
+                        "from ..._schemas.{name} import DATA as _jsoncompat_schema_{alias}"
                     ),
                     Chunk::Local(bytes) => {
-                        writeln!(imports, "_schema_{alias} = {}", super::render::bytes(bytes))
+                        writeln!(
+                            imports,
+                            "_jsoncompat_schema_{alias} = {}",
+                            super::render::bytes(bytes)
+                        )
                     }
                 }
                 .unwrap();
-                parts.push(format!("_schema_{alias},"));
+                parts.push(format!("_jsoncompat_schema_{alias},"));
             }
             streams_literals.push(format!("({})", parts.join(" ")));
         }
         match source {
             SchemaSource::Whole(_) => writeln!(
                 imports,
-                "_schema: tuple[bytes, ...] = {}",
+                "_jsoncompat_schema: tuple[_jsoncompat_bytes, ...] = {}",
                 streams_literals[0]
             ),
             SchemaSource::Fragments(_) => writeln!(
                 imports,
-                "_schema = dc.SchemaSource(({},))",
+                "_jsoncompat_schema = dc.SchemaSource(({},))",
                 streams_literals.join(", ")
             ),
         }

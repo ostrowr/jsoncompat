@@ -358,7 +358,7 @@ fn canonicalize_schema_object(
     pointer: &str,
     options: CanonicalizationOptions<'_>,
 ) -> Result<Value> {
-    let mut current = canonicalize_schema_members(obj, pointer, options)?;
+    let mut current = canonicalize_schema_members(obj, pointer, options, None)?;
 
     for _ in 0..MAX_PASSES {
         let next = rewrite_schema_object(&current, pointer, options)?;
@@ -369,7 +369,9 @@ fn canonicalize_schema_object(
             });
         }
         current = match next {
-            Value::Object(obj) => canonicalize_schema_members(&obj, pointer, options)?,
+            Value::Object(obj) => {
+                canonicalize_schema_members(&obj, pointer, options, current.as_object())?
+            }
             Value::Bool(_) => next,
             _ => {
                 return Err(CanonicalizeError::InvalidRewriteOutput {
@@ -390,9 +392,18 @@ fn canonicalize_schema_members(
     obj: &Map<String, Value>,
     pointer: &str,
     options: CanonicalizationOptions<'_>,
+    previous: Option<&Map<String, Value>>,
 ) -> Result<Value> {
     let mut canonical = Map::new();
     for (key, value) in obj {
+        // Rewrites often add a parent constraint while leaving a large $defs
+        // or properties tree intact. These values were already canonicalized
+        // at this exact schema location with the same reference/annotation
+        // context. Only changed members need another recursive pass.
+        if previous.and_then(|members| members.get(key)) == Some(value) {
+            canonical.insert(key.clone(), value.clone());
+            continue;
+        }
         if should_strip_keyword(key) {
             continue;
         }

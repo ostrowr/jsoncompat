@@ -112,6 +112,7 @@ type SchemaRootVisitor<'a> = dyn FnMut(&Value, &JsonPointer) -> Result<(), OpenA
 #[derive(Debug, Clone)]
 pub struct OpenApiDocument {
     raw: Value,
+    schema_validation_cache: std::sync::OnceLock<json_schema_ast::SchemaValidationCache>,
 }
 
 impl OpenApiDocument {
@@ -176,7 +177,10 @@ impl OpenApiDocument {
         let operations = collect_operation_index(object)?;
         validate_resolvable_link_targets(object, &operations)?;
         validate_declared_security_requirement_names(object)?;
-        let document = Self { raw: raw.clone() };
+        let document = Self {
+            raw: raw.clone(),
+            schema_validation_cache: Default::default(),
+        };
         document.validate_document_schema_validity()?;
         Ok(document)
     }
@@ -207,6 +211,12 @@ impl OpenApiDocument {
         schema: &Value,
     ) -> Result<SchemaDocument, OpenApiLoweringError> {
         self.schema_document(schema.clone())
+    }
+
+    /// Reuse component validity when generating namespaces with unchanged
+    /// definitions. Documents with scoped references retain full validation.
+    pub fn schema_validation_cache(&self) -> Option<&json_schema_ast::SchemaValidationCache> {
+        self.schema_validation_cache.get()
     }
 
     pub fn uses_same_schema_dialect_as(&self, other: &Self) -> Result<bool, OpenApiLoweringError> {
@@ -295,10 +305,14 @@ impl OpenApiDocument {
             return false;
         }
         self.schema_document(validation).is_ok_and(|schema| {
-            schema
+            let valid = schema
                 .root()
                 .and_then(|_| schema.validate_source_schema())
-                .is_ok()
+                .is_ok();
+            if valid && let Some(cache) = schema.namespace_validation_cache() {
+                let _ = self.schema_validation_cache.set(cache);
+            }
+            valid
         })
     }
 
@@ -4265,6 +4279,7 @@ mod tests {
 
     fn document_with_validation_roots(roots: Vec<Value>) -> OpenApiDocument {
         OpenApiDocument {
+            schema_validation_cache: Default::default(),
             raw: json!({
                 "openapi": "3.1.0", "info": {"title":"Schema roots", "version":"1"},
                 "paths": {"/values": {"get": {
@@ -4278,6 +4293,16 @@ mod tests {
                 }}}}
             }),
         }
+    }
+
+    #[test]
+    fn validated_component_cache_is_retained_and_documents_remain_shareable() {
+        fn shareable<T: Send + Sync>() {}
+        shareable::<OpenApiDocument>();
+        let raw = document_with_validation_roots(Vec::new()).raw;
+        let document = OpenApiDocument::from_json(&raw).unwrap();
+        assert!(document.schema_validation_cache().is_some());
+        assert!(document.clone().schema_validation_cache().is_some());
     }
 
     fn independently_validate_roots(document: &OpenApiDocument) -> Result<(), super::OpenApiError> {

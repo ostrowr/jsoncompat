@@ -258,7 +258,11 @@ pub(super) fn generate(
                 .map(|(name, _)| name.clone())
                 .collect::<Vec<_>>()
         } else {
-            let schema = SchemaDocument::from_json_with_options(&input, options)?;
+            let schema = SchemaDocument::from_json_with_options_and_cache(
+                &input,
+                options,
+                document.schema_validation_cache(),
+            )?;
             timings.mark(&format!("{module_name}: validate schema document"));
             let module = generate_dataclass_package_declarations_with_metadata(
                 &schema,

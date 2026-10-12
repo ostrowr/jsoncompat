@@ -138,6 +138,13 @@ def inventory(package: Path) -> dict[str, object]:
                    for p in package.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
     sources = [item for item in files if item[1].endswith((".py", ".pyi"))]
     manifest = json.loads((package / ".jsoncompat-manifest.json").read_text())
+    model_files = [package / path for _, path in sources
+                   if path.startswith("_models/") and not Path(path).name.startswith("_")]
+    empty_headers = sum(
+        bool(re.search(r"^class \w+Headers\(", source, re.MULTILINE))
+        and "__slots__ = ()" in source
+        for source in (path.read_text() for path in model_files)
+    )
     return {
         "files": len(files), "bytes": sum(size for size, _ in files),
         "python_files": len(sources), "python_bytes": sum(size for size, _ in sources),
@@ -148,6 +155,7 @@ def inventory(package: Path) -> dict[str, object]:
                             for _, p in sources),
         "schema_storage_bytes": sum(size for size, p in sources if Path(p).name.startswith("_schema_")),
         "schema_chunk_files": sum(Path(p).name.startswith("_schema_") for _, p in sources),
+        "empty_header_models": empty_headers,
     }
 
 
@@ -202,6 +210,22 @@ def inspect(directory: Path, case: str, package: Path, timeout: float, repeats: 
                     [sys.executable, "-m", "compileall", "-q", str(package)])
         for repeat in range(repeats):
             measure(directory, f"{case}-import-{phase}-{repeat}", timeout, [sys.executable, "-c", source])
+        # Diagnose the import graph separately from loading the complete API.
+        # These private paths are measurements, not supported public imports.
+        if case == "models":
+            selective_load = f"getattr(importlib.import_module({name!r}), 'SimpleUser')"
+        else:
+            selective_load = f"importlib.import_module({(name + '._operations.issues_get')!r})"
+        selective = (
+            "import importlib,json,sys,time; t=time.perf_counter(); "
+            f"{selective_load}; elapsed=time.perf_counter()-t; "
+            f"models=[n for n in sys.modules if n.startswith({(name + '._models.')!r}) "
+            "and n.count('.')==3 and not n.rsplit('.',1)[1].startswith('_')]; "
+            "print(json.dumps(dict(load_seconds=elapsed,loaded_models=len(models))))"
+        )
+        for repeat in range(repeats):
+            measure(directory, f"{case}-selective-import-{phase}-{repeat}", timeout,
+                    [sys.executable, "-c", selective])
     typecheck(directory, case, package, timeout)
 
 

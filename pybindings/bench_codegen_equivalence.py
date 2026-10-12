@@ -38,6 +38,15 @@ class Package:
         self.streams: dict[bytes, bytes] = {}
         self.manifest = json.loads((root / ".jsoncompat-manifest.json").read_text())
 
+    def model_files(self, directory: Path) -> dict[str, Path]:
+        files = list((self.root / directory).glob("_init_*.py"))
+        if files:
+            return {path.name.removeprefix("_init_"): path for path in files}
+        return {
+            path.name: path for path in (self.root / directory).glob("*.py")
+            if "\ndef _jsoncompat_install(" in path.read_text()
+        }
+
     def data(self, path: Path) -> bytes:
         if path not in self.chunks:
             tree = ast.parse(path.read_text())
@@ -97,7 +106,7 @@ class Package:
                 )
                 if not isinstance(target, ast.Name):
                     continue
-                if target.id == "_schema":
+                if target.id in {"_schema", "_jsoncompat_schema"}:
                     source = value(node.value)
                     if isinstance(node.value, ast.Call):
                         schema = source
@@ -105,9 +114,9 @@ class Package:
                         schema = zlib.decompress(
                             b"".join(source) if isinstance(source, tuple) else source
                         )
-                elif target.id == "_program":
+                elif target.id in {"_program", "_jsoncompat_program"}:
                     program = value(node.value)
-                elif target.id.startswith(("_program_", "_schema_")):
+                elif target.id.startswith(("_program_", "_schema_", "_jsoncompat_program_", "_jsoncompat_schema_")):
                     namespace[target.id] = value(node.value)
         ensure(isinstance(schema, bytes) and isinstance(program, bytes), path)
         return schema, program
@@ -343,11 +352,13 @@ class VerifierTests(unittest.TestCase):
                 "from ._program_old_0000 import DATA as _program_0\n"
                 "_program = b''.join([_program_0])\n"
             )
-            after = group / "_init_after.py"
+            after = group / "after.py"
             after.write_text(
-                f"_schema_0 = {zlib.compress(schema[:5])!r}\n"
-                f"_schema_1 = {zlib.compress(schema[5:])!r}\n"
-                "_schema = dc.SchemaSource(((_schema_0,), (_schema_1,)))\n"
+                "class Example: pass\n"
+                "def _jsoncompat_install(model, namespace): raise RuntimeError('never execute artifacts')\n"
+                f"_jsoncompat_schema_0 = {zlib.compress(schema[:5])!r}\n"
+                f"_jsoncompat_schema_1 = {zlib.compress(schema[5:])!r}\n"
+                "_jsoncompat_schema = dc.SchemaSource(((_jsoncompat_schema_0,), (_jsoncompat_schema_1,)))\n"
                 f"_program_0 = {program[:7]!r}\n"
                 f"_program = b''.join([_program_0, {program[7:]!r}])\n"
             )
@@ -397,11 +408,12 @@ def main():
     )
     for group in old.manifest["modules"]:
         directory = Path(*group.split("."))
-        previous = sorted((args.before / directory).glob("_init_*.py"))
-        current = sorted((args.after / directory).glob("_init_*.py"))
+        previous = old.model_files(directory)
+        current = new.model_files(directory)
         ensure(previous, (group, "no model initializers found"))
-        ensure([p.name for p in previous] == [p.name for p in current], group)
-        for before, after in zip(previous, current):
+        ensure(previous.keys() == current.keys(), group)
+        for name, before in sorted(previous.items()):
+            after = current[name]
             before_schema, before_program = old.initializer(before)
             after_schema, after_program = new.initializer(after)
             ensure(before_schema == after_schema, str(before))

@@ -106,10 +106,70 @@ fn declaration(name: &str) -> bool {
 }
 
 #[test]
+fn merged_implementations_preserve_user_declaration_names() {
+    let work = Work::new();
+    let mut spec = api();
+    spec["components"]["schemas"]["Blob"] = json!({"type":"string"});
+    work.write(&spec);
+    success(work.generate_with_group_size(
+        "128",
+        &[
+            "--rename",
+            "Customer=_schema",
+            "--rename",
+            "Order=_program",
+            "--rename",
+            "Other=_schema_0",
+            "--rename",
+            "Unused=_program_0",
+            "--rename",
+            "Wide=_install",
+            "--rename",
+            "Blob=bytes",
+        ],
+    ));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import sys
+sys.path.insert(0, sys.argv[1])
+from models import _schema, _program, _schema_0, _program_0, _install, bytes
+for model in (_schema, _program, _schema_0, _program_0, _install, bytes):
+    assert isinstance(model, type), model
+customer = _schema(id=1, orders=[])
+order = _program(customer=customer, total=2)
+assert type(_program.deserialize(order.serialize()).customer) is _schema
+assert _program_0(root=True).serialize() == 'true'
+assert bytes(root='text').serialize() == '"text"'
+assert _install.deserialize(_install(**{f'f{i:03}': i for i in range(200)}).serialize()).f199 == 199
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+    let typed = python_env::ty_command()
+        .arg("--project")
+        .arg(&work.0)
+        .arg(work.0.join("models"))
+        .output()
+        .unwrap();
+    assert!(
+        typed.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&typed.stdout),
+        String::from_utf8_lossy(&typed.stderr)
+    );
+}
+
+#[test]
 fn older_packages_migrate_without_removing_unmanaged_files() {
     for (previous_version, previous_file) in [
         (3, "models_0000.py"),
         (4, "_models/wide/_schema_wide_0000.py"),
+        (5, "_models/wide/_init_wide.py"),
     ] {
         let work = Work::new();
         work.write(&api());
@@ -276,7 +336,7 @@ fn publication_preserves_unchanged_files_and_checks_all_conflicts_before_writing
     let before = contents(&output);
     let corrupted = before
         .keys()
-        .find(|name| name.ends_with("/_init_wide.py"))
+        .find(|name| name.ends_with("/wide.py"))
         .unwrap();
     fs::write(output.join(corrupted), "# corrupted prepared data\n").unwrap();
     assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
@@ -358,6 +418,10 @@ fn package_builds_preserve_identity_recursion_laziness_and_incremental_outputs()
     assert!(success(work.generate(&[])).contains("5 models in 3 modules (3 rebuilt)"));
     let before = contents(&work.0.join("models"));
     assert!(
+        !before.keys().any(|name| name.contains("/_init_")),
+        "each declaration includes its own prepared initializer"
+    );
+    assert!(
         !before.keys().any(|name| name.contains("/_program_")),
         "small prepared programs belong in the existing model initializer"
     );
@@ -436,7 +500,7 @@ else: raise AssertionError('unknown export')
     assert!(!changed.is_empty());
     assert!(
         changed.iter().all(|name| name.starts_with("_schemas/")
-            || name.contains("_init_wide.py")
+            || name.ends_with("/wide.py")
             || name.contains("_program_wide_")
             || name.as_str() == "_models/wide/_binding.py"
             || name.contains("_plan_")),

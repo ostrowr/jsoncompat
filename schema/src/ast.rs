@@ -70,6 +70,7 @@ pub struct SchemaDocument {
     root: OnceCell<SchemaNode>,
     canonical: OnceCell<Value>,
     raw_validator: OnceCell<JSONSchema>,
+    source_validated: bool,
     #[cfg(test)]
     canonical_validator: OnceCell<JSONSchema>,
 }
@@ -94,6 +95,29 @@ impl SchemaDocument {
     }
 
     fn from_prepared(raw: &Value) -> Result<Self> {
+        Self::from_prepared_with_cache(raw, None)
+    }
+
+    /// Build with options, reusing proven unchanged definitions when possible.
+    /// Ineligible scopes or changed definitions use the ordinary validation path.
+    pub fn from_json_with_options_and_cache(
+        raw: &Value,
+        options: &crate::SchemaOptions,
+        cache: Option<&crate::SchemaValidationCache>,
+    ) -> Result<Self> {
+        Self::from_prepared_with_cache(&crate::options::prepare(raw, options)?, cache)
+    }
+
+    /// Retain a schema-validity proof for a namespace exposing every definition
+    /// as a property. Other document shapes return `None`.
+    pub fn namespace_validation_cache(&self) -> Option<crate::SchemaValidationCache> {
+        crate::SchemaValidationCache::from_document(self)
+    }
+
+    fn from_prepared_with_cache(
+        raw: &Value,
+        cache: Option<&crate::SchemaValidationCache>,
+    ) -> Result<Self> {
         // Validate the source's dialect and shape before rewriting references.
         let checked = canonicalize_schema(raw)?;
         let canonical = if crate::references::needs_linking(raw) {
@@ -114,6 +138,7 @@ impl SchemaDocument {
             root: OnceCell::new(),
             canonical: OnceCell::new(),
             raw_validator: OnceCell::new(),
+            source_validated: cache.is_some_and(|cache| cache.validates(raw)),
             #[cfg(test)]
             canonical_validator: OnceCell::new(),
         };
@@ -218,7 +243,11 @@ impl SchemaDocument {
     /// Ensure the original JSON Schema document is accepted by the backend
     /// Draft 2020-12 validator before downstream tooling reasons about it.
     pub fn validate_source_schema(&self) -> Result<()> {
-        self.raw_validator().map(|_| ())
+        if self.source_validated {
+            Ok(())
+        } else {
+            self.raw_validator().map(|_| ())
+        }
     }
 
     /// Validate one instance against the backend compiled from the original

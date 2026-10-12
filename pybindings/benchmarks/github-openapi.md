@@ -1,15 +1,15 @@
 # GitHub OpenAPI scale experiment
 
-Cold generation now takes **5.18 seconds for all GitHub models** and **2.21
-seconds for the Issues client**, down from 436.95 and 23.23 seconds. The
-**1,223-operation client projection completes in 9.24 seconds**; the previous
-build timed out after 900 seconds. These measurements include writing every
-output file and the manifest. The approximately one-second target is not met.
+Combining each declaration with its initializer removes **12,351 files** from the
+full client: **31,950 → 19,599**. Reusing component-validation proofs and avoiding
+repeated canonicalization reduces its three-run generation median from **9.28 to
+7.48 seconds**. The models and Issues medians are **3.73 and 1.64 seconds**.
+The approximately one-second target is still not met.
 
-Compilation remains a build-time operation. This change does not defer schema
-compilation, normalization, or regex compilation to import or first model use.
-The original upstream document still requires the explicitly described
-projection.
+All model identities, public imports, schemas, and prepared validation programs
+are preserved. No schema compilation moves to import or first use. The direct
+import and model-count investigation below describes proposed follow-up work;
+barrel removal and model deduplication are not implemented in these measurements.
 
 ## Input and scope
 
@@ -42,56 +42,63 @@ Omitted operations are not counted as supported.
 
 ## Measurements
 
-| Cold generation | Previous build | Current build | Generation peak RSS, previous / current |
+Cold generation includes every output file and the manifest. These comparisons
+use the preceding optimized build, with the same inputs and release configuration.
+
+| Case | Previous median | Current median | Files, previous → current |
 | --- | ---: | ---: | ---: |
-| All 973 component schemas | 436.95 s | 5.18 s | 5.47 / 0.67 GiB |
-| 61-operation Issues client | 23.23 s | 2.21 s | 0.49 / 0.38 GiB |
-| 1,223-operation client projection | Timeout at 900 s | 9.24 s | 6.96 / 0.91 GiB |
+| All 973 component schemas | 4.85 s | 3.73 s | 7,228 → 4,095 |
+| 61-operation Issues client | 2.23 s | 1.64 s | 1,783 → 1,119 |
+| 1,223-operation client projection | 9.28 s | 7.48 s | 31,950 → 19,599 |
 
-The table uses each primary harness run, whose package was then measured for
-imports and typing. Two additional generations into fresh directories produced
-three-run medians of **4.85 s / 2.23 s / 9.28 s** for models / Issues / the client
-projection, with ranges **4.84–5.18 s / 2.21–2.25 s / 9.24–9.32 s**. These are
-complete cold generations; filesystem caches were not flushed.
+The primary runs took **3.87 / 1.65 / 7.82 seconds**. Two further generations
+into fresh directories give the medians above, with ranges **3.71–3.87 /
+1.63–1.65 / 7.29–7.82 seconds**. Filesystem caches were not flushed.
 
-The model package also shrank from **71.13 MiB to 28.44 MiB**, and the Issues
-package from **10.81 MiB to 4.51 MiB**. The earlier layout before any schema
-sharing occupied 622.61 MiB for the models.
+For historical context, before the earlier compiler optimizations the models
+and Issues cases took 436.95 and 23.23 seconds, and the full client timed out at
+900 seconds. Before schema-source sharing, the model package occupied 622.61 MiB.
 
-| Current artifact and import measurements | Models | Issues client | Client projection |
+| Current artifacts and imports | Models | Issues client | Client projection |
 | --- | ---: | ---: | ---: |
-| Generated declarations | 3,133 | 664 | 12,351 |
+| Generated classes | 3,133 | 664 | 12,351 |
 | Binding groups | 4 | 5 | 34 |
-| Files, including manifest | 7,228 | 1,783 | 31,950 |
-| Total output | 28.44 MiB | 4.51 MiB | 89.04 MiB |
+| Total output | 28.04 MiB | 4.41 MiB | 86.80 MiB |
+| Generation peak RSS | 0.71 GiB | 0.38 GiB | 0.95 GiB |
 | Largest Python file | 778.4 KiB | 121.6 KiB | 2,974.6 KiB |
-| 95th percentile Python file | 14.5 KiB | 6.2 KiB | 5.0 KiB |
-| Import all models / prepared API, source | 1.479 s | 0.287 s | 5.432 s |
-| Import all models / prepared API, bytecode | 0.541 s | 0.158 s | 2.696 s |
-| Lazy package import, bytecode | 2.34 ms | 2.34 ms | 9.62 ms |
-| Import peak RSS, source / bytecode | 167.5 / 142.6 MiB | 47.0 / 40.5 MiB | 417.5 / 353.4 MiB |
+| 95th percentile Python file | 24.4 KiB | 10.3 KiB | 9.6 KiB |
+| Import all models / prepared API, source | 1.437 s | 0.287 s | 5.548 s |
+| Import all models / prepared API, bytecode | 0.451 s | 0.143 s | 2.407 s |
+| Lazy package import, bytecode | 2.87 ms | 2.74 ms | 10.98 ms |
+| Import peak RSS, source / bytecode | 165.2 / 136.2 MiB | 46.0 / 39.5 MiB | 397.6 / 330.0 MiB |
 
-Type checking now uses **ty 0.0.86 with every rule treated as an error** and a
-Python 3.12 target. It checks every generated Python file and a typed consumer:
+The largest full-client Python file is the package `__init__.py`, at 2.90 MiB.
+The file merge reduces module overhead, but preserves the payloads and model
+population; total full-client output falls only from 89.04 to 86.80 MiB.
+Full-client source import is 5.548 seconds versus the previous 5.432 seconds;
+bytecode import improves from 2.696 to 2.407 seconds. Fewer files alone do not
+remove the cost of constructing and binding thousands of classes.
 
-| ty check | Models | Issues client | Client projection |
+**ty 0.0.86**, targeting Python 3.12 with every rule treated as an error, checks
+every generated Python file and a typed consumer:
+
+| Primary ty check | Models | Issues client | Client projection |
 | --- | ---: | ---: | ---: |
-| Wall time | 0.775 s | 0.210 s | 3.027 s |
-| Peak RSS | 0.42 GiB | 0.10 GiB | 1.21 GiB |
+| Wall time | 0.667 s | 0.188 s | 5.714 s |
+| Peak RSS | 0.47 GiB | 0.11 GiB | 1.27 GiB |
 | Diagnostics | 0 | 0 | 0 |
 
-Both clients also pass negative checks: a string `issue_number` is rejected, as
-is returning the response's string title from a function declared to return
-`int`. Positive consumers verify inferred response and body types for both
-synchronous and asynchronous clients.
+The first full-client typing run took 5.714 seconds. To check the apparent
+regression, three subsequent old/new runs were interleaved on the same machine.
+Those medians were **2.568 seconds before and 2.236 seconds after**, all with zero
+diagnostics. Both sets are retained in the snapshot; warmed repeats are not a
+replacement for the primary measurement. Paths are resolved before invoking ty.
 
-Earlier exploratory checks used Pyright 1.1.408 and Node 24.14.0. The complete
-client exhausted Node's default **4 GiB heap** in both the positive and negative
-checks (18.13 and 17.91 seconds); explicit **8 GiB** reruns also exhausted the heap
-(35.63 and 34.51 seconds). The models and Issues package passed Pyright. Those
-results remain separate in the snapshot as historical measurements. The switch
-of type checker is not a generation optimization or a like-for-like typing
-speed comparison.
+Both clients also pass negative checks for an incorrect request argument and
+an incorrectly annotated response return value. Positive consumers check
+inferred request, response, and body types for sync and async clients.
+Historical Pyright measurements remain in the preceding snapshots; the current
+comparison uses ty throughout.
 
 Measurements use an Apple M2 Max with 32 GiB RAM, macOS 26.6.2 arm64, Python
 3.12.2, and a release Rust generator/native extension. The successful baseline
@@ -109,64 +116,82 @@ operation dispatch preparation. Lazy package-root imports are measured separatel
 
 ## What changed
 
-The old compiler copied entire definition maps into each reference-bearing
-model, pretty-printed them, parsed them again, and rebuilt a validator for every
-class. It compressed those expanded schemas independently and rendered an unused
-single-file implementation before producing package files.
+1. Each model file contains its declaration and prepared initializer. Separate
+   `_init_<model>.py` files are removed during regeneration. Prepared helpers use
+   reserved names, and the runtime import is retained even for empty requests.
+   Overflow data, shared schema chunks, conversion plans, and recursive binding
+   groups retain their existing layout and behavior.
+2. OpenAPI validation retains an immutable proof for component definitions that
+   were fully exposed to the backend validator. Generated namespaces reuse it
+   only when definitions and dependency meanings are unchanged. New wrappers
+   still undergo backend validation. Changed definitions, resource/dynamic
+   scopes, unsupported reference shapes, and any failed check use the original
+   path and diagnostics. Instance validation always uses the complete original
+   schema, never the reduced schema used to check new wrappers.
+3. Canonicalization reuses members unchanged by a parent rewrite. A member is
+   reused only at the same location, within the same reference and annotation
+   context; changed members still receive the full recursive pass.
 
-The new pipeline:
+`just check` passes, including schema/fuzz/differential coverage, Python typing,
+and website checks. Final targeted runs pass all 10 model-package tests, all 12
+local generated-client tests, and clippy. The existing opt-in live internet test
+was not rerun for this generator-only change. New regressions cover cache
+fallbacks, recursive instance validation, thread-shareable OpenAPI documents,
+legacy-file migration, empty requests, and user renames that resemble helpers
+or the built-in `bytes` type.
 
-1. Keeps local model schemas separate from shared definitions, reuses validated
-   documents, and prepares common validation nodes and regexes once per group.
-   It emits standalone prepared programs for each model with the original
-   promoted-root recursion behavior.
-2. Validates distinct OpenAPI schema roots together with every component,
-   including unused components. Only ordinary references to known schema
-   positions use this path. Resource scopes, dynamic references, data targets,
-   and any validation failure retain the original validation path and diagnostics.
-3. Renders package artifacts directly. Shared definition fragments are serialized
-   and compressed once; their exact original schema text is reconstructed only
-   for explicit `Model.__jsoncompat_schema__` access and cached on that class.
-   Small local source and prepared payloads live in existing initializer modules;
-   larger data and shared fragments remain separate chunks.
-4. Publishes new generated subtrees with directory renames after checking every
-   destination for conflicts. Incremental regeneration preserves caller-owned
-   files, unchanged outputs, and shared-schema ownership.
+An independent AST-only verifier compares all three packages against the
+preceding compiler: **16,148 classes**, **21,607,182,092 reconstructed schema
+bytes**, and every prepared validation program are byte-identical. The full
+client alone covers **12,351 classes and 148,805 validation nodes**. The verifier
+also checks graph equivalence and has self-tests that pass with and without
+Python assertions enabled.
 
-Named model and operation modules remain stable. Public imports still use
-`models.py`, `api.py`, or the package root. Shared compressed fragments live in
-`_schemas/_schema_<sha256>.py`; private model groups retain one declaration and
-initializer per model. Numbered modules store large prepared data, not arbitrary
-collections of declarations. Individual declarations and export lists remain
-whole, so there is no universal maximum file size for arbitrary inputs.
+## Model count and direct imports
 
-The regression suite checks reference scopes, recursive root identity and depth
-limits, validation errors, exact introspection text, shared storage, import/use
-without compilation or decompression, legacy artifacts, and safe publication.
-A separate artifact comparison confirms byte-for-byte equality for all **3,133
-expanded model schema texts** (4,455,281,588 bytes) and all **3,133 prepared
-programs**, containing **60,993 validator nodes**, against the preceding
-generator. The verifier also compares every reachable rule, ordered edge,
-compiled regex, and reference diagnostic while allowing node IDs to differ. This
-checks the prepared programs and exposed schema text, not the complete generated
-Python source: generated declarations now hide runtime-only slots and model
-binding from type checkers with `typing.TYPE_CHECKING` guards.
+The full client contains **3,228 empty header classes**. These are the clearest
+candidate for sharing a structural header model. Requests and named component
+models should retain their identities; sharing other anonymous models needs to
+account for constraints, HTTP annotations, and reference scope.
+
+The current `api.py` eagerly prepares every operation. The package root and
+`models.py` are lazy routers, but touching a model loads its entire undirected
+reference group. Directly importing a private operation therefore still pulls
+in many unrelated reverse dependents:
+
+| Selective import (diagnostic only) | Loaded model classes | Source | Bytecode |
+| --- | ---: | ---: | ---: |
+| `SimpleUser` in models | 2,679 | 1.280 s | 0.358 s |
+| `issues_get` in Issues | 609 | 0.228 s | 0.093 s |
+| `issues_get` in full client | 7,779 | 2.978 s | 0.993 s |
+
+The operation measurements bypass the public API registry. Binding the current
+API subsequently loads and prepares the complete registry. They do not measure
+a selectively bound client.
+
+The recommended next layout makes `operations/issues_get.py` and
+`models/issue.py` the public import paths, keeps the package initializer small,
+and replaces undirected groups with directed dependencies: only actual recursive
+cycles need to bind together. Operation imports would prepare their own dispatch
+plans under the same explicit API identity, keeping later binding cheap.
+Removing a barrel without changing these dependencies leaves the expensive
+group loads in place. Sharing empty headers first would connect more operations
+under the current grouping algorithm, so the two changes should be designed
+together. This recommendation is not part of the implemented layout.
 
 ## Remaining generation costs
 
-Instrumented stages explain why the largest case is still several seconds:
-
-| Generation stage | Models | Issues client | Client projection |
+| Instrumented stage, primary run | Models | Issues client | Client projection |
 | --- | ---: | ---: | ---: |
-| Validate OpenAPI document | 1.62 s | 1.61 s | 1.71 s |
-| Validate generated group schemas | 1.30 s | 0.07 s | 2.00 s |
-| Prepare and render models | 1.09 s | 0.09 s | 2.08 s |
-| Write staged package files | 0.57 s | 0.12 s | 2.37 s |
+| Validate OpenAPI document | 1.09 s | 1.11 s | 1.29 s |
+| Canonicalize / validate generated groups | 0.79 s | 0.06 s | 1.61 s |
+| Prepare and render models | 1.04 s | 0.08 s | 1.95 s |
+| Write staged package files | 0.38 s | 0.08 s | 1.81 s |
 
-These stage timers exclude some startup and final cleanup work; complete process
-wall times appear above. Schema validation and writing tens of thousands of files
-now dominate the largest package. Further reductions toward one second require
-reducing those costs while preserving validation and the stable split layout.
+These stages exclude startup and some final publication work. Group
+canonicalization, preparation, and writing 19,599 files remain substantial.
+The next major reduction needs fewer generated classes and narrower dependency
+groups, while retaining the existing correctness guarantees.
 
 ## Reproduce
 
@@ -205,7 +230,8 @@ uv run --no-config --project pybindings --locked python \
 ```
 
 The [current measurement snapshot](github-openapi-results.json),
-[previous generation baseline](github-openapi-before-fast-generation.json), and
+[preceding layout baseline](github-openapi-before-merged-models.json),
+[earlier generation baseline](github-openapi-before-fast-generation.json), and
 [earlier storage baseline](github-openapi-before-dedup.json) preserve the results.
 The [artifact equivalence report](github-openapi-equivalence.json) records the
 compared generator fingerprints. Raw harness reports retain commands, environment,

@@ -326,8 +326,8 @@ from my_models import Order, Customer
 ```
 
 The package exports component models by name. `__init__.pyi` makes those exports
-visible to type checkers. Each model always gets its own readable declaration
-file and private initializer file. The public `models.py` barrel exports models
+visible to type checkers. Each model always gets one file containing its readable
+declaration followed by its prepared initializer. The public `models.py` barrel exports models
 by name; `from my_models.models import Order` and `from my_models import Order`
 return the same class. Reference groups live under private `_models/<group>/`
 packages and bind their shared model identities. Package and barrel imports load
@@ -337,7 +337,7 @@ moves to first access.
 File layout does not depend on a source-size budget: growing one model never
 merges or redistributes neighboring declarations. Files use readable names such
 as `order.py`; only long or colliding names receive a short digest to remain
-portable across case-insensitive filesystems. Each initializer includes the first
+portable across case-insensitive filesystems. Each model file includes the first
 64 KiB of its prepared validation data; further chunks use separate Python
 modules. Conversion graph
 metadata uses groups of 256 nodes. Even one large connected schema graph can
@@ -349,6 +349,12 @@ Generation prepares each shared definition graph once, while preserving every
 model's own validation root. It also serializes and compresses shared definition
 blocks once, instead of copying the entire graph into each model. Scope-sensitive
 schemas retain the standalone compiler's reference handling.
+
+OpenAPI validation also retains proof that the component definitions were checked.
+Generation reuses that proof for unchanged definitions and validates new operation
+wrappers separately. Changed definitions, resource scopes, dynamic references,
+and unsupported reference shapes use the full validation path. This changes no
+model constraints, instance validation, or error reporting.
 
 Shared schema chunks live in `_schemas/`.
 Their filenames contain a SHA-256 digest of the compressed bytes, so identical

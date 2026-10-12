@@ -7,9 +7,9 @@
   "new_prepared_nodes": 60993,
   "exact_schema_text_equal": true,
   "prepared_programs_bisimilar": true,
-  "before": "/tmp/jsoncompat-github-dedup/github_models",
-  "after": "/tmp/jsoncompat-github-fast-final/github_models",
-  "seconds": 7.441934125032276,
-  "before_compiler": "373ee415298dcacad5b69df14096d778e3bf85f5f0cf95161ae842702e839d7a",
-  "after_compiler": "57271c4e164d01bf1be908f5d29123a6c06c4e35952918b3325c92a1a1ec96cf"
+  "before": "/tmp/jsoncompat-github-fast-final/github_models",
+  "after": "/tmp/jsoncompat-github-merged-final/github_models",
+  "seconds": 6.352845916990191,
+  "before_compiler": "57271c4e164d01bf1be908f5d29123a6c06c4e35952918b3325c92a1a1ec96cf",
+  "after_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242"
 }

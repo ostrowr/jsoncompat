@@ -148,8 +148,8 @@ jsoncompat codegen --openapi openapi.json --output my_models --models-per-module
 ```
 
 Use `from my_models import Order`. The package loads model modules on demand;
-reference-connected models share identities. Each model has its own declaration
-and implementation files, with large prepared data stored separately.
+reference-connected models share identities. Each model has one file containing
+its declaration and prepared initializer, with large prepared data stored separately.
 Identical schema chunks share storage across the package and in memory.
 Generation also reuses shared validation graphs and compressed definitions,
 while keeping all model preparation in the build step.
