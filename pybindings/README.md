@@ -400,6 +400,24 @@ releases the HTTP response before returning; jsoncompat parses and validates the
 body only when you call `.result()` or `.unwrap()`. No second `await`, mode flag,
 or response context manager is needed. The caller still owns the session.
 
+Use `.unwrap()` for the usual success path and `.result()` when you want to
+branch on `Ok`/`Err`. Properties never trigger parsing:
+
+| Access | What happens to the response body? |
+| --- | --- |
+| `request()` / `await request()` | Buffer decompressed bytes and release the HTTP response; no JSON parsing or model validation. |
+| `response.status`, `.headers`, `.content`, `.raw` | Read buffered data without parsing. |
+| `response.result()` | Decode and validate once; return cached `Ok`/`Err` or raise a cached contract failure. |
+| `response.unwrap()` | Use the same cached decoding; return the success envelope or raise. |
+| `result.value` / `result.error` after narrowing | Read an already materialized field; no implicit parsing. |
+| `unexpected.status`, `.headers`, `.body` | Read preserved metadata and bytes without parsing. |
+| `unexpected.text()` / `.json()` | Explicitly decode text or JSON without schema validation. |
+
+Both `.result()` and `.unwrap()` are synchronous even with an async client:
+network I/O has already finished. They share one cached outcome. The diagnostic
+`.text()` and `.json()` helpers perform a conversion on each call; save their
+return value if you want to reuse it.
+
 ```python
 from jsoncompat.http import Ok, Err, UnexpectedResponse
 from petstore import GetPetRequest, GetPet404
@@ -480,6 +498,62 @@ Regenerate API packages created before the Result interface: request bases carry
 `Request[API, Success, Error]`. Custom clients return `ClientResponse[S, E]`;
 construct one from `raw` and `prepare(API, request).decode`. Fetchers still return
 `RawResponse` and do not need to implement lazy decoding or manage response objects.
+
+### Inspecting unexpected responses
+
+An unexpected error keeps the server's useful details even when the spec omits
+that status or describes a different body. With an existing async client:
+
+```python
+from jsoncompat.http import Err, UnexpectedResponse
+from petstore import GetPetRequest
+
+response = await client.request(GetPetRequest(pet_id="unavailable"))
+match response.result():  # Attempt contract decoding explicitly.
+    case Err(error=UnexpectedResponse() as error):
+        print(error.status)                      # 503
+        print(error.headers.get("Retry-After"))   # "10"
+        print(error.body)                        # Original buffered bytes.
+        print(error.text())                      # Decode diagnostic text.
+        try:
+            details = error.json()               # Explicit JSON parsing.
+        except ValueError:
+            print("Non-JSON error:", error.text())
+        else:
+            print("JSON error details:", details)
+        print(error.decode_error)                # Why typed decoding failed.
+    case result:
+        pet = result.unwrap()                    # Other errors still raise.
+        print(pet.body.name)
+```
+
+`.json()` returns `JsonValue`, which can be an object, array, scalar, or null;
+narrow it before accessing object fields. HTML gateway errors are easy to read
+with `.text()`, and `.body` always retains the exact buffered bytes even when
+text decoding replaces invalid characters or JSON parsing fails. Duplicate
+headers remain available through `.headers.get_all(name)` and `.headers.raw`.
+A malformed declared 404 also becomes `UnexpectedResponse`; match `GetPet404`
+only when you need its validated, typed body.
+
+The normal `.unwrap()` path retains these details on its exception too:
+
+```python
+from jsoncompat.http import HTTPStatusError
+
+try:
+    pet = (await client.request(GetPetRequest(pet_id="unavailable"))).unwrap()
+except HTTPStatusError as exc:
+    print(exc.response.status, exc.response.body)  # No type narrowing needed.
+    if isinstance(exc.error, UnexpectedResponse):
+        print(exc.error.headers.get("Retry-After"), exc.error.text())
+```
+
+Malformed successes instead raise `ResponseError` when `.result()` or
+`.unwrap()` is called, with the original bytes at `exc.response.body`.
+The [runnable unexpected-response example](../examples/openapi_client/unexpected_responses.py)
+demonstrates a JSON 503, an HTML 502, a schema-invalid 404, an unwrapped error,
+and an invalid 200. The aiohttp, requests, and sync/async HTTPX examples all
+exercise those cases against the local server.
 
 ### The fetcher contract
 
@@ -674,7 +748,7 @@ from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
     client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
     # Inferred: AsyncClient[PetstoreAPI, AiohttpOptions]
-    result = await client.request(
+    response = await client.request(
         GetPetRequest(pet_id="p_123"),
         transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
         options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
@@ -698,7 +772,7 @@ Use `RequestOptions` for fields missing from a spec or an exceptional call:
 ```python
 from jsoncompat.http import RequestOptions
 
-result = client.request(
+response = client.request(
     GetPetRequest(pet_id="p_123", include_history=False),
     options=RequestOptions(
         extra_headers={"X-Trace-ID": "trace-123"},

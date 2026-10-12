@@ -320,7 +320,12 @@ class HTTPStatusError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class UnexpectedResponse:
-    """A non-2xx response that could not be decoded into a declared model."""
+    """A non-2xx response that could not be decoded into a declared model.
+
+    status, headers, and body expose the preserved wire data without parsing.
+    text() and json() explicitly decode the bytes without validating a schema.
+    decode_error retains the original contract diagnostic and its cause.
+    """
 
     decode_error: ResponseError
 
@@ -386,6 +391,8 @@ class ClientResponse[S, E]:
 
     Inspect status, headers, or content without parsing. result() decodes into
     Ok/Err; unwrap() decodes and returns the success model or raises.
+    Both methods share a cached result or ResponseError. Once returned, Ok.value
+    and Err.error are ordinary fields; accessing them never triggers decoding.
     """
 
     raw: RawResponse
@@ -429,5 +436,5 @@ class ClientResponse[S, E]:
             return cast(Result[S, E], self._result)
 
     def unwrap(self) -> S:
-        """Return the decoded success model; raise on HTTP or contract errors."""
+        """Decode through result() and return success, or raise on HTTP/contract errors."""
         return self.result().unwrap()

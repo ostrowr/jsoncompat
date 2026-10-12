@@ -33,6 +33,7 @@ uv run --project pybindings --extra aiohttp python examples/openapi_client/aioht
 uv run --project pybindings --extra httpx python examples/openapi_client/httpx_client.py
 uv run --project pybindings --extra requests python examples/openapi_client/requests_client.py
 uv run --project pybindings --extra httpx python examples/openapi_client/prepared_client.py
+uv run --project pybindings --extra aiohttp python examples/openapi_client/unexpected_responses.py
 ```
 
 The HTTPX example exercises both synchronous and asynchronous clients.
@@ -73,13 +74,74 @@ decoded error and original buffered response. The shared workflow demonstrates
 explicit 304/404/412 handling and unwrapping an already inspected error.
 Model decoding happens only at `.result()` or `.unwrap()`, and is cached.
 Undeclared or malformed non-2xx responses become `Err(UnexpectedResponse(...))`;
-the shared workflow exercises an undeclared 503 with JSON details and Retry-After.
+the shared workflow exercises JSON and HTML errors and a malformed declared 404.
 Malformed or undeclared 2xx responses raise `ResponseError` at decoding time.
 Before parsing, `.status`, `.headers`, and `.content` expose the buffered wire data.
 Headers support case-insensitive `.get()` and `.get_all()`; the latter preserves
 repeated values. The transport still downloads the body and releases the response.
 See [result semantics](../../pybindings/README.md#working-with-responses-and-results), including
 status ranges, default responses that can match 2xx, and `Never` branches.
+
+## When parsing happens
+
+With an existing async client:
+
+```python
+response = await client.request(GetPetRequest(pet_id="p_123"))
+# The body has been downloaded and the connection released. No model is parsed.
+print(response.status, response.headers.get("ETag"), response.content)
+
+pet = response.unwrap()  # Parse and validate now; return the success envelope.
+print(pet.body.name)
+result = response.result()  # Reuse the cached outcome without parsing again.
+```
+
+Call `.unwrap()` for the common success path or `.result()` to branch on `Ok`
+and `Err`. Both methods are synchronous, even after an async request, and share
+one cached decoding outcome. All properties are ordinary data access, including
+`Ok.value` and `Err.error` once you have narrowed the result. Transport errors
+occur at `request()`; response contract errors occur at `.result()` / `.unwrap()`.
+Lazy decoding still downloads the entire body. See the
+[full parsing timeline](../../pybindings/README.md#working-with-responses-and-results).
+
+## Unexpected error examples
+
+[`unexpected_responses.py`](unexpected_responses.py) is a standalone aiohttp
+walkthrough, also exercised by every adapter's shared workflow. It demonstrates:
+
+- An undeclared JSON 503: inspect status, `Retry-After`, bytes, text, and JSON.
+- An undeclared HTML 502: read its text and handle `.json()` raising `ValueError`.
+- A declared 404 whose JSON violates its schema: retain the useful JSON and
+  decoding diagnostic through `UnexpectedResponse`.
+- `.unwrap()` raising `HTTPStatusError`: inspect `exc.response.status` and
+  `exc.response.body`, or narrow `exc.error` for the text/JSON helpers.
+- A malformed 200: inspect metadata and bytes before `.result()` raises
+  `ResponseError`, which also retains the original response.
+
+The demo server deliberately returns these undocumented or invalid bodies;
+the OpenAPI spec remains unchanged. A focused handler needs no extra wrapping:
+
+```python
+from jsoncompat.http import Err, UnexpectedResponse
+
+match response.result():
+    case Err(error=UnexpectedResponse() as error):
+        print(error.status, error.headers.get("Retry-After"))
+        print(error.body)  # Exact buffered bytes.
+        print(error.text())
+        try:
+            details = error.json()  # Explicit JSON parsing, without a schema.
+        except ValueError:
+            print("The server returned a non-JSON body")
+        else:
+            print(details)
+    case result:
+        result.unwrap()
+```
+
+`.text()` and `.json()` decode on each call; save their return value to reuse it.
+These helpers never discard the original bytes. See the complete
+[unexpected-response contract](../../pybindings/README.md#inspecting-unexpected-responses).
 
 ## Per-call transport options
 
@@ -100,7 +162,7 @@ from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 
 client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
 # AsyncClient[PetstoreAPI, AiohttpOptions]
-result = await client.request(
+response = await client.request(
     GetPetRequest(pet_id="p_123"),
     transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
 )
@@ -114,7 +176,7 @@ from jsoncompat.http.requests import RequestsFetch, RequestsOptions
 
 client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
 # Client[PetstoreAPI, RequestsOptions]
-result = client.request(
+response = client.request(
     GetPetRequest(pet_id="p_123"),
     transport=RequestsOptions(timeout=(1, 2)),
 )
@@ -129,7 +191,7 @@ from jsoncompat.http.httpx import HttpxFetch, HttpxOptions
 
 client = bind(PetstoreAPI, fetch=HttpxFetch(session, base_url))
 # Client[PetstoreAPI, HttpxOptions]
-result = client.request(
+response = client.request(
     GetPetRequest(pet_id="p_123"),
     transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1)),
 )
@@ -223,7 +285,8 @@ nested and nullable values. See the [runtime contract](../../pybindings/README.m
 for details and error behavior.
 
 Validation: `cargo test --test openapi_client` generates fresh packages, checks
-static typing and wire serialization, and runs all three examples over loopback.
+static typing and wire serialization, and runs the examples over loopback with
+all four transport variants.
 Socket tests also hold a response open and confirm that each adapter's per-call
 timeout raises its native exception while leaving the session usable.
 The source-distribution check installs the built wheel into four clean environments:

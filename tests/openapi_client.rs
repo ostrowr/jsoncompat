@@ -146,6 +146,7 @@ fn all_example_transports_work_against_the_local_server() {
         "httpx_client.py",
         "requests_client.py",
         "prepared_client.py",
+        "unexpected_responses.py",
         "wire.py",
     ] {
         success(
@@ -169,7 +170,7 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
         work.0.join("transport_typing.py"),
     )
     .unwrap();
-    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py"]}).to_string()).unwrap();
+    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py","unexpected_responses.py"]}).to_string()).unwrap();
     fs::write(
         work.0.join("valid.py"),
         r#"

@@ -58,6 +58,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/pets/unavailable":
             # Deliberately absent from the OpenAPI contract, like a gateway error.
             self.respond(503, {"message": "Try again later"}, (("Retry-After", "10"),))
+        elif path == "/pets/gateway-error":
+            self.respond(502, "<h1>Bad gateway</h1>", content_type="text/html")
+        elif path == "/pets/broken-error":
+            # Valid JSON, but it violates the declared 404 Problem schema.
+            self.respond(404, {"detail": "The pet was removed"})
+        elif path == "/pets/broken-success":
+            self.respond(200, {}, (("ETag", '"rev-1"'),))
         elif path == "/pets" and self.command == "GET":
             self.respond(
                 200,
@@ -127,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
             if status in (204, 304)
             else (
                 str(value).encode()
-                if content_type == "text/plain"
+                if content_type in ("text/plain", "text/html")
                 else serialize_json_value(value).encode()
             )
         )

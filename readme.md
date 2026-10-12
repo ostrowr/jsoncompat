@@ -166,6 +166,10 @@ buffered content without parsing; call `.unwrap()` for the validated success
 model or `.result()` to match `Ok`/`Err`. Non-2xx responses that cannot match a
 declared model become `Err(UnexpectedResponse(...))`, preserving their bytes and
 decoding diagnostic. Model decoding is lazy and cached.
+Properties never parse: once `.result()` has returned, `Ok.value` and `Err.error`
+are ordinary fields. See the [parsing timeline](pybindings/README.md#working-with-responses-and-results)
+and [unexpected-response examples](examples/openapi_client/unexpected_responses.py)
+for raw status/body access, JSON and HTML errors, and exception handling.
 `bind_async` provides the async equivalent. API boundaries are enforced by
 invariant types and runtime registration checks. Callers supply one fetch
 function and own sessions, authentication, pooling, and retries. Optional

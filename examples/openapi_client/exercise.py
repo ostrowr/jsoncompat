@@ -6,11 +6,9 @@ from jsoncompat import MISSING
 from jsoncompat.http import (
     AsyncClient,
     Client,
-    ClientResponse,
     Err,
     HTTPStatusError,
     RequestOptions,
-    UnexpectedResponse,
 )
 from petstore import (
     CreatePet201,
@@ -19,11 +17,9 @@ from petstore import (
     GetGroupPetsRequest,
     GetPet304,
     GetPet404,
-    GetPetError,
     GetPetNote200ApplicationJson,
     GetPetNoteRequest,
     GetPetRequest,
-    GetPetSuccess,
     Health200,
     HealthRequest,
     ListPets200,
@@ -40,29 +36,11 @@ from petstore import (
     UpdatePet412,
     UpdatePetRequest,
 )
-
-
-def check_unavailable(response: ClientResponse[GetPetSuccess, GetPetError]) -> None:
-    # Metadata is available before attempting model decoding.
-    assert response.status == 503
-    assert response.headers.get("retry-after") == "10"
-    assert response.headers.get_all("X-Trace") == ("first", "second")
-    match response.result():
-        case Err(error=UnexpectedResponse(status=503) as error):
-            assert error.json() == {"message": "Try again later"}
-            assert "undeclared HTTP status 503" in str(error.decode_error)
-        case _:
-            raise AssertionError("expected an undeclared 503")
-    try:
-        response.unwrap()
-    except HTTPStatusError as error:
-        assert error.response is response.raw
-    else:
-        raise AssertionError("unwrap() should raise for an undeclared 503")
+from unexpected_responses import exercise_unexpected, exercise_unexpected_async
 
 
 def exercise(client: Client[PetstoreAPI, Never]) -> None:
-    check_unavailable(client.request(GetPetRequest(pet_id="unavailable")))
+    exercise_unexpected(client)
     page = client.request(
         ListPetsRequest(
             limit=10,
@@ -161,7 +139,7 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
 
 
 async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
-    check_unavailable(await client.request(GetPetRequest(pet_id="unavailable")))
+    await exercise_unexpected_async(client)
     page = (
         await client.request(
             ListPetsRequest(
