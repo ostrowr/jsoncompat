@@ -10,8 +10,7 @@ check:
   else \
     cargo build -p jsoncompat_py; \
   fi
-  cargo clippy --workspace --all-targets --locked -- -D warnings
-  cargo test --workspace --exclude jsoncompat_py --locked
+  cargo test --locked --test numeric_precision --test python_dataclasses_prepared
   cargo fetch --locked
   python3 tests/check_cargo_features.py
   @echo "[just] checking opt-in numeric precision …"

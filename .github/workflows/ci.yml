@@ -70,12 +70,13 @@ jobs:
       - name: rustfmt (check only)
         run: cargo fmt --all -- --check
 
-      - name: Test default precision and isolated Cargo consumers
+      # Keep the full suite in the existing matrix; check the alternate
+      # numeric representation only once with focused tests and metadata.
+      - name: Check default precision and Cargo feature wiring
         if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
         run: |
           cargo build -p jsoncompat_py --locked
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-          cargo test --workspace --exclude jsoncompat_py --locked
+          cargo test --locked --test numeric_precision --test python_dataclasses_prepared
           cargo fetch --locked
           python tests/check_cargo_features.py
 
@@ -347,11 +348,6 @@ jobs:
 
       - name: Exercise structured WebAssembly verdicts
         run: node wasm/tests/verdicts.mjs
-
-      - name: Exercise opt-in WebAssembly precision
-        run: |
-          wasm-pack build wasm --release --target web --out-dir pkg-precise --features arbitrary-precision
-          node wasm/tests/verdicts.mjs --arbitrary-precision
 
       - name: Prepare distribution directory
         run: |

@@ -38,17 +38,17 @@ serde = { version = "1.0.228", features = ["derive"] }
 # Small, zero‑dep colour library for pleasant CLI output.
 owo-colors = "4.3"
 # Our own strict Draft‑2020 implementation crate
-json_schema_ast = { path = "schema", version = "0.5.0", default-features = false }
-jsoncompat_codegen = { path = "codegen", version = "0.5.0", default-features = false }
-json_schema_fuzz = { path = "fuzz", version = "0.5.0", default-features = false }
-jsoncompat_openapi = { path = "openapi", version = "0.5.0", default-features = false }
+json_schema_ast = { path = "schema", version = "0.5.0" }
+jsoncompat_codegen = { path = "codegen", version = "0.5.0" }
+json_schema_fuzz = { path = "fuzz", version = "0.5.0" }
+jsoncompat_openapi = { path = "openapi", version = "0.5.0" }
 console = "0.16.3"
 fancy-regex = "0.17"
 percent-encoding = "2.3"
 sha2 = "0.10.8"
 
 [dev-dependencies]
-json_schema_fuzz = { path = "fuzz", default-features = false }
+json_schema_fuzz = { path = "fuzz" }
 criterion = "0.8"
 datatest-stable = "0.3"
 

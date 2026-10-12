@@ -12,13 +12,24 @@ just check
 
 That is the full local validation gate. It runs the Rust checks and tests, the web checks, and the production website build.
 
-The Rust and Python suites run with both default numeric precision and
-`--all-features`. Build the Python extension with the same precision feature as
-the Rust integration tests. Exact numeric-lexeme fixtures run in the opt-in
-configuration; the default run checks the documented rounding and range limits.
-`tests/check_cargo_features.py` also checks every crate from isolated consumers,
-so workspace feature unification cannot hide an accidentally enabled default.
-CI exercises the WebAssembly exports with both precision settings too.
+The full Rust/Python suite runs once with `--all-features`, including exact
+numeric-lexeme fixtures. Focused numeric and prepared-Python tests also check the
+default rounding and range limits. Build the Python extension with the same
+precision feature as its Rust integration tests. CI runs these extra default-mode
+checks only on Ubuntu/stable, without adding another matrix dimension or full
+suite run.
+
+`tests/check_cargo_features.py` checks the resolved feature metadata for every
+crate from isolated consumers, with defaults and with `arbitrary-precision`.
+It does not compile those consumers: the focused runtime tests cover numeric
+behavior, while metadata detects accidental feature unification and missing
+forwarding. CI exercises the default WebAssembly release exports. To additionally
+check the opt-in WebAssembly build locally:
+
+```bash
+wasm-pack build wasm --release --target web --out-dir pkg-precise --features arbitrary-precision
+node wasm/tests/verdicts.mjs --arbitrary-precision
+```
 
 Use the pnpm version declared in `package.json` when updating JavaScript
 dependencies. Keep routine dependency refreshes within compatible version

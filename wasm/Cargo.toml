@@ -22,8 +22,8 @@ rand = "0.10.0"
 anyhow = "1.0.102"
 
 # Internal crates
-jsoncompat = { path = "..", default-features = false }
-json_schema_fuzz = { path = "../fuzz", default-features = false }
+jsoncompat = { path = ".." }
+json_schema_fuzz = { path = "../fuzz" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # `rand` 0.10 uses `getrandom` 0.4 for OS entropy. The wasm adapter is the

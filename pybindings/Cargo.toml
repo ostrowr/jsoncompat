@@ -19,10 +19,10 @@ anyhow = "1.0.102"
 rand = "0.10.0"
 
 # Internal crates
-jsoncompat_codegen = { path = "../codegen", default-features = false }
-jsoncompat = { path = "..", default-features = false }
-json_schema_ast = { path = "../schema", default-features = false }
-json_schema_fuzz = { path = "../fuzz", default-features = false }
+jsoncompat_codegen = { path = "../codegen" }
+jsoncompat = { path = ".." }
+json_schema_ast = { path = "../schema" }
+json_schema_fuzz = { path = "../fuzz" }
 jsonschema = { git = "https://github.com/ostrowr/jsonschema", rev = "3705ac7889d8708f9fdd15ec23b8893d7a995c9d", default-features = false, features = ["jiter", "python"] }
 
 [build-dependencies]
