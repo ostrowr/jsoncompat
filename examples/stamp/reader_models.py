@@ -6,17 +6,19 @@ import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
-if __package__:
-    from ._reader_models_generated import bind_models as _jsoncompat_bind
-else:
-    from _reader_models_generated import bind_models as _jsoncompat_bind
+if not typing.TYPE_CHECKING:
+    if __package__ not in (None, ""):
+        from ._reader_models_generated import bind_models as _jsoncompat_bind
+    else:
+        from _reader_models_generated import bind_models as _jsoncompat_bind
 
 
 @typing.final
 class UserProfileReader(dc.ReaderDataclassRootModel):
     root: (UserProfileV1Reader | UserProfileV2Reader) = dc.root_field()
 
-    __slots__ = ("root",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("root",)
 
 
 @typing.final
@@ -25,7 +27,8 @@ class UserProfileV1(dc.DataclassAdditionalModel["typing.Any"]):
     name: str = dc.field("name")
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("age", "name", "__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("age", "name", "__jsoncompat_extra__",)
 
 
 @typing.final
@@ -35,7 +38,8 @@ class UserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
     name: str = dc.field("name")
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
 
 
 @typing.final
@@ -43,7 +47,8 @@ class UserProfileV2Reader(dc.ReaderDataclassModel):
     version: typing.Literal[2] = dc.field("version")
     data: UserProfileV2 = dc.field("data")
 
-    __slots__ = ("version", "data",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("version", "data",)
 
 
 @typing.final
@@ -51,11 +56,13 @@ class UserProfileV1Reader(dc.ReaderDataclassModel):
     version: typing.Literal[1] = dc.field("version")
     data: UserProfileV1 = dc.field("data")
 
-    __slots__ = ("version", "data",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("version", "data",)
 
 JSONCOMPAT_MODEL = UserProfileReader
 
 __all__ = ("UserProfileReader", "UserProfileV1", "UserProfileV2", "UserProfileV2Reader", "UserProfileV1Reader", "JSONCOMPAT_MODEL",)
 
-_jsoncompat_bind((UserProfileReader, UserProfileV1, UserProfileV2, UserProfileV2Reader, UserProfileV1Reader,), globals())
-del _jsoncompat_bind
+if not typing.TYPE_CHECKING:
+    _jsoncompat_bind((UserProfileReader, UserProfileV1, UserProfileV2, UserProfileV2Reader, UserProfileV1Reader,), globals())
+    del _jsoncompat_bind

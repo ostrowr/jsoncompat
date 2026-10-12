@@ -1,226 +1,183 @@
 # GitHub OpenAPI scale experiment
 
-Generated packages now share identical compressed source-schema chunks across
-all models and binding groups. This experiment measures the storage and import
-effects against the previous layout, while retaining the same schema semantics.
-Generation remains expensive for large connected schemas. This is not evidence
-that the entire GitHub client works unchanged.
+Cold generation now takes **5.18 seconds for all GitHub models** and **2.21
+seconds for the Issues client**, down from 436.95 and 23.23 seconds. The
+**1,223-operation client projection completes in 9.24 seconds**; the previous
+build timed out after 900 seconds. These measurements include writing every
+output file and the manifest. The approximately one-second target is not met.
+
+Compilation remains a build-time operation. This change does not defer schema
+compilation, normalization, or regex compilation to import or first model use.
+The original upstream document still requires the explicitly described
+projection.
 
 ## Input and scope
 
-Source: GitHub's official
+The input is GitHub's official
 [OpenAPI 3.1 description](https://github.com/github/rest-api-description/blob/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json),
 pinned at `58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1`.
-The 13,131,466-byte document has **1,232 operations, 973 component schemas,
-816 paths, and 274 webhooks**. SHA-256:
+The 13,131,466-byte document contains **1,232 operations, 973 component schemas,
+816 paths, and 274 webhooks**. Its SHA-256 is
 `0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe`.
 
-Four cases keep failures separate from successful measurements:
+The projections are unchanged from the preceding benchmark:
 
-- **Original:** fails validation before generation. Two attestation paths in
-  each of `/orgs/{org}` and `/users/{username}` have the same template shape with
-  different final parameter names (`attestation_id` and `subject_digest`).
+- **Original:** fails validation because organization and user attestation paths
+  have duplicate template shapes with different final parameter names
+  (`attestation_id` and `subject_digest`).
 - **Models:** sets `paths` to `{}` and generates all 973 unchanged component
-  schemas, including their nested classes. This measures the entire model
-  population, not a working full API client.
-- **JSON client projection:** retains 1,223 operations and every component
-  schema. It omits two duplicate-shape operations and seven operations with
-  unsupported media, plus the 274 inbound webhooks and 533 documentation examples
-  in `components.examples`. The latter collections are currently rejected by the
-  outbound operation lowerer. It does not erase schema constraints or replace
-  declared response bodies with `Any`.
-- **Issues:** selects all 61 `issues/` operations from that projection and uses
-  `--component basic-error` to select their transitive model dependencies rather
-  than every unrelated component. It produces 664 model declarations in five
-  binding groups, with unchanged schemas for the selected contracts.
+  schemas, including nested classes. Other collections, including webhooks,
+  remain in the input and are validated. This is a model package.
+- **Issues:** selects all 61 `issues/` operations and their transitive model
+  dependencies with `--component basic-error`.
+- **JSON client projection:** retains 1,223 operations and every component schema.
+  It omits two duplicate-shape operations and seven operations with unsupported
+  media, plus the 274 inbound webhooks and 533 documentation examples in
+  `components.examples`. Those collections are unsupported by the outbound
+  operation lowerer. Declared schema constraints and response bodies remain
+  intact.
 
-The script saves each projected document and an itemized exclusion log. An
-omitted operation is never counted as successfully supported.
+Each projected document and its itemized exclusions are saved by the harness.
+Omitted operations are not counted as supported.
 
 ## Measurements
 
-The full model package shrank from **622.61 MiB to 71.13 MiB (88.6%)**.
-Schema chunk storage alone fell from 596.42 MiB to 45.74 MiB. All **3,133
-compressed schema streams remain byte-for-byte identical** to the baseline;
-6,168 chunk references now share 1,551 source files and 1,551 in-memory byte
-objects. The comparison imported both packages and reconstructed every stream,
-including nested models, while excluding duplicate public aliases.
+| Cold generation | Previous build | Current build | Generation peak RSS, previous / current |
+| --- | ---: | ---: | ---: |
+| All 973 component schemas | 436.95 s | 5.18 s | 5.47 / 0.67 GiB |
+| 61-operation Issues client | 23.23 s | 2.21 s | 0.49 / 0.38 GiB |
+| 1,223-operation client projection | Timeout at 900 s | 9.24 s | 6.96 / 0.91 GiB |
 
-| Full model population | Before | Shared chunks |
-|---|---:|---:|
-| Total output | 622.61 MiB | 71.13 MiB |
-| Files | 15,619 | 11,003 |
-| Source import | 5.637 s | 1.979 s |
-| Bytecode import | 0.950 s | 0.710 s |
-| Bytecode import peak RSS | 619.9 MiB | 164.9 MiB |
-| Strict Pyright | 50.52 s | 15.85 s |
-| Cold generation | 455.80 s | 436.95 s |
+The table uses each primary harness run, whose package was then measured for
+imports and typing. Two additional generations into fresh directories produced
+three-run medians of **4.85 s / 2.23 s / 9.28 s** for models / Issues / the client
+projection, with ranges **4.84–5.18 s / 2.21–2.25 s / 9.24–9.32 s**. These are
+complete cold generations; filesystem caches were not flushed.
 
-The Issues client has mostly distinct small schema payloads. Its total output
-increased by 22.4 KiB (0.2%) because digest-based imports cost slightly more than
-the little duplication removed. Its prior size was 10.79 MiB. Sharing primarily
-benefits models that repeat large connected definition sets.
+The model package also shrank from **71.13 MiB to 28.44 MiB**, and the Issues
+package from **10.81 MiB to 4.51 MiB**. The earlier layout before any schema
+sharing occupied 622.61 MiB for the models.
 
-Current measurements:
+| Current artifact and import measurements | Models | Issues client | Client projection |
+| --- | ---: | ---: | ---: |
+| Generated declarations | 3,133 | 664 | 12,351 |
+| Binding groups | 4 | 5 | 34 |
+| Files, including manifest | 7,228 | 1,783 | 31,950 |
+| Total output | 28.44 MiB | 4.51 MiB | 89.04 MiB |
+| Largest Python file | 778.4 KiB | 121.6 KiB | 2,974.6 KiB |
+| 95th percentile Python file | 14.5 KiB | 6.2 KiB | 5.0 KiB |
+| Import all models / prepared API, source | 1.479 s | 0.287 s | 5.432 s |
+| Import all models / prepared API, bytecode | 0.541 s | 0.158 s | 2.696 s |
+| Lazy package import, bytecode | 2.34 ms | 2.34 ms | 9.62 ms |
+| Import peak RSS, source / bytecode | 167.5 / 142.6 MiB | 47.0 / 40.5 MiB | 417.5 / 353.4 MiB |
 
-| Metric | All 973 component schemas | 61-operation Issues client |
-| --- | ---: | ---: |
-| Generated declarations | 3,133 | 664 |
-| Generated files (including manifest) | 11,003 | 2,729 |
-| Total output | 71.13 MiB | 10.81 MiB |
-| Largest Python file | 778.4 KiB | 121.6 KiB |
-| 95th percentile Python file | 69.7 KiB | 18.4 KiB |
-| Cold generation | 436.95 s | 23.23 s |
-| Generation peak RSS | 5.47 GiB | 0.49 GiB |
-| Import all models / prepared API, source | 1.979 s | 0.382 s |
-| Import all models / prepared API, bytecode | 0.710 s | 0.204 s |
-| Lazy package import, bytecode | 2.42 ms | 2.33 ms |
-| Import peak RSS, source / bytecode | 191.8 / 164.9 MiB | 50.8 / 44.8 MiB |
-| Strict Pyright wall time | 15.85 s; 0 errors | 3.44 s; 0 errors |
-| Pyright peak RSS | 2.41 GiB | 0.78 GiB |
+Type checking now uses **ty 0.0.86 with every rule treated as an error** and a
+Python 3.12 target. It checks every generated Python file and a typed consumer:
 
-The 1,223-operation projection again did **not** complete within 900 seconds
-(900.28 s; 7,476,281,344 bytes / 6.96 GiB peak RSS). No complete package, import
-timing, or typing result is reported for it. Unlike the earlier exploratory
-projection at `a28b29a2`, this rerun uses the same generator as the successful
-cases above. Two five-second stack samples were collected during this run to
-investigate the bottleneck below. The untouched document still fails validation
-before generation, in 0.075 seconds, on duplicate path-template shapes.
+| ty check | Models | Issues client | Client projection |
+| --- | ---: | ---: | ---: |
+| Wall time | 0.775 s | 0.210 s | 3.027 s |
+| Peak RSS | 0.42 GiB | 0.10 GiB | 1.21 GiB |
+| Diagnostics | 0 | 0 | 0 |
+
+Both clients also pass negative checks: a string `issue_number` is rejected, as
+is returning the response's string title from a function declared to return
+`int`. Positive consumers verify inferred response and body types for both
+synchronous and asynchronous clients.
+
+Earlier exploratory checks used Pyright 1.1.408 and Node 24.14.0. The complete
+client exhausted Node's default **4 GiB heap** in both the positive and negative
+checks (18.13 and 17.91 seconds); explicit **8 GiB** reruns also exhausted the heap
+(35.63 and 34.51 seconds). The models and Issues package passed Pyright. Those
+results remain separate in the snapshot as historical measurements. The switch
+of type checker is not a generation optimization or a like-for-like typing
+speed comparison.
 
 Measurements use an Apple M2 Max with 32 GiB RAM, macOS 26.6.2 arm64, Python
-3.12.2, release Rust generator/native extension, Pyright 1.1.408, and Node
-24.14.0 with its default heap limit. Generation
-starts in an empty output directory and includes writing the manifest. File
-totals exclude bytecode; maximum Python size includes `.py` and `.pyi` files.
-The largest overall file is the manifest. These are local observations, not
-performance thresholds. The rerun executes benchmark stages sequentially with no
-other repository tests or generation jobs running. The earlier baseline had
-concurrent generation/check activity, so timing differences should not be read
-as controlled speedup guarantees; artifact sizes and schema equality are exact.
+3.12.2, and a release Rust generator/native extension. The successful baseline
+and current benchmark stages were run sequentially without competing repository
+tests or generation jobs. Generation starts in an empty output directory. File
+totals exclude bytecode; Python sizes include `.py` and `.pyi`. These are local
+observations, not performance guarantees.
 
-Import samples use three fresh interpreters per mode. Source mode removes the
-generated package's bytecode first and disables writes; bytecode mode runs
-`compileall` first. Filesystem caches are not flushed. Import timings measure
-the Python import itself; process wall time and peak RSS are recorded separately.
-The model case accesses every exported model, loading every binding group. The
-Issues case imports `GitHubAPI`, including every operation and its dispatch
-preparation. Merely importing the lazy package root is reported separately.
+Imports use three fresh interpreters per mode; the table reports medians and the
+largest measured RSS. Source mode removes generated bytecode and disables writes;
+bytecode mode runs `compileall` first. Filesystem caches are not flushed. Timings
+measure the import itself, with process wall time recorded separately. The model
+case accesses every exported model; client cases import `GitHubAPI`, including
+operation dispatch preparation. Lazy package-root imports are measured separately.
 
-Strict Pyright checks include **every generated Python file** and a typed
-consumer, including the new model barrel. The Issues consumer verifies inferred
-success responses for sync and async client aliases. A separate negative test
-must reject a string `issue_number` and returning the response's string title
-from a function annotated `int`.
+## What changed
 
-In the earlier run, two additional public HTTPX calls decoded the current PR as
-`IssuesGet200` and an absent issue as `IssuesGet404`. The latter remained an
-expected typed `Err`.
-Binding the already imported API took about 5 microseconds in that single run;
-this is a smoke observation, not a stable microbenchmark.
+The old compiler copied entire definition maps into each reference-bearing
+model, pretty-printed them, parsed them again, and rebuilt a validator for every
+class. It compressed those expanded schemas independently and rendered an unused
+single-file implementation before producing package files.
 
-## Findings and layout
+The new pipeline:
 
-The initial large-package typing run found Pyright's tuple-literal inference
-limit: unannotated `__all__` became `tuple[Unknown, ...]` in large barrels. Explicit
-`tuple[str, ...]` annotations fix this; a large recursive API regression now
-checks the whole generated package and its consumer in strict mode. Moving
-annotation dependencies through the new group barrel also exhausted Pyright's
-default 4 GiB heap on the full model population. Importing each referenced class
-directly from its declaration module fixed that regression without increasing
-the heap limit. These imports remain under `TYPE_CHECKING`; runtime forward
-annotations still resolve in the shared group namespace.
+1. Keeps local model schemas separate from shared definitions, reuses validated
+   documents, and prepares common validation nodes and regexes once per group.
+   It emits standalone prepared programs for each model with the original
+   promoted-root recursion behavior.
+2. Validates distinct OpenAPI schema roots together with every component,
+   including unused components. Only ordinary references to known schema
+   positions use this path. Resource scopes, dynamic references, data targets,
+   and any validation failure retain the original validation path and diagnostics.
+3. Renders package artifacts directly. Shared definition fragments are serialized
+   and compressed once; their exact original schema text is reconstructed only
+   for explicit `Model.__jsoncompat_schema__` access and cached on that class.
+   Small local source and prepared payloads live in existing initializer modules;
+   larger data and shared fragments remain separate chunks.
+4. Publishes new generated subtrees with directory renames after checking every
+   destination for conflicts. Incremental regeneration preserves caller-owned
+   files, unchanged outputs, and shared-schema ownership.
 
-The old `models_0000.py` name exposed the index of an internal binding group.
-The public barrels are now **`models.py` and `api.py`**, with the same convenient
-package-root imports. For example:
+Named model and operation modules remain stable. Public imports still use
+`models.py`, `api.py`, or the package root. Shared compressed fragments live in
+`_schemas/_schema_<sha256>.py`; private model groups retain one declaration and
+initializer per model. Numbered modules store large prepared data, not arbitrary
+collections of declarations. Individual declarations and export lists remain
+whole, so there is no universal maximum file size for arbitrary inputs.
 
-```text
-petstore/
-  __init__.py / __init__.pyi
-  models.py / models.pyi
-  api.py
-  _operations/get_pet.py
-  _schemas/
-    __init__.py
-    _schema_<sha256>.py
-  _models/shared/
-    __init__.py
-    pet.py
-    _init_pet.py
-    _binding.py
-    _program_pet_0000.py
-```
+The regression suite checks reference scopes, recursive root identity and depth
+limits, validation errors, exact introspection text, shared storage, import/use
+without compilation or decompression, legacy artifacts, and safe publication.
+A separate artifact comparison confirms byte-for-byte equality for all **3,133
+expanded model schema texts** (4,455,281,588 bytes) and all **3,133 prepared
+programs**, containing **60,993 validator nodes**, against the preceding
+generator. The verifier also compares every reachable rule, ordered edge,
+compiled regex, and reference diagnostic while allowing node IDs to differ. This
+checks the prepared programs and exposed schema text, not the complete generated
+Python source: generated declarations now hide runtime-only slots and model
+binding from type checkers with `typing.TYPE_CHECKING` guards.
 
-Private binding groups use descriptive names; a single group with multiple
-roots uses `shared`. Declaration and operation filenames use snake case, with digest
-suffixes only for collisions and long names. Numbered chunks remain appropriate
-for prepared data. Regeneration migrates earlier managed files, preserves
-handwritten files, and refuses to traverse directory symlinks.
+## Remaining generation costs
 
-The baseline stored 6,168 source-schema chunks, many repeating the same connected
-definitions. Schema storage alone occupied 625,390,408 bytes, about **96% of the
-full artifact**. The new `_schemas/` pool names each compressed chunk by its full
-SHA-256 digest. Identical chunks share one source file and one imported `bytes`
-object; each model retains a tuple of references in the original order. Only an
-explicit `Model.__jsoncompat_schema__` access joins and decompresses its stream,
-then caches the schema text on that class. Imports, constructors, validation, and
-error reporting do not expand or copy the complete schema stream.
+Instrumented stages explain why the largest case is still several seconds:
 
-Manifest v5 tracks shared ownership: cached groups retain their chunks, damaged
-chunks rebuild every owner, and a chunk disappears only when its last owner is
-removed. Regeneration also removes the old per-model schema source files. Shared data
-does not import unrelated model groups or merge their class identities. The
-regression suite covers these properties, multi-chunk reconstruction, and lazy
-introspection. Standalone JSON Schema output and previously generated byte
-payloads remain supported by the runtime.
+| Generation stage | Models | Issues client | Client projection |
+| --- | ---: | ---: | ---: |
+| Validate OpenAPI document | 1.62 s | 1.61 s | 1.71 s |
+| Validate generated group schemas | 1.30 s | 0.07 s | 2.00 s |
+| Prepare and render models | 1.09 s | 0.09 s | 2.08 s |
+| Write staged package files | 0.57 s | 0.12 s | 2.37 s |
 
-This change deduplicates stored data; it does not eliminate repeated schema
-construction, compression, or validator preparation during generation. Those
-remain separate performance targets. Individual model declarations and public
-export lists also remain whole, so there is no universal maximum file-size
-guarantee for arbitrary inputs.
-
-## Generation bottleneck
-
-Storage sharing happens after compilation, so it does not address the main
-repeated work during generation. Two five-second samples of the full-client run,
-taken several minutes apart, placed 4,014/4,031 and 4,049/4,076 main-thread stack
-samples inside `PreparedModule::compile` (99.6% and 99.3%). These are observations
-of that phase, not a whole-run allocation of generation time.
-
-The current pipeline:
-
-1. [Copies root definitions into reference-bearing class schemas](../../codegen/src/dataclasses.rs)
-   and pretty-prints each as a separate JSON string.
-2. [Parses each string back into JSON and compiles it independently](../../codegen/src/dataclasses/plan.rs).
-3. [Constructs a fresh SchemaDocument](../../codegen/src/prepared_schema.rs),
-   repeating normalization, reference resolution, and backend validator building
-   before emitting each prepared validator. The samples include substantial
-   time in canonicalization and source-schema validation.
-4. [Compresses every complete class schema at level 9](../../codegen/src/dataclasses/render.rs),
-   building the legacy single-file source string even for package output. The
-   package layout only deduplicates chunks afterward.
-
-The next optimization target is one validated, normalized schema context per
-binding group, with model roots referring into it. Prepared nodes and schema
-storage can then reuse that context instead of repeatedly processing whole
-definition maps. Package output should also skip building unused legacy source.
-Reference scopes, recursion, and validation semantics must
-remain intact. A full phase timing breakdown is still needed before assigning
-an expected speedup to that change.
+These stage timers exclude some startup and final cleanup work; complete process
+wall times appear above. Schema validation and writing tens of thousands of files
+now dominate the largest package. Further reductions toward one second require
+reducing those costs while preserving validation and the stable split layout.
 
 ## Reproduce
 
-The benchmark is opt-in, downloads only the pinned public specification, and
-requires macOS or Linux for subprocess RSS measurements. Reserve several GiB of
-disk and memory; each stage has a 900-second timeout. Failed stages retain their
-stderr and timing instead of inventing downstream measurements.
+The benchmark downloads only the pinned public specification and requires macOS
+or Linux for subprocess RSS measurements. Each stage has a 900-second timeout;
+failed stages retain their timing and stderr.
 
 ```sh
 cargo build --release --bin jsoncompat --locked
 just _build-python-release
 
-# Use the repository Python environment, which is Python 3.12 or later.
 uv run --no-config --project pybindings --all-extras --locked python \
   pybindings/bench_github_openapi.py --case models --output /tmp/github-models-run
 uv run --no-config --project pybindings --all-extras --locked python \
@@ -231,12 +188,26 @@ uv run --no-config --project pybindings --all-extras --locked python \
   pybindings/bench_github_openapi.py --case client --output /tmp/github-client-run
 ```
 
-Use a fresh output directory for cold generation. `--prepare-only` saves inputs
-and exclusions without generating. `--inspect-only` remeasures an existing
-generated package without claiming a generation time. The checked-in
-[measurement snapshot](github-openapi-results.json) preserves this run, and the
-[baseline snapshot](github-openapi-before-dedup.json) preserves the earlier layout.
-New JSON reports record commands, generator digest, source revision,
-working-tree state, interpreter,
-wall time, peak RSS, file inventory, and Pyright diagnostics. Generated packages
-and the upstream spec are deliberately not checked into this repository.
+Use a fresh directory for cold generation. `--prepare-only` saves inputs and
+exclusions; `--inspect-only` remeasures an existing package without claiming a new
+generation time. `--typecheck-only` checks an existing package with the pinned
+version of ty, preserving generation and import measurements. Set
+`JSONCOMPAT_CODEGEN_TIMING=1` for the stage breakdown.
+
+Compare packages generated by the previous and current compiler:
+
+```sh
+uv run --no-config --project pybindings --locked python \
+  pybindings/bench_codegen_equivalence.py \
+  --before /tmp/previous-models/github_models \
+  --after /tmp/github-models-run/github_models \
+  --output /tmp/github-model-equivalence.json
+```
+
+The [current measurement snapshot](github-openapi-results.json),
+[previous generation baseline](github-openapi-before-fast-generation.json), and
+[earlier storage baseline](github-openapi-before-dedup.json) preserve the results.
+The [artifact equivalence report](github-openapi-equivalence.json) records the
+compared generator fingerprints. Raw harness reports retain commands, environment,
+source revision, file inventory, and typing diagnostics. Generated packages and
+the upstream specification are not checked into the repository.

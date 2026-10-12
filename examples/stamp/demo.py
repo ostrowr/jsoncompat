@@ -3,6 +3,8 @@
 # dependencies = ["jsoncompat[msgpack,yaml]"]
 # [tool.uv.sources]
 # jsoncompat = { path = "../../pybindings", editable = true }
+# [tool.ty.environment]
+# extra-paths = ["."]
 # ///
 """Canonical end-to-end example for generated jsoncompat dataclasses."""
 

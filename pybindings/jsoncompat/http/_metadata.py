@@ -6,7 +6,7 @@ import types
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import ClassVar, Generic, Literal, Never, Protocol, TypeVar, cast
+from typing import ClassVar, Generic, Literal, Never, Protocol, TypeVar, cast, override
 
 from typing_extensions import TypeForm
 
@@ -27,6 +27,7 @@ class ResponseHeaders(Mapping[str, str]):
 
     raw: HeaderPairs
 
+    @override
     def __getitem__(self, name: str) -> str:
         key = name.lower()
         for candidate, value in self.raw:
@@ -34,6 +35,7 @@ class ResponseHeaders(Mapping[str, str]):
                 return value
         raise KeyError(name)
 
+    @override
     def __iter__(self) -> Iterator[str]:
         seen: set[str] = set()
         for name, _ in self.raw:
@@ -42,6 +44,7 @@ class ResponseHeaders(Mapping[str, str]):
                 seen.add(key)
                 yield name
 
+    @override
     def __len__(self) -> int:
         return len({name.lower() for name, _ in self.raw})
 

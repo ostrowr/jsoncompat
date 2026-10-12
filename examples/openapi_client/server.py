@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar
+from typing import ClassVar, override
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from jsoncompat import JsonValue, deserialize_json_value, serialize_json_value
@@ -21,6 +21,7 @@ class Handler(BaseHTTPRequestHandler):
         "tags": [],
     }
 
+    @override
     def log_message(self, format: str, *args: object) -> None:
         pass
 
@@ -151,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def serve() -> Iterator[str]:
+def serve() -> Generator[str, None, None]:
     with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()

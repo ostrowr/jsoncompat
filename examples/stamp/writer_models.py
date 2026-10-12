@@ -6,10 +6,11 @@ import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
-if __package__:
-    from ._writer_models_generated import bind_models as _jsoncompat_bind
-else:
-    from _writer_models_generated import bind_models as _jsoncompat_bind
+if not typing.TYPE_CHECKING:
+    if __package__ not in (None, ""):
+        from ._writer_models_generated import bind_models as _jsoncompat_bind
+    else:
+        from _writer_models_generated import bind_models as _jsoncompat_bind
 
 
 @typing.final
@@ -17,7 +18,8 @@ class UserProfileWriter(dc.WriterDataclassModel):
     version: typing.Literal[2] = dc.field("version")
     data: UserProfileV2 = dc.field("data")
 
-    __slots__ = ("version", "data",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("version", "data",)
 
 
 @typing.final
@@ -27,11 +29,13 @@ class UserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
     name: str = dc.field("name")
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
 
 JSONCOMPAT_MODEL = UserProfileWriter
 
 __all__ = ("UserProfileWriter", "UserProfileV2", "JSONCOMPAT_MODEL",)
 
-_jsoncompat_bind((UserProfileWriter, UserProfileV2,), globals())
-del _jsoncompat_bind
+if not typing.TYPE_CHECKING:
+    _jsoncompat_bind((UserProfileWriter, UserProfileV2,), globals())
+    del _jsoncompat_bind

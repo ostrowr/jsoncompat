@@ -3,6 +3,7 @@ mod plan;
 mod plan_proof;
 mod render;
 mod types;
+pub use package::DataclassPackage;
 pub use render::{DataclassMetadata, DataclassModule};
 use types::Annotation;
 
@@ -11,6 +12,7 @@ use json_schema_ast::{SchemaBuildError, SchemaDocument, SchemaNodeKind};
 use serde_json::{Map, Value, json};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 const DATACLASS_ADDITIONAL_MODEL_CLASS: &str = "DataclassAdditionalModel";
 const DATACLASS_MODEL_CLASS: &str = "DataclassModel";
@@ -66,9 +68,52 @@ enum ClassKind {
 #[derive(Debug, Clone)]
 struct ClassSpec {
     name: String,
-    schema_json: String,
+    schema: ClassSchema,
     base_class: &'static str,
     kind: ClassKind,
+}
+
+/// A model's schema stays separate from the shared definition resource until
+/// standalone output or explicit schema introspection actually needs the merge.
+#[derive(Debug, Clone)]
+struct ClassSchema {
+    value: Value,
+    definitions: Option<Arc<RootDefinitions>>,
+    context: Option<Arc<RootDefinitions>>,
+    pointer: String,
+}
+#[derive(Debug)]
+struct RootDefinitions {
+    root: Value,
+}
+impl RootDefinitions {
+    fn defs(&self) -> Option<&Map<String, Value>> {
+        self.root.get("$defs").and_then(Value::as_object)
+    }
+    fn legacy_defs(&self) -> Option<&Map<String, Value>> {
+        self.root.get("definitions").and_then(Value::as_object)
+    }
+}
+impl ClassSchema {
+    fn standalone(value: Value) -> Self {
+        Self {
+            value,
+            definitions: None,
+            context: None,
+            pointer: "#".into(),
+        }
+    }
+    fn materialize(&self) -> Value {
+        let mut value = self.value.clone();
+        if let (Some(object), Some(definitions)) = (value.as_object_mut(), &self.definitions) {
+            merge_root_definition_map(object, "$defs", definitions.defs());
+            merge_root_definition_map(object, "definitions", definitions.legacy_defs());
+        }
+        value
+    }
+    fn pretty_json(&self) -> Result<String, DataclassError> {
+        pretty_schema_literal(&self.materialize())
+    }
 }
 
 #[derive(Debug)]
@@ -79,8 +124,7 @@ struct DataclassModuleBuilder<'a> {
     codegen_root: &'a Value,
     validation_root: &'a Value,
     source_root: &'a Value,
-    validation_root_defs: Option<&'a Map<String, Value>>,
-    validation_root_legacy_defs: Option<&'a Map<String, Value>>,
+    definitions: Arc<RootDefinitions>,
     inline_names: BTreeMap<String, String>,
     inline_name_counters: BTreeMap<String, u32>,
 }
@@ -115,14 +159,9 @@ impl<'a> DataclassModuleBuilder<'a> {
             class_names,
             named_refs,
             codegen_root,
-            validation_root_defs: validation_root
-                .as_object()
-                .and_then(|obj| obj.get("$defs"))
-                .and_then(Value::as_object),
-            validation_root_legacy_defs: validation_root
-                .as_object()
-                .and_then(|obj| obj.get("definitions"))
-                .and_then(Value::as_object),
+            definitions: Arc::new(RootDefinitions {
+                root: validation_root.clone(),
+            }),
             validation_root,
             inline_names: BTreeMap::new(),
             inline_name_counters: BTreeMap::new(),
@@ -196,7 +235,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             Value::Bool(_) => self.register_class(
                 ClassSpec {
                     name: name.to_owned(),
-                    schema_json: self.schema_json(schema, pointer)?,
+                    schema: self.class_schema(schema, pointer),
                     base_class: DATACLASS_ROOT_MODEL_CLASS,
                     kind: ClassKind::Root {
                         annotation: Annotation::any(),
@@ -238,7 +277,7 @@ impl<'a> DataclassModuleBuilder<'a> {
 
         self.classes.push(ClassSpec {
             name: name.to_owned(),
-            schema_json: self.schema_json(&Value::Object(obj.clone()), pointer)?,
+            schema: self.class_schema(&Value::Object(obj.clone()), pointer),
             base_class: if matches!(kind, ClassKind::Root { .. }) {
                 DATACLASS_ROOT_MODEL_CLASS
             } else {
@@ -318,34 +357,24 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
     }
 
-    fn schema_json(
-        &self,
-        fallback_schema: &Value,
-        pointer: &str,
-    ) -> Result<String, DataclassError> {
+    fn class_schema(&self, fallback_schema: &Value, pointer: &str) -> ClassSchema {
         if pointer == "#" {
-            return pretty_schema_literal(self.source_root);
+            return ClassSchema::standalone(self.source_root.clone());
         }
-        let validation_schema = resolve_json_pointer(self.validation_root, pointer)
+        let value = resolve_json_pointer(self.validation_root, pointer)
             .unwrap_or(fallback_schema)
             .clone();
-        let schema = match (
-            &validation_schema,
-            has_definition_entries(self.validation_root_defs),
-            has_definition_entries(self.validation_root_legacy_defs),
-        ) {
-            (Value::Object(obj), true, _) | (Value::Object(obj), _, true)
-                if contains_reference(&validation_schema) =>
-            {
-                Value::Object(schema_object_with_root_definition_maps(
-                    obj,
-                    self.validation_root_defs,
-                    self.validation_root_legacy_defs,
-                )?)
-            }
-            _ => validation_schema,
-        };
-        pretty_schema_literal(&schema)
+        let definitions = (value.is_object()
+            && (has_definition_entries(self.definitions.defs())
+                || has_definition_entries(self.definitions.legacy_defs()))
+            && contains_reference(&value))
+        .then(|| Arc::clone(&self.definitions));
+        ClassSchema {
+            value,
+            definitions,
+            context: Some(Arc::clone(&self.definitions)),
+            pointer: pointer.into(),
+        }
     }
 
     fn schema_annotation(
@@ -749,6 +778,30 @@ pub fn generate_dataclass_declarations_with_metadata(
     declarations: &BTreeMap<String, String>,
     metadata: &DataclassMetadata,
 ) -> Result<DataclassModule, DataclassError> {
+    generate_declarations(document, declarations, metadata, false)
+}
+
+/// Generate a package group directly, avoiding an unused monolithic source.
+/// `module_path` names the group within the generated public package.
+pub fn generate_dataclass_package_declarations_with_metadata(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+    module_path: &str,
+) -> Result<DataclassPackage, DataclassError> {
+    let module = generate_declarations(document, declarations, metadata, true)?;
+    Ok(DataclassPackage {
+        files: module.package_files(module_path),
+        models: module.models,
+    })
+}
+
+fn generate_declarations(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+    package: bool,
+) -> Result<DataclassModule, DataclassError> {
     document.validate_source_schema()?;
     let canonical = document.canonical_schema_json()?;
     let mut refs = collect_named_refs(canonical)?;
@@ -848,7 +901,11 @@ pub fn generate_dataclass_declarations_with_metadata(
         .values()
         .next()
         .ok_or_else(|| invalid_schema("#".into(), "at least one declaration is required"))?;
-    render::module_with_metadata(&builder.classes, root, metadata)
+    if package {
+        render::module_with_metadata_for_package(&builder.classes, root, metadata, document)
+    } else {
+        render::module_with_metadata(&builder.classes, root, metadata)
+    }
 }
 
 fn unconstrained_codegen_schema(canonical: &Value) -> Value {
@@ -987,7 +1044,7 @@ fn envelope_class(
 ) -> Result<ClassSpec, DataclassError> {
     Ok(ClassSpec {
         name,
-        schema_json: pretty_schema_literal(&schema)?,
+        schema: ClassSchema::standalone(schema),
         base_class,
         kind: ClassKind::Object {
             fields: vec![
@@ -1154,7 +1211,7 @@ fn reader_root_class(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ClassSpec {
         name,
-        schema_json: pretty_schema_literal(&Value::Object(validation.clone()))?,
+        schema: ClassSchema::standalone(Value::Object(validation.clone())),
         base_class: READER_ROOT_MODEL_CLASS,
         kind: ClassKind::Root {
             annotation: Annotation::union(&variants),

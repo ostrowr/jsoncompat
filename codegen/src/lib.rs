@@ -11,9 +11,10 @@ pub mod prepared_schema;
 pub mod python_names;
 
 pub use dataclasses::{
-    DataclassError, DataclassMetadata, DataclassModule, generate_dataclass_declarations,
-    generate_dataclass_declarations_with_metadata, generate_dataclass_models,
-    generate_dataclass_models_from_document, generate_dataclass_module_from_document,
+    DataclassError, DataclassMetadata, DataclassModule, DataclassPackage,
+    generate_dataclass_declarations, generate_dataclass_declarations_with_metadata,
+    generate_dataclass_models, generate_dataclass_models_from_document,
+    generate_dataclass_module_from_document, generate_dataclass_package_declarations_with_metadata,
 };
 use serde::{Deserialize, Serialize};
 

@@ -246,12 +246,121 @@ fn nested_output_does_not_follow_directory_symlinks() {
 }
 
 #[test]
+fn publication_preserves_unchanged_files_and_checks_all_conflicts_before_writing() {
+    let work = Work::new();
+    work.write(&api());
+    let output = work.0.join("models");
+    fs::create_dir(&output).unwrap();
+    let conflict = output.join("models.py");
+    fs::write(&conflict, "# caller owned\n").unwrap();
+    let rejected = work.generate(&[]);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("unmanaged package file"));
+    assert_eq!(
+        contents(&output),
+        BTreeMap::from([("models.py".into(), b"# caller owned\n".to_vec())]),
+        "a conflict discovered late in preflight must leave every generated file unpublished"
+    );
+    assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+    fs::remove_file(conflict).unwrap();
+    success(work.generate(&[]));
+
+    let unchanged = output.join("__init__.py");
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(60);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&unchanged)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    let before = contents(&output);
+    let corrupted = before
+        .keys()
+        .find(|name| name.ends_with("/_init_wide.py"))
+        .unwrap();
+    fs::write(output.join(corrupted), "# corrupted prepared data\n").unwrap();
+    assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
+    assert_eq!(contents(&output), before);
+    assert_eq!(
+        fs::metadata(unchanged).unwrap().modified().unwrap(),
+        modified
+    );
+    assert!(fs::read_dir(&output).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".jsoncompat-build-")
+    }));
+}
+
+#[test]
+fn namespace_generation_preserves_true_false_and_constrained_component_roots() {
+    let work = Work::new();
+    work.write(&json!({
+        "openapi":"3.1.0", "info":{"title":"Boolean roots", "version":"1"},
+        "components":{"schemas":{
+            "Allow":true,
+            "Reject":false,
+            "Count":{"type":"integer", "minimum":0}
+        }}
+    }));
+    success(work.generate_with_group_size("128", &[]));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from models import Allow, Reject, Count
+for value in (None, False, True, 0, -1, 0.5, '', 'text', [], {}, {'key': [1]}):
+    assert Allow.from_value(value).to_value() == value
+    assert Allow.deserialize(json.dumps(value)).to_value() == value
+    for convert, instance in ((Reject.from_value, value), (Reject.deserialize, json.dumps(value))):
+        try: convert(instance)
+        except ValueError: pass
+        else: raise AssertionError(('false schema accepted', value))
+assert Count.from_value(3).to_value() == 3
+assert Count.deserialize('3').to_value() == 3
+for value in (None, False, -1, 0.5, '3', [], {}):
+    for convert, instance in ((Count.from_value, value), (Count.deserialize, json.dumps(value))):
+        try: convert(instance)
+        except ValueError: pass
+        else: raise AssertionError(('integer constraint omitted', value))
+allow_schema = {'anyOf': [
+    {'enum': [None]}, {'enum': [False, True]},
+    {'type': 'object', 'properties': {}, 'minProperties': 0},
+    {'type': 'array', 'items': True, 'minItems': 0},
+    {'type': 'string', 'minLength': 0}, {'type': 'number'}
+]}
+for model, expected in ((Allow, allow_schema), (Reject, {'not': True}), (Count, {'minimum': 0, 'multipleOf': 1, 'type': 'integer'})):
+    source = json.loads(model.__jsoncompat_schema__)
+    metadata = source.pop('x-jsoncompat')
+    assert source == expected, (model, source)
+    assert metadata == {
+        'kind': 'declaration', 'stable_id': f'#/$defs/{model.__name__}',
+        'name': model.__name__, 'version': 1, 'schema_ref': f'#/$defs/{model.__name__}'
+    }, metadata
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
 fn package_builds_preserve_identity_recursion_laziness_and_incremental_outputs() {
     let work = Work::new();
     let mut input = api();
     work.write(&input);
     assert!(success(work.generate(&[])).contains("5 models in 3 modules (3 rebuilt)"));
     let before = contents(&work.0.join("models"));
+    assert!(
+        !before.keys().any(|name| name.contains("/_program_")),
+        "small prepared programs belong in the existing model initializer"
+    );
     assert!(success(work.generate(&[])).contains("(0 rebuilt)"));
     assert_eq!(contents(&work.0.join("models")), before);
     let output = python_env::python_command().arg("-c").arg(r#"
@@ -280,6 +389,23 @@ with patch.object(builtins, 'compile', forbidden), patch.object(dataclasses, 'da
     try: Wide.deserialize(json.dumps(dict(payload, f199=-1)))
     except ValueError: pass
     else: raise AssertionError('wide constraint was omitted')
+# The recursive models retain shared streams, and explicit introspection alone
+# expands them into the original complete schema, once per class.
+order_source = vars(Order)['__jsoncompat_schema__']._compressed
+customer_source = vars(Customer)['__jsoncompat_schema__']._compressed
+assert isinstance(order_source, dc.SchemaSource)
+assert isinstance(customer_source, dc.SchemaSource)
+assert len(order_source.parts[1]) == len(customer_source.parts[1])
+assert all(a is b for a, b in zip(order_source.parts[1], customer_source.parts[1]))
+with patch.object(zlib, 'decompress', wraps=zlib.decompress) as decompress:
+    source = Order.__jsoncompat_schema__
+    assert Order.__jsoncompat_schema__ is source
+    assert decompress.call_count == len(order_source.parts)
+    source_schema = json.loads(source)
+    assert source_schema['properties']['customer']['$ref'] == '#/$defs/Customer'
+    assert source_schema['$defs']['Customer']['properties']['id']['minimum'] == 0
+    assert source_schema['$defs']['Customer']['properties']['orders']['items']['$ref'] == '#/$defs/Order'
+    assert source_schema['$defs']['Order']['properties']['total']['minimum'] == 0
 assert len(models.__all__) == 5
 assert set(models.__all__) <= set(dir(models))
 try: models.NoSuchModel
@@ -312,6 +438,7 @@ else: raise AssertionError('unknown export')
         changed.iter().all(|name| name.starts_with("_schemas/")
             || name.contains("_init_wide.py")
             || name.contains("_program_wide_")
+            || name.as_str() == "_models/wide/_binding.py"
             || name.contains("_plan_")),
         "only Wide's prepared data and the shared decision plan should change: {changed:?}"
     );

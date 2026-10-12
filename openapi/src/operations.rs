@@ -101,6 +101,15 @@ pub struct ApiOperation {
 }
 
 impl OpenApiOperationLowerer<'_> {
+    /// Borrow the component schemas already lowered and validated for these
+    /// operation contracts. References use `#/$defs/`, and names are sorted.
+    pub fn component_schemas(&self) -> impl ExactSizeIterator<Item = (&str, &Value)> {
+        self.resolver
+            .component_schema_defs
+            .iter()
+            .map(|(name, component)| (name.as_str(), &component.schema))
+    }
+
     pub fn operation_contract(
         &self,
         key: &OperationKey,

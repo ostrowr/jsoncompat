@@ -6,10 +6,11 @@ import typing
 
 from jsoncompat.codegen import dataclasses as dc
 
-if __package__:
-    from ._models_generated import bind_models as _jsoncompat_bind
-else:
-    from _models_generated import bind_models as _jsoncompat_bind
+if not typing.TYPE_CHECKING:
+    if __package__ not in (None, ""):
+        from ._models_generated import bind_models as _jsoncompat_bind
+    else:
+        from _models_generated import bind_models as _jsoncompat_bind
 
 
 @typing.final
@@ -20,7 +21,8 @@ class Order(dc.DataclassModel):
     note: dc.Omittable[str | None] = dc.field("note", default=dc.MISSING)
     status: (typing.Literal["paid"] | typing.Literal["pending"]) = dc.field("status")
 
-    __slots__ = ("customer", "id", "items", "note", "status",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("customer", "id", "items", "note", "status",)
 
 
 @typing.final
@@ -28,7 +30,8 @@ class Customer(dc.DataclassModel):
     email: str = dc.field("email")
     name: str = dc.field("name")
 
-    __slots__ = ("email", "name",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("email", "name",)
 
 
 @typing.final
@@ -37,11 +40,13 @@ class OrderItem(dc.DataclassModel):
     sku: str = dc.field("sku")
     unitPriceCents: int = dc.field("unitPriceCents")
 
-    __slots__ = ("quantity", "sku", "unitPriceCents",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("quantity", "sku", "unitPriceCents",)
 
 JSONCOMPAT_MODEL = Order
 
 __all__ = ("Order", "Customer", "OrderItem", "JSONCOMPAT_MODEL",)
 
-_jsoncompat_bind((Order, Customer, OrderItem,), globals())
-del _jsoncompat_bind
+if not typing.TYPE_CHECKING:
+    _jsoncompat_bind((Order, Customer, OrderItem,), globals())
+    del _jsoncompat_bind

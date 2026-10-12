@@ -107,6 +107,8 @@ pub enum OpenApiLoweringError {
     Schema(#[from] SchemaBuildError),
 }
 
+type SchemaRootVisitor<'a> = dyn FnMut(&Value, &JsonPointer) -> Result<(), OpenApiError> + 'a;
+
 #[derive(Debug, Clone)]
 pub struct OpenApiDocument {
     raw: Value,
@@ -223,13 +225,81 @@ impl OpenApiDocument {
         }
 
         let defs = load_component_schema_defs_for_validation(self)?;
+        // Include every component even when it is unused by an operation. This
+        // validates the complete document once, with a shared definition graph.
+        let mut roots = defs
+            .keys()
+            .map(|name| {
+                json!({
+                    "$ref": JsonPointer::root().child("$defs").child(name).render()
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut seen = roots
+            .iter()
+            .map(|schema| serde_json::to_vec(schema).expect("JSON schema serialization"))
+            .collect::<std::collections::HashSet<_>>();
+        let collected = self.visit_document_schema_roots(&mut |schema, pointer| {
+            let schema = rewrite_schema_refs_for_validation(schema, pointer)?;
+            let key = serde_json::to_vec(&schema).expect("JSON schema serialization");
+            if seen.insert(key) {
+                roots.push(schema);
+            }
+            Ok(())
+        });
+        if collected.is_ok() && self.validate_schema_roots_together(roots, &defs) {
+            return Ok(());
+        }
+        // Preserve the original first error, source location, and deferred
+        // reference behavior when collection or aggregate validation fails.
+        // Components must still be checked before operation schema roots.
         self.validate_component_schema_defs(&defs)?;
-        self.validate_response_component_schema_roots(&defs)?;
-        self.validate_parameter_component_schema_roots(&defs)?;
-        self.validate_request_body_component_schema_roots(&defs)?;
-        self.validate_header_component_schema_roots(&defs)?;
-        self.validate_inline_contract_schema_roots(&defs)?;
-        Ok(())
+        self.visit_document_schema_roots(&mut |schema, pointer| {
+            self.validate_document_schema_root(schema, pointer, &defs)
+        })
+    }
+
+    fn visit_document_schema_roots(
+        &self,
+        visit: &mut SchemaRootVisitor<'_>,
+    ) -> Result<(), OpenApiError> {
+        self.validate_response_component_schema_roots(visit)?;
+        self.validate_parameter_component_schema_roots(visit)?;
+        self.validate_request_body_component_schema_roots(visit)?;
+        self.validate_header_component_schema_roots(visit)?;
+        self.validate_inline_contract_schema_roots(visit)
+    }
+
+    fn validate_schema_roots_together(
+        &self,
+        roots: Vec<Value>,
+        defs: &BTreeMap<String, ComponentSchemaDef>,
+    ) -> bool {
+        if roots.is_empty() {
+            return true;
+        }
+        // Optional properties keep every schema reachable without allowing a
+        // false branch to make the entire aggregate schema contradictory.
+        let properties: Map<String, Value> = roots
+            .into_iter()
+            .enumerate()
+            .map(|(index, schema)| (index.to_string(), schema))
+            .collect();
+        let mut validation =
+            json!({"type": "object", "properties": properties, "additionalProperties": false});
+        validation["$defs"] = Value::Object(component_schema_defs_for_schema(defs, &validation));
+        // Moving a root is safe only for references into the common definitions.
+        // Resource IDs, anchors, dynamic references, and other relative targets
+        // retain their original independently validated document scopes.
+        if !schema_roots_can_share_validation(&validation) {
+            return false;
+        }
+        self.schema_document(validation).is_ok_and(|schema| {
+            schema
+                .root()
+                .and_then(|_| schema.validate_source_schema())
+                .is_ok()
+        })
     }
 
     fn validate_component_schema_defs(
@@ -359,7 +429,7 @@ impl OpenApiDocument {
 
     fn validate_response_component_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(responses) = self
             .as_object()
@@ -385,14 +455,14 @@ impl OpenApiDocument {
                 self.validate_content_schema_roots(
                     content,
                     &response_pointer.child("content"),
-                    defs,
+                    visit,
                 )?;
             }
             if let Some(headers) = response.get("headers").and_then(Value::as_object) {
                 self.validate_header_map_schema_roots(
                     headers,
                     &response_pointer.child("headers"),
-                    defs,
+                    visit,
                 )?;
             }
         }
@@ -401,7 +471,7 @@ impl OpenApiDocument {
 
     fn validate_parameter_component_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(parameters) = self
             .as_object()
@@ -423,14 +493,14 @@ impl OpenApiDocument {
             let Some(parameter) = parameter.as_object() else {
                 continue;
             };
-            self.validate_field_schema_roots(parameter, &parameter_pointer, defs)?;
+            self.validate_field_schema_roots(parameter, &parameter_pointer, visit)?;
         }
         Ok(())
     }
 
     fn validate_request_body_component_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(request_bodies) = self
             .as_object()
@@ -457,14 +527,14 @@ impl OpenApiDocument {
             else {
                 continue;
             };
-            self.validate_content_schema_roots(content, &body_pointer.child("content"), defs)?;
+            self.validate_content_schema_roots(content, &body_pointer.child("content"), visit)?;
         }
         Ok(())
     }
 
     fn validate_header_component_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(headers) = self
             .as_object()
@@ -478,35 +548,35 @@ impl OpenApiDocument {
         self.validate_header_map_schema_roots(
             headers,
             &JsonPointer::root().child("components").child("headers"),
-            defs,
+            visit,
         )
     }
 
     fn validate_inline_contract_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         self.validate_path_item_container_schema_roots(
             self.as_object().get("paths").and_then(Value::as_object),
             &JsonPointer::root().child("paths"),
-            defs,
+            visit,
             true,
         )?;
         self.validate_path_item_container_schema_roots(
             self.as_object().get("webhooks").and_then(Value::as_object),
             &JsonPointer::root().child("webhooks"),
-            defs,
+            visit,
             false,
         )?;
-        self.validate_component_callback_schema_roots(defs)?;
-        self.validate_component_path_item_schema_roots(defs)
+        self.validate_component_callback_schema_roots(visit)?;
+        self.validate_component_path_item_schema_roots(visit)
     }
 
     fn validate_path_item_container_schema_roots(
         &self,
         path_items: Option<&Map<String, Value>>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
         allow_extension_entries: bool,
     ) -> Result<(), OpenApiError> {
         let Some(path_items) = path_items else {
@@ -528,7 +598,7 @@ impl OpenApiDocument {
             self.validate_parameter_array_schema_roots(
                 path_item.get("parameters"),
                 &path_pointer.child("parameters"),
-                defs,
+                visit,
             )?;
 
             for method in HTTP_METHODS {
@@ -539,22 +609,22 @@ impl OpenApiDocument {
                 self.validate_parameter_array_schema_roots(
                     operation.get("parameters"),
                     &operation_pointer.child("parameters"),
-                    defs,
+                    visit,
                 )?;
                 self.validate_request_body_schema_roots(
                     operation.get("requestBody"),
                     &operation_pointer.child("requestBody"),
-                    defs,
+                    visit,
                 )?;
                 self.validate_response_map_schema_roots(
                     operation.get("responses"),
                     &operation_pointer.child("responses"),
-                    defs,
+                    visit,
                 )?;
                 self.validate_callbacks_schema_roots(
                     operation.get("callbacks"),
                     &operation_pointer.child("callbacks"),
-                    defs,
+                    visit,
                 )?;
             }
         }
@@ -564,7 +634,7 @@ impl OpenApiDocument {
 
     fn validate_component_callback_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         self.validate_callbacks_schema_roots(
             self.as_object()
@@ -572,13 +642,13 @@ impl OpenApiDocument {
                 .and_then(Value::as_object)
                 .and_then(|components| components.get("callbacks")),
             &JsonPointer::root().child("components").child("callbacks"),
-            defs,
+            visit,
         )
     }
 
     fn validate_component_path_item_schema_roots(
         &self,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         self.validate_path_item_container_schema_roots(
             self.as_object()
@@ -587,7 +657,7 @@ impl OpenApiDocument {
                 .and_then(|components| components.get("pathItems"))
                 .and_then(Value::as_object),
             &JsonPointer::root().child("components").child("pathItems"),
-            defs,
+            visit,
             false,
         )
     }
@@ -596,7 +666,7 @@ impl OpenApiDocument {
         &self,
         raw_callbacks: Option<&Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(callbacks) = raw_callbacks.and_then(Value::as_object) else {
             return Ok(());
@@ -613,7 +683,7 @@ impl OpenApiDocument {
             self.validate_path_item_container_schema_roots(
                 Some(callback),
                 &callback_pointer,
-                defs,
+                visit,
                 true,
             )?;
         }
@@ -625,7 +695,7 @@ impl OpenApiDocument {
         &self,
         raw_parameters: Option<&Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(parameters) = raw_parameters.and_then(Value::as_array) else {
             return Ok(());
@@ -641,7 +711,7 @@ impl OpenApiDocument {
             let Some(parameter) = parameter.as_object() else {
                 continue;
             };
-            self.validate_field_schema_roots(parameter, &parameter_pointer, defs)?;
+            self.validate_field_schema_roots(parameter, &parameter_pointer, visit)?;
         }
 
         Ok(())
@@ -651,7 +721,7 @@ impl OpenApiDocument {
         &self,
         raw_body: Option<&Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(raw_body) = raw_body else {
             return Ok(());
@@ -667,14 +737,14 @@ impl OpenApiDocument {
         else {
             return Ok(());
         };
-        self.validate_content_schema_roots(content, &pointer.child("content"), defs)
+        self.validate_content_schema_roots(content, &pointer.child("content"), visit)
     }
 
     fn validate_response_map_schema_roots(
         &self,
         raw_responses: Option<&Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         let Some(responses) = raw_responses.and_then(Value::as_object) else {
             return Ok(());
@@ -697,14 +767,14 @@ impl OpenApiDocument {
                 self.validate_content_schema_roots(
                     content,
                     &response_pointer.child("content"),
-                    defs,
+                    visit,
                 )?;
             }
             if let Some(headers) = response.get("headers").and_then(Value::as_object) {
                 self.validate_header_map_schema_roots(
                     headers,
                     &response_pointer.child("headers"),
-                    defs,
+                    visit,
                 )?;
             }
         }
@@ -716,7 +786,7 @@ impl OpenApiDocument {
         &self,
         headers: &Map<String, Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         for (name, raw_header) in headers {
             let header_pointer = pointer.child(name);
@@ -727,7 +797,7 @@ impl OpenApiDocument {
             let Some(header) = header.as_object() else {
                 continue;
             };
-            self.validate_field_schema_roots(header, &header_pointer, defs)?;
+            self.validate_field_schema_roots(header, &header_pointer, visit)?;
         }
         Ok(())
     }
@@ -736,13 +806,13 @@ impl OpenApiDocument {
         &self,
         field: &Map<String, Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         if let Some(schema) = field.get("schema") {
-            self.validate_document_schema_root(schema, &pointer.child("schema"), defs)?;
+            visit(schema, &pointer.child("schema"))?;
         }
         if let Some(content) = field.get("content").and_then(Value::as_object) {
-            self.validate_content_schema_roots(content, &pointer.child("content"), defs)?;
+            self.validate_content_schema_roots(content, &pointer.child("content"), visit)?;
         }
         Ok(())
     }
@@ -751,17 +821,13 @@ impl OpenApiDocument {
         &self,
         content: &Map<String, Value>,
         pointer: &JsonPointer,
-        defs: &BTreeMap<String, ComponentSchemaDef>,
+        visit: &mut SchemaRootVisitor<'_>,
     ) -> Result<(), OpenApiError> {
         for (media_type, media) in content {
             let Some(schema) = media.as_object().and_then(|media| media.get("schema")) else {
                 continue;
             };
-            self.validate_document_schema_root(
-                schema,
-                &pointer.child(media_type).child("schema"),
-                defs,
-            )?;
+            visit(schema, &pointer.child(media_type).child("schema"))?;
         }
         Ok(())
     }
@@ -3457,6 +3523,88 @@ fn component_schema_name_from_defs_reference(reference: &str) -> Option<String> 
     Some(decoded.replace("~1", "/").replace("~0", "~"))
 }
 
+/// Root relocation preserves only unscoped references into shared definitions.
+/// Visit schema positions, including legacy schema dependencies, while leaving
+/// annotation objects (such as defaults or examples containing `$ref`) alone.
+fn schema_roots_can_share_validation(schema: &Value) -> bool {
+    fn visit(
+        schema: &Value,
+        path: &str,
+        positions: &mut std::collections::HashSet<String>,
+        references: &mut Vec<String>,
+    ) -> bool {
+        positions.insert(path.to_owned());
+        let Some(object) = schema.as_object() else {
+            return schema.is_boolean();
+        };
+        if [
+            "$id",
+            "$anchor",
+            "$dynamicRef",
+            "$dynamicAnchor",
+            "$recursiveRef",
+            "$recursiveAnchor",
+            "$vocabulary",
+            "x-jsoncompat-format-assertion",
+        ]
+        .iter()
+        .any(|key| object.contains_key(*key))
+        {
+            return false;
+        }
+        if let Some(reference) = object.get("$ref") {
+            let Some(reference) = reference
+                .as_str()
+                .filter(|reference| reference.starts_with("#/$defs/"))
+            else {
+                return false;
+            };
+            let Ok(pointer) = percent_decode_str(reference).decode_utf8() else {
+                return false;
+            };
+            references.push(pointer.into_owned());
+        }
+        let mut child = |key: &str, value: &Value| {
+            visit(value, &format!("{path}/{key}"), positions, references)
+        };
+        for (key, value) in object {
+            let valid = if is_single_schema_child_keyword(key) {
+                child(key, value)
+            } else if is_schema_map_child_keyword(key) || key == "dependencies" {
+                value.as_object().is_some_and(|values| {
+                    values.iter().all(|(name, value)| {
+                        key == "dependencies" && value.is_array()
+                            || child(
+                                &format!("{key}/{}", name.replace('~', "~0").replace('/', "~1")),
+                                value,
+                            )
+                    })
+                })
+            } else if is_schema_array_child_keyword(key) {
+                value.as_array().is_some_and(|values| {
+                    values
+                        .iter()
+                        .enumerate()
+                        .all(|(index, value)| child(&format!("{key}/{index}"), value))
+                })
+            } else {
+                true
+            };
+            if !valid {
+                return false;
+            }
+        }
+        true
+    }
+    let mut positions = std::collections::HashSet::new();
+    let mut references = Vec::new();
+    visit(schema, "#", &mut positions, &mut references)
+        // A reference can turn arbitrary annotation data into a schema. Those
+        // targets were not visited above and may contain scope-sensitive refs;
+        // keep them on the independent validation path instead of relocating.
+        && references.iter().all(|reference| positions.contains(reference))
+}
+
 fn schema_uses_later_lowering_reference_features(schema: &Value) -> bool {
     match schema {
         Value::Object(object) => {
@@ -4113,5 +4261,187 @@ mod tests {
         assert!(defs.contains_key("Pet"));
         assert!(defs.contains_key("Owner"));
         assert!(!defs.contains_key("Unused"));
+    }
+
+    fn document_with_validation_roots(roots: Vec<Value>) -> OpenApiDocument {
+        OpenApiDocument {
+            raw: json!({
+                "openapi": "3.1.0", "info": {"title":"Schema roots", "version":"1"},
+                "paths": {"/values": {"get": {
+                    "parameters": roots.into_iter().enumerate().map(|(index, schema)| json!({
+                        "name": format!("p{index}"), "in": "query", "schema": schema
+                    })).collect::<Vec<_>>(),
+                    "responses": {"200": {"description":"ok"}}
+                }}},
+                "components": {"schemas": {"Node": {"type":"object", "properties": {
+                    "name": {"type":"string"}, "next": {"$ref":"#/components/schemas/Node"}
+                }}}}
+            }),
+        }
+    }
+
+    fn independently_validate_roots(document: &OpenApiDocument) -> Result<(), super::OpenApiError> {
+        let defs = super::load_component_schema_defs_for_validation(document)?;
+        document.validate_component_schema_defs(&defs)?;
+        document.visit_document_schema_roots(&mut |schema, pointer| {
+            document.validate_document_schema_root(schema, pointer, &defs)
+        })
+    }
+
+    #[test]
+    fn aggregate_inline_validation_checks_every_root_and_preserves_original_errors() {
+        for roots in [
+            vec![json!(true), json!({"type":"string", "pattern":"["})],
+            vec![json!(false), json!({"type":"string", "pattern":"["})],
+            vec![
+                json!({"type":"integer", "minimum":"wrong"}),
+                json!({"$ref": 5}),
+            ],
+            vec![json!({"type":"string", "pattern":"["}), json!({"$ref": 5})],
+            vec![json!({"$ref":"#/components/schemas/Missing"})],
+            vec![json!({"type":"object", "dependentRequired":{"x":false}})],
+            vec![
+                json!({"$ref":"#/components/schemas/Node"}),
+                json!({"type":"array", "items":false}),
+            ],
+        ] {
+            let document = document_with_validation_roots(roots);
+            let original =
+                independently_validate_roots(&document).map_err(|error| error.to_string());
+            let batched = document
+                .validate_document_schema_validity()
+                .map_err(|error| error.to_string());
+            assert_eq!(batched, original, "schema roots: {}", document.raw);
+        }
+    }
+
+    #[test]
+    fn aggregate_inline_validation_keeps_scoped_references_independent() {
+        for roots in [
+            vec![
+                json!({"$id":"https://example.test/shared", "type":"string"}),
+                json!({"$id":"https://example.test/shared", "type":"number"}),
+            ],
+            vec![json!({"$ref":"#/properties/0"})],
+            vec![
+                json!({"type":"object", "properties":{"id":{"type":"string"},
+                "copy":{"$ref":"#/properties/value/properties/id"}}}),
+            ],
+            vec![
+                json!({"$dynamicAnchor":"node", "type":"object", "properties":{
+                "child":{"$dynamicRef":"#node"}}}),
+            ],
+            vec![json!({"dependencies":{"x":{"$ref":"#/properties/0"}}})],
+        ] {
+            let document = document_with_validation_roots(roots.clone());
+            let defs = super::load_component_schema_defs_for_validation(&document).unwrap();
+            assert!(!document.validate_schema_roots_together(roots, &defs));
+            let original =
+                independently_validate_roots(&document).map_err(|error| error.to_string());
+            let batched = document
+                .validate_document_schema_validity()
+                .map_err(|error| error.to_string());
+            assert_eq!(batched, original, "schema roots: {}", document.raw);
+        }
+    }
+
+    #[test]
+    fn aggregate_inline_validation_supports_shared_refs_without_inspecting_annotation_data() {
+        let document = document_with_validation_roots(vec![]);
+        let defs = super::load_component_schema_defs_for_validation(&document).unwrap();
+        let roots = vec![
+            json!({"$ref":"#/$defs/Node"}),
+            json!({"type":"array", "items":{"$ref":"#/$defs/Node"}}),
+            json!({"const":{"$id":"annotation", "$ref":"#/not/a/schema"}}),
+            json!(false),
+        ];
+        assert!(document.validate_schema_roots_together(roots, &defs));
+    }
+
+    #[test]
+    fn aggregate_validation_checks_unused_components_before_inline_errors() {
+        for component in [
+            json!({"type":"string", "pattern":"["}),
+            json!({"$ref":"#/components/schemas/Absent"}),
+            json!({"$ref":"#/components/schemas/Bad"}),
+            json!({"type":"object", "dependentRequired":{"a":false}}),
+        ] {
+            for inline in [
+                vec![],
+                vec![json!({"$ref": 42})],
+                vec![json!({"pattern":"["})],
+            ] {
+                let mut document = document_with_validation_roots(inline);
+                document.raw["components"]["schemas"]["Bad"] = component.clone();
+                let original = independently_validate_roots(&document)
+                    .unwrap_err()
+                    .to_string();
+                assert!(original.contains("#/components/schemas/Bad"), "{original}");
+                let batched = document
+                    .validate_document_schema_validity()
+                    .unwrap_err()
+                    .to_string();
+                assert_eq!(batched, original);
+            }
+        }
+    }
+
+    #[test]
+    fn aggregate_validation_handles_component_only_documents_and_deferred_scopes() {
+        for components in [
+            json!({"False":false, "True":true}),
+            json!({"A":{"$id":"https://example.test/a", "type":"string"},
+                   "B":{"$id":"https://example.test/a", "type":"number"}}),
+            json!({"A":{"$ref":"https://example.test/later"}, "B":{"type":"string"}}),
+            json!({}),
+        ] {
+            let mut document = document_with_validation_roots(vec![]);
+            document.raw["paths"] = json!({});
+            document.raw["components"]["schemas"] = components;
+            let original =
+                independently_validate_roots(&document).map_err(|error| error.to_string());
+            let batched = document
+                .validate_document_schema_validity()
+                .map_err(|error| error.to_string());
+            assert_eq!(
+                batched, original,
+                "component-only document: {}",
+                document.raw
+            );
+        }
+    }
+
+    #[test]
+    fn aggregate_validation_does_not_relocate_schema_refs_into_annotation_data() {
+        let mut document = document_with_validation_roots(vec![
+            json!({"$ref":"#/components/schemas/X/const/schema"}),
+        ]);
+        document.raw["components"]["schemas"]["X"] = json!({
+            "const": {"schema": {"$ref":"#/properties/0"}}
+        });
+        let original = independently_validate_roots(&document)
+            .unwrap_err()
+            .to_string();
+        assert!(original.contains("#/$defs/X/const/schema"), "{original}");
+        assert!(!super::schema_roots_can_share_validation(&json!({
+            "$defs": {"X": {"const":{"schema":{"$ref":"#/properties/0"}}}},
+            "properties": {"0": {"$ref":"#/$defs/X/const/schema"}}
+        })));
+        let batched = document
+            .validate_document_schema_validity()
+            .map_err(|error| error.to_string());
+        assert_eq!(batched, Err(original));
+    }
+
+    #[test]
+    fn aggregate_validation_scope_guard_resolves_escaped_schema_positions() {
+        assert!(super::schema_roots_can_share_validation(&json!({
+            "$defs": {"With Space/Slash~": {"properties": {"escaped/key": {"type":"string"}}}},
+            "properties": {"use": {"$ref":"#/$defs/With%20Space~1Slash~0/properties/escaped~1key"}}
+        })));
+        assert!(!super::schema_roots_can_share_validation(&json!({
+            "$defs": {"With Space/Slash~": {"const": {"schema":true}}},
+            "properties": {"use": {"$ref":"#/$defs/With%20Space~1Slash~0/const/schema"}}
+        })));
     }
 }

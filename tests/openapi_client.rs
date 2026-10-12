@@ -127,22 +127,20 @@ fn jsonplaceholder_example() -> Work {
     work
 }
 
+fn write_ty_config(directory: &Path, includes: &[&str]) {
+    fs::write(
+        directory.join("ty.toml"),
+        format!("[src]\ninclude = {}\n", json!(includes)),
+    )
+    .unwrap();
+}
+
 #[test]
 fn jsonplaceholder_spec_and_live_test_preserve_static_types() {
     let work = jsonplaceholder_example();
-    fs::write(
-        work.0.join("pyrightconfig.json"),
-        json!({
-            "pythonVersion": "3.12",
-            "typeCheckingMode": "strict",
-            "extraPaths": [Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],
-            "include": ["jsonplaceholder", "live_jsonplaceholder.py"]
-        })
-        .to_string(),
-    )
-    .unwrap();
+    write_ty_config(&work.0, &["jsonplaceholder", "live_jsonplaceholder.py"]);
     success(
-        python_env::pyright_command()
+        python_env::ty_command()
             .current_dir(&work.0)
             .output()
             .unwrap(),
@@ -250,7 +248,24 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
         work.0.join("transport_typing.py"),
     )
     .unwrap();
-    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py","unexpected_responses.py","readme_aiohttp.py","readme_requests.py"]}).to_string()).unwrap();
+    write_ty_config(
+        &work.0,
+        &[
+            "valid.py",
+            "transport_typing.py",
+            "petstore",
+            "other_petstore",
+            "exercise.py",
+            "server.py",
+            "aiohttp_client.py",
+            "httpx_client.py",
+            "requests_client.py",
+            "prepared_client.py",
+            "unexpected_responses.py",
+            "readme_aiohttp.py",
+            "readme_requests.py",
+        ],
+    );
     fs::write(
         work.0.join("valid.py"),
         r#"
@@ -323,7 +338,7 @@ def inspect_result(result: GetPetResult) -> None:
 "#,
     ).unwrap();
     success(
-        python_env::pyright_command()
+        python_env::ty_command()
             .current_dir(&work.0)
             .output()
             .unwrap(),
@@ -416,9 +431,9 @@ async def invalid_options() -> None:
     missing: AsyncClient[PetstoreAPI] = typed_async  # must fail
 "#;
     fs::write(work.0.join("invalid.py"), invalid).unwrap();
-    let output = python_env::pyright_command()
+    let output = python_env::ty_command()
         .current_dir(&work.0)
-        .arg("--outputjson")
+        .args(["--output-format", "gitlab"])
         .arg("invalid.py")
         .output()
         .unwrap();
@@ -430,13 +445,13 @@ async def invalid_options() -> None:
         .filter(|(_, source)| source.ends_with("# must fail"))
     {
         assert!(
-            diagnostics["generalDiagnostics"]
+            diagnostics
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|diagnostic| diagnostic["severity"] == "error"
-                    && diagnostic["rule"] != "reportUnusedVariable"
-                    && diagnostic["range"]["start"]["line"] == line),
+                .any(|diagnostic| diagnostic["severity"] == "major"
+                    && diagnostic["check_name"] != "unused-variable"
+                    && diagnostic["location"]["positions"]["begin"]["line"] == line + 1),
             "missing expected type error on {source}: {diagnostics}"
         );
     }
@@ -682,9 +697,9 @@ for prefix, selectors in (
             "Client, Err, UnexpectedResponse",
         );
     fs::write(work.0.join("typing_results.py"), typing).unwrap();
-    fs::write(work.0.join("pyrightconfig.json"), json!({"pythonVersion":"3.12", "typeCheckingMode":"strict", "extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")], "include":["typing_results.py", "petstore"]}).to_string()).unwrap();
+    write_ty_config(&work.0, &["typing_results.py", "petstore"]);
     success(
-        python_env::pyright_command()
+        python_env::ty_command()
             .current_dir(&work.0)
             .output()
             .unwrap(),
@@ -829,18 +844,9 @@ def update(client: PetstoreClient, tree: BarrelNode) -> Node:
 "#,
     )
     .unwrap();
-    fs::write(
-        work.0.join("pyrightconfig.json"),
-        json!({
-            "pythonVersion":"3.12", "typeCheckingMode":"strict",
-            "extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],
-            "include":["petstore", "large_consumer.py"]
-        })
-        .to_string(),
-    )
-    .unwrap();
+    write_ty_config(&work.0, &["petstore", "large_consumer.py"]);
     success(
-        python_env::pyright_command()
+        python_env::ty_command()
             .current_dir(&work.0)
             .output()
             .unwrap(),

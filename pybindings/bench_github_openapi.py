@@ -26,6 +26,7 @@ REVISION = "58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1"
 URL = f"https://raw.githubusercontent.com/github/rest-api-description/{REVISION}/descriptions-next/api.github.com/api.github.com.json"
 SHA256 = "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe"
 METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+TY_VERSION = "0.0.86"
 
 
 def save(path: Path, value: object) -> None:
@@ -150,14 +151,42 @@ def inventory(package: Path) -> dict[str, object]:
     }
 
 
-def inspect(directory: Path, case: str, package: Path, timeout: float, repeats: int):
-    name = package.name
+def negative_check(exit_code: int | str, stdout: str) -> dict[str, object]:
+    result: dict[str, object] = {
+        "exit_code": exit_code,
+        "expected_errors_detected": False,
+    }
+    try:
+        diagnostics = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        result["diagnostic_json_error"] = str(error)
+        return result
+    if not isinstance(diagnostics, list):
+        result["diagnostic_json_error"] = "expected a GitLab diagnostic array"
+        return result
+    if any(not isinstance(entry, dict) for entry in diagnostics):
+        result["diagnostic_json_error"] = "expected diagnostic objects"
+        return result
+    rules = [entry.get("check_name") for entry in diagnostics]
+    result["expected_errors_detected"] = (
+        exit_code == 1 and all(isinstance(rule, str) for rule in rules)
+        and set(rules) == {"invalid-argument-type", "invalid-return-type"}
+    )
+    return result
+
+
+def configure_environment(directory: Path) -> None:
     env = os.environ
     env["PYTHONPATH"] = os.pathsep.join([str(ROOT / "pybindings"), str(directory)])
     env["JSONCOMPAT_NATIVE_PROFILE"] = "release"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     for key in ["VIRTUAL_ENV", "UV_DEFAULT_INDEX", "UV_INDEX", "UV_INDEX_URL", "UV_EXTRA_INDEX_URL"]:
         env.pop(key, None)
+
+
+def inspect(directory: Path, case: str, package: Path, timeout: float, repeats: int):
+    name = package.name
+    configure_environment(directory)
     save(directory / f"{case}-files.json", inventory(package))
     for cache in package.rglob("__pycache__"):
         shutil.rmtree(cache)
@@ -173,6 +202,12 @@ def inspect(directory: Path, case: str, package: Path, timeout: float, repeats: 
                     [sys.executable, "-m", "compileall", "-q", str(package)])
         for repeat in range(repeats):
             measure(directory, f"{case}-import-{phase}-{repeat}", timeout, [sys.executable, "-c", source])
+    typecheck(directory, case, package, timeout)
+
+
+def typecheck(directory: Path, case: str, package: Path, timeout: float) -> None:
+    name = package.name
+    configure_environment(directory)
     consumer = directory / f"{case}_consumer.py"
     if case == "models":
         consumer.write_text(f"""from typing import assert_type
@@ -196,14 +231,27 @@ def get_issue(client: GitHubClient) -> IssuesGet200:
 async def get_issue_async(client: GitHubAsyncClient) -> IssuesGet200:
     return (await client.request(IssuesGetRequest(owner="octocat", repo="Hello-World", issue_number=1))).unwrap()
 """)
-    config = directory / f"{case}-pyrightconfig.json"
-    save(config, {"pythonVersion": "3.12", "typeCheckingMode": "strict",
-                  "include": [name, consumer.name], "extraPaths": [str(ROOT / "pybindings")]})
-    command = [
+    launcher = [
         "uv", "run", "--no-config", "--project", str(ROOT / "pybindings"), "--all-extras", "--locked",
-        "--with", "pyright==1.1.408", "pyright", "--outputjson",
+        "--with", f"ty=={TY_VERSION}", "ty",
     ]
-    measure(directory, f"{case}-pyright", timeout, [*command, "--project", str(config)])
+    command = [
+        *launcher, "check", "--project", str(directory), "--python-version", "3.12",
+        "--extra-search-path", str(ROOT / "pybindings"), "--extra-search-path", str(directory),
+        "--error", "all", "--output-format", "gitlab",
+    ]
+    manifest = json.loads((package / ".jsoncompat-manifest.json").read_text())
+    save(directory / f"{case}-ty-environment.json", {
+        "typechecker": "ty", "version": TY_VERSION,
+        "version_output": subprocess.check_output([*launcher, "--version"], text=True).strip(),
+        "platform": platform.platform(), "python": sys.version,
+        "python_version_target": "3.12", "rules": "--error all", "command": command,
+        "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "working_tree": subprocess.check_output(["git", "status", "--short"], cwd=ROOT, text=True),
+        "package": str(package), "package_compiler": manifest["compiler"],
+        "node_options": os.environ.get("NODE_OPTIONS"),
+    })
+    measure(directory, f"{case}-ty", timeout, [*command, str(package), str(consumer)])
     if case != "models":
         invalid = directory / f"{case}_invalid.py"
         invalid.write_text(f"""from {name} import GitHubClient, IssuesGetRequest
@@ -211,18 +259,12 @@ def bad(client: GitHubClient) -> int:
     request = IssuesGetRequest(owner="octocat", repo="Hello-World", issue_number="wrong")
     return client.request(request).unwrap().body.title
 """)
-        negative_config = directory / f"{case}-negative-pyrightconfig.json"
-        save(negative_config, {"pythonVersion": "3.12", "typeCheckingMode": "strict",
-                               "include": [invalid.name], "extraPaths": [str(ROOT / "pybindings")]})
-        result = measure(directory, f"{case}-pyright-negative", timeout,
-                         [*command, "--project", str(negative_config)])
-        if result["exit_code"] != "timeout":
-            diagnostics = json.loads((directory / f"{case}-pyright-negative.stdout").read_text())
-            save(directory / f"{case}-negative-check.json", {
-                "expected_errors_detected": result["exit_code"] == 1 and
-                {d.get("rule") for d in diagnostics.get("generalDiagnostics", [])}
-                == {"reportArgumentType", "reportReturnType"},
-            })
+        result = measure(directory, f"{case}-ty-negative", timeout, [*command, str(invalid)])
+        save(directory / f"{case}-ty-negative-check.json", {
+            **negative_check(result["exit_code"],
+                             (directory / f"{case}-ty-negative.stdout").read_text()),
+            "stderr_file": f"{case}-ty-negative.stderr",
+        })
 
 
 def main() -> None:
@@ -234,21 +276,29 @@ def main() -> None:
     phase = parser.add_mutually_exclusive_group()
     phase.add_argument("--prepare-only", action="store_true")
     phase.add_argument("--inspect-only", action="store_true", help="reuse output; generation timing is not measured")
+    phase.add_argument("--typecheck-only", action="store_true",
+                       help="check an existing package with ty; preserve generation and import measurements")
     args = parser.parse_args()
     if args.timeout <= 0 or args.repeats < 1:
         parser.error("timeout and repeats must be positive")
     directory = args.output.resolve()
     directory.mkdir(parents=True, exist_ok=True)
+    package = directory / f"github_{args.case}"
+    if args.typecheck_only:
+        if not package.is_dir():
+            parser.error("--typecheck-only requires an existing generated package")
+        typecheck(directory, args.case, package, args.timeout)
+        return
     spec, flags = prepare(directory, args.case)
     if args.prepare_only:
         return
-    package = directory / f"github_{args.case}"
     save(directory / f"{args.case}-environment.json", {
         "platform": platform.platform(), "python": sys.version,
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "working_tree": subprocess.check_output(["git", "status", "--short"], cwd=ROOT, text=True),
         "generator_sha256": hashlib.sha256((ROOT / "target/release/jsoncompat").read_bytes()).hexdigest(),
         "native_profile": "release", "repeats": args.repeats,
+        "node_options": os.environ.get("NODE_OPTIONS"),
     })
     if not args.inspect_only:
         if package.exists():

@@ -9,7 +9,15 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
+    sync::Arc,
 };
+
+/// Generated source files for one logical package model group.
+/// File paths are relative to the public package, including shared schema data.
+pub struct DataclassPackage {
+    pub models: Vec<String>,
+    pub files: BTreeMap<String, String>,
+}
 
 #[derive(Default)]
 pub(super) struct Parts {
@@ -18,24 +26,35 @@ pub(super) struct Parts {
     pub declarations: Vec<String>,
     pub initializers: Vec<String>,
     pub footer: String,
-    pub sources: Vec<Vec<u8>>,
+    pub sources: Vec<SchemaSource>,
     pub programs: Vec<Vec<u8>>,
     pub roots: Vec<usize>,
     pub descriptors: Vec<String>,
     pub plan: Vec<u8>,
 }
 
+pub(super) enum SchemaSource {
+    Whole(Vec<u8>),
+    Fragments(Vec<SchemaFragment>),
+}
+
+pub(super) enum SchemaFragment {
+    Local(Vec<u8>),
+    Shared(Arc<Vec<u8>>),
+}
+
 const PRIVATE_IMPORTS: &str = "# Generated implementation. Import the public model module instead.\nfrom __future__ import annotations\nimport typing\nfrom jsoncompat.codegen import dataclasses as dc\n\n";
 // Prepared bytes can dwarf declarations, even for a single recursive model.
-// Keep their storage separate from semantic module boundaries. These constants
-// never decide whether neighboring models or operations share a source file.
+// Bound the prepared bytes stored alongside each initializer; overflow lives in
+// data-only modules. These constants never decide whether neighboring models or
+// operations share a source file.
 const DATA_CHUNK_BYTES: usize = 64 * 1024;
 const NODES_PER_MODULE: usize = 256;
 
 impl DataclassModule {
     /// Render a package group with one declaration and initializer module per
     /// model. The layout is unconditional and named by model, not source size.
-    /// Prepared data uses separate byte-constant chunks, without runtime source
+    /// Prepared data uses bounded byte-constant chunks, without runtime source
     /// compilation or resource files that require packaging configuration.
     pub fn package_files(&self, module: &str) -> BTreeMap<String, String> {
         let mut files = Files {
@@ -138,6 +157,7 @@ impl DataclassModule {
 struct Files {
     prefix: String,
     sources: BTreeMap<String, String>,
+    schema_chunks: BTreeMap<usize, Vec<String>>,
 }
 impl Files {
     fn add(&mut self, module: &str, source: String) {
@@ -151,6 +171,13 @@ impl Files {
         let mut imports = String::new();
         let mut parts = Vec::new();
         for (i, chunk) in bytes.chunks(DATA_CHUNK_BYTES).enumerate() {
+            if i == 0 {
+                // Most programs fit beside their existing initializer. Avoid a
+                // separate file and import just to hold one small constant.
+                writeln!(imports, "{alias}_{i} = {}", super::render::bytes(chunk)).unwrap();
+                parts.push(format!("{alias}_{i}"));
+                continue;
+            }
             let shard = format!("{module}_{i:04}");
             self.add(
                 &shard,
@@ -166,38 +193,96 @@ impl Files {
         imports
     }
 
-    fn schema(&mut self, bytes: &[u8]) -> String {
-        let mut imports = String::new();
-        let mut parts = Vec::new();
-        for (i, chunk) in bytes.chunks(DATA_CHUNK_BYTES).enumerate() {
-            // The digest covers the complete compressed chunk. Shared files
-            // live at package scope, so independent binding groups reuse them
-            // without importing each other's models or changing class identity.
-            let name = format!("_schema_{:x}", Sha256::digest(chunk));
-            self.sources
-                .entry(format!("_schemas/{name}.py"))
-                .or_insert_with(|| {
-                    format!(
-                        "# Generated shared schema data.\nDATA: bytes = {}\n",
-                        super::render::bytes(chunk)
-                    )
-                });
-            writeln!(
-                imports,
-                "from ..._schemas.{name} import DATA as _schema_{i}"
-            )
-            .unwrap();
-            parts.push(format!("_schema_{i},"));
+    fn schema(&mut self, source: &SchemaSource) -> String {
+        enum Chunk<'a> {
+            Local(&'a [u8]),
+            Shared(String),
         }
-        // Keep chunk identities shared in memory as well as on disk. Joining
-        // belongs to explicit schema introspection, never model import.
-        writeln!(
-            imports,
-            "_schema: tuple[bytes, ...] = ({})",
-            parts.join(" ")
-        )
+        let imported =
+            |chunks: Vec<String>| chunks.into_iter().map(Chunk::Shared).collect::<Vec<_>>();
+        let mut inline_budget = DATA_CHUNK_BYTES;
+        let streams = match source {
+            // Identical complete schemas can be shared by independent model
+            // groups, whose lazy imports must retain the same bytes objects.
+            SchemaSource::Whole(bytes) => vec![imported(self.schema_stream(bytes))],
+            SchemaSource::Fragments(fragments) => fragments
+                .iter()
+                .map(|fragment| match fragment {
+                    SchemaFragment::Local(bytes) if bytes.len() <= inline_budget => {
+                        inline_budget -= bytes.len();
+                        vec![Chunk::Local(bytes)]
+                    }
+                    SchemaFragment::Local(bytes) => imported(self.schema_stream(bytes)),
+                    SchemaFragment::Shared(bytes) => {
+                        let identity = Arc::as_ptr(bytes) as usize;
+                        let chunks = if let Some(chunks) = self.schema_chunks.get(&identity) {
+                            chunks.clone()
+                        } else {
+                            let chunks = self.schema_stream(bytes);
+                            self.schema_chunks.insert(identity, chunks.clone());
+                            chunks
+                        };
+                        imported(chunks)
+                    }
+                })
+                .collect(),
+        };
+        let mut imports = String::new();
+        let mut streams_literals = Vec::new();
+        let mut next_alias = 0;
+        for chunks in streams {
+            let mut parts = Vec::new();
+            for chunk in chunks {
+                let alias = next_alias;
+                next_alias += 1;
+                match chunk {
+                    Chunk::Shared(name) => writeln!(
+                        imports,
+                        "from ..._schemas.{name} import DATA as _schema_{alias}"
+                    ),
+                    Chunk::Local(bytes) => {
+                        writeln!(imports, "_schema_{alias} = {}", super::render::bytes(bytes))
+                    }
+                }
+                .unwrap();
+                parts.push(format!("_schema_{alias},"));
+            }
+            streams_literals.push(format!("({})", parts.join(" ")));
+        }
+        match source {
+            SchemaSource::Whole(_) => writeln!(
+                imports,
+                "_schema: tuple[bytes, ...] = {}",
+                streams_literals[0]
+            ),
+            SchemaSource::Fragments(_) => writeln!(
+                imports,
+                "_schema = dc.SchemaSource(({},))",
+                streams_literals.join(", ")
+            ),
+        }
         .unwrap();
         imports
+    }
+
+    fn schema_stream(&mut self, bytes: &[u8]) -> Vec<String> {
+        bytes
+            .chunks(DATA_CHUNK_BYTES)
+            .map(|chunk| {
+                // Shared fragments and identical complete schemas are content
+                // addressed across independent binding groups as well as models.
+                let name = format!("_schema_{:x}", Sha256::digest(chunk));
+                self.sources
+                    .entry(format!("_schemas/{name}.py"))
+                    .or_insert_with(|| {
+                        format!(
+                            "# Generated shared schema data.\nDATA: bytes = {}\n",
+                            super::render::bytes(chunk)
+                        )
+                    });
+                name
+            })
+            .collect()
     }
 }
 

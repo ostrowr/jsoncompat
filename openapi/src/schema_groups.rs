@@ -99,7 +99,7 @@ impl OpenApiDocument {
         }
         if scoped {
             return Ok(vec![ComponentSchemaGroup {
-                schemas: collect(&available, included),
+                schemas: collect(&mut available, included),
                 dialect,
             }]);
         }
@@ -118,7 +118,7 @@ impl OpenApiDocument {
             }
             if !current.is_empty() && current.len() + connected.len() > models_per_module.get() {
                 groups.push(ComponentSchemaGroup {
-                    schemas: collect(&available, std::mem::take(&mut current)),
+                    schemas: collect(&mut available, std::mem::take(&mut current)),
                     dialect: dialect.clone(),
                 });
             }
@@ -126,7 +126,7 @@ impl OpenApiDocument {
         }
         if !current.is_empty() {
             groups.push(ComponentSchemaGroup {
-                schemas: collect(&available, current),
+                schemas: collect(&mut available, current),
                 dialect,
             });
         }
@@ -134,13 +134,16 @@ impl OpenApiDocument {
     }
 }
 fn collect(
-    available: &BTreeMap<String, ComponentSchemaDef>,
+    available: &mut BTreeMap<String, ComponentSchemaDef>,
     names: BTreeSet<String>,
 ) -> Map<String, Value> {
     names
         .into_iter()
         .map(|name| {
-            let schema = available[&name].schema.clone();
+            let schema = available
+                .remove(&name)
+                .expect("schema groups partition the selected component names")
+                .schema;
             (name, schema)
         })
         .collect()
@@ -184,4 +187,73 @@ fn has_resource_scope(schema: &Value) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::OpenApiOperationLowerer;
+    use serde_json::json;
+
+    #[test]
+    fn groups_partition_and_preserve_the_prepared_component_schemas() {
+        let document = OpenApiDocument::from_json(&json!({
+            "openapi":"3.1.0", "info":{"title":"Grouped components", "version":"1"},
+            "paths":{},
+            "components":{"schemas":{
+                "A":{"type":"object", "properties":{
+                    "count":{"type":"integer", "minimum":0},
+                    "next":{"$ref":"#/components/schemas/B"}
+                }, "required":["count"]},
+                "B":{"type":"object", "properties":{
+                    "owner":{"$ref":"#/components/schemas/A"},
+                    "literal":{"const":{"$ref":"this is instance data"}}
+                }},
+                "C":false,
+                "D":{"type":"array", "items":{"$ref":"#/components/schemas/A/properties/count"}}
+            }}
+        }))
+        .unwrap();
+        let lowerer = OpenApiOperationLowerer::new(&document).unwrap();
+        assert_eq!(lowerer.component_schemas().len(), 4);
+        let definitions: Map<_, _> = lowerer
+            .component_schemas()
+            .map(|(name, schema)| (name.to_owned(), schema.clone()))
+            .collect();
+        let size = NonZeroUsize::new(1).unwrap();
+        let groups = document
+            .component_schema_groups(&BTreeSet::new(), size)
+            .unwrap();
+        assert_eq!(groups.len(), 2);
+        let flattened: Map<_, _> = groups.into_iter().flat_map(|group| group.schemas).collect();
+        assert_eq!(flattened, definitions);
+        assert_eq!(definitions["C"], false);
+        assert_eq!(
+            definitions["B"]["properties"]["literal"]["const"]["$ref"],
+            "this is instance data"
+        );
+        assert_eq!(
+            definitions["D"]["items"]["$ref"],
+            "#/$defs/A/properties/count"
+        );
+
+        let selected = document
+            .component_schema_groups(&BTreeSet::from(["D".into()]), size)
+            .unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            selected[0]
+                .schemas
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["A", "B", "D"]
+        );
+        assert!(
+            selected[0]
+                .schemas
+                .iter()
+                .all(|(name, schema)| definitions.get(name) == Some(schema))
+        );
+    }
 }

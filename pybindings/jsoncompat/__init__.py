@@ -213,7 +213,8 @@ def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
     target_roots = [repo_root / "target"]
-    if cargo_target_dir := os.environ.get("CARGO_TARGET_DIR"):
+    cargo_target_dir = os.environ.get("CARGO_TARGET_DIR")
+    if cargo_target_dir not in (None, ""):
         target_roots.insert(0, Path(cargo_target_dir).expanduser())
 
     native_profile = os.environ.get("JSONCOMPAT_NATIVE_PROFILE")

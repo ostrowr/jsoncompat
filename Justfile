@@ -13,7 +13,7 @@ check:
   cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
   cargo test --workspace --exclude jsoncompat_py --all-features --locked
   @echo "[just] checking Python code …"
-  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL uv run --no-config --project pybindings --all-extras --group benchmark --locked --with pyright==1.1.408 pyright
+  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL uv run --no-config --project pybindings --all-extras --group benchmark --locked --with ty==0.0.86 ty check
   @echo "[just] checking TypeScript code …"
   pnpm --prefix web/jsoncompatdotcom run ci
   pnpm --prefix web/jsoncompatdotcom run build

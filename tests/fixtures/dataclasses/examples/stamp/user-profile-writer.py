@@ -12,7 +12,8 @@ class ExamplesStampUserProfileWriter(dc.WriterDataclassModel):
     version: typing.Literal[2] = dc.field("version")
     data: ExamplesStampUserProfileV2 = dc.field("data")
 
-    __slots__ = ("version", "data",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("version", "data",)
 
 
 @typing.final
@@ -22,7 +23,8 @@ class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
     name: str = dc.field("name")
     __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
 
 JSONCOMPAT_MODEL = ExamplesStampUserProfileWriter
 

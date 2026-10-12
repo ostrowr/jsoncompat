@@ -337,19 +337,26 @@ moves to first access.
 File layout does not depend on a source-size budget: growing one model never
 merges or redistributes neighboring declarations. Files use readable names such
 as `order.py`; only long or colliding names receive a short digest to remain
-portable across case-insensitive filesystems. Prepared validation data
-lives in separate Python modules, in 64 KiB byte chunks, and conversion graph
+portable across case-insensitive filesystems. Each initializer includes the first
+64 KiB of its prepared validation data; further chunks use separate Python
+modules. Conversion graph
 metadata uses groups of 256 nodes. Even one large connected schema graph can
 therefore span many files. These are ordinary Python files: no extra package-data
 configuration, runtime source compilation, or Git LFS is needed for prepared data.
 Individual model declarations still stay whole.
 
-Original schema chunks are shared across the entire package in `_schemas/`.
+Generation prepares each shared definition graph once, while preserving every
+model's own validation root. It also serializes and compresses shared definition
+blocks once, instead of copying the entire graph into each model. Scope-sensitive
+schemas retain the standalone compiler's reference handling.
+
+Shared schema chunks live in `_schemas/`.
 Their filenames contain a SHA-256 digest of the compressed bytes, so identical
 chunks have one file and one in-memory byte string, even across independent
-model groups. Models retain references to those chunks; joining and decompressing
-them happens only when you explicitly read `Model.__jsoncompat_schema__`.
-Validation continues to use its prepared program.
+model groups. Small, model-specific fragments stay in the initializer. Joining
+and decompressing the fragments happens only when you explicitly read
+`Model.__jsoncompat_schema__`, preserving its exact JSON text. Validation uses
+its prepared program; import and first use do not compile or decompress schemas.
 
 See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
 file sizes, generation/import costs, strict type checking, and current limits.
@@ -376,6 +383,11 @@ or edited chunks rebuild every affected group. Regeneration removes obsolete
 managed files, preserves unrelated files, and refuses to overwrite unmanaged
 files. Deploy the complete directory as one
 build artifact; generation is not a live-reload or concurrent-writer protocol.
+Generation completes and checks all destination paths before publishing files.
+New subdirectories are moved into place together; existing files are replaced
+atomically. The directory update is not a crash-consistent transaction. A later
+generation detects missing or changed managed files through their digests and
+rebuilds the affected groups.
 
 ## API-scoped HTTP requests
 

@@ -4,7 +4,8 @@ use super::codegen::write_atomic;
 use anyhow::{Context, Result, bail, ensure};
 use jsoncompat::{OpenApiDocument, SchemaDocument, SchemaOptions};
 use jsoncompat_codegen::{
-    DataclassMetadata, generate_dataclass_declarations_with_metadata, python_names::module_names,
+    DataclassMetadata, generate_dataclass_package_declarations_with_metadata,
+    python_names::module_names,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -14,6 +15,7 @@ use std::{
     fs,
     num::NonZeroUsize,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 const MANIFEST: &str = ".jsoncompat-manifest.json";
@@ -38,6 +40,28 @@ impl Drop for Staging {
     }
 }
 
+struct Timings(Option<(Instant, Instant)>);
+impl Timings {
+    fn new() -> Self {
+        Self(std::env::var_os("JSONCOMPAT_CODEGEN_TIMING").map(|_| {
+            let now = Instant::now();
+            (now, now)
+        }))
+    }
+
+    fn mark(&mut self, stage: &str) {
+        if let Some((started, previous)) = &mut self.0 {
+            let now = Instant::now();
+            eprintln!(
+                "Codegen timing: {stage}: {:.6}s ({:.6}s total)",
+                now.duration_since(*previous).as_secs_f64(),
+                now.duration_since(*started).as_secs_f64(),
+            );
+            *previous = now;
+        }
+    }
+}
+
 pub(super) fn generate(
     raw: &Value,
     destination: &Path,
@@ -47,10 +71,13 @@ pub(super) fn generate(
     options: &SchemaOptions,
     api: Option<&str>,
 ) -> Result<()> {
+    let mut timings = Timings::new();
     let document = OpenApiDocument::from_json(raw)?;
+    timings.mark("validate OpenAPI document");
     let api = api
         .map(|name| super::codegen_api::ApiPackage::prepare(&document, raw, name))
         .transpose()?;
+    timings.mark("prepare operation contracts");
     let empty_schemas = serde_json::Map::new();
     let empty_metadata = DataclassMetadata::default();
     let metadata = api.as_ref().map(|p| &p.metadata).unwrap_or(&empty_metadata);
@@ -59,6 +86,7 @@ pub(super) fn generate(
         models_per_module,
         api.as_ref().map(|p| &p.schemas).unwrap_or(&empty_schemas),
     )?;
+    timings.mark("group component schemas");
     ensure!(
         !groups.is_empty(),
         "OpenAPI document has no selected component schemas"
@@ -153,6 +181,7 @@ pub(super) fn generate(
             .map(|g| names[g.schemas.keys().next().unwrap()].as_str()),
     );
     let one_group = groups.len() == 1;
+    timings.mark("prepare output and compiler fingerprint");
     for mut group in groups {
         let anchor = &names[group.schemas.keys().next().unwrap()];
         let group_name = if one_group && group.schemas.len() > 1 {
@@ -182,11 +211,14 @@ pub(super) fn generate(
             let pointer = format!("#/$defs/{}", name.replace('~', "~0").replace('/', "~1"));
             schema["x-jsoncompat"] = json!({"kind":"declaration", "stable_id":pointer, "name":names[name], "version":1, "schema_ref":pointer});
         }
-        let selected: Vec<_> = declarations
-            .keys()
-            .map(|pointer| json!({"$ref":pointer}))
+        // This root is only a namespace for the selected declarations. Keep
+        // every definition reachable without analyzing a union of unrelated
+        // models; the namespace itself is never emitted as a model.
+        let selected: serde_json::Map<_, _> = declarations
+            .iter()
+            .map(|(pointer, name)| (name.clone(), json!({"$ref":pointer})))
             .collect();
-        let input = json!({"$schema":group.dialect, "$defs":group.schemas, "anyOf":selected});
+        let input = json!({"$schema":group.dialect, "$defs":group.schemas, "type":"object", "properties":selected});
         let input_digest = digest(&serde_json::to_vec(&json!([
             input,
             declarations,
@@ -208,6 +240,7 @@ pub(super) fn generate(
                         })
                     })
             });
+        timings.mark(&format!("{module_name}: prepare group and check cache"));
         let nested_exports = if cached {
             let files = cached_files.unwrap();
             manifest
@@ -226,16 +259,25 @@ pub(super) fn generate(
                 .collect::<Vec<_>>()
         } else {
             let schema = SchemaDocument::from_json_with_options(&input, options)?;
-            let module =
-                generate_dataclass_declarations_with_metadata(&schema, &declarations, metadata)
-                    .with_context(|| format!("generating {module_name}"))?;
-            let files = module.package_files(&module_name);
+            timings.mark(&format!("{module_name}: validate schema document"));
+            let module = generate_dataclass_package_declarations_with_metadata(
+                &schema,
+                &declarations,
+                metadata,
+                &module_name,
+            )
+            .with_context(|| format!("generating {module_name}"))?;
+            timings.mark(&format!(
+                "{module_name}: generate and render prepared models"
+            ));
+            let files = module.files;
             manifest
                 .module_files
                 .insert(module_name.clone(), files.keys().cloned().collect());
             for (file, source) in files {
                 stage(&staging, &mut manifest, &file, &source)?;
             }
+            timings.mark(&format!("{module_name}: stage package files"));
             rebuilt += 1;
             module.models
         };
@@ -316,6 +358,7 @@ pub(super) fn generate(
         ),
     )?;
     let manifest_source = serde_json::to_string_pretty(&manifest)?;
+    timings.mark("render and stage package exports");
     // Finish every build before modifying the existing package. Unmanaged
     // files are never replaced. Deploy the resulting directory as one unit.
     for file in manifest.files.keys() {
@@ -326,15 +369,9 @@ pub(super) fn generate(
             destination.join(file).display()
         );
     }
-    for file in manifest.files.keys() {
-        let source = staging.0.join(file);
-        if source.exists() {
-            let text = fs::read_to_string(&source)?;
-            if !fs::read(destination.join(file)).is_ok_and(|bytes| bytes == text.as_bytes()) {
-                write_atomic(&destination.join(file), &text)?;
-            }
-        }
-    }
+    timings.mark("check publication paths");
+    publish_staged_tree(&staging.0, destination, Path::new(""), &manifest)?;
+    timings.mark("publish package files");
     for file in previous
         .files
         .keys()
@@ -371,6 +408,7 @@ pub(super) fn generate(
         }
     }
     write_atomic(&destination.join(MANIFEST), &manifest_source)?;
+    timings.mark("remove obsolete files and publish manifest");
     eprintln!(
         "Generated {} models in {} modules ({} rebuilt) at {}",
         model_count,
@@ -392,6 +430,40 @@ fn add_export(exports: &mut BTreeMap<String, String>, name: &str, module: &str) 
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
+
+fn publish_staged_tree(
+    staging: &Path,
+    destination: &Path,
+    relative: &Path,
+    manifest: &Manifest,
+) -> Result<()> {
+    for entry in fs::read_dir(staging.join(relative))? {
+        let entry = entry?;
+        let relative = relative.join(entry.file_name());
+        let source = entry.path();
+        let target = destination.join(&relative);
+        if entry.file_type()?.is_dir() && target.try_exists()? {
+            // Existing directories may contain cached models or caller-owned
+            // notes. Merge into them; preflight has checked every managed path.
+            publish_staged_tree(staging, destination, &relative, manifest)?;
+            continue;
+        }
+        if entry.file_type()?.is_file() {
+            let name = relative.to_string_lossy().replace('\\', "/");
+            let expected = &manifest.files[&name];
+            if fs::read(&target).is_ok_and(|bytes| digest(&bytes) == *expected) {
+                continue;
+            }
+        }
+        // Staging lives on the destination filesystem. Cold subtrees move as
+        // one unit; changed files in existing trees are atomically replaced.
+        // The final manifest is flushed, and a later build checks its digests
+        // to repair any missing or damaged files after an interrupted build.
+        fs::rename(&source, &target).with_context(|| format!("writing {}", target.display()))?;
+    }
+    Ok(())
+}
+
 fn stage(directory: &Staging, manifest: &mut Manifest, name: &str, source: &str) -> Result<()> {
     if !safe_filename(name) {
         bail!("invalid generated filename {name}");

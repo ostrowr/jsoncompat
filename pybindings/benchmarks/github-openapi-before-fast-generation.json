@@ -1,0 +1,324 @@
+{
+  "source": {
+    "url": "https://raw.githubusercontent.com/github/rest-api-description/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json",
+    "sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+    "operations": 1232,
+    "components": 973
+  },
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+    "revision": "6e5844603e5aafb60e60ac7107c4e01aeef3e928",
+    "working_tree": " M codegen/src/dataclasses/package.rs\n M pybindings/README.md\n M pybindings/bench_github_openapi.py\n M pybindings/jsoncompat/codegen/dataclasses.py\n M readme.md\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n M tests/openapi_client.rs\n?? pybindings/benchmarks/github-openapi-before-dedup.json\n",
+    "generator_sha256": "373ee415298dcacad5b69df14096d778e3bf85f5f0cf95161ae842702e839d7a",
+    "native_profile": "release",
+    "repeats": 3
+  },
+  "cases": {
+    "models": {
+      "generation": {
+        "seconds": 436.9456987499725,
+        "exit_code": 0,
+        "max_rss_bytes": 5869355008
+      },
+      "files": {
+        "files": 11003,
+        "bytes": 74584629,
+        "python_files": 11001,
+        "python_bytes": 71847485,
+        "largest_files": [
+          [
+            2737144,
+            ".jsoncompat-manifest.json"
+          ],
+          [
+            797076,
+            "_models/actions_policy/__init__.py"
+          ],
+          [
+            616751,
+            "_models/actions_policy/_binding.py"
+          ],
+          [
+            190297,
+            "_schemas/_schema_58c559df544d0befc3a06c30609f4c61b04fc7cec638fc1d7732050d43b7f878.py"
+          ],
+          [
+            189891,
+            "_schemas/_schema_e54d4e4aac1f2eb6f97ebc5ce0f72bff07feed98574d880bc5fee39dff7c31ad.py"
+          ],
+          [
+            189750,
+            "_schemas/_schema_5714aa80bab8a22fe07a987356f7a842a4bdbc648b511a5b81691d9ecc4f247e.py"
+          ],
+          [
+            189505,
+            "_schemas/_schema_dd77287da282e54fe39330f54fd9a46cc3c128067f2cb97055820437e80fc14d.py"
+          ],
+          [
+            189264,
+            "_schemas/_schema_8eeee5d9d4ca3bcca04d256143904a46605923830df74096c08381e76317054b.py"
+          ],
+          [
+            118201,
+            "__init__.py"
+          ],
+          [
+            118200,
+            "models.py"
+          ]
+        ],
+        "largest_python_file": [
+          797076,
+          "_models/actions_policy/__init__.py"
+        ],
+        "p95_python_bytes": 71346,
+        "binding_groups": 4,
+        "declarations": 3133,
+        "schema_storage_bytes": 47962355,
+        "schema_chunk_files": 1551
+      },
+      "imports": {
+        "source": {
+          "samples": [
+            {
+              "package_seconds": 0.008467999985441566,
+              "load_seconds": 2.008346124959644,
+              "seconds": 2.1450320000294596,
+              "exit_code": 0,
+              "max_rss_bytes": 196149248
+            },
+            {
+              "package_seconds": 0.008294166007544845,
+              "load_seconds": 1.949109417037107,
+              "seconds": 2.086827000021003,
+              "exit_code": 0,
+              "max_rss_bytes": 195952640
+            },
+            {
+              "package_seconds": 0.008175541006494313,
+              "load_seconds": 1.9794885839801282,
+              "seconds": 2.095252708008047,
+              "exit_code": 0,
+              "max_rss_bytes": 201129984
+            }
+          ],
+          "median_package_seconds": 0.008294166007544845,
+          "median_load_seconds": 1.9794885839801282,
+          "max_rss_bytes": 201129984
+        },
+        "bytecode": {
+          "samples": [
+            {
+              "package_seconds": 0.002383457962423563,
+              "load_seconds": 0.7096351670334116,
+              "seconds": 0.8109121670131572,
+              "exit_code": 0,
+              "max_rss_bytes": 172900352
+            },
+            {
+              "package_seconds": 0.002416375034954399,
+              "load_seconds": 0.7432145409984514,
+              "seconds": 0.8804080000263639,
+              "exit_code": 0,
+              "max_rss_bytes": 172900352
+            },
+            {
+              "package_seconds": 0.0024640829651616514,
+              "load_seconds": 0.7065357079845853,
+              "seconds": 0.820200250018388,
+              "exit_code": 0,
+              "max_rss_bytes": 172703744
+            }
+          ],
+          "median_package_seconds": 0.002416375034954399,
+          "median_load_seconds": 0.7096351670334116,
+          "max_rss_bytes": 172900352
+        }
+      },
+      "typing": {
+        "seconds": 15.848142041999381,
+        "exit_code": 0,
+        "max_rss_bytes": 2583298048
+      },
+      "typing_summary": {
+        "filesAnalyzed": 11002,
+        "errorCount": 0,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 14.868
+      }
+    },
+    "issues": {
+      "generation": {
+        "seconds": 23.232804415980354,
+        "exit_code": 0,
+        "max_rss_bytes": 528695296
+      },
+      "files": {
+        "files": 2729,
+        "bytes": 11331955,
+        "python_files": 2727,
+        "python_bytes": 10605720,
+        "largest_files": [
+          [
+            726235,
+            ".jsoncompat-manifest.json"
+          ],
+          [
+            124521,
+            "__init__.py"
+          ],
+          [
+            97280,
+            "models.py"
+          ],
+          [
+            92427,
+            "__init__.pyi"
+          ],
+          [
+            73737,
+            "models.pyi"
+          ],
+          [
+            65574,
+            "_models/issues_add_assignees201/_program_issues_list_events_for_timeline200_0000.py"
+          ],
+          [
+            64719,
+            "_models/issues_add_assignees201/_program_timeline_issue_events_0000.py"
+          ],
+          [
+            61899,
+            "_exports.py"
+          ],
+          [
+            56717,
+            "_models/issues_add_blocked_by_dependency301/__init__.py"
+          ],
+          [
+            48342,
+            "_models/issues_add_blocked_by_dependency301/_binding.py"
+          ]
+        ],
+        "largest_python_file": [
+          124521,
+          "__init__.py"
+        ],
+        "p95_python_bytes": 18792,
+        "binding_groups": 5,
+        "declarations": 664,
+        "schema_storage_bytes": 6982815,
+        "schema_chunk_files": 641
+      },
+      "imports": {
+        "source": {
+          "samples": [
+            {
+              "package_seconds": 0.009184999973513186,
+              "load_seconds": 0.5972502080257982,
+              "seconds": 0.6601887080469169,
+              "exit_code": 0,
+              "max_rss_bytes": 53264384
+            },
+            {
+              "package_seconds": 0.008242292038630694,
+              "load_seconds": 0.37907699996139854,
+              "seconds": 0.4616207079961896,
+              "exit_code": 0,
+              "max_rss_bytes": 53215232
+            },
+            {
+              "package_seconds": 0.008145542000420392,
+              "load_seconds": 0.38202458299929276,
+              "seconds": 0.4522322089760564,
+              "exit_code": 0,
+              "max_rss_bytes": 53248000
+            }
+          ],
+          "median_package_seconds": 0.008242292038630694,
+          "median_load_seconds": 0.38202458299929276,
+          "max_rss_bytes": 53264384
+        },
+        "bytecode": {
+          "samples": [
+            {
+              "package_seconds": 0.0023285840288735926,
+              "load_seconds": 0.2048739589517936,
+              "seconds": 0.2848530000192113,
+              "exit_code": 0,
+              "max_rss_bytes": 46727168
+            },
+            {
+              "package_seconds": 0.0023320000036619604,
+              "load_seconds": 0.20258525002282113,
+              "seconds": 0.29548216599505395,
+              "exit_code": 0,
+              "max_rss_bytes": 46891008
+            },
+            {
+              "package_seconds": 0.002395667019300163,
+              "load_seconds": 0.2039232500246726,
+              "seconds": 0.2888767920085229,
+              "exit_code": 0,
+              "max_rss_bytes": 47022080
+            }
+          ],
+          "median_package_seconds": 0.0023320000036619604,
+          "median_load_seconds": 0.2039232500246726,
+          "max_rss_bytes": 47022080
+        }
+      },
+      "typing": {
+        "seconds": 3.440212666988373,
+        "exit_code": 0,
+        "max_rss_bytes": 840335360
+      },
+      "typing_summary": {
+        "filesAnalyzed": 2728,
+        "errorCount": 0,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 2.761
+      },
+      "negative_typing": {
+        "expected_errors_detected": true
+      }
+    },
+    "original": {
+      "seconds": 0.07539258303586394,
+      "exit_code": 1,
+      "max_rss_bytes": 90030080,
+      "error": "Error: OpenAPI value at '#/paths/~1orgs~1{org}~1attestations~1{subject_digest}' must be a path template shape that is not already declared with different parameter names"
+    },
+    "client": {
+      "seconds": 900.2764678329695,
+      "exit_code": "timeout",
+      "max_rss_bytes": 7476281344
+    }
+  },
+  "schema_equivalence": {
+    "compared_models": 3133,
+    "compressed_schemas_byte_identical": true,
+    "chunk_references": 6168,
+    "unique_in_memory_chunks": 1551
+  },
+  "generation_profile": {
+    "scope": "Two short samples during full-client generation, not a whole-run stage breakdown",
+    "samples": [
+      {
+        "requested_seconds": 5,
+        "interval_ms": 1,
+        "main_thread_samples": 4031,
+        "per_class_compile_samples": 4014
+      },
+      {
+        "requested_seconds": 5,
+        "interval_ms": 1,
+        "main_thread_samples": 4076,
+        "per_class_compile_samples": 4049
+      }
+    ]
+  }
+}

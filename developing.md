@@ -10,7 +10,12 @@ Run [bootstrap.sh](bootstrap.sh) once to install the project dependencies, then 
 just check
 ```
 
-That is the full local validation gate. It runs the Rust checks and tests, the web checks, and the production website build.
+That is the full local validation gate. It runs the Rust checks and tests,
+Python type checking with pinned `ty`, the web checks, and the production
+website build. [ty.toml](ty.toml) checks the Python runtime, generated fixtures,
+and examples with all rules enabled. Generated-client integration tests also
+check inferred types and verify that invalid requests, response types, and
+cross-API calls are rejected.
 
 Use the pnpm version declared in `package.json` when updating JavaScript
 dependencies. Keep routine dependency refreshes within compatible version

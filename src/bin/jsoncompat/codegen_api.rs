@@ -78,13 +78,14 @@ impl ApiPackage {
                 .cloned()
                 .unwrap_or_else(|| json!({})),
         };
-        let mut definitions = Map::new();
-        for group in document
-            .component_schema_groups(&BTreeSet::new(), std::num::NonZeroUsize::new(128).unwrap())?
-        {
-            definitions.extend(group.schemas);
-        }
-        let definitions = json!({"$defs":definitions});
+        let definitions = lowerer
+            .component_schemas()
+            .map(|(name, schema)| (name.to_owned(), schema.clone()))
+            .collect();
+        let definitions = Value::Object(Map::from_iter([(
+            "$defs".into(),
+            Value::Object(definitions),
+        )]));
         let mut ids = BTreeSet::new();
         for key in lowerer.operation_keys()? {
             let contract = lowerer
@@ -316,7 +317,7 @@ impl ApiPackage {
     }
     pub fn identity_source(&self) -> String {
         format!(
-            "# Generated nominal API identity; importing it does not load models.\nfrom typing import final\nfrom jsoncompat import http as _http\n\n@final\nclass {}API(_http.API):\n    __slots__ = ()\n\n    @classmethod\n    def operations(cls) -> tuple[_http.Operation, ...]:\n        from .api import OPERATIONS\n        return OPERATIONS\n",
+            "# Generated nominal API identity; importing it does not load models.\nfrom typing import final, override\nfrom jsoncompat import http as _http\n\n@final\nclass {}API(_http.API):\n    __slots__ = ()\n\n    @classmethod\n    @override\n    def operations(cls) -> tuple[_http.Operation, ...]:\n        from .api import OPERATIONS\n        return OPERATIONS\n",
             self.name
         )
     }
@@ -378,7 +379,7 @@ impl ApiPackage {
         }
         writeln!(
             source,
-            "\nSECURITY_SCHEMES: _typing.Final[dict[str, _JsonValue]] = _json.loads({})",
+            "\nSECURITY_SCHEMES: _typing.Final[dict[str, _JsonValue]] = _typing.cast(dict[str, _JsonValue], _json.loads({}))",
             py(&self.security_schemes.to_string())
         )?;
         writeln!(

@@ -21,7 +21,7 @@ pub fn python_command() -> Command {
 }
 
 #[allow(dead_code)]
-pub fn pyright_command() -> Command {
+pub fn ty_command() -> Command {
     let mut command = Command::new("uv");
     configure_uv_environment(&mut command);
     configure_utf8_python_io(&mut command);
@@ -32,7 +32,19 @@ pub fn pyright_command() -> Command {
         .arg(repo_pybindings_path())
         .arg("--all-extras")
         .arg("--locked");
-    command.arg("--with").arg("pyright==1.1.408").arg("pyright");
+    command
+        .arg("--with")
+        .arg("ty==0.0.86")
+        .arg("ty")
+        .arg("check")
+        .arg("--python-version")
+        .arg("3.12")
+        .arg("--extra-search-path")
+        .arg(repo_pybindings_path())
+        .arg("--error")
+        .arg("all")
+        .arg("--color")
+        .arg("never");
     add_repo_python_path(&mut command);
     command
 }

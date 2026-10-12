@@ -16,7 +16,8 @@ class GeneratedSchema(dc.DataclassAdditionalModel["str"]):
     items: collections.abc.Sequence[GeneratedSchemaItem] = dc.field("items")
     __jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("couponCode", "currency", "customer", "event", "items", "__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("couponCode", "currency", "customer", "event", "items", "__jsoncompat_extra__",)
 
 
 @typing.final
@@ -26,7 +27,8 @@ class GeneratedSchemaCustomer(dc.DataclassModel):
     segment: (typing.Literal["enterprise"] | typing.Literal["self_serve"] | typing.Literal["startup"]) = dc.field("segment")
     trialDaysRemaining: dc.Omittable[int] = dc.field("trialDaysRemaining", default=dc.MISSING)
 
-    __slots__ = ("email", "id", "segment", "trialDaysRemaining",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("email", "id", "segment", "trialDaysRemaining",)
 
 
 @typing.final
@@ -35,7 +37,8 @@ class GeneratedSchemaItem(dc.DataclassModel):
     sku: (typing.Literal["audit-log"] | typing.Literal["starter-seat"] | typing.Literal["team-seat"]) = dc.field("sku")
     unitPrice: int = dc.field("unitPrice")
 
-    __slots__ = ("quantity", "sku", "unitPrice",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("quantity", "sku", "unitPrice",)
 
 JSONCOMPAT_MODEL = GeneratedSchema
 

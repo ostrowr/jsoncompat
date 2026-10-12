@@ -11,14 +11,16 @@ from jsoncompat.codegen import dataclasses as dc
 class GeneratedSchema(dc.DataclassRootModel):
     root: GeneratedSchemaNode = dc.root_field()
 
-    __slots__ = ("root",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("root",)
 
 
 @typing.final
 class GeneratedSchemaFileMetadata(dc.DataclassAdditionalModel["str"]):
     __jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("__jsoncompat_extra__",)
 
 
 @typing.final
@@ -30,21 +32,24 @@ class GeneratedSchemaFile(dc.DataclassModel):
     name: str = dc.field("name")
     size: int = dc.field("size")
 
-    __slots__ = ("checksum", "kind", "labels", "metadata", "name", "size",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("checksum", "kind", "labels", "metadata", "name", "size",)
 
 
 @typing.final
 class GeneratedSchemaNode(dc.DataclassRootModel):
     root: (GeneratedSchemaDirectory | GeneratedSchemaFile) = dc.root_field()
 
-    __slots__ = ("root",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("root",)
 
 
 @typing.final
 class GeneratedSchemaDirectoryMetadata(dc.DataclassAdditionalModel["str"]):
     __jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.extra_field(default_factory=dict)
 
-    __slots__ = ("__jsoncompat_extra__",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("__jsoncompat_extra__",)
 
 
 @typing.final
@@ -55,7 +60,8 @@ class GeneratedSchemaDirectory(dc.DataclassModel):
     name: str = dc.field("name")
     owner: (str | None) = dc.field("owner")
 
-    __slots__ = ("children", "kind", "metadata", "name", "owner",)
+    if not typing.TYPE_CHECKING:
+        __slots__ = ("children", "kind", "metadata", "name", "owner",)
 
 JSONCOMPAT_MODEL = GeneratedSchema
 

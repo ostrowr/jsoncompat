@@ -50,14 +50,10 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
         }
     });
     let module = generate_dataclass_module_from_document(&SchemaDocument::from_json(&schema)?)?;
-    let source = format!(
-        "# pyright: strict\n{}",
-        module.public_file("_generated_impl")
-    );
+    let source = module.public_file("_generated_impl");
     let work_dir = write_typecheck_files(
         &source,
         r#"
-# pyright: strict
 
 from typing import Literal, Mapping, Sequence, assert_type
 
@@ -116,7 +112,6 @@ assert_type(
 )
 "#,
         r#"
-# pyright: strict
 
 from generated_models import InventoryItem, InventoryItemMetadata
 from jsoncompat.codegen.dataclasses import MissingType
@@ -163,40 +158,50 @@ InventoryItem(
     )?;
 
     fs::write(work_dir.join("_generated_impl.py"), module.private_file())?;
-    let generated_output = run_pyright(&work_dir, "generated_models.py")?;
+    let generated_output = run_ty(&work_dir, "generated_models.py")?;
     assert!(
         generated_output.status.success(),
         "{}",
         String::from_utf8_lossy(&generated_output.stdout)
     );
-    let valid_output = run_pyright(&work_dir, "valid_usage.py")?;
+    let valid_output = run_ty(&work_dir, "valid_usage.py")?;
     assert!(
         valid_output.status.success(),
-        "pyright rejected valid generated dataclass usage:\n{}\n{}",
+        "ty rejected valid generated dataclass usage:\n{}\n{}",
         String::from_utf8_lossy(&valid_output.stdout),
         String::from_utf8_lossy(&valid_output.stderr),
     );
 
-    let invalid_output = run_pyright(&work_dir, "invalid_usage.py")?;
+    let invalid_output = run_ty(&work_dir, "invalid_usage.py")?;
     assert!(
         !invalid_output.status.success(),
-        "pyright accepted invalid generated dataclass usage"
+        "ty accepted invalid generated dataclass usage"
     );
     let invalid_stdout = String::from_utf8_lossy(&invalid_output.stdout);
     assert!(
         invalid_stdout.contains("sku") && invalid_stdout.contains("str"),
-        "pyright failure did not report the sku type mismatch:\n{invalid_stdout}",
+        "ty failure did not report the sku type mismatch:\n{invalid_stdout}",
     );
     assert!(
         invalid_stdout.contains("warehouse") && invalid_stdout.contains("str"),
-        "pyright failure did not report the nested warehouse type mismatch:\n{invalid_stdout}",
+        "ty failure did not report the nested warehouse type mismatch:\n{invalid_stdout}",
     );
     assert!(
         invalid_stdout.contains("MissingType")
-            && invalid_stdout.contains("marked final")
-            && invalid_stdout.contains("cannot be subclassed"),
-        "pyright failure did not reject subclassing the final missing singleton type:\n{invalid_stdout}",
+            && invalid_stdout.contains("subclass-of-final-class"),
+        "ty failure did not reject subclassing the final missing singleton type:\n{invalid_stdout}",
     );
+    for rejected in [
+        "coordinates",
+        "skip_validation",
+        "get_additional_property",
+        "no-matching-overload",
+    ] {
+        assert!(
+            invalid_stdout.contains(rejected),
+            "ty did not reject {rejected}:\n{invalid_stdout}"
+        );
+    }
 
     Ok(())
 }
@@ -216,7 +221,6 @@ fn omitted_fields_narrow_in_both_branches_without_losing_null() -> Result<(), Bo
     let work_dir = write_typecheck_files(
         &source,
         r#"
-# pyright: strict
 from collections.abc import Sequence
 from typing import Literal, assert_type
 
@@ -285,7 +289,6 @@ def match_missing(preferences: Preferences) -> str:
             return note.upper()
 "#,
         r#"
-# pyright: strict
 from generated_models import Preferences
 from jsoncompat import MISSING
 
@@ -297,21 +300,21 @@ def invalid_usage(preferences: Preferences) -> None:
         print(preferences.note.upper())  # Still nullable.
 "#,
     )?;
-    let valid_output = run_pyright(&work_dir, "valid_usage.py")?;
+    let valid_output = run_ty(&work_dir, "valid_usage.py")?;
     assert!(
         valid_output.status.success(),
-        "pyright rejected omitted-field narrowing:\n{}\n{}",
+        "ty rejected omitted-field narrowing:\n{}\n{}",
         String::from_utf8_lossy(&valid_output.stdout),
         String::from_utf8_lossy(&valid_output.stderr),
     );
-    let invalid_output = run_pyright(&work_dir, "invalid_usage.py")?;
+    let invalid_output = run_ty(&work_dir, "invalid_usage.py")?;
     assert!(!invalid_output.status.success());
     let diagnostics = String::from_utf8_lossy(&invalid_output.stdout);
     assert!(
         diagnostics.contains("MissingType")
             && diagnostics.contains("upper")
             && diagnostics.contains("None"),
-        "pyright failed to preserve missing and null branches:\n{diagnostics}",
+        "ty failed to preserve missing and null branches:\n{diagnostics}",
     );
     Ok(())
 }
@@ -334,7 +337,6 @@ fn patterned_additional_properties_keep_precise_extra_types() -> Result<(), Box<
     let work_dir = write_typecheck_files(
         &source,
         r#"
-# pyright: strict
 
 from typing import Mapping, assert_type
 
@@ -353,7 +355,6 @@ constructed = LabeledRecord(name="Ada", __jsoncompat_extra__={"x-rank": 7})
 assert_type(constructed, LabeledRecord)
 "#,
         r#"
-# pyright: strict
 
 from generated_models import LabeledRecord
 
@@ -362,24 +363,24 @@ LabeledRecord(name="Ada", __jsoncompat_extra__={"x-rank": "high"})
 "#,
     )?;
 
-    let valid_output = run_pyright(&work_dir, "valid_usage.py")?;
+    let valid_output = run_ty(&work_dir, "valid_usage.py")?;
     assert!(
         valid_output.status.success(),
-        "pyright rejected valid patterned extras usage:\n{}\n{}",
+        "ty rejected valid patterned extras usage:\n{}\n{}",
         String::from_utf8_lossy(&valid_output.stdout),
         String::from_utf8_lossy(&valid_output.stderr),
     );
 
-    let invalid_output = run_pyright(&work_dir, "invalid_usage.py")?;
+    let invalid_output = run_ty(&work_dir, "invalid_usage.py")?;
     assert!(
         !invalid_output.status.success(),
-        "pyright accepted invalid patterned extras usage"
+        "ty accepted invalid patterned extras usage"
     );
     let invalid_stdout = String::from_utf8_lossy(&invalid_output.stdout);
     assert!(
         invalid_stdout.contains("__jsoncompat_extra__")
             && invalid_stdout.contains("Mapping[str, int]"),
-        "pyright failure did not report the patterned extra value mismatch:\n{invalid_stdout}",
+        "ty failure did not report the patterned extra value mismatch:\n{invalid_stdout}",
     );
 
     Ok(())
@@ -402,12 +403,8 @@ fn write_typecheck_files(
     Ok(dir)
 }
 
-fn run_pyright(work_dir: &Path, file_name: &str) -> Result<std::process::Output, Box<dyn Error>> {
-    let mut command = python_env::pyright_command();
-    command
-        .arg("--pythonversion")
-        .arg("3.12")
-        .arg(file_name)
-        .current_dir(work_dir);
+fn run_ty(work_dir: &Path, file_name: &str) -> Result<std::process::Output, Box<dyn Error>> {
+    let mut command = python_env::ty_command();
+    command.arg(file_name).current_dir(work_dir);
     Ok(command.output()?)
 }

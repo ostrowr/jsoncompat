@@ -45,7 +45,7 @@ fn split_codegen_uses_stable_names_and_imports_before_models() {
     assert!(generated.stdout.is_empty());
     let source = fs::read_to_string(&output).unwrap();
     assert!(source.find("import bind_models").unwrap() < source.find("class Node(").unwrap());
-    assert!(source.find("class Node(").unwrap() < source.find("\n_jsoncompat_bind(").unwrap());
+    assert!(source.find("class Node(").unwrap() < source.find("_jsoncompat_bind(").unwrap());
     assert!(source.contains("from ._models_generated import bind_models"));
     let companion = package.join("_models_generated.py");
     let implementation = fs::read_to_string(&companion).unwrap();
