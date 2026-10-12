@@ -1,8 +1,21 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import init, { analyze_compat, validator_for, generator_for } from '../pkg-web/jsoncompat_wasm.js';
+const precise = process.argv.includes('--arbitrary-precision');
+const packageDirectory = precise ? '../pkg-precise/' : '../pkg-web/';
+const { default: init, analyze_compat, validator_for, generator_for } = await import(
+  new URL(`${packageDirectory}jsoncompat_wasm.js`, import.meta.url)
+);
+await init({ module_or_path: await readFile(new URL(`${packageDirectory}jsoncompat_wasm_bg.wasm`, import.meta.url)) });
 
-await init({ module_or_path: await readFile(new URL('../pkg-web/jsoncompat_wasm_bg.wasm', import.meta.url)) });
+assert.equal(validator_for('{"const":0.10000000000000001}').is_valid('0.1'), !precise);
+assert.equal(validator_for('{"const":0}').is_valid('1e-400'), !precise);
+assert.equal(validator_for('{"const":18446744073709551615}').is_valid('18446744073709551615'), true);
+if (precise) {
+  assert.equal(validator_for('true').is_valid('1e400'), true);
+} else {
+  assert.throws(() => validator_for('true').is_valid('1e400'));
+}
+console.log(`WASM numeric precision verified: ${precise ? 'opt-in' : 'default'}`);
 assert.equal(analyze_compat('{"type":"integer"}', '{"type":"integer"}', 'both').status, 'compatible');
 const broken = analyze_compat('{"type":"string"}', '{"type":"integer"}', 'serializer');
 assert.equal(broken.status, 'incompatible');

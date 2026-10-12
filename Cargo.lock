@@ -1004,7 +1004,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.45.0"
-source = "git+https://github.com/ostrowr/jsonschema?rev=42dabfa9706d113e7c27bae924d8c27b674a8acf#42dabfa9706d113e7c27bae924d8c27b674a8acf"
+source = "git+https://github.com/ostrowr/jsonschema?rev=3705ac7889d8708f9fdd15ec23b8893d7a995c9d#3705ac7889d8708f9fdd15ec23b8893d7a995c9d"
 dependencies = [
  "ahash",
  "bytecount",
@@ -1562,7 +1562,7 @@ dependencies = [
 [[package]]
 name = "referencing"
 version = "0.45.0"
-source = "git+https://github.com/ostrowr/jsonschema?rev=42dabfa9706d113e7c27bae924d8c27b674a8acf#42dabfa9706d113e7c27bae924d8c27b674a8acf"
+source = "git+https://github.com/ostrowr/jsonschema?rev=3705ac7889d8708f9fdd15ec23b8893d7a995c9d#3705ac7889d8708f9fdd15ec23b8893d7a995c9d"
 dependencies = [
  "ahash",
  "fluent-uri",

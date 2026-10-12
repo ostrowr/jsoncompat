@@ -15,6 +15,10 @@ json_schema_fuzz = "0.5.0"
 
 ## Usage
 
+The `arbitrary-precision` Cargo feature is opt-in and forwards to
+`json_schema_ast`. By default, schemas and generated values follow ordinary
+`serde_json` numeric limits. See [numeric precision](../readme.md#numeric-precision).
+
 ```rust
 use json_schema_ast::SchemaDocument;
 use json_schema_fuzz::{GenerationConfig, ValueGenerator};

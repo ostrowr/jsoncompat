@@ -23,6 +23,27 @@ fetch the build backend, Rust crates, and the pinned Git validator dependency.
 The archive includes the local Rust workspace dependencies and Python sources;
 you do not need a repository checkout.
 
+### Numeric precision
+
+Prebuilt wheels and default source builds do not enable arbitrary precision.
+Schema numbers and values materialized through `serde_json` use signed/unsigned
+64-bit integers or finite `f64` values. Decimal digits may round, tiny values may
+underflow, and values outside that range may be rejected. Native Python integers
+and generated model paths can retain larger values, but that does not make every
+schema, validation, or conversion path exact. See
+[numeric precision](../readme.md#numeric-precision).
+
+To opt in, build a wheel from this repository with the Cargo feature enabled,
+then install that wheel:
+
+```bash
+maturin build --release --manifest-path pybindings/Cargo.toml --features arbitrary-precision
+```
+
+This is a build option, not a Python extra or a runtime setting. It preserves
+exact JSON schema number text; ordinary Python `float` precision limits still
+apply to values already converted to Python floats.
+
 ## Quick start
 
 ```python

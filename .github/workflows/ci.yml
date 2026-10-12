@@ -70,6 +70,15 @@ jobs:
       - name: rustfmt (check only)
         run: cargo fmt --all -- --check
 
+      - name: Test default precision and isolated Cargo consumers
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        run: |
+          cargo build -p jsoncompat_py --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --exclude jsoncompat_py --locked
+          cargo fetch --locked
+          python tests/check_cargo_features.py
+
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
 
@@ -78,14 +87,14 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            cargo rustc -p jsoncompat_py --lib --locked -- -C link-arg=-undefined -C link-arg=dynamic_lookup
+            cargo rustc -p jsoncompat_py --lib --features arbitrary-precision --locked -- -C link-arg=-undefined -C link-arg=dynamic_lookup
           else
-            cargo build -p jsoncompat_py --locked
+            cargo build -p jsoncompat_py --features arbitrary-precision --locked
           fi
 
       - name: Build Python extension for Rust integration tests (Windows)
         if: runner.os == 'Windows'
-        run: cargo build -p jsoncompat_py --locked
+        run: cargo build -p jsoncompat_py --features arbitrary-precision --locked
 
       - name: cargo test
         # The Python binding is a cdylib with no Rust tests. Excluding it keeps
@@ -114,8 +123,8 @@ jobs:
           PYTHON_GIL: '0'
         run: |
           uv sync --project pybindings --all-extras --locked --no-install-project
-          cargo build -p jsoncompat_py --locked
-          UV_NO_SYNC=1 cargo test --locked --test python_dataclasses_prepared --test python_dataclasses_differential --test python_dataclasses_runtime --test codegen_cli
+          cargo build -p jsoncompat_py --features arbitrary-precision --locked
+          UV_NO_SYNC=1 cargo test --features arbitrary-precision --locked --test python_dataclasses_prepared --test python_dataclasses_differential --test python_dataclasses_runtime --test codegen_cli
 
   rust-packages:
     name: Package and verify Rust release crates
@@ -338,6 +347,11 @@ jobs:
 
       - name: Exercise structured WebAssembly verdicts
         run: node wasm/tests/verdicts.mjs
+
+      - name: Exercise opt-in WebAssembly precision
+        run: |
+          wasm-pack build wasm --release --target web --out-dir pkg-precise --features arbitrary-precision
+          node wasm/tests/verdicts.mjs --arbitrary-precision
 
       - name: Prepare distribution directory
         run: |

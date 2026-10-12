@@ -12,6 +12,14 @@ just check
 
 That is the full local validation gate. It runs the Rust checks and tests, the web checks, and the production website build.
 
+The Rust and Python suites run with both default numeric precision and
+`--all-features`. Build the Python extension with the same precision feature as
+the Rust integration tests. Exact numeric-lexeme fixtures run in the opt-in
+configuration; the default run checks the documented rounding and range limits.
+`tests/check_cargo_features.py` also checks every crate from isolated consumers,
+so workspace feature unification cannot hide an accidentally enabled default.
+CI exercises the WebAssembly exports with both precision settings too.
+
 Use the pnpm version declared in `package.json` when updating JavaScript
 dependencies. Keep routine dependency refreshes within compatible version
 ranges, preserve the exact Python benchmark pins, and commit the Cargo, pnpm,

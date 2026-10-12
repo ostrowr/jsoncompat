@@ -4,11 +4,21 @@ help:
 check:
   @echo "[just] checking Rust code …"
   cargo fmt --all
-  @echo "[just] building Python extension …"
+  @echo "[just] checking default numeric precision …"
   if [ "$(uname)" = "Darwin" ]; then \
     cargo rustc -p jsoncompat_py --lib -- -C link-arg=-undefined -C link-arg=dynamic_lookup; \
   else \
     cargo build -p jsoncompat_py; \
+  fi
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+  cargo test --workspace --exclude jsoncompat_py --locked
+  cargo fetch --locked
+  python3 tests/check_cargo_features.py
+  @echo "[just] checking opt-in numeric precision …"
+  if [ "$(uname)" = "Darwin" ]; then \
+    cargo rustc -p jsoncompat_py --lib --features arbitrary-precision -- -C link-arg=-undefined -C link-arg=dynamic_lookup; \
+  else \
+    cargo build -p jsoncompat_py --features arbitrary-precision; \
   fi
   cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
   cargo test --workspace --exclude jsoncompat_py --all-features --locked

@@ -150,13 +150,18 @@ impl<'a> InstanceView<'a> for View<'a> {
     #[inline]
     fn equals(self, value: &Value) -> bool {
         if value.is_number() || value.is_array() || value.is_object() {
-            json_schema_ast::json_values_equal(&self.0.to_owned(), value)
+            self.0
+                .try_to_owned()
+                .is_ok_and(|owned| json_schema_ast::json_values_equal(&owned, value))
         } else {
             self.0.equals(value)
         }
     }
     fn to_owned(self) -> Value {
         self.0.to_owned()
+    }
+    fn try_to_owned(self) -> Result<Value, serde_json::Error> {
+        self.0.try_to_owned()
     }
 }
 impl<'a> NumberView<'a> for NumberAdapter<'a> {

@@ -188,6 +188,7 @@ mod tests {
         Decimal::try_from(text.to_owned()).unwrap()
     }
     #[test]
+    #[cfg(feature = "arbitrary-precision")]
     fn extreme_exponents_remain_exact_and_compact() {
         for exponent in ["10000", "10001", "2147483648", "999999999999999999999999"] {
             let tiny = number(&format!("1e-{exponent}"));
@@ -205,6 +206,7 @@ mod tests {
             );
         }
     }
+    #[cfg(feature = "arbitrary-precision")]
     fn number_exponent_plus_one(text: &str) -> BigInt {
         text.parse::<BigInt>().unwrap() + 1
     }

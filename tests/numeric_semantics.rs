@@ -1,6 +1,8 @@
 //! Decimal lexical regressions and metamorphic schema checks. The expected
 //! signs, integrality and divisibility are mathematical labels, not another
 //! invocation of either production validator.
+#![cfg(feature = "arbitrary-precision")]
+
 use jsoncompat_codegen::prepared_schema::{PreparedSchema, instance::InstanceRef};
 use serde_json::{Value, json};
 

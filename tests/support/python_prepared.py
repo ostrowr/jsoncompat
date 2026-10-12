@@ -9,6 +9,7 @@ import dataclasses
 import gc
 import inspect
 import json
+import os
 import pickle
 import sys
 import unittest
@@ -25,6 +26,7 @@ from jsoncompat.codegen import dataclasses as dc
 WORK = Path(sys.argv.pop(1))
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = WORK / "fixtures"
+ARBITRARY_PRECISION = os.environ.get("JSONCOMPAT_TEST_ARBITRARY_PRECISION") != "0"
 
 
 def _load(path):
@@ -76,6 +78,40 @@ class PreparedTests(unittest.TestCase):
                 self.assertEqual(raised.exception.keyword, "minimum")
                 self.assertEqual(raised.exception.kind, "constraint")
 
+    def test_numeric_precision_matches_the_build(self):
+        validator = jsoncompat.validator_for('{"const":0.10000000000000001}')
+        self.assertEqual(validator.is_valid_json('0.1'), not ARBITRARY_PRECISION)
+        zero = jsoncompat.validator_for('{"const":0}')
+        self.assertEqual(zero.is_valid_json('1e-400'), not ARBITRARY_PRECISION)
+        if ARBITRARY_PRECISION:
+            self.assertTrue(jsoncompat.validator_for('true').is_valid_json('1e400'))
+        else:
+            with self.assertRaises(ValueError):
+                jsoncompat.validator_for('true').is_valid_json('1e400')
+
+    def test_oversized_numeric_errors_never_panic(self):
+        model = self.modules["constrained"].Constrained
+        bad = {"name": "ok", "count": -(10**400)}
+        for operation in (lambda: model.from_value(bad),
+                          lambda: model(name="ok", count=bad["count"])):
+            with self.assertRaises(jsoncompat.ValidationError) as raised:
+                operation()
+            self.assertIn(raised.exception.kind, ("constraint", "non_json"))
+        # The streaming parser can reject before constructing diagnostics.
+        with self.assertRaises(ValueError):
+            model.deserialize(json.dumps(bad))
+        # Borrowed equality must also reject out-of-range nested values safely.
+        validator = jsoncompat.validator_for('{"const":{"x":0}}')
+        self.assertFalse(validator._is_valid_borrowed_value({"x":10**400}))
+        if ARBITRARY_PRECISION:
+            self.assertFalse(validator.is_valid_value({"x":10**400}))
+        else:
+            with self.assertRaises(ValueError):
+                validator.is_valid_value({"x":10**400})
+        constant = _load(FIXTURES / "fuzz/const/000.py").JSONCOMPAT_MODEL
+        with self.assertRaises(ValueError):
+            constant.from_value(10**400)
+
     def test_schema_options_are_explicit_and_shared(self):
         schema = '{"$ref":"https://example.com/name"}'
         options = {"resources": {"https://example.com/name": {"type":"string", "minLength":2}}}
@@ -103,6 +139,7 @@ class PreparedTests(unittest.TestCase):
         complex_schema = {"type": "object", "anyOf": [{"properties": {k: True}} for k in properties], "unevaluatedProperties": False}
         self.assertEqual(jsoncompat.analyze_compat(json.dumps(simple), json.dumps(complex_schema))["status"], "unknown")
 
+    @unittest.skipUnless(ARBITRARY_PRECISION, "requires exact JSON numeric lexemes")
     def test_numeric_exponents_never_turn_failed_assertions_into_negations(self):
         for exponent in (324, 10000, 10001, 2147483648):
             for negative in (False, True):
@@ -607,6 +644,7 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             model.deserialize('{"value":1,"children":[{"value":-1,"children":[]}]}')
 
+    @unittest.skipUnless(ARBITRARY_PRECISION, "requires exact JSON numeric lexemes")
     def test_decimal_json_boundaries_are_checked_before_float_conversion(self):
         module = _load(FIXTURES / "fuzz/optional/bignum/004.py")
         model = module.JSONCOMPAT_MODEL
@@ -627,6 +665,12 @@ class PreparedTests(unittest.TestCase):
         checked_modules = checked_examples = 0
         for source in sorted(FIXTURES.rglob("*.py")):
             relative = source.relative_to(FIXTURES)
+            # Float parsers can round opposite sides of these huge boundaries.
+            # The all-features run retains the complete bignum corpus.
+            if not ARBITRARY_PRECISION and relative.as_posix() in (
+                "fuzz/optional/bignum/004.py", "fuzz/optional/bignum/006.py",
+            ):
+                continue
             with self.subTest(fixture=str(relative)):
                 module = _load(source)
                 try:

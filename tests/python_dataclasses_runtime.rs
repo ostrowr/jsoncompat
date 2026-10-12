@@ -2446,6 +2446,7 @@ fn serialization_formats_reject_values_outside_the_json_data_model() {
     command.arg("-B").arg("-c").arg(
         r###"
 import msgpack
+import os
 
 from jsoncompat.codegen import SerializationFormat
 from jsoncompat.codegen.serialization import deserialize_value, serialize_value
@@ -2457,9 +2458,12 @@ for format in SerializationFormat:
     assert deserialize_value(encoded, format=format) == value
 
 large_integer = 10**80
-assert deserialize_value(serialize_value({"value": large_integer})) == {
-    "value": large_integer,
-}
+round_tripped = deserialize_value(serialize_value({"value": large_integer}))["value"]
+if os.environ["JSONCOMPAT_TEST_ARBITRARY_PRECISION"] == "1":
+    assert round_tripped == large_integer
+else:
+    assert round_tripped == float(large_integer)
+    assert round_tripped != large_integer
 assert deserialize_value(b'{"name":"Ada"}') == {"name": "Ada"}
 
 cyclic = []
@@ -3082,6 +3086,7 @@ fn python_api_exposes_reusable_schema_tools_and_deprecates_one_shot_helpers() {
     command.arg("-B").arg("-c").arg(
         r###"
 import json
+import os
 import warnings
 
 import jsoncompat
@@ -3107,8 +3112,11 @@ big_integer = 10 ** 80
 assert integer_validator.is_valid_json(str(big_integer))
 assert integer_validator.is_valid_value(big_integer)
 
-exclusive_validator = jsoncompat.validator_for('{"exclusiveMaximum":9.727837981879871e+26}')
-exclusive_boundary = 9.727837981879871e+26
+# The large decimal boundary needs exact parsing; both modes still check a
+# representable exclusive boundary through JSON and native Python inputs.
+exclusive_boundary = (9.727837981879871e+26
+                      if os.environ["JSONCOMPAT_TEST_ARBITRARY_PRECISION"] == "1" else 1.5)
+exclusive_validator = jsoncompat.validator_for(json.dumps({"exclusiveMaximum": exclusive_boundary}))
 assert not exclusive_validator.is_valid_json(json.dumps(exclusive_boundary))
 assert not exclusive_validator.is_valid_value(exclusive_boundary)
 

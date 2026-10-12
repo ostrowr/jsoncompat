@@ -703,7 +703,7 @@ fn construct_model_json_bytes_checked(
     payload: &[u8],
     converter: &ModelConverterPy,
 ) -> PyResult<Option<Py<PyAny>>> {
-    // Retain arbitrary-precision JSON numbers for schemas with exact bounds.
+    // Use serde_json's configured precision for schemas with exact bounds.
     // This decision is built into the artifact, never discovered on first use.
     if converter.schema()?.requires_exact_json_numbers() {
         return construct_exact_model_json(py, payload, converter);
