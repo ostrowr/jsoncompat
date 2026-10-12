@@ -55,6 +55,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/health":
             self.respond(200, {"status": "ok"})
+        elif path == "/pets/unavailable":
+            # Deliberately absent from the OpenAPI contract, like a gateway error.
+            self.respond(503, {"message": "Try again later"}, (("Retry-After", "10"),))
         elif path == "/pets" and self.command == "GET":
             self.respond(
                 200,

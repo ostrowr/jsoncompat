@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError, replace
 from unittest.mock import patch
@@ -13,6 +14,7 @@ import petstore as api
 from jsoncompat import MISSING, ValidationError
 from jsoncompat.http import (
     API,
+    ClientResponse,
     ContractError,
     Cookie,
     Err,
@@ -25,6 +27,7 @@ from jsoncompat.http import (
     Request,
     RequestOptions,
     ResponseError,
+    UnexpectedResponse,
     bind,
     bind_async,
     prepare,
@@ -70,7 +73,7 @@ class BindingTests(unittest.TestCase):
         self.client = bind(api.PetstoreAPI, fetch=self.fetch)
 
     def test_result_identity_immutability_and_unwrap(self):
-        result = self.client.request(api.GetPetRequest(pet_id="x"))
+        result = self.client.request(api.GetPetRequest(pet_id="x")).result()
         self.assertIs(type(result), Ok)
         self.assertIs(result.unwrap(), result.value)
         self.assertIs(result.unwrap(), result.unwrap())
@@ -78,7 +81,7 @@ class BindingTests(unittest.TestCase):
             result.value = result.value
         raw = response(404, PROBLEM)
         self.fetch.reply = raw
-        result = self.client.request(api.GetPetRequest(pet_id="x"))
+        result = self.client.request(api.GetPetRequest(pet_id="x")).result()
         self.assertIs(type(result), Err)
         self.assertIs(result.response, raw)
         match result:
@@ -96,17 +99,6 @@ class BindingTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             result.error = result.error
 
-    def test_invalid_error_responses_raise_during_decode(self):
-        for raw in (
-            response(404, b"not json"),
-            response(404, b"{}"),
-            response(502, PROBLEM),
-        ):
-            self.fetch.reply = raw
-            with self.subTest(raw=raw), self.assertRaises(ResponseError) as caught:
-                self.client.request(api.GetPetRequest(pet_id="x"))
-            self.assertIs(caught.exception.response, raw)
-
     def test_shared_models_and_missing(self):
         result = self.client.request(api.GetPetRequest(**{"pet_id": "p_123"})).unwrap()
         self.assertIs(type(result), api.GetPet200)
@@ -114,6 +106,184 @@ class BindingTests(unittest.TestCase):
         self.assertIs(result.body.nickname, MISSING)
         self.assertEqual(result.headers.etag, '"r1"')
         self.assertEqual(self.fetch.requests[-1].target, "/pets/p_123")
+
+    def test_lazy_response_headers_and_cached_success(self):
+        raw = response(headers=(("Set-Cookie", "a=1"), ("set-cookie", "b=2")))
+        self.fetch.reply = raw
+        with patch.object(
+            api.GetPet200, "from_value", wraps=api.GetPet200.from_value
+        ) as decode:
+            pending = self.client.request(api.GetPetRequest(pet_id="x"))
+            self.assertIs(type(pending), ClientResponse)
+            self.assertIs(pending.raw, raw)
+            self.assertIs(pending.content, raw.body)
+            self.assertEqual(pending.status, 200)
+            self.assertEqual(pending.headers["ETAG"], '"r1"')
+            self.assertEqual(pending.headers.get_all("SET-cookie"), ("a=1", "b=2"))
+            self.assertEqual(pending.headers["set-cookie"], "a=1")
+            self.assertIsNone(pending.headers.get("missing"))
+            self.assertEqual(pending.headers.get_all("missing"), ())
+            self.assertEqual(len(pending.headers), 3)
+            self.assertEqual(
+                pending.headers,
+                {
+                    "Content-Type": "application/json",
+                    "ETag": '"r1"',
+                    "Set-Cookie": "a=1",
+                },
+            )
+            self.assertEqual(
+                list(pending.headers), ["Content-Type", "ETag", "Set-Cookie"]
+            )
+            self.assertIs(pending.headers.raw, raw.headers)
+            with self.assertRaises(KeyError):
+                pending.headers["missing"]
+            with self.assertRaises(TypeError):
+                pending.headers["ETag"] = "changed"
+            with self.assertRaises(FrozenInstanceError):
+                pending.raw = raw
+            decode.assert_not_called()
+            # A response can be shared across threads without decoding twice.
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(lambda _: pending.result(), range(12)))
+            self.assertTrue(all(result is results[0] for result in results))
+            self.assertIs(pending.unwrap(), results[0].value)
+            self.assertEqual(decode.call_count, 1)
+        self.assertEqual(len(self.fetch.requests), 1)
+
+    def test_lazy_response_caches_success_contract_failure(self):
+        raw = response(body=b"{}")
+        self.fetch.reply = raw
+        with patch.object(
+            api.GetPet200, "from_value", wraps=api.GetPet200.from_value
+        ) as decode:
+            pending = self.client.request(api.GetPetRequest(pet_id="x"))
+            self.assertEqual(pending.headers.get("etag"), '"r1"')
+            decode.assert_not_called()
+            failures = []
+            for method in (pending.result, pending.unwrap, pending.result):
+                with self.assertRaises(ResponseError) as caught:
+                    method()
+                failures.append(caught.exception)
+            self.assertTrue(all(error is failures[0] for error in failures))
+            self.assertIs(failures[0].response, raw)
+            self.assertIsNotNone(failures[0].__cause__)
+            self.assertEqual(decode.call_count, 1)
+
+    def test_unexpected_errors_preserve_wire_data_and_decode_failure(self):
+        cases = (
+            (
+                response(503, b'{"message":"Overloaded"}', (("Retry-After", "10"),)),
+                "undeclared HTTP status",
+            ),
+            (
+                RawResponse(
+                    503, (("Content-Type", "text/html"),), b"<h1>Unavailable</h1>"
+                ),
+                "undeclared HTTP status",
+            ),
+            (response(404, b"not json"), "GET /pets/{petId}"),
+            (response(404, b"{}"), "GET /pets/{petId}"),
+            (response(404, b"\xff"), "GET /pets/{petId}"),
+            (
+                RawResponse(404, (("Content-Type", "text/plain"),), b"Not found"),
+                "undeclared response media",
+            ),
+            (
+                response(404, PROBLEM, (("Content-Type", "application/json"),)),
+                "multiple Content-Type",
+            ),
+            (RawResponse(304, (), b"unexpected body"), "declares no body"),
+        )
+        for raw, reason in cases:
+            with self.subTest(raw=raw):
+                self.fetch.reply = raw
+                pending = self.client.request(api.GetPetRequest(pet_id="x"))
+                result = pending.result()
+                match result:
+                    case Err(error=UnexpectedResponse(status=status) as error):
+                        self.assertEqual(status, raw.status)
+                    case _:
+                        self.fail("expected an unmodeled HTTP error")
+                self.assertIs(result.response, raw)
+                self.assertIs(error.response, raw)
+                self.assertIs(error.body, raw.body)
+                self.assertIs(error.headers.raw, raw.headers)
+                self.assertIn(reason, str(error.decode_error))
+                self.assertIsNotNone(error.decode_error.__cause__)
+                self.assertIs(pending.result(), result)
+                with self.assertRaises(HTTPStatusError) as caught:
+                    pending.unwrap()
+                self.assertIs(caught.exception.error, error)
+                self.assertIs(caught.exception.response, raw)
+                with self.assertRaises(FrozenInstanceError):
+                    error.decode_error = error.decode_error
+
+    def test_unexpected_body_helpers_are_explicit_and_do_not_require_json_media(self):
+        for payload, expected in (
+            (b"null", None),
+            (b"42", 42),
+            (b"[]", []),
+            (b'{"x":true}', {"x": True}),
+        ):
+            raw = RawResponse(503, (), payload)
+            result = prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x")).decode(raw)
+            self.assertEqual(result.error.json(), expected)
+            self.assertEqual(result.error.text(), payload.decode())
+        for payload in (b"<html>Unavailable</html>", b"", b"\xff", b"NaN"):
+            error = (
+                prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x"))
+                .decode(RawResponse(503, (), payload))
+                .error
+            )
+            with self.assertRaises(ValueError):
+                error.json()
+            self.assertEqual(error.text(), payload.decode(errors="replace"))
+        self.assertEqual(error.text("latin-1"), "NaN")
+        error = (
+            prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x"))
+            .decode(RawResponse(503, (), b"caf\xe9"))
+            .error
+        )
+        self.assertEqual(error.text("latin-1"), "café")
+        with self.assertRaises(UnicodeDecodeError):
+            error.text(errors="strict")
+
+    def test_invalid_raw_contract_and_undeclared_success_still_raise(self):
+        for raw in (
+            response(True),
+            response(99),
+            response(600),
+            response(503, "not bytes"),
+            response(201),
+        ):
+            pending = ClientResponse(
+                raw, prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x")).decode
+            )
+            with self.subTest(raw=raw), self.assertRaises(ResponseError) as caught:
+                pending.result()
+            self.assertIs(caught.exception.response, raw)
+        self.fetch.reply = object()
+        with self.assertRaises(TypeError):
+            self.client.request(api.GetPetRequest(pet_id="x"))
+
+    def test_invalid_ranged_and_default_errors_fall_back_without_retrying_selection(
+        self,
+    ):
+        for raw in (response(503, b"{}"), response(418, PROBLEM)):
+            self.fetch.reply = raw
+            result = self.client.request(api.HealthRequest()).result()
+            self.assertIsInstance(result.error, UnexpectedResponse)
+            self.assertIs(result.response, raw)
+        # A failed range must not fall through to the valid empty default.
+        self.fetch.reply = RawResponse(503, (), b"")
+        self.assertIsInstance(
+            self.client.request(api.HealthRequest()).result().error, UnexpectedResponse
+        )
+        # Likewise, an exact success cannot fall through to the empty default.
+        self.fetch.reply = RawResponse(200, (), b"")
+        with self.assertRaises(ResponseError):
+            self.client.request(api.HealthRequest()).result()
 
     def test_encoded_path_and_false_query(self):
         self.client.request(
@@ -223,7 +393,7 @@ class BindingTests(unittest.TestCase):
             (api.GetPetRequest, 304, api.GetPet304),
         ]:
             self.fetch.reply = RawResponse(status, (), b"")
-            result = self.client.request(input_model(pet_id="p_123"))
+            result = self.client.request(input_model(pet_id="p_123")).result()
             self.assertIs(type(result), Ok if status == 204 else Err)
             result = result.value if isinstance(result, Ok) else result.error
             self.assertIs(type(result), expected)
@@ -237,20 +407,19 @@ class BindingTests(unittest.TestCase):
             (418, b"", api.HealthDefault),
         ]:
             self.fetch.reply = response(status, body)
-            result = self.client.request(api.HealthRequest())
+            result = self.client.request(api.HealthRequest()).result()
             self.assertIs(type(result), Ok if 200 <= status < 300 else Err)
             result = result.value if isinstance(result, Ok) else result.error
             self.assertIs(type(result), expected)
             self.assertEqual(result.status, status)
         self.fetch.reply = response(404, PROBLEM)
         self.assertIsInstance(
-            self.client.request(api.GetPetRequest(pet_id="missing")).error,
+            self.client.request(api.GetPetRequest(pet_id="missing")).result().error,
             api.GetPet404,
         )
 
     def test_response_contract_errors_retain_raw_response(self):
         for raw in [
-            response(500, PROBLEM),
             response(body=b"not json"),
             response(body=b"{}"),
             RawResponse(200, (), PET),
@@ -358,7 +527,8 @@ class BindingTests(unittest.TestCase):
             other = bind(api.PetstoreAPI, fetch=other_fetch)
             self.assertIs(type(other), type(self.client))
             self.assertIsInstance(
-                other.request(api.GetPetRequest(pet_id="x")).error, api.GetPet404
+                other.request(api.GetPetRequest(pet_id="x")).result().error,
+                api.GetPet404,
             )
             self.assertIsInstance(
                 self.client.request(api.GetPetRequest(pet_id="x")).unwrap(),
@@ -437,7 +607,7 @@ class BindingTests(unittest.TestCase):
         result = other.request(other_api.GetPetRequest(pet_id="x")).unwrap()
         self.assertIs(type(result), other_api.GetPet200)
         with self.assertRaises(TypeError):
-            other.request(api.GetPetRequest(pet_id="x")).error
+            other.request(api.GetPetRequest(pet_id="x")).result().error
         self.assertEqual(len(self.fetch.requests), 1)
 
     def test_incomplete_api_contracts_fail_binding(self):
@@ -606,7 +776,7 @@ class PreparationTests(unittest.TestCase):
         _prepare_api.cache_clear()
         self.assertIs(type(call.decode(response()).unwrap()), api.GetPet200)
         self.assertIs(type(call.decode(response(404, PROBLEM)).error), api.GetPet404)
-        for raw in (response(599), response(body=b"not json"), response(body=b"{}")):
+        for raw in (response(body=b"not json"), response(body=b"{}")):
             with self.assertRaises(ResponseError) as caught:
                 call.decode(raw).unwrap()
             self.assertIs(caught.exception.response, raw)
@@ -789,6 +959,30 @@ class ParameterTests(unittest.TestCase):
 
 
 class AsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unexpected_error_is_decoded_only_on_demand(self):
+        calls = []
+        raw = response(404, b"{}")
+
+        async def fetch(request, /, *, transport=None):
+            calls.append(request)
+            return raw
+
+        client = bind_async(api.PetstoreAPI, fetch=fetch)
+        with patch.object(
+            api.GetPet404, "from_value", wraps=api.GetPet404.from_value
+        ) as decode:
+            pending = await client.request(api.GetPetRequest(pet_id="x"))
+            self.assertIs(pending.raw, raw)
+            self.assertEqual(pending.headers.get("content-type"), "application/json")
+            decode.assert_not_called()
+            result = pending.result()
+            self.assertIsInstance(result.error, UnexpectedResponse)
+            self.assertIs(pending.result(), result)
+            with self.assertRaises(HTTPStatusError):
+                pending.unwrap()
+            self.assertEqual(decode.call_count, 1)
+            self.assertEqual(len(calls), 1)
+
     async def test_concurrent_options_are_isolated_and_preparation_is_transport_independent(
         self,
     ):
@@ -824,7 +1018,7 @@ class AsyncTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(
             all(
-                type(result) is Ok and type(result.unwrap()) is api.GetPet200
+                type(result.result()) is Ok and type(result.unwrap()) is api.GetPet200
                 for result in results
             )
         )

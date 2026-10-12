@@ -17,6 +17,7 @@ from jsonplaceholder import (
     CreatePost201,
     CreatePostRequest,
     GetPost200,
+    GetPost404,
     GetPostRequest,
     GetPostResult,
     JsonPlaceholderAPI,
@@ -84,7 +85,7 @@ def check_patch(response: PatchPost200, original: Post) -> None:
 
 def check_missing(result: GetPostResult) -> None:
     assert isinstance(result, Err)
-    assert result.error.status == 404
+    assert isinstance(result.error, GetPost404)
     assert result.error.body.to_value() == {}
     try:
         result.unwrap()
@@ -106,7 +107,7 @@ def exercise[Options](
     check_patch(client.request(patch_post()).unwrap(), original)
     # JSONPlaceholder simulates writes: a fresh read must still match the original.
     assert check_get(client.request(GetPostRequest(post_id=1)).unwrap()) == original
-    check_missing(client.request(GetPostRequest(post_id=999999)))
+    check_missing(client.request(GetPostRequest(post_id=999999)).result())
 
 
 async def exercise_async[Options](
@@ -122,7 +123,7 @@ async def exercise_async[Options](
         check_get((await client.request(GetPostRequest(post_id=1))).unwrap())
         == original
     )
-    check_missing(await client.request(GetPostRequest(post_id=999999)))
+    check_missing((await client.request(GetPostRequest(post_id=999999))).result())
 
 
 class LiveSyncTests(unittest.TestCase):

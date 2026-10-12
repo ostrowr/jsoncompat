@@ -3,16 +3,51 @@
 from __future__ import annotations
 
 import types
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
+from threading import Lock
 from typing import Generic, Literal, Never, Protocol, TypeVar, cast
 
 from typing_extensions import TypeForm
 
+from jsoncompat import JsonValue, deserialize_json_value
 from jsoncompat.codegen.dataclasses import DataclassModel
 
 type HeaderPairs = tuple[tuple[str, str], ...]
 type ScalarKind = Literal["string", "integer", "number", "boolean"]
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class ResponseHeaders(Mapping[str, str]):
+    """Read-only, case-insensitive headers. Lookup returns the first value.
+
+    get_all() preserves every value without combining fields such as Set-Cookie.
+    raw preserves the original names, order, and duplicate pairs.
+    """
+
+    raw: HeaderPairs
+
+    def __getitem__(self, name: str) -> str:
+        key = name.lower()
+        for candidate, value in self.raw:
+            if candidate.lower() == key:
+                return value
+        raise KeyError(name)
+
+    def __iter__(self) -> Iterator[str]:
+        seen: set[str] = set()
+        for name, _ in self.raw:
+            key = name.lower()
+            if key not in seen:
+                seen.add(key)
+                yield name
+
+    def __len__(self) -> int:
+        return len({name.lower() for name, _ in self.raw})
+
+    def get_all(self, name: str) -> tuple[str, ...]:
+        key = name.lower()
+        return tuple(value for candidate, value in self.raw if candidate.lower() == key)
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +162,7 @@ class Client[A: API, Options](Protocol):
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> Result[S, E]: ...
+    ) -> ClientResponse[S, E]: ...
 
 
 class AsyncClient[A: API, Options](Protocol):
@@ -140,7 +175,7 @@ class AsyncClient[A: API, Options](Protocol):
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> Result[S, E]: ...
+    ) -> ClientResponse[S, E]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,12 +310,48 @@ class ResponseError(ValueError):
 
 
 class HTTPStatusError(Exception):
-    """A validated non-2xx result was unwrapped. Retains its model and wire data."""
+    """A non-2xx result was unwrapped. Retains its error value and wire data."""
 
     def __init__(self, error: object, response: RawResponse) -> None:
         super().__init__(f"HTTP status {response.status}")
         self.error = error
         self.response = response
+
+
+@dataclass(frozen=True, slots=True)
+class UnexpectedResponse:
+    """A non-2xx response that could not be decoded into a declared model."""
+
+    decode_error: ResponseError
+
+    @property
+    def response(self) -> RawResponse:
+        return self.decode_error.response
+
+    @property
+    def status(self) -> int:
+        return self.response.status
+
+    @property
+    def headers(self) -> ResponseHeaders:
+        return ResponseHeaders(self.response.headers)
+
+    @property
+    def body(self) -> bytes:
+        return self.response.body
+
+    def text(
+        self,
+        encoding: str = "utf-8",
+        *,
+        errors: Literal["strict", "replace", "ignore"] = "replace",
+    ) -> str:
+        """Decode diagnostic text; default to UTF-8 with replacement characters."""
+        return self.body.decode(encoding, errors=errors)
+
+    def json(self) -> JsonValue:
+        """Parse JSON on demand, raising ValueError for invalid JSON or UTF-8."""
+        return deserialize_json_value(self.body)
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,14 +367,67 @@ class Ok[S]:
 
 @dataclass(frozen=True, slots=True)
 class Err[E]:
-    """A validated non-2xx response. Inspect error or call unwrap() to raise."""
+    """A non-2xx response. Inspect error or call unwrap() to raise."""
 
     error: E
     response: RawResponse
 
     def unwrap(self) -> Never:
-        """Raise with the typed error model and original buffered response."""
+        """Raise with the error value and original buffered response."""
         raise HTTPStatusError(self.error, self.response)
 
 
-type Result[S, E] = Ok[S] | Err[E]
+type Result[S, E] = Ok[S] | Err[E | UnexpectedResponse]
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class ClientResponse[S, E]:
+    """Buffered response with lazy, cached model decoding; owns no connection.
+
+    Inspect status, headers, or content without parsing. result() decodes into
+    Ok/Err; unwrap() decodes and returns the success model or raises.
+    """
+
+    raw: RawResponse
+    _decode: Callable[[RawResponse], Result[S, E]] = field(repr=False, compare=False)
+    _result: Result[S, E] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _failure: ResponseError | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _lock: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(cast(object, self.raw), RawResponse):
+            raise TypeError("fetch must return RawResponse")
+
+    @property
+    def status(self) -> int:
+        return self.raw.status
+
+    @property
+    def headers(self) -> ResponseHeaders:
+        return ResponseHeaders(self.raw.headers)
+
+    @property
+    def content(self) -> bytes:
+        return self.raw.body
+
+    def result(self) -> Result[S, E]:
+        """Decode once, caching both results and response contract failures."""
+        with self._lock:
+            if self._failure is not None:
+                raise self._failure
+            if self._result is None:
+                try:
+                    object.__setattr__(self, "_result", self._decode(self.raw))
+                except ResponseError as error:
+                    object.__setattr__(self, "_failure", error)
+                    raise
+            # A decoder returns an Ok/Err wrapper even for an empty body.
+            return cast(Result[S, E], self._result)
+
+    def unwrap(self) -> S:
+        """Return the decoded success model; raise on HTTP or contract errors."""
+        return self.result().unwrap()

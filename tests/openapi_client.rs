@@ -174,9 +174,9 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
         work.0.join("valid.py"),
         r#"
 from typing import Never, assert_type
-from petstore import PetstoreAPI, GetPetRequest, GetPetResult, GetPet200, GetPetError, GetPet304, ListPetsRequest
-from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, RequestOptions, Result, Ok, Err, bind, bind_async, prepare, EncodedRequest, RawResponse
-from jsoncompat import MISSING
+from petstore import PetstoreAPI, GetPetRequest, GetPetResult, GetPet200, GetPetSuccess, GetPetError, GetPet304, ListPetsRequest
+from jsoncompat.http import API, AsyncClient, Client, ClientResponse, PreparedRequest, Request, RequestOptions, UnexpectedResponse, Ok, Err, bind, bind_async, prepare, EncodedRequest, RawResponse
+from jsoncompat import MISSING, JsonValue
 
 def fetch(request: EncodedRequest, /, *, transport: None = None) -> RawResponse:
     raise NotImplementedError
@@ -184,9 +184,15 @@ async def async_fetch(request: EncodedRequest, /, *, transport: None = None) -> 
     raise NotImplementedError
 client: Client[PetstoreAPI, Never] = bind(PetstoreAPI, fetch=fetch)
 assert_type(client, Client[PetstoreAPI, Never])
-assert_type(client.request(GetPetRequest(pet_id="a")), GetPetResult)
+assert_type(client.request(GetPetRequest(pet_id="a")), ClientResponse[GetPetSuccess, GetPetError])
+pending = client.request(GetPetRequest(pet_id="a"))
+assert_type(pending.result(), GetPetResult)
+assert_type(pending.status, int)
+assert_type(pending.content, bytes)
+assert_type(pending.headers.get("Retry-After"), str | None)
+assert_type(pending.headers.get_all("Set-Cookie"), tuple[str, ...])
 options = RequestOptions(extra_headers={"X-Trace-ID": "trace"}, extra_query=(("preview", "true"),))
-assert_type(client.request(GetPetRequest(pet_id="a"), options=options), GetPetResult)
+assert_type(client.request(GetPetRequest(pet_id="a"), options=options), ClientResponse[GetPetSuccess, GetPetError])
 call = prepare(PetstoreAPI, GetPetRequest(pet_id="a"), options=options)
 assert_type(call, PreparedRequest[PetstoreAPI, GetPetResult])
 assert_type(call.request, EncodedRequest)
@@ -198,18 +204,18 @@ if request.limit is not MISSING:
 async def example() -> GetPetResult:
     client: AsyncClient[PetstoreAPI, Never] = bind_async(PetstoreAPI, fetch=async_fetch)
     assert_type(client, AsyncClient[PetstoreAPI, Never])
-    assert_type(await client.request(GetPetRequest(pet_id="a"), options=options), GetPetResult)
+    assert_type(await client.request(GetPetRequest(pet_id="a"), options=options), ClientResponse[GetPetSuccess, GetPetError])
     return call.decode(await async_fetch(call.request))
 class Fake:
-    def request[S, E](self, request: Request[PetstoreAPI, S, E], /, *, options: RequestOptions | None = None, transport: Never | None = None) -> Result[S, E]:
+    def request[S, E](self, request: Request[PetstoreAPI, S, E], /, *, options: RequestOptions | None = None, transport: Never | None = None) -> ClientResponse[S, E]:
         raise NotImplementedError
 reader: Client[PetstoreAPI, Never] = Fake()
 response=reader.request(GetPetRequest(pet_id="a")).unwrap()
 assert_type(response, GetPet200)
 assert_type(response.body.name, str)
-def execute[A: API, S, E](client: Client[A, Never], request: Request[A, S, E]) -> Result[S, E]:
+def execute[A: API, S, E](client: Client[A, Never], request: Request[A, S, E]) -> ClientResponse[S, E]:
     return client.request(request)
-assert_type(execute(client, GetPetRequest(pet_id="a")), GetPetResult)
+assert_type(execute(client, GetPetRequest(pet_id="a")), ClientResponse[GetPetSuccess, GetPetError])
 
 assert_type(call.decode(fetch(call.request)).unwrap(), GetPet200)
 async def unwrap_async() -> GetPet200:
@@ -220,15 +226,19 @@ def inspect_result(result: GetPetResult) -> None:
     if isinstance(result, Ok):
         assert_type(result.value, GetPet200)
     else:
-        assert_type(result.error, GetPetError)
+        assert_type(result.error, GetPetError | UnexpectedResponse)
         assert_type(result.response, RawResponse)
     match result:
         case Ok(value=pet):
             assert_type(pet, GetPet200)
         case Err(error=error):
-            assert_type(error, GetPetError)
+            assert_type(error, GetPetError | UnexpectedResponse)
             if isinstance(error, GetPet304):
                 assert_type(error.body, None)
+            if isinstance(error, UnexpectedResponse):
+                assert_type(error.body, bytes)
+                assert_type(error.json(), JsonValue)
+                assert_type(error.text(), str)
 "#,
     ).unwrap();
     success(
@@ -424,7 +434,7 @@ fn default_only_responses_and_component_renames_preserve_contracts() {
 from petstore import PetstoreAPI, PingRequest, PingDefault, Outcome
 from jsoncompat.http import bind, RawResponse
 def fetch(request, /, *, transport=None): return RawResponse(418, (("Content-Type","application/json"),), b'{"ok":false}')
-result=bind(PetstoreAPI,fetch=fetch).request(PingRequest())
+result=bind(PetstoreAPI,fetch=fetch).request(PingRequest()).result()
 from jsoncompat.http import Err
 assert isinstance(result, Err)
 result=result.error
@@ -476,7 +486,7 @@ fn result_partitions_cover_exact_ranges_defaults_and_never() {
         r#"
 from typing import Never, assert_type
 import petstore as api
-from jsoncompat.http import Client, Err, HTTPStatusError, Ok, RawResponse, ResponseError, bind
+from jsoncompat.http import Client, Err, HTTPStatusError, Ok, RawResponse, ResponseError, UnexpectedResponse, bind
 
 assert api.OnlySuccessError.__value__ is Never
 assert api.OnlyErrorSuccess.__value__ is Never
@@ -485,6 +495,9 @@ assert api.DefaultOnlyError.__value__ is api.DefaultOnlyDefault
 
 def typing_cases(client: Client[api.PetstoreAPI, Never]) -> None:
     assert_type(client.request(api.OnlySuccessRequest()).unwrap(), api.OnlySuccess200)
+    result = client.request(api.OnlySuccessRequest()).result()
+    if isinstance(result, Err):
+        assert_type(result.error, UnexpectedResponse)
     # Put a Never-returning expression last so it cannot hide later type checks.
     assert_type(client.request(api.OnlyErrorRequest()).unwrap(), Never)
 
@@ -506,16 +519,20 @@ for prefix, selectors in (
         raw = RawResponse(status, (), b"")
         exact, ranged = str(status), f"{status // 100}XX"
         selector = exact if exact in selectors else ranged if ranged in selectors else "default"
-        if selector not in selectors:
+        if selector not in selectors and 200 <= status < 300:
             try:
-                client.request(request)
+                client.request(request).result()
             except ResponseError as error:
                 assert error.response is raw
             else:
                 raise AssertionError((prefix, status, "undeclared response accepted"))
             continue
-        expected = getattr(api, prefix + ("Default" if selector == "default" else selector))
-        result = client.request(request)
+        expected = (getattr(api, prefix + ("Default" if selector == "default" else selector))
+                    if selector in selectors else UnexpectedResponse)
+        pending = client.request(request)
+        assert pending.status == status
+        result = pending.result()
+        assert pending.result() is result
         if 200 <= status < 300:
             assert isinstance(result, Ok) and type(result.value) is expected
             assert result.unwrap() is result.value
@@ -547,8 +564,8 @@ for prefix, selectors in (
         .unwrap()
         .replace("from dataclasses import replace\n", "")
         .replace(
-            "Client, Err, HTTPStatusError, Ok, RawResponse, ResponseError, bind",
-            "Client",
+            "Client, Err, HTTPStatusError, Ok, RawResponse, ResponseError, UnexpectedResponse, bind",
+            "Client, Err, UnexpectedResponse",
         )
         .replace("from jsoncompat.http._binding import _prepare_api\n", "");
     fs::write(work.0.join("typing_results.py"), typing).unwrap();

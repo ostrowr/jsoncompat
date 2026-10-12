@@ -161,8 +161,11 @@ jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 The package exports `PetstoreAPI`, typed request models, and response unions.
 `jsoncompat.http.bind(PetstoreAPI, fetch=...)` implements one shared
 `client.request(GetPetRequest(...))` method returning
-`Result[GetPetSuccess, GetPetError]`. Call `.unwrap()` to get the success model,
-or match `Ok`/`Err` to handle declared statuses explicitly.
+`ClientResponse[GetPetSuccess, GetPetError]`. Inspect raw status, headers, and
+buffered content without parsing; call `.unwrap()` for the validated success
+model or `.result()` to match `Ok`/`Err`. Non-2xx responses that cannot match a
+declared model become `Err(UnexpectedResponse(...))`, preserving their bytes and
+decoding diagnostic. Model decoding is lazy and cached.
 `bind_async` provides the async equivalent. API boundaries are enforced by
 invariant types and runtime registration checks. Callers supply one fetch
 function and own sessions, authentication, pooling, and retries. Optional

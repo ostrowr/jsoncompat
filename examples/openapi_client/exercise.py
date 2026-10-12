@@ -3,7 +3,15 @@
 from typing import Never
 
 from jsoncompat import MISSING
-from jsoncompat.http import AsyncClient, Client, Err, HTTPStatusError, RequestOptions
+from jsoncompat.http import (
+    AsyncClient,
+    Client,
+    ClientResponse,
+    Err,
+    HTTPStatusError,
+    RequestOptions,
+    UnexpectedResponse,
+)
 from petstore import (
     CreatePet201,
     CreatePetRequest,
@@ -11,9 +19,11 @@ from petstore import (
     GetGroupPetsRequest,
     GetPet304,
     GetPet404,
+    GetPetError,
     GetPetNote200ApplicationJson,
     GetPetNoteRequest,
     GetPetRequest,
+    GetPetSuccess,
     Health200,
     HealthRequest,
     ListPets200,
@@ -32,7 +42,27 @@ from petstore import (
 )
 
 
+def check_unavailable(response: ClientResponse[GetPetSuccess, GetPetError]) -> None:
+    # Metadata is available before attempting model decoding.
+    assert response.status == 503
+    assert response.headers.get("retry-after") == "10"
+    assert response.headers.get_all("X-Trace") == ("first", "second")
+    match response.result():
+        case Err(error=UnexpectedResponse(status=503) as error):
+            assert error.json() == {"message": "Try again later"}
+            assert "undeclared HTTP status 503" in str(error.decode_error)
+        case _:
+            raise AssertionError("expected an undeclared 503")
+    try:
+        response.unwrap()
+    except HTTPStatusError as error:
+        assert error.response is response.raw
+    else:
+        raise AssertionError("unwrap() should raise for an undeclared 503")
+
+
 def exercise(client: Client[PetstoreAPI, Never]) -> None:
+    check_unavailable(client.request(GetPetRequest(pet_id="unavailable")))
     page = client.request(
         ListPetsRequest(
             limit=10,
@@ -60,10 +90,10 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
     ]
     cached = client.request(
         GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
-    )
+    ).result()
     assert isinstance(cached, Err)
     assert isinstance(cached.error, GetPet304) and cached.error.body is None
-    missing = client.request(GetPetRequest(pet_id="unknown"))
+    missing = client.request(GetPetRequest(pet_id="unknown")).result()
     match missing:
         case Err(error=GetPet404(body=problem)):
             assert problem.code == "not_found"
@@ -85,7 +115,9 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
         )
     ).unwrap()
     assert updated.body.nickname is None
-    conflict = client.request(UpdatePetRequest(pet_id="p_123", if_match='"stale"'))
+    conflict = client.request(
+        UpdatePetRequest(pet_id="p_123", if_match='"stale"')
+    ).result()
     assert isinstance(conflict, Err) and isinstance(conflict.error, UpdatePet412)
     note = client.request(GetPetNoteRequest(pet_id="p_123")).unwrap()
     assert (
@@ -129,6 +161,7 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
 
 
 async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
+    check_unavailable(await client.request(GetPetRequest(pet_id="unavailable")))
     page = (
         await client.request(
             ListPetsRequest(
@@ -159,12 +192,14 @@ async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
         "first",
         "second",
     ]
-    cached = await client.request(
-        GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
-    )
+    cached = (
+        await client.request(
+            GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
+        )
+    ).result()
     assert isinstance(cached, Err)
     assert isinstance(cached.error, GetPet304) and cached.error.body is None
-    missing = await client.request(GetPetRequest(pet_id="unknown"))
+    missing = (await client.request(GetPetRequest(pet_id="unknown"))).result()
     match missing:
         case Err(error=GetPet404(body=problem)):
             assert problem.code == "not_found"
@@ -188,9 +223,9 @@ async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
         )
     ).unwrap()
     assert updated.body.nickname is None
-    conflict = await client.request(
-        UpdatePetRequest(pet_id="p_123", if_match='"stale"')
-    )
+    conflict = (
+        await client.request(UpdatePetRequest(pet_id="p_123", if_match='"stale"'))
+    ).result()
     assert isinstance(conflict, Err) and isinstance(conflict.error, UpdatePet412)
     note = (await client.request(GetPetNoteRequest(pet_id="p_123"))).unwrap()
     assert (

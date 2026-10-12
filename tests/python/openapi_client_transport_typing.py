@@ -9,27 +9,33 @@ from jsoncompat.http import (
     AsyncClient,
     AsyncFetch,
     Client,
+    ClientResponse,
     EncodedRequest,
     Fetch,
     RawResponse,
     Request,
     RequestOptions,
-    Result,
     bind,
     bind_async,
 )
 from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 from jsoncompat.http.requests import RequestsFetch, RequestsOptions
-from petstore import GetPetRequest, GetPetResult, PetstoreAPI
+from petstore import (
+    GetPetError,
+    GetPetRequest,
+    GetPetResult,
+    GetPetSuccess,
+    PetstoreAPI,
+)
 
 
 def portable(client: Client[PetstoreAPI, Never]) -> GetPetResult:
-    return client.request(GetPetRequest(pet_id="x"))
+    return client.request(GetPetRequest(pet_id="x")).result()
 
 
 async def portable_async(client: AsyncClient[PetstoreAPI, Never]) -> GetPetResult:
-    return await client.request(GetPetRequest(pet_id="x"))
+    return (await client.request(GetPetRequest(pet_id="x"))).result()
 
 
 def fetch(
@@ -52,7 +58,7 @@ class Fake:
         *,
         options: RequestOptions | None = None,
         transport: HttpxOptions | None = None,
-    ) -> Result[S, E]:
+    ) -> ClientResponse[S, E]:
         raise NotImplementedError
 
 
@@ -65,7 +71,7 @@ def sync_clients(session: requests.Session, httpx_session: httpx.Client) -> None
     assert_type(client, Client[PetstoreAPI, RequestsOptions])
     assert_type(
         client.request(request, transport=RequestsOptions(timeout=(1, 2))),
-        GetPetResult,
+        ClientResponse[GetPetSuccess, GetPetError],
     )
     assert_type(portable(client), GetPetResult)
     httpx_client = bind(
@@ -74,7 +80,7 @@ def sync_clients(session: requests.Session, httpx_session: httpx.Client) -> None
     assert_type(httpx_client, Client[PetstoreAPI, HttpxOptions])
     assert_type(
         httpx_client.request(request, transport=HttpxOptions(timeout=None)),
-        GetPetResult,
+        ClientResponse[GetPetSuccess, GetPetError],
     )
     assert_type(portable(httpx_client), GetPetResult)
     assert_type(bind(PetstoreAPI, fetch=fetch), Client[PetstoreAPI, HttpxOptions])
@@ -97,7 +103,7 @@ async def async_clients(
             transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
             options=RequestOptions(extra_headers={"X-Trace-ID": "one"}),
         ),
-        GetPetResult,
+        ClientResponse[GetPetSuccess, GetPetError],
     )
     assert_type(await portable_async(client), GetPetResult)
     httpx_client = bind_async(
@@ -106,7 +112,7 @@ async def async_clients(
     assert_type(httpx_client, AsyncClient[PetstoreAPI, HttpxOptions])
     assert_type(
         await httpx_client.request(request, transport=HttpxOptions(timeout=2)),
-        GetPetResult,
+        ClientResponse[GetPetSuccess, GetPetError],
     )
     assert_type(await portable_async(httpx_client), GetPetResult)
     assert_type(

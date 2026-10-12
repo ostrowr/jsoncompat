@@ -286,7 +286,9 @@ async def async_checks(url):
             TimeoutError,
         )
         await async_edges(fetch)
+        pending = await bind_async(PetstoreAPI, fetch=fetch).request(GET)
     assert session.closed
+    check_get(pending.unwrap())  # Decoding remains usable after session shutdown.
     async with httpx.AsyncClient(
         headers={"Authorization": "Bearer demo"},
         timeout=5,
@@ -302,7 +304,9 @@ async def async_checks(url):
             httpx.ReadTimeout,
         )
         await async_edges(fetch)
+        pending = await bind_async(PetstoreAPI, fetch=fetch).request(GET)
     assert session.is_closed
+    check_get(pending.unwrap())
 
 
 with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
@@ -325,7 +329,10 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
                 requests.ReadTimeout,
             )
             sync_edges(fetch)
+            pending = bind(PetstoreAPI, fetch=fetch).request(GET)
             close.assert_not_called()
+        session.close()
+        check_get(pending.unwrap())
         with httpx.Client(
             headers={"Authorization": "Bearer demo"},
             timeout=5,
@@ -341,8 +348,10 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
                 httpx.ReadTimeout,
             )
             sync_edges(fetch)
+            pending = bind(PetstoreAPI, fetch=fetch).request(GET)
             assert not session.is_closed
         assert session.is_closed
+        check_get(pending.unwrap())
         asyncio.run(async_checks(url))
     finally:
         server.shutdown()

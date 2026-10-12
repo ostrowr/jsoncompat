@@ -393,53 +393,93 @@ there are no generated operation methods or per-service client protocols.
 Sessions, authentication, retries, and cleanup stay outside this interface.
 Generated packages include a `py.typed` marker; include it when publishing them.
 
-### Working with results
+### Working with responses and results
 
-`request()` returns `Result[Success, Error]`, an alias for `Ok[Success] | Err[Error]`.
-The same applies to `PreparedRequest.decode()`. These immutable wrappers support
-`isinstance` and Python pattern matching. They hold the existing generated
-response models, including typed bodies, headers, and status.
+`request()` returns `ClientResponse[Success, Error]`. The transport buffers and
+releases the HTTP response before returning; jsoncompat parses and validates the
+body only when you call `.result()` or `.unwrap()`. No second `await`, mode flag,
+or response context manager is needed. The caller still owns the session.
 
 ```python
-from jsoncompat.http import Ok, Err
+from jsoncompat.http import Ok, Err, UnexpectedResponse
 from petstore import GetPetRequest, GetPet404
 
-result = client.request(GetPetRequest(pet_id="p_123"))  # GetPetResult
-match result:
+response = client.request(GetPetRequest(pet_id="p_123"))
+print(response.status, response.headers.get("ETag"))  # No model parsing.
+print(response.headers.get_all("Set-Cookie"))
+# response.content contains buffered bytes; response.raw is the original RawResponse.
+
+match response.result():  # GetPetResult; decode and validate now.
     case Ok(value=pet):
-        print(pet.body.name)  # GetPet200; no additional narrowing needed.
+        print(pet.body.name, pet.headers.etag)  # GetPet200.
     case Err(error=GetPet404(body=problem)):
         print(problem.message)
-    case Err(error=other):
-        print(other.status)  # For this operation, the remaining variant is 304.
+    case Err(error=UnexpectedResponse(status=503) as error):
+        print(error.text(), error.headers.get("Retry-After"))
+    case result:
+        result.unwrap()  # Raise for other non-2xx responses, including 304.
 ```
 
-`Ok.unwrap()` returns its exact `value`. `Err.unwrap()` always raises
-`HTTPStatusError`, so `result.unwrap()` has only the success type. Unwrapping
-performs no I/O, decoding, or copying; it never retries the request. An exception's
-`error` is the same decoded object as `Err.error`, and its `response` is the same
-original `RawResponse` as `Err.response`. Match the decoded error with
-`isinstance` when handling an exception; Python exception handlers do not infer
-an operation-specific error type.
+For the usual success path, write
+`pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()` or
+`pet = (await client.request(GetPetRequest(pet_id="p_123"))).unwrap()`.
+This returns the generated success **envelope**, with its typed `.body`,
+`.headers`, `.status`, and `.raw_headers`. Before decoding, `response.headers` is
+an immutable `ResponseHeaders` mapping with case-insensitive lookup. Lookup and
+`.get()` return the first value; `.get_all()` returns every matching value as a
+tuple. `.raw` preserves original header names, ordering, and duplicate pairs.
+These raw headers are distinct from the generated, validated header model.
 
-Success means **200–299**. Redirects, 304, and all other declared statuses are
-`Err`; callers can handle them as values instead of unwrapping. Timeouts and
-cancellation still propagate from the transport. Invalid or undeclared responses
-raise `ResponseError` during the request/decode, before a `Result` exists—even
-for an error status with malformed JSON. `HTTPStatusError` specifically means
-that a validated `Err` was unwrapped.
+`.result()` returns `Result[Success, Error]`, an alias for
+`Ok[Success] | Err[Error | UnexpectedResponse]`. `PreparedRequest.decode(raw)`
+returns that Result directly and decodes immediately. Immutable `Ok` and `Err`
+wrappers support `isinstance` and Python pattern matching.
+
+Both response methods share one cached decoding outcome, including contract
+failures. Repeated calls never reparse, resend, retry, or copy the decoded model;
+concurrent calls on one response also decode once. `Ok.unwrap()` returns its
+exact `value`. `Err.unwrap()` raises `HTTPStatusError`, whose `error` is the same
+object as `Err.error` and whose `response` is the original buffered `RawResponse`.
+Exception handlers can use `isinstance` to narrow `error`; they do not infer an
+operation-specific error type.
+
+| Response | `.result()` behavior |
+| --- | --- |
+| Declared, valid 200–299 | `Ok(success_model)` |
+| Declared, valid non-2xx, including redirects and 304 | `Err(error_model)` |
+| Undeclared non-2xx | `Err(UnexpectedResponse(...))` |
+| Non-2xx with invalid JSON, media type, body, or declared headers | `Err(UnexpectedResponse(...))` |
+| Undeclared or invalid 2xx | Raise `ResponseError` |
+
+`UnexpectedResponse` exposes `.status`, `.headers`, `.body` (bytes), and the
+original `.response`. `.decode_error` retains the `ResponseError` and its original
+cause. `.text(encoding="utf-8", errors="replace")` decodes diagnostic text;
+`.json()` explicitly parses JSON into `JsonValue`, regardless of Content-Type,
+and raises `ValueError` for invalid JSON or UTF-8. Neither helper guesses a model
+or discards the original bytes. Invalid error bodies never become instances of
+declared models. A declared range or default is decoded before using the fallback.
+A failed exact match does not retry a less-specific range or default.
+
+A malformed success remains a contract failure: catch `ResponseError` around
+`.result()` or `.unwrap()` and inspect `.response`. The response's raw metadata
+and bytes remain accessible before and after the failure. Invalid fetcher output
+(such as a non-integer status or a non-bytes body) is also a contract failure,
+not an `UnexpectedResponse`. Network errors, timeouts, and cancellation propagate
+from `request()` without being wrapped. Lazy parsing does **not** skip downloading
+the body; streaming and headers-only requests are separate future capabilities.
 
 The generator exports `GetPetSuccess`, `GetPetError`, and
 `GetPetResult = Result[GetPetSuccess, GetPetError]`. `GetPetResponse` remains the
-union of the decoded response models, without wrappers. Selection uses exact
-status, then range, then `default`. A default model appears in both success and
-error aliases if it can match both; `default` is not inherently an error. An
-unreachable side is `Never`. Multiple legitimate success variants still need
-narrowing after `unwrap()`; an uncovered 2xx matched by `default` is one example.
+union of declared decoded models, without wrappers. Selection uses exact status,
+then range, then `default`. A default model appears in both success and error
+aliases if it can match both; `default` is not inherently an error. An unreachable
+declared side is `Never`; `Result[S, Never]` still includes unexpected errors.
+Multiple legitimate success variants still need narrowing after `unwrap()`.
 
-Regenerate API packages created before the Result interface: request bases now
-carry `Request[API, Success, Error]`, and custom client implementations return
-`Result[S, E]`. HTTP fetchers and their `RawResponse` contract are unchanged.
+Regenerate API packages created before the Result interface: request bases carry
+`Request[API, Success, Error]`. Custom clients return `ClientResponse[S, E]`;
+construct one from `raw` and `prepare(API, request).decode`. Fetchers still return
+`RawResponse` and do not need to implement lazy decoding or manage response objects.
 
 ### The fetcher contract
 
@@ -489,7 +529,7 @@ The adapter's responsibilities are:
   all response header pairs including duplicates, and fully buffered bytes
   after HTTP decompression but before JSON/text parsing. Consume and release
   the response according to the HTTP library's lifetime rules.
-- Return declared HTTP error statuses for the binder to decode; do not call
+- Return every HTTP status, including undeclared errors, for the binder to decode; do not call
   `raise_for_status`. Choose a redirect policy deliberately: following redirects
   hides the intermediate responses from the generated contract. Our examples
   disable redirects.
@@ -508,7 +548,7 @@ The resulting client has this structural interface (the async version uses
 `async def` with the same parameters and result annotation):
 
 ```python
-from jsoncompat.http import API, Request, RequestOptions, Result
+from jsoncompat.http import API, ClientResponse, Request, RequestOptions
 
 class Client[A: API, Options](Protocol):
     def request[S, E](
@@ -518,7 +558,7 @@ class Client[A: API, Options](Protocol):
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> Result[S, E]: ...
+    ) -> ClientResponse[S, E]: ...
 ```
 
 Implement that method directly for a custom client or test double. At a boundary
@@ -638,7 +678,7 @@ async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as ses
         GetPetRequest(pet_id="p_123"),
         transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
         options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
-    )  # GetPetResult
+    )  # ClientResponse[GetPetSuccess, GetPetError]
     # Later calls without transport= still use the session's 30-second timeout.
 ```
 
@@ -716,8 +756,9 @@ Preparation is synchronous and performs no I/O. The immutable result contains
 the explicit API identity (`call.api`), encoded request (`call.request`), and
 the selected operation's validated decoder. A caller may inspect `RawResponse`
 without decoding, or call `decode` later; only decoding promises the typed
-response. Invalid or undeclared responses still raise `ResponseError`, retaining
-the raw response. Both bound clients use this same preparation/decoding path.
+response. Invalid or undeclared 2xx responses raise `ResponseError`, retaining
+the raw response; non-2xx decoding failures become `Err(UnexpectedResponse(...))`.
+Both bound clients use this same preparation/decoding path.
 
 See [prepared_client.py](../examples/openapi_client/prepared_client.py) for a
 runnable example with native HTTPX timeout settings. Timeouts, authentication,
@@ -737,9 +778,11 @@ Use `result.unwrap()` for success-only inference, or match `Ok`/`Err` and inspec
 its generated model. Multiple success media/status variants can still require
 `isinstance` checks within the success union.
 
-Declared non-2xx responses such as 304 and 404 are returned as `Err`. Undeclared statuses/media,
-malformed bodies, missing required response headers, and schema failures raise
-`ResponseError`, which retains the `RawResponse` and chains the underlying error.
+Declared non-2xx responses such as 304 and 404 decode as `Err`. Undeclared
+statuses/media, malformed bodies, missing required response headers, and schema
+failures become `Err(UnexpectedResponse(...))` for non-2xx responses. For 2xx
+responses they raise `ResponseError`, retaining the `RawResponse` and original
+cause. Both behaviors occur only when decoding is requested.
 Invalid API metadata raises `ContractError` at binding. Invalid request models
 or unrepresentable parameters fail before fetching. Transport exceptions and async
 cancellation propagate unchanged. Do not call a transport's `raise_for_status`

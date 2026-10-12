@@ -31,6 +31,7 @@ from ._metadata import (
     AsyncFetch,
     Body,
     Client,
+    ClientResponse,
     ContractError,
     Cookie,
     EncodedRequest,
@@ -50,6 +51,7 @@ from ._metadata import (
     ResponseError,
     ResponseT,
     Result,
+    UnexpectedResponse,
 )
 from ._options import apply_options
 from ._parameters import check_header, decode_header, encode_parameter
@@ -152,6 +154,9 @@ class _Operation:
                 raise ValueError("invalid HTTP response status")
             if type(raw.body) is not bytes:
                 raise TypeError("response body must be bytes")
+        except (ValueError, TypeError) as error:
+            raise ResponseError(str(error), raw) from error
+        try:
             candidates = [
                 plan for plan in self.responses if plan.response.status == raw.status
             ]
@@ -207,9 +212,13 @@ class _Operation:
             decoded = plan.response.model.from_value(value)
             return Ok(decoded) if 200 <= raw.status < 300 else Err(decoded, raw)
         except (ValueError, TypeError, UnicodeError) as error:
-            raise ResponseError(
+            failure = ResponseError(
                 f"{self.endpoint.method} {self.endpoint.path}: {error}", raw
-            ) from error
+            )
+            if not 200 <= raw.status < 300:
+                failure.__cause__ = error
+                return Err(UnexpectedResponse(failure), raw)
+            raise failure from error
 
 
 def _media_type(value: str) -> str:
@@ -527,9 +536,11 @@ class _SyncClient[A: API, Options]:
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> Result[S, E]:
+    ) -> ClientResponse[S, E]:
         call = _prepare_request(self._api, self._plans, request, options)
-        return call.decode(self._fetch(call.request, transport=transport))
+        return ClientResponse(
+            self._fetch(call.request, transport=transport), call.decode
+        )
 
 
 class _AsyncClient[A: API, Options]:
@@ -547,9 +558,11 @@ class _AsyncClient[A: API, Options]:
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> Result[S, E]:
+    ) -> ClientResponse[S, E]:
         call = _prepare_request(self._api, self._plans, request, options)
-        return call.decode(await self._fetch(call.request, transport=transport))
+        return ClientResponse(
+            await self._fetch(call.request, transport=transport), call.decode
+        )
 
 
 def _require_api(api: object) -> None:

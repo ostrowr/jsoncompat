@@ -43,20 +43,23 @@ jsoncompat version supporting this HTTP runtime.
 ```python
 import httpx
 from petstore import PetstoreAPI, GetPetRequest, GetPet404
-from jsoncompat.http import bind, Ok, Err
+from jsoncompat.http import bind, Ok, Err, UnexpectedResponse
 from jsoncompat.http.httpx import HttpxFetch
 
 with httpx.Client(headers={"Authorization": "Bearer example-token"}) as session:
     client = bind(PetstoreAPI, fetch=HttpxFetch(session, "http://127.0.0.1:8000"))
     request = GetPetRequest(pet_id="p_123")
-    result = client.request(request)
-    match result:
+    response = client.request(request)
+    print(response.status, response.headers.get("ETag"))  # No model parsing.
+    match response.result():
         case Ok(value=pet):
             print(pet.body.name, pet.headers.etag)
         case Err(error=GetPet404(body=problem)):
             print(problem.message)
-        case Err(error=other):
-            print(other.status)
+        case Err(error=UnexpectedResponse(status=503) as error):
+            print(error.text(), error.headers.get("Retry-After"))
+        case result:
+            result.unwrap()
 ```
 
 Run `server.py` separately to use the snippet with a persistent server; it
@@ -68,8 +71,14 @@ or `pet = (await client.request(request)).unwrap()`. `unwrap()` returns only the
 success type and raises `HTTPStatusError` on `Err`; the exception retains the
 decoded error and original buffered response. The shared workflow demonstrates
 explicit 304/404/412 handling and unwrapping an already inspected error.
-Malformed responses still raise `ResponseError` before a result is returned.
-See [result semantics](../../pybindings/README.md#working-with-results), including
+Model decoding happens only at `.result()` or `.unwrap()`, and is cached.
+Undeclared or malformed non-2xx responses become `Err(UnexpectedResponse(...))`;
+the shared workflow exercises an undeclared 503 with JSON details and Retry-After.
+Malformed or undeclared 2xx responses raise `ResponseError` at decoding time.
+Before parsing, `.status`, `.headers`, and `.content` expose the buffered wire data.
+Headers support case-insensitive `.get()` and `.get_all()`; the latter preserves
+repeated values. The transport still downloads the body and releases the response.
+See [result semantics](../../pybindings/README.md#working-with-responses-and-results), including
 status ranges, default responses that can match 2xx, and `Never` branches.
 
 ## Per-call transport options
@@ -127,8 +136,9 @@ result = client.request(
 ```
 
 For async HTTPX, use `AsyncHttpxFetch`, `bind_async`, and `await`; it shares
-`HttpxOptions`. All of these calls infer `GetPetResult`; `.unwrap()` infers
-`GetPet200`. Passing `RequestsOptions` to the aiohttp client, for example, is a
+`HttpxOptions`. All of these calls infer
+`ClientResponse[GetPetSuccess, GetPetError]`; `.result()` infers `GetPetResult`
+and `.unwrap()` infers `GetPet200`. Passing `RequestsOptions` to the aiohttp client, for example, is a
 static type error.
 
 Omitting `transport` or passing `None` uses the existing aiohttp/HTTPX session's

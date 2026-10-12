@@ -9,6 +9,7 @@ from ._metadata import AsyncClient as AsyncClient
 from ._metadata import AsyncFetch as AsyncFetch
 from ._metadata import Body as Body
 from ._metadata import Client as Client
+from ._metadata import ClientResponse as ClientResponse
 from ._metadata import ContractError as ContractError
 from ._metadata import Cookie as Cookie
 from ._metadata import EncodedRequest as EncodedRequest
@@ -27,7 +28,9 @@ from ._metadata import Request as Request
 from ._metadata import RequestOptions as RequestOptions
 from ._metadata import Response as Response
 from ._metadata import ResponseError as ResponseError
+from ._metadata import ResponseHeaders as ResponseHeaders
 from ._metadata import Result as Result
 from ._metadata import SecurityRequirement as SecurityRequirement
 from ._metadata import Server as Server
+from ._metadata import UnexpectedResponse as UnexpectedResponse
 from ._metadata import operation as operation

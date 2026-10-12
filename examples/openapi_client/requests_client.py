@@ -13,10 +13,11 @@ def main() -> None:
         session.trust_env = False
         session.headers["Authorization"] = "Bearer example-token"
         client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
-        result = client.request(
+        response = client.request(
             HealthRequest(), transport=RequestsOptions(timeout=(1, 2))
-        ).unwrap()
-        assert isinstance(result, Health200)
+        )
+        assert response.headers.get("content-type") == "application/json; charset=utf-8"
+        assert isinstance(response.unwrap(), Health200)
         exercise(client)
     print("requests: all ten operations passed")
 
