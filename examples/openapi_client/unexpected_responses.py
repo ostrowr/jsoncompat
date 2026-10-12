@@ -5,18 +5,22 @@ The same functions also run through requests and both HTTPX adapters.
 """
 
 import asyncio
-from typing import Never
 
 from jsoncompat.http import (
-    AsyncClient,
-    Client,
     ClientResponse,
     Err,
     HTTPStatusError,
     ResponseError,
     UnexpectedResponse,
 )
-from petstore import GetPetError, GetPetRequest, GetPetSuccess, PetstoreAPI
+from petstore import (
+    GetPetError,
+    GetPetRequest,
+    GetPetSuccess,
+    PetstoreAPI,
+    PetstoreAsyncClient,
+    PetstoreClient,
+)
 
 
 def inspect_error(
@@ -105,7 +109,7 @@ def inspect_invalid_success(
         raise AssertionError("an invalid success must not produce Ok")
 
 
-def exercise_unexpected(client: Client[PetstoreAPI, Never]) -> None:
+def exercise_unexpected(client: PetstoreClient) -> None:
     for pet_id in ("unavailable", "gateway-error", "broken-error"):
         response = client.request(GetPetRequest(pet_id=pet_id))
         check_error(pet_id, inspect_error(response))
@@ -113,7 +117,7 @@ def exercise_unexpected(client: Client[PetstoreAPI, Never]) -> None:
     inspect_invalid_success(client.request(GetPetRequest(pet_id="broken-success")))
 
 
-async def exercise_unexpected_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
+async def exercise_unexpected_async(client: PetstoreAsyncClient) -> None:
     for pet_id in ("unavailable", "gateway-error", "broken-error"):
         response = await client.request(GetPetRequest(pet_id=pet_id))
         check_error(pet_id, inspect_error(response))

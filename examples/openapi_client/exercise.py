@@ -1,11 +1,7 @@
 """The same typed workflow works with any conforming client."""
 
-from typing import Never
-
 from jsoncompat import MISSING
 from jsoncompat.http import (
-    AsyncClient,
-    Client,
     Err,
     HTTPStatusError,
     RequestOptions,
@@ -27,7 +23,8 @@ from petstore import (
     PetCreate,
     PetFilter,
     PetPatch,
-    PetstoreAPI,
+    PetstoreAsyncClient,
+    PetstoreClient,
     SearchCriteria,
     SearchPetsRequest,
     SetPetNoteBodyApplicationJson,
@@ -39,7 +36,7 @@ from petstore import (
 from unexpected_responses import exercise_unexpected, exercise_unexpected_async
 
 
-def exercise(client: Client[PetstoreAPI, Never]) -> None:
+def exercise(client: PetstoreClient) -> None:
     exercise_unexpected(client)
     page = client.request(
         ListPetsRequest(
@@ -138,7 +135,7 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
     assert client.request(DeletePetRequest(pet_id="p_123")).unwrap().body is None
 
 
-async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
+async def exercise_async(client: PetstoreAsyncClient) -> None:
     await exercise_unexpected_async(client)
     page = (
         await client.request(

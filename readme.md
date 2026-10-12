@@ -158,33 +158,52 @@ Generate API-scoped HTTP requests alongside the models with `--api`:
 jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
-The package exports `PetstoreAPI`, typed request models, and response unions.
-`jsoncompat.http.bind(PetstoreAPI, fetch=...)` implements one shared
-`client.request(GetPetRequest(...))` method returning
-`ClientResponse[GetPetSuccess, GetPetError]`. Inspect raw status, headers, and
-buffered content without parsing; call `.unwrap()` for the validated success
-model or `.result()` to match `Ok`/`Err`. Non-2xx responses that cannot match a
-declared model become `Err(UnexpectedResponse(...))`, preserving their bytes and
-decoding diagnostic. Model decoding is lazy and cached.
-Properties never parse: once `.result()` has returned, `Ok.value` and `Err.error`
-are ordinary fields. See the [parsing timeline](pybindings/README.md#working-with-responses-and-results)
-and [unexpected-response examples](examples/openapi_client/unexpected_responses.py)
-for raw status/body access, JSON and HTML errors, and exception handling.
-`bind_async` provides the async equivalent. API boundaries are enforced by
-invariant types and runtime registration checks. Callers supply one fetch
-function and own sessions, authentication, pooling, and retries. Optional
-`jsoncompat[aiohttp]`, `jsoncompat[httpx]`, and `jsoncompat[requests]` integrations
-provide that fetcher for an existing session. See the
-[runnable aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md)
-and [HTTP runtime contract](pybindings/README.md#api-scoped-http-requests).
+Install the integration for your HTTP library, then bind your own session:
 
-Per-call `transport=` accepts the fetcher's own typed options, such as a native
-timeout. `options=RequestOptions(...)` supports header/query overrides and a wire
-transform. The [fetcher contract](pybindings/README.md#the-fetcher-contract)
-documents the complete sync/async protocols and explicit
-`Client[MyAPI, Options]` types. `prepare(PetstoreAPI, request)` also exposes the
-encoded request and its typed response decoder for direct transport calls and
-raw response inspection. See [per-call controls](pybindings/README.md#per-call-overrides-and-prepared-requests).
+```sh
+pip install 'jsoncompat[requests]'
+```
+
+```python
+import requests
+from jsoncompat.http import bind
+from jsoncompat.http.requests import RequestsFetch
+from petstore import GetPetRequest, PetstoreAPI
+
+with requests.Session() as session:
+    client = bind(PetstoreAPI, fetch=RequestsFetch(session, "https://example.com"))
+    response = client.request(GetPetRequest(pet_id="p_123"))
+    pet = response.unwrap()
+    print(pet.body.name)
+```
+
+Importing `PetstoreAPI` prepares the API before your application starts serving.
+Binding just attaches the fetcher. You own the session and its lifetime.
+Use `bind_async` with the aiohttp or async HTTPX integration for async code.
+
+`request()` downloads the response; `.unwrap()` parses it and returns the typed
+success response, or raises. Read `response.status`, `.headers`, and `.content`
+without parsing. Use `.result()` to handle an expected error such as a 404.
+Undeclared errors retain their status, headers, and body in `UnexpectedResponse`.
+
+Pass clients to your application using the generated types:
+
+```python
+from petstore import GetPet200, GetPetRequest, PetstoreClient
+
+def get_pet(client: PetstoreClient, pet_id: str) -> GetPet200:
+    return client.request(GetPetRequest(pet_id=pet_id)).unwrap()
+```
+
+`PetstoreAsyncClient` is the async equivalent. Both accept an optional transport
+type, such as `PetstoreAsyncClient[AiohttpOptions]`, for helpers that need native
+per-call settings. The default works with any adapter and preserves API and
+response typing.
+
+See the [aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md)
+for complete clients, expected errors, and timeout overrides. The
+[HTTP reference](pybindings/README.md#api-scoped-http-requests) covers custom
+fetchers, extra headers, and other controls.
 
 - `from_value(...)` / `to_value(...)` for schema-checked conversion between
   generated models and Python JSON values;

@@ -64,6 +64,20 @@ fn copy_python_examples(destination: &Path) {
             fs::copy(&path, destination.join(path.file_name().unwrap())).unwrap();
         }
     }
+    // Keep the README's two complete clients executable and type checked.
+    let snippets: Vec<_> = include_str!("../examples/openapi_client/README.md")
+        .split("```python\n")
+        .skip(1)
+        .take(2)
+        .map(|block| block.split("```").next().unwrap())
+        .collect();
+    assert_eq!(snippets.len(), 2);
+    for (name, source) in ["readme_aiohttp.py", "readme_requests.py"]
+        .into_iter()
+        .zip(snippets)
+    {
+        fs::write(destination.join(name), source).unwrap();
+    }
 }
 
 fn jsonplaceholder_example() -> Work {
@@ -132,6 +146,34 @@ fn generated_requests_encode_decode_and_bind_without_generated_clients() {
     );
 }
 #[test]
+fn generated_api_prepares_on_import_without_a_transport() {
+    let work = Work::new();
+    success(work.generate(&example(), &["--models-per-module", "1"]));
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/python/openapi_client_import.py"),
+        work.0.join("imports.py"),
+    )
+    .unwrap();
+    for mode in [
+        "public",
+        "model",
+        "identity",
+        "PetstoreClient",
+        "PetstoreAsyncClient",
+        "failed",
+        "legacy",
+    ] {
+        success(
+            python_env::python_command()
+                .current_dir(&work.0)
+                .args(["imports.py", mode])
+                .output()
+                .unwrap(),
+        );
+    }
+}
+
+#[test]
 fn all_example_transports_work_against_the_local_server() {
     let work = Work::new();
     success(work.generate(&example(), &[]));
@@ -148,6 +190,8 @@ fn all_example_transports_work_against_the_local_server() {
         "prepared_client.py",
         "unexpected_responses.py",
         "wire.py",
+        "readme_aiohttp.py",
+        "readme_requests.py",
     ] {
         success(
             python_env::python_command()
@@ -170,12 +214,12 @@ fn api_boundaries_preserve_static_types_and_structural_implementations() {
         work.0.join("transport_typing.py"),
     )
     .unwrap();
-    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py","unexpected_responses.py"]}).to_string()).unwrap();
+    fs::write(work.0.join("pyrightconfig.json"),json!({"pythonVersion":"3.12","typeCheckingMode":"strict","extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")],"include":["valid.py","transport_typing.py","petstore","other_petstore","exercise.py","server.py","aiohttp_client.py","httpx_client.py","requests_client.py","prepared_client.py","unexpected_responses.py","readme_aiohttp.py","readme_requests.py"]}).to_string()).unwrap();
     fs::write(
         work.0.join("valid.py"),
         r#"
 from typing import Never, assert_type
-from petstore import PetstoreAPI, GetPetRequest, GetPetResult, GetPet200, GetPetSuccess, GetPetError, GetPet304, ListPetsRequest
+from petstore import PetstoreAPI, PetstoreClient, PetstoreAsyncClient, GetPetRequest, GetPetResult, GetPet200, GetPetSuccess, GetPetError, GetPet304, ListPetsRequest
 from jsoncompat.http import API, AsyncClient, Client, ClientResponse, PreparedRequest, Request, RequestOptions, UnexpectedResponse, Ok, Err, bind, bind_async, prepare, EncodedRequest, RawResponse
 from jsoncompat import MISSING, JsonValue
 
@@ -183,7 +227,7 @@ def fetch(request: EncodedRequest, /, *, transport: None = None) -> RawResponse:
     raise NotImplementedError
 async def async_fetch(request: EncodedRequest, /, *, transport: None = None) -> RawResponse:
     raise NotImplementedError
-client: Client[PetstoreAPI, Never] = bind(PetstoreAPI, fetch=fetch)
+client: PetstoreClient = bind(PetstoreAPI, fetch=fetch)
 assert_type(client, Client[PetstoreAPI, Never])
 assert_type(client.request(GetPetRequest(pet_id="a")), ClientResponse[GetPetSuccess, GetPetError])
 pending = client.request(GetPetRequest(pet_id="a"))
@@ -203,14 +247,14 @@ request=ListPetsRequest()
 if request.limit is not MISSING:
     assert_type(request.limit, int)
 async def example() -> GetPetResult:
-    client: AsyncClient[PetstoreAPI, Never] = bind_async(PetstoreAPI, fetch=async_fetch)
+    client: PetstoreAsyncClient = bind_async(PetstoreAPI, fetch=async_fetch)
     assert_type(client, AsyncClient[PetstoreAPI, Never])
     assert_type(await client.request(GetPetRequest(pet_id="a"), options=options), ClientResponse[GetPetSuccess, GetPetError])
     return call.decode(await async_fetch(call.request))
 class Fake:
     def request[S, E](self, request: Request[PetstoreAPI, S, E], /, *, options: RequestOptions | None = None, transport: Never | None = None) -> ClientResponse[S, E]:
         raise NotImplementedError
-reader: Client[PetstoreAPI, Never] = Fake()
+reader: PetstoreClient = Fake()
 response=reader.request(GetPetRequest(pet_id="a")).unwrap()
 assert_type(response, GetPet200)
 assert_type(response.body.name, str)
@@ -220,7 +264,7 @@ assert_type(execute(client, GetPetRequest(pet_id="a")), ClientResponse[GetPetSuc
 
 assert_type(call.decode(fetch(call.request)).unwrap(), GetPet200)
 async def unwrap_async() -> GetPet200:
-    client: AsyncClient[PetstoreAPI, Never] = bind_async(PetstoreAPI, fetch=async_fetch)
+    client: PetstoreAsyncClient = bind_async(PetstoreAPI, fetch=async_fetch)
     return (await client.request(GetPetRequest(pet_id="a"))).unwrap()
 def inspect_result(result: GetPetResult) -> None:
     assert_type(result.unwrap(), GetPet200)
@@ -250,8 +294,8 @@ def inspect_result(result: GetPetResult) -> None:
     );
     let invalid = r#"
 from typing import Never
-from petstore import PetstoreAPI, GetPetRequest, GetPetResult, DeletePet204
-from other_petstore import PetstoreAPI as OtherAPI, GetPetRequest as OtherRequest
+from petstore import PetstoreAPI, PetstoreClient, PetstoreAsyncClient, GetPetRequest, GetPetResult, DeletePet204
+from other_petstore import PetstoreAPI as OtherAPI, PetstoreClient as OtherClient, PetstoreAsyncClient as OtherAsyncClient, GetPetRequest as OtherRequest
 from jsoncompat.http import API, AsyncClient, Client, PreparedRequest, Request, RequestOptions, Response, Result, bind, operation, prepare
 from typing_extensions import TypeForm
 from valid import async_fetch, call, client, execute, fetch
@@ -299,6 +343,18 @@ async def wrong_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
     await client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
 
 typed_client = bind(PetstoreAPI, fetch=typed_fetch)
+wrong_alias: PetstoreClient[AiohttpOptions] = typed_client  # must fail
+other_alias: OtherClient = typed_client  # must fail
+extra_alias_argument: PetstoreClient[HttpxOptions, HttpxOptions] = typed_client  # must fail
+def portable_alias(client: PetstoreClient) -> None:
+    client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
+    client.request(OtherRequest(pet_id="x"))  # must fail
+    wrong: DeletePet204 = client.request(GetPetRequest(pet_id="x")).unwrap()  # must fail
+async def portable_async_alias(client: PetstoreAsyncClient) -> None:
+    await client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
+    await client.request(OtherRequest(pet_id="x"))  # must fail
+async def native_async_alias(client: PetstoreAsyncClient[AiohttpOptions]) -> None:
+    await client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
 typed_client.request(GetPetRequest(pet_id="x"), transport=RequestsOptions(timeout=2))  # must fail
 typed_client.request(GetPetRequest(pet_id="x"), transport={"timeout": 2})  # must fail
 client.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
@@ -318,6 +374,7 @@ bind(PetstoreAPI, fetch=required_option)  # must fail
 bind_async(PetstoreAPI, fetch=typed_fetch)  # must fail
 async def invalid_options() -> None:
     typed_async = bind_async(PetstoreAPI, fetch=typed_async_fetch)
+    other_alias: OtherAsyncClient = typed_async  # must fail
     await typed_async.request(GetPetRequest(pet_id="x"), transport=HttpxOptions(timeout=2))  # must fail
     await typed_async.request(OtherRequest(pet_id="x"))  # must fail
     missing: AsyncClient[PetstoreAPI] = typed_async  # must fail
@@ -385,6 +442,26 @@ fn generation_rejects_unsupported_or_ambiguous_contracts_before_writing() {
         assert!(!output.status.success());
         assert!(
             String::from_utf8_lossy(&output.stderr).contains(message),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!work.0.join("petstore/__init__.py").exists());
+    }
+}
+
+#[test]
+fn generated_client_aliases_cannot_shadow_models() {
+    for name in ["PetstoreClient", "PetstoreAsyncClient"] {
+        let work = Work::new();
+        let mut spec = example();
+        spec["components"]["schemas"][name] = spec["components"]["schemas"]["Pet"].clone();
+        spec["paths"]["/pets/{petId}"]["get"]["responses"]["200"]["content"]["application/json"]
+            ["schema"] = json!({"$ref": format!("#/components/schemas/{name}")});
+        let output = work.generate(&spec, &[]);
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains(&format!("API export collides at {name}")),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -567,8 +644,7 @@ for prefix, selectors in (
         .replace(
             "Client, Err, HTTPStatusError, Ok, RawResponse, ResponseError, UnexpectedResponse, bind",
             "Client, Err, UnexpectedResponse",
-        )
-        .replace("from jsoncompat.http._binding import _prepare_api\n", "");
+        );
     fs::write(work.0.join("typing_results.py"), typing).unwrap();
     fs::write(work.0.join("pyrightconfig.json"), json!({"pythonVersion":"3.12", "typeCheckingMode":"strict", "extraPaths":[Path::new(env!("CARGO_MANIFEST_DIR")).join("pybindings")], "include":["typing_results.py", "petstore"]}).to_string()).unwrap();
     success(

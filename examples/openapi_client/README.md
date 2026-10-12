@@ -1,331 +1,196 @@
-# API-scoped requests with caller-owned HTTP clients
+# Typed Python clients from OpenAPI
 
-This example generates a publishable Python contract from a ten-operation
-OpenAPI 3.1 Petstore. The generated package contains validated request/response
-models and a nominal `PetstoreAPI` identity. `jsoncompat.http.bind` and
-`bind_async` provide one shared `client.request(request)` method. Every request
-carries its API, success, and error types, preserving inference and rejecting cross-API
-calls. Each transport implements one fetch function; sessions, pools, timeouts,
-credentials, retries, and cleanup remain application decisions.
+Generate request and response models, bind your own HTTP session, and call
+`client.request(...)`. The same generated package works with aiohttp, HTTPX,
+requests, or a fetcher you write yourself.
 
-The complete [fetcher contract](../../pybindings/README.md#the-fetcher-contract)
-documents exactly what `bind` requires. A sync adapter satisfies `Fetch[Options]`
-by implementing
-`__call__(self, request: EncodedRequest, /, *, transport: Options | None = None) -> RawResponse`;
-an async adapter satisfies `AsyncFetch[Options]` with `async def` instead. Plain
-functions work too. The binder always passes `transport` by keyword, including
-`None`, which selects adapter defaults. The adapter returns every HTTP status,
-body bytes, and all header pairs for decoding. No generated operation methods
-or protocol inheritance are needed.
+## Run the examples
 
-From the repository root, generate the package:
+From the repository root:
 
 ```sh
-cargo run --bin jsoncompat -- codegen --openapi examples/openapi_client/openapi.json \
+cargo run --bin jsoncompat -- codegen \
+  --openapi examples/openapi_client/openapi.json \
   --api Petstore --output examples/openapi_client/petstore
-```
 
-Then run any example. Each starts and stops its own local HTTP server; no
-account, external service, or real credential is needed.
-
-```sh
 uv run --project pybindings --extra aiohttp python examples/openapi_client/aiohttp_client.py
 uv run --project pybindings --extra httpx python examples/openapi_client/httpx_client.py
 uv run --project pybindings --extra requests python examples/openapi_client/requests_client.py
-uv run --project pybindings --extra httpx python examples/openapi_client/prepared_client.py
-uv run --project pybindings --extra aiohttp python examples/openapi_client/unexpected_responses.py
 ```
 
-The HTTPX example exercises both synchronous and asynchronous clients.
-Generated files are ignored here: regenerate them from `openapi.json`. To
-publish a contract, include the entire generated directory and depend on a
-jsoncompat version supporting this HTTP runtime.
+Each example starts a local Petstore server and exercises all ten operations.
+No account or external service is needed. The HTTPX example runs both sync and
+async clients. Generated files are ignored; regenerate them with the command above.
+
+## An aiohttp client
+
+Importing `PetstoreAPI` prepares the API once, before creating a session or
+serving traffic. Binding later just attaches the fetcher. Your application owns
+the session, credentials, connection pool, and cleanup.
 
 ```python
-import httpx
-from petstore import PetstoreAPI, GetPetRequest, GetPet404
-from jsoncompat.http import bind, Ok, Err, UnexpectedResponse
-from jsoncompat.http.httpx import HttpxFetch
+import asyncio
+import aiohttp
+from jsoncompat.http import bind_async
+from jsoncompat.http.aiohttp import AiohttpFetch
+from petstore import GetPet200, GetPetRequest, PetstoreAPI, PetstoreAsyncClient
+from server import serve
 
-with httpx.Client(headers={"Authorization": "Bearer example-token"}) as session:
-    client = bind(PetstoreAPI, fetch=HttpxFetch(session, "http://127.0.0.1:8000"))
-    request = GetPetRequest(pet_id="p_123")
-    response = client.request(request)
-    print(response.status, response.headers.get("ETag"))  # No model parsing.
-    match response.result():
-        case Ok(value=pet):
-            print(pet.body.name, pet.headers.etag)
-        case Err(error=GetPet404(body=problem)):
-            print(problem.message)
-        case Err(error=UnexpectedResponse(status=503) as error):
-            print(error.text(), error.headers.get("Retry-After"))
-        case result:
-            result.unwrap()
+async def get_pet(client: PetstoreAsyncClient, pet_id: str) -> GetPet200:
+    return (await client.request(GetPetRequest(pet_id=pet_id))).unwrap()
+
+async def main() -> None:
+    with serve() as base_url:
+        async with aiohttp.ClientSession(
+            headers={"Authorization": "Bearer example-token"},
+        ) as session:
+            client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
+            pet = await get_pet(client, "p_123")
+            print(pet.body.name)
+
+asyncio.run(main())
 ```
 
-Run `server.py` separately to use the snippet with a persistent server; it
-prints its dynamically assigned URL. Substitute that URL in the snippet.
-The runnable examples above handle this automatically.
+`PetstoreAsyncClient` is a protocol alias for passing clients around. The helper
+above also accepts async HTTPX clients and correctly typed fakes. For synchronous
+code, use `PetstoreClient` and `bind`:
 
-For the ordinary success path, use `pet = client.request(request).unwrap()`
-or `pet = (await client.request(request)).unwrap()`. `unwrap()` returns only the
-success type and raises `HTTPStatusError` on `Err`; the exception retains the
-decoded error and original buffered response. The shared workflow demonstrates
-explicit 304/404/412 handling and unwrapping an already inspected error.
-Model decoding happens only at `.result()` or `.unwrap()`, and is cached.
-Undeclared or malformed non-2xx responses become `Err(UnexpectedResponse(...))`;
-the shared workflow exercises JSON and HTML errors and a malformed declared 404.
-Malformed or undeclared 2xx responses raise `ResponseError` at decoding time.
-Before parsing, `.status`, `.headers`, and `.content` expose the buffered wire data.
-Headers support case-insensitive `.get()` and `.get_all()`; the latter preserves
-repeated values. The transport still downloads the body and releases the response.
-See [result semantics](../../pybindings/README.md#working-with-responses-and-results), including
-status ranges, default responses that can match 2xx, and `Never` branches.
+```python
+import requests
+from jsoncompat.http import bind
+from jsoncompat.http.requests import RequestsFetch
+from petstore import GetPetRequest, PetstoreAPI
+from server import serve
+
+with serve() as base_url, requests.Session() as session:
+    session.headers["Authorization"] = "Bearer example-token"
+    client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
+    pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()
+    print(pet.body.name)
+```
+
+For HTTPX, pass `HttpxFetch(session, base_url)` to `bind`, or
+`AsyncHttpxFetch(session, base_url)` to `bind_async`. Both come from
+`jsoncompat.http.httpx`. See the [complete HTTPX example](httpx_client.py).
 
 ## When parsing happens
 
-With an existing async client:
-
 ```python
 response = await client.request(GetPetRequest(pet_id="p_123"))
-# The body has been downloaded and the connection released. No model is parsed.
-print(response.status, response.headers.get("ETag"), response.content)
-
-pet = response.unwrap()  # Parse and validate now; return the success envelope.
-print(pet.body.name)
-result = response.result()  # Reuse the cached outcome without parsing again.
+print(response.status, response.headers.get("ETag"))
+print(response.content)  # Buffered bytes; no model parsing yet.
+pet = response.unwrap()  # Parse and validate now; return GetPet200.
 ```
 
-Call `.unwrap()` for the common success path or `.result()` to branch on `Ok`
-and `Err`. Both methods are synchronous, even after an async request, and share
-one cached decoding outcome. All properties are ordinary data access, including
-`Ok.value` and `Err.error` once you have narrowed the result. Transport errors
-occur at `request()`; response contract errors occur at `.result()` / `.unwrap()`.
-Lazy decoding still downloads the entire body. See the
-[full parsing timeline](../../pybindings/README.md#working-with-responses-and-results).
+- `request()` downloads the body and releases the HTTP response.
+- `.status`, `.headers`, `.content`, and `.raw` never parse the body.
+- `.unwrap()` and `.result()` parse once and share the cached outcome.
 
-## Unexpected error examples
+`.unwrap()` returns a typed success response or raises `HTTPStatusError` for an
+HTTP error. Invalid successful responses raise `ResponseError` when parsed.
+Transport errors occur during `request()` and retain their native exception type.
+This is buffered HTTP, not streaming. See the [full parsing contract](../../pybindings/README.md#working-with-responses-and-results).
 
-[`unexpected_responses.py`](unexpected_responses.py) is a standalone aiohttp
-walkthrough, also exercised by every adapter's shared workflow. It demonstrates:
+## Handle an expected 404 or an unexpected error
 
-- An undeclared JSON 503: inspect status, `Retry-After`, bytes, text, and JSON.
-- An undeclared HTML 502: read its text and handle `.json()` raising `ValueError`.
-- A declared 404 whose JSON violates its schema: retain the useful JSON and
-  decoding diagnostic through `UnexpectedResponse`.
-- `.unwrap()` raising `HTTPStatusError`: inspect `exc.response.status` and
-  `exc.response.body`, or narrow `exc.error` for the text/JSON helpers.
-- A malformed 200: inspect metadata and bytes before `.result()` raises
-  `ResponseError`, which also retains the original response.
-
-The demo server deliberately returns these undocumented or invalid bodies;
-the OpenAPI spec remains unchanged. A focused handler needs no extra wrapping:
+Use `.result()` when you want to branch on the outcome:
 
 ```python
 from jsoncompat.http import Err, UnexpectedResponse
+from petstore import GetPet404, GetPetRequest
 
+response = await client.request(GetPetRequest(pet_id="unknown"))
 match response.result():
+    case Err(error=GetPet404(body=problem)):
+        print("Not found:", problem.message)
     case Err(error=UnexpectedResponse() as error):
         print(error.status, error.headers.get("Retry-After"))
-        print(error.body)  # Exact buffered bytes.
         print(error.text())
-        try:
-            details = error.json()  # Explicit JSON parsing, without a schema.
-        except ValueError:
-            print("The server returned a non-JSON body")
-        else:
-            print(details)
     case result:
-        result.unwrap()
+        print(result.unwrap().body.name)
 ```
 
-`.text()` and `.json()` decode on each call; save their return value to reuse it.
-These helpers never discard the original bytes. See the complete
-[unexpected-response contract](../../pybindings/README.md#inspecting-unexpected-responses).
+`UnexpectedResponse` preserves undeclared or malformed non-2xx responses.
+Use `.body` for bytes, `.text()` for text, or `.json()` to explicitly parse JSON
+without a schema. `.json()` raises `ValueError` for a non-JSON body; neither helper
+discards the original bytes. `.decode_error` explains why the response could not
+match the contract. Helpers decode on each call, so save their result to reuse it.
 
-## Per-call transport options
+The local server has useful examples: `"unavailable"` returns a JSON 503,
+`"gateway-error"` an HTML 502, `"broken-error"` an invalid 404 body, and
+`"broken-success"` an invalid 200 body. Run the [full walkthrough](unexpected_responses.py):
 
-The adapters ship as [optional integrations](../../pybindings/README.md#optional-http-integrations).
-Install `jsoncompat[aiohttp]`, `jsoncompat[httpx]`, or `jsoncompat[requests]`
-and import only the integration you use. Each option type is a frozen dataclass
-with one required `timeout` field. The binder infers that type from the fetcher's
-signature and forwards the exact value to the adapter.
+```sh
+uv run --project pybindings --extra aiohttp python examples/openapi_client/unexpected_responses.py
+```
 
-With an existing session and base URL, one call can override the timeout:
+## Override one call
+
+The adapter supplies a typed `transport=` option:
 
 ```python
-# aiohttp: ClientTimeout supports total/connect/socket timeouts.
-import aiohttp
-from jsoncompat.http import bind_async
-from petstore import PetstoreAPI, GetPetRequest
-from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
+from jsoncompat.http.aiohttp import AiohttpOptions
 
-client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
-# AsyncClient[PetstoreAPI, AiohttpOptions]
 response = await client.request(
     GetPetRequest(pet_id="p_123"),
     transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
 )
 ```
 
-```python
-# requests: a scalar or a (connect, read) timeout in seconds.
-from jsoncompat.http import bind
-from petstore import PetstoreAPI, GetPetRequest
-from jsoncompat.http.requests import RequestsFetch, RequestsOptions
+Binding infers `AiohttpOptions` automatically. A helper that needs those controls
+can accept `client: PetstoreAsyncClient[AiohttpOptions]`. Without brackets, the
+alias defaults to `Never`: it accepts any adapter, while only allowing omitted
+or `None` transport options. Request and response types remain precise either way.
+`PetstoreClient` has the same optional type parameter.
 
-client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
-# Client[PetstoreAPI, RequestsOptions]
-response = client.request(
+HTTPX uses `HttpxOptions(timeout=2)`; requests uses
+`RequestsOptions(timeout=(1, 2))` for connect/read timeouts. Omitting `transport`
+uses the configured defaults. [Timeout details](../../pybindings/README.md#optional-http-integrations).
+
+Extra headers and query parameters work with every adapter:
+
+```python
+from jsoncompat.http import RequestOptions
+
+response = await client.request(
     GetPetRequest(pet_id="p_123"),
-    transport=RequestsOptions(timeout=(1, 2)),
+    options=RequestOptions(extra_headers={"X-Trace-ID": "demo"}),
 )
 ```
 
-```python
-# HTTPX: a Timeout object or a scalar in seconds.
-import httpx
-from jsoncompat.http import bind
-from petstore import PetstoreAPI, GetPetRequest
-from jsoncompat.http.httpx import HttpxFetch, HttpxOptions
+## More examples and reference
 
-client = bind(PetstoreAPI, fetch=HttpxFetch(session, base_url))
-# Client[PetstoreAPI, HttpxOptions]
-response = client.request(
-    GetPetRequest(pet_id="p_123"),
-    transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1)),
-)
-```
+- [Shared typed workflow](exercise.py): CRUD, pagination, optional fields, headers,
+  cookies, JSON/text bodies, and expected errors across all four transports.
+- [Custom fetcher contract](../../pybindings/README.md#the-fetcher-contract): the
+  single function needed to connect another HTTP library.
+- [Prepared request example](prepared_client.py): access encoded requests and
+  decode raw responses directly when you need more control.
+- [HTTP reference](../../pybindings/README.md#api-scoped-http-requests): supported
+  OpenAPI features, serialization, overrides, and error behavior.
 
-For async HTTPX, use `AsyncHttpxFetch`, `bind_async`, and `await`; it shares
-`HttpxOptions`. All of these calls infer
-`ClientResponse[GetPetSuccess, GetPetError]`; `.result()` infers `GetPetResult`
-and `.unwrap()` infers `GetPet200`. Passing `RequestsOptions` to the aiohttp client, for example, is a
-static type error.
+To publish a contract, ship the entire generated directory, including `py.typed`,
+and depend on a jsoncompat version supporting this runtime. API preparation uses
+no HTTP library and needs no session. Individual model imports remain lazy.
 
-Omitting `transport` or passing `None` uses the existing aiohttp/HTTPX session's
-timeout or the requests adapter's configured default. Passing
-`HttpxOptions(timeout=None)` or `RequestsOptions(timeout=None)` disables the
-timeout for that call; aiohttp uses `ClientTimeout(total=None)`. The adapters
-do not mutate session settings. Timeout units and meanings come from the
-[aiohttp](https://docs.aiohttp.org/en/stable/client_reference.html#aiohttp.ClientTimeout),
-[requests](https://requests.readthedocs.io/en/latest/user/advanced/#timeouts),
-and [HTTPX](https://www.python-httpx.org/advanced/timeouts/) libraries; a requests
-read timeout is not a total request deadline.
+`cargo test --test openapi_client` generates fresh packages, checks static typing,
+and runs the examples and timeout tests against local servers.
 
-[`aiohttp_client.py`](aiohttp_client.py), [`requests_client.py`](requests_client.py),
-and [`httpx_client.py`](httpx_client.py) are complete runnable examples. Each
-performs a typed call with a native timeout override, then passes the same client
-to the shared ten-operation workflow. That workflow explicitly accepts
-`Client[PetstoreAPI, Never]` or `AsyncClient[PetstoreAPI, Never]`, importing
-`Never` from `typing`. This keeps its boundary independent of the adapter while
-retaining the exact API and response types. Functions needing native settings
-can instead declare, for example, `AsyncClient[PetstoreAPI, AiohttpOptions]`.
-Python 3.12 type parameters have no defaults, so both arguments are explicit.
-
-Add other controls to your own adapter's option type as needed. The binder
-performs no runtime inspection or validation of transport options; the adapter
-owns those semantics. Sessions, pooling, credentials, retries, and lifetimes
-remain caller-owned.
-
-## Wire overrides and prepared requests
-
-The sync and async clients accept `options=RequestOptions(...)`. Use
-`extra_headers` to replace headers case-insensitively, `remove_headers` to remove
-generated headers, `extra_query` to append query pairs, and `remove_query` to
-remove existing names before appending. Inputs are snapshotted, duplicates are
-preserved, and changes do not leak into later calls. Removals do not suppress
-headers added subsequently by a session or authentication handler.
-You can pass `options=` and `transport=` together; only `options` changes the
-encoded request, and the transport option object is never serialized.
-
-For unusual wire changes, `transform` accepts a synchronous function from
-`EncodedRequest` to `EncodedRequest`, applied after those overrides. API identity
-checks, request validation, and the original response decoder remain in place.
-
-[`prepared_client.py`](prepared_client.py) demonstrates the lower-level API:
-`prepare(PetstoreAPI, request, options=...)` returns an immutable typed call,
-`call.request` is sent through a caller-owned fetcher with native HTTPX timeout
-settings using the shipped `HttpxFetch`, and `call.decode(raw)` validates and wraps the
-response in `Ok` or `Err`; the example then calls `unwrap()`. Preparation performs no network I/O; the same call works with a
-synchronous or asynchronous fetcher.
-Raw responses can also be inspected without decoding. See the
-[full contract](../../pybindings/README.md#per-call-overrides-and-prepared-requests).
-
-## What the spec exercises
-
-- CRUD, pagination, a JSON search endpoint, notes with JSON/text representations,
-  and a health endpoint with explicit, ranged, and default responses.
-- Shared component models and local parameter/response references.
-- Required path fields, simple/label/matrix paths, repeated query arrays,
-  `deepObject` filters, pipe-delimited arrays, and JSON-content parameters.
-- Request headers and cookies, typed response headers, repeated raw response
-  headers, conditional requests, 204 and 304 responses.
-- Optional bodies and fields using `MISSING`, nullable JSON values, body media
-  variants, validation failures, and declared 400/404/412 errors as `Err` values.
-- Inherited security/server metadata, with credentials supplied by the transport.
-
-The shipped adapters buffer decompressed response bytes, retain repeated headers,
-and release each response while keeping the caller's session open. They do not
-call `raise_for_status`; aiohttp's session-level setting is overridden per call.
-Caller-configured hooks may still raise. Redirects are disabled so declared
-redirects remain visible to the contract; use a custom fetcher for a different
-redirect policy. Requests cannot send repeated request header names, so its
-adapter rejects those explicitly.
-The aiohttp adapter disables automatic Content-Type headers so an omitted body
-stays omitted. Raw response header bytes are decoded with Latin-1 in every
-adapter. The example session configurations also disable environment proxies where
-applicable, keeping the local demo independent of machine proxy settings.
-
-The binder currently buffers bodies. JSON and UTF-8 `text/plain` are supported;
-multipart, streaming, binary bodies, wildcard media, `allowReserved`, and
-`allowEmptyValue` are rejected during generation. Schema-style parameters
-support non-null scalars and flat arrays/objects; JSON-content parameters support
-nested and nullable values. See the [runtime contract](../../pybindings/README.md#api-scoped-http-requests)
-for details and error behavior.
-
-Validation: `cargo test --test openapi_client` generates fresh packages, checks
-static typing and wire serialization, and runs the examples over loopback with
-all four transport variants.
-Socket tests also hold a response open and confirm that each adapter's per-call
-timeout raises its native exception while leaving the session usable.
-The source-distribution check installs the built wheel into four clean environments:
-core without HTTP libraries, then each HTTP extra separately with a socket test.
-
-## Live JSONPlaceholder smoke test
-
-Run all four transports against the public HTTPS API:
+## Test against a public API
 
 ```sh
 just python-http-live
 ```
 
-This generates a fresh `JsonPlaceholderAPI` request/response package in a
-temporary directory, then runs aiohttp, HTTPX sync/async, and requests through
-the same six checks (24 requests total):
+This runs aiohttp, HTTPX sync/async, and requests against JSONPlaceholder: read,
+filter, create, patch, verify simulated writes do not persist, and handle a 404.
+There are 24 HTTPS requests, with no credentials and explicit timeouts. This
+internet test is optional and is not part of `just check`.
 
-- Read `/posts/1` and validate its typed response.
-- Filter `/posts?userId=1` and validate the returned posts.
-- Create a post with a Unicode title and check the simulated 201 response.
-- PATCH only its title; verify `MISSING` fields are omitted and existing fields
-  survive in the response.
-- Read the original post again to verify the patch did not persist.
-- Read a nonexistent post, inspect `Err(GetPost404)`, and verify that `unwrap()`
-  raises `HTTPStatusError` retaining the typed response and original bytes.
-
-Each transport passes its native timeout option on the first read and also
-exercises ordinary calls without transport options.
-
-[`jsonplaceholder.json`](jsonplaceholder.json) is our small OpenAPI 3.1 contract
-for the [documented posts API](https://jsonplaceholder.typicode.com/#guide),
-not an upstream-published spec. The service simulates writes without storing
-them. Tests use no credentials, retain TLS verification, honor environment proxy
-settings, set explicit timeouts, and fail on network or contract errors without
-retrying or substituting local responses.
-
-The internet test is ignored by default and is not part of `just check`.
-Normal tests still generate its contract and strictly type-check the live test
-and adapters. To inspect the generated package or run an individual transport:
+[The spec](jsonplaceholder.json) is our OpenAPI 3.1 description of the
+[documented posts API](https://jsonplaceholder.typicode.com/#guide).
+[The test](live_jsonplaceholder.py) demonstrates generic helpers that preserve
+the caller's transport-options type. To run an individual transport:
 
 ```sh
 cargo run --locked --bin jsoncompat -- codegen \
@@ -334,6 +199,3 @@ cargo run --locked --bin jsoncompat -- codegen \
 uv run --project pybindings --all-extras --locked python \
   examples/openapi_client/live_jsonplaceholder.py LiveAsyncTests.test_aiohttp
 ```
-
-Omit the test name to run all four; the other names are
-`LiveAsyncTests.test_httpx`, `LiveSyncTests.test_httpx`, and `LiveSyncTests.test_requests`.

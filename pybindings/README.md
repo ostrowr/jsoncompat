@@ -351,47 +351,78 @@ build artifact; generation is not a live-reload or concurrent-writer protocol.
 jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
-This adds a nominal `PetstoreAPI` identity, operation request models such as
-`GetPetRequest`, response models, and success/error/result aliases to the
-generated package. Every request inherits
-`Request[PetstoreAPI, ItsSuccess, ItsError]`. One shared client method handles
-every operation and preserves its inferred response type:
+Install an HTTP integration, for example `pip install 'jsoncompat[aiohttp]'`,
+and bind a session you own:
 
 ```python
-from typing import Never
+import asyncio
+import aiohttp
+from jsoncompat.http import bind_async
+from jsoncompat.http.aiohttp import AiohttpFetch
+from petstore import GetPetRequest, PetstoreAPI
 
-from petstore import PetstoreAPI, GetPetRequest, GetPet200
-from jsoncompat.http import Client, EncodedRequest, RawResponse, bind
+async def main() -> None:
+    async with aiohttp.ClientSession() as session:
+        client = bind_async(
+            PetstoreAPI,
+            fetch=AiohttpFetch(session, "https://example.com"),
+        )
+        response = await client.request(GetPetRequest(pet_id="p_123"))
+        pet = response.unwrap()  # GetPet200; parsing happens here.
+        print(pet.body.name)
 
-def fetch(
-    request: EncodedRequest, /, *, transport: None = None
-) -> RawResponse:
-    # Adapt your existing session here. Return the status, all header pairs,
-    # and body bytes, including declared HTTP error responses.
-    ...
-
-client: Client[PetstoreAPI, Never] = bind(PetstoreAPI, fetch=fetch)
-pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()  # GetPet200
-print(pet.body.name, pet.headers.etag)
-
-def get_pet(client: Client[PetstoreAPI, Never], pet_id: str) -> GetPet200:
-    return client.request(GetPetRequest(pet_id=pet_id)).unwrap()
+asyncio.run(main())
 ```
 
-`bind_async(PetstoreAPI, fetch=async_fetch)` provides the async equivalent;
-use `await client.request(...)`. Both factories require the API class explicitly
-and infer the transport option type from the fetcher's signature.
-The API type parameter is invariant: clients and requests cannot widen to a
-common API base or accept another API's requests. Strict type checking also
-rejects `Client` annotations without both type arguments. Each generated API
-class is a distinct identity, even when two packages have identical schemas and
-class names. At runtime the binder checks exact registered request classes
-before encoding or fetching, including when callers bypass static checking.
+Importing `PetstoreAPI` prepares and validates all operation dispatch plans.
+No session or network access is needed. The plans live with the API class;
+`bind` and `bind_async` reuse them when attaching a fetcher. Import your API
+during application startup to keep that preparation out of request handling.
+Importing the package alone or an individual model remains lazy.
 
-`Client[A, Options]` and `AsyncClient[A, Options]` are shared structural protocols;
-there are no generated operation methods or per-service client protocols.
-Sessions, authentication, retries, and cleanup stay outside this interface.
-Generated packages include a `py.typed` marker; include it when publishing them.
+### Passing clients to your code
+
+The package exports `PetstoreClient` and `PetstoreAsyncClient` for annotations:
+
+```python
+from petstore import GetPet200, GetPetRequest, PetstoreAsyncClient
+
+async def get_pet(client: PetstoreAsyncClient, pet_id: str) -> GetPet200:
+    return (await client.request(GetPetRequest(pet_id=pet_id))).unwrap()
+```
+
+This helper accepts aiohttp, async HTTPX, or a correctly typed fake. Request and
+response types remain precise; requests from another API are rejected.
+Use `PetstoreClient` for synchronous helpers.
+
+Both aliases have an optional transport-options type parameter, defaulting to
+`Never`. The default permits omitting `transport=` or passing `None`; shared
+`options=RequestOptions(...)` overrides remain available. If a helper needs
+native options, declare them explicitly:
+
+```python
+from jsoncompat.http.aiohttp import AiohttpOptions
+
+async def get_pet_quickly(
+    client: PetstoreAsyncClient[AiohttpOptions], pet_id: str,
+) -> GetPet200:
+    response = await client.request(
+        GetPetRequest(pet_id=pet_id),
+        transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
+    )
+    return response.unwrap()
+```
+
+Binding still infers the full transport type from the fetcher. A helper's
+annotation only controls which options that helper can supply. Generated aliases
+use `typing_extensions` to support defaults on Python 3.12.
+
+The aliases refer to the shared structural protocols
+`Client[PetstoreAPI, Options]` and `AsyncClient[PetstoreAPI, Options]`.
+Each generated API has a distinct identity, even when two packages contain the
+same spec. Static typing and runtime registration checks enforce that boundary.
+Generated packages include a `py.typed` marker; include the entire package when
+publishing it. Sessions, authentication, retries, and cleanup remain yours.
 
 ### Working with responses and results
 
@@ -586,7 +617,7 @@ The binder calls `fetch(encoded_request, transport=transport)` exactly once per
 valid call, always passing the keyword, including `None` when omitted. The
 fetcher must accept that keyword with a default. A fetcher with no per-call
 controls declares `transport: None = None` and explicitly annotates its bound
-client as `Client[MyAPI, Never]` (or `AsyncClient[MyAPI, Never]`). This supplies
+client with the generated `MyClient` (or `MyAsyncClient`) alias. This supplies
 the option type when there is no concrete type to infer from the callback.
 A callback accepting only `request` does not satisfy the contract.
 
@@ -622,6 +653,7 @@ The resulting client has this structural interface (the async version uses
 `async def` with the same parameters and result annotation):
 
 ```python
+from typing import Protocol
 from jsoncompat.http import API, ClientResponse, Request, RequestOptions
 
 class Client[A: API, Options](Protocol):
@@ -636,13 +668,12 @@ class Client[A: API, Options](Protocol):
 ```
 
 Implement that method directly for a custom client or test double. At a boundary
-that needs native controls, annotate `Client[PetstoreAPI, MyOptions]`. At a
-transport-independent boundary, use `Client[PetstoreAPI, Never]` (or
-`AsyncClient[PetstoreAPI, Never]`). Such a function accepts clients with any
-concrete option type but can only pass `transport=None` or omit it. The API
-parameter stays invariant; the option parameter is inferred as contravariant.
-Both parameters are explicit because Python 3.12 does not support defaults in
-type parameter lists.
+that needs native controls, annotate `PetstoreClient[MyOptions]` or
+`PetstoreAsyncClient[MyOptions]`. For ordinary helpers, use `PetstoreClient` or
+`PetstoreAsyncClient`. Their default of `Never` accepts clients with any concrete
+option type but only permits `transport=None` or omission. The underlying
+`Client[A, Options]` / `AsyncClient[A, Options]` protocols still require both
+parameters: the API is invariant and transport options are contravariant.
 
 ### Generated metadata and dispatch
 
@@ -650,12 +681,17 @@ The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
 `Cookie`, `Body`) and an operation registry in `api.py`. Each entry pairs a request
 class with its response type and HTTP endpoint metadata. `_api.py` holds the
 API identity separately so request/response model imports remain acyclic.
-Binding validates the API's registered operations and caches immutable dispatch
-plans for up to 128 API classes, shared by sync and async clients. Requests use
-those prepared plans. Model validation programs remain prepared during code
-generation; binding does not compile schemas. Treat published metadata as
-immutable after binding. API identities are final, and unregistered request
-types and inherited API identities are rejected by the shared binder.
+The public `api.py` validates all registered operations and prepares immutable
+dispatch plans when imported, including through the package's API or client-alias
+exports. It retains those plans on the exact API class for its lifetime, shared
+by sync and async clients. Binding and requests reuse them without inspecting
+annotations again. Individual model imports use the lightweight `_api.py`
+identity and do not prepare the whole API. Older generated packages still work,
+preparing on first bind; regenerate them to get import-time preparation.
+Model validation programs remain prepared during code generation; importing an
+API does not compile schemas. Treat published metadata as immutable after import.
+API identities are final, and unregistered request types and inherited API
+identities are rejected by the shared binder.
 
 Request and response names derive from `operationId`, or a deterministic
 method/path fallback. Collisions fail generation. Requests flatten parameters

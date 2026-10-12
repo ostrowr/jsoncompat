@@ -6,7 +6,7 @@ import types
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import Generic, Literal, Never, Protocol, TypeVar, cast
+from typing import ClassVar, Generic, Literal, Never, Protocol, TypeVar, cast
 
 from typing_extensions import TypeForm
 
@@ -121,10 +121,24 @@ class Endpoint:
     servers: tuple[Server, ...] = ()
 
 
+class OperationPlan(Protocol):
+    """Internal dispatch interface retained by a prepared API."""
+
+    def encode(self, request: DataclassModel) -> EncodedRequest: ...
+
+    def decode(self, raw: object) -> Result[DataclassModel, DataclassModel]: ...
+
+
 class API:
     """Nominal identity for one generated API. Pass the class explicitly to bind."""
 
     __slots__ = ()
+
+    # Owned by this exact API class, so preparation survives for its lifetime
+    # without a global cache retaining generated packages or evicting plans.
+    __jsoncompat_http_plans__: ClassVar[
+        Mapping[type[DataclassModel], OperationPlan] | None
+    ] = None
 
     @classmethod
     def operations(cls) -> tuple[Operation, ...]:

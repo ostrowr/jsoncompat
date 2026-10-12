@@ -9,7 +9,7 @@ import aiohttp
 import httpx
 import requests
 from jsoncompat import MISSING
-from jsoncompat.http import AsyncClient, Client, Err, HTTPStatusError, bind, bind_async
+from jsoncompat.http import Err, HTTPStatusError, bind, bind_async
 from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 from jsoncompat.http.requests import RequestsFetch, RequestsOptions
@@ -21,6 +21,8 @@ from jsonplaceholder import (
     GetPostRequest,
     GetPostResult,
     JsonPlaceholderAPI,
+    JsonPlaceholderAsyncClient,
+    JsonPlaceholderClient,
     ListPosts200,
     ListPostsRequest,
     NewPost,
@@ -97,7 +99,7 @@ def check_missing(result: GetPostResult) -> None:
 
 
 def exercise[Options](
-    client: Client[JsonPlaceholderAPI, Options], transport: Options
+    client: JsonPlaceholderClient[Options], transport: Options
 ) -> None:
     original = check_get(
         client.request(GetPostRequest(post_id=1), transport=transport).unwrap()
@@ -111,7 +113,7 @@ def exercise[Options](
 
 
 async def exercise_async[Options](
-    client: AsyncClient[JsonPlaceholderAPI, Options], transport: Options
+    client: JsonPlaceholderAsyncClient[Options], transport: Options
 ) -> None:
     original = check_get(
         (await client.request(GetPostRequest(post_id=1), transport=transport)).unwrap()

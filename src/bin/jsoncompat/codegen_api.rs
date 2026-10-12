@@ -323,6 +323,10 @@ impl ApiPackage {
         let mut names: BTreeSet<String> = exports.keys().cloned().collect();
         let mut public = Vec::new();
         for name in std::iter::once(format!("{}API", self.name))
+            .chain([
+                format!("{}Client", self.name),
+                format!("{}AsyncClient", self.name),
+            ])
             .chain(std::iter::once("SECURITY_SCHEMES".into()))
             .chain(self.operations.iter().flat_map(|o| {
                 [
@@ -337,9 +341,14 @@ impl ApiPackage {
             public.push(name);
         }
         let mut source = String::from(
-            "# Generated operation registry. Dispatch is supplied by jsoncompat.http.bind.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\n",
+            "# Generated operation registry. Dispatch is prepared once on import.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeForm as _TypeForm, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.http._binding import initialize_api as _initialize_api\n",
         );
         writeln!(source, "from ._api import {0}API as {0}API", self.name)?;
+        writeln!(
+            source,
+            "\n_TransportOptions = _TypeVar(\"_TransportOptions\", default=_typing.Never)\n{0}Client = _TypeAliasType(\"{0}Client\", _http.Client[{0}API, _TransportOptions], type_params=(_TransportOptions,))\n{0}AsyncClient = _TypeAliasType(\"{0}AsyncClient\", _http.AsyncClient[{0}API, _TransportOptions], type_params=(_TransportOptions,))",
+            self.name
+        )?;
         let imported: BTreeSet<_> = self
             .operations
             .iter()
@@ -490,6 +499,7 @@ impl ApiPackage {
             )?;
         }
         writeln!(source, ")\n")?;
+        writeln!(source, "_initialize_api({}API)\n", self.name)?;
         writeln!(
             source,
             "__all__ = {}",

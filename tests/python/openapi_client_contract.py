@@ -32,7 +32,6 @@ from jsoncompat.http import (
     bind_async,
     prepare,
 )
-from jsoncompat.http._binding import _prepare_api
 from jsoncompat.http._parameters import decode_header, encode_parameter
 
 PET = b'{"id":"p_123","name":"Mochi","species":"cat","tags":[]}'
@@ -59,12 +58,11 @@ class Recorder:
 
 @contextmanager
 def operations(*specs):
-    _prepare_api.cache_clear()
-    try:
-        with patch.object(api.PetstoreAPI, "operations", return_value=specs):
-            yield
-    finally:
-        _prepare_api.cache_clear()
+    with (
+        patch.object(api.PetstoreAPI, "__jsoncompat_http_plans__", None),
+        patch.object(api.PetstoreAPI, "operations", return_value=specs),
+    ):
+        yield
 
 
 class BindingTests(unittest.TestCase):
@@ -554,12 +552,15 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(api.SECURITY_SCHEMES["bearerAuth"]["scheme"], "bearer")
 
     def test_first_bind_reuses_prepared_models(self):
-        _prepare_api.cache_clear()
         with (
             patch("zlib.decompress", side_effect=AssertionError("schema expansion")),
             patch(
                 "jsoncompat.validator_for",
                 side_effect=AssertionError("schema compilation"),
+            ),
+            patch(
+                "jsoncompat.http._binding.get_type_hints",
+                side_effect=AssertionError("annotation inspection"),
             ),
         ):
             client = bind(api.PetstoreAPI, fetch=self.fetch)
@@ -636,6 +637,15 @@ class BindingTests(unittest.TestCase):
                 bind(api.PetstoreAPI, fetch=self.fetch)
         with self.assertRaises(TypeError):
             bind(fetch=self.fetch)
+
+    def test_subclass_cannot_reuse_another_api_plan(self):
+        class OtherAPI(api.PetstoreAPI):
+            pass
+
+        with self.assertRaisesRegex(ContractError, "must be a Request scoped to"):
+            bind(OtherAPI, fetch=self.fetch)
+        self.assertNotIn("__jsoncompat_http_plans__", OtherAPI.__dict__)
+        self.assertEqual(self.fetch.requests, [])
 
 
 class PreparationTests(unittest.TestCase):
@@ -769,12 +779,12 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(transformed.request, original.request)
         self.assertIn("name|species", transformed.request.target)
 
-    def test_prepared_decoder_validates_after_cache_eviction_and_preserves_raw_failures(
+    def test_prepared_decoder_validates_independently_and_preserves_raw_failures(
         self,
     ):
         call = prepare(api.PetstoreAPI, api.GetPetRequest(pet_id="x"))
-        _prepare_api.cache_clear()
-        self.assertIs(type(call.decode(response()).unwrap()), api.GetPet200)
+        with patch.object(api.PetstoreAPI, "__jsoncompat_http_plans__", None):
+            self.assertIs(type(call.decode(response()).unwrap()), api.GetPet200)
         self.assertIs(type(call.decode(response(404, PROBLEM)).error), api.GetPet404)
         for raw in (response(body=b"not json"), response(body=b"{}")):
             with self.assertRaises(ResponseError) as caught:

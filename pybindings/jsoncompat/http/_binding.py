@@ -7,7 +7,6 @@ import re
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import (
     Annotated,
     Generic,
@@ -41,6 +40,7 @@ from ._metadata import (
     Header,
     Ok,
     Operation,
+    OperationPlan,
     Parameter,
     Path,
     Query,
@@ -492,12 +492,25 @@ def _prepare(spec: Operation, api: type[API]) -> _Operation:
     )
 
 
-@lru_cache(maxsize=128)
-def _prepare_api(api: type[API]) -> Mapping[type[DataclassModel], _Operation]:
+def initialize_api(api: type[API]) -> Mapping[type[DataclassModel], OperationPlan]:
+    """Generated-module hook: validate and retain dispatch plans once, without I/O."""
+    # Do not inherit another API's plans: request registration is nominal.
+    if (
+        "__jsoncompat_http_plans__" in api.__dict__
+        and api.__jsoncompat_http_plans__ is not None
+    ):
+        return api.__jsoncompat_http_plans__
     operations = cast(object, api.operations())
+    # Loading an older/private identity can import the public API module,
+    # whose final statement prepares the same API. Reuse that completed plan.
+    if (
+        "__jsoncompat_http_plans__" in api.__dict__
+        and api.__jsoncompat_http_plans__ is not None
+    ):
+        return api.__jsoncompat_http_plans__
     if not isinstance(operations, tuple) or not operations:
         raise ContractError("API must register a nonempty tuple of operations")
-    plans: dict[type[DataclassModel], _Operation] = {}
+    plans: dict[type[DataclassModel], OperationPlan] = {}
     for spec in cast(tuple[object, ...], operations):
         if not isinstance(spec, Operation):
             raise ContractError("API operations must contain Operation declarations")
@@ -505,14 +518,17 @@ def _prepare_api(api: type[API]) -> Mapping[type[DataclassModel], _Operation]:
         if plan.input_model in plans:
             raise ContractError(f"duplicate operation for {plan.input_model.__name__}")
         plans[plan.input_model] = plan
-    return types.MappingProxyType(plans)
+    prepared = types.MappingProxyType(plans)
+    # Publish only after the entire registry validates successfully.
+    api.__jsoncompat_http_plans__ = prepared
+    return prepared
 
 
 def _select(
     api: type[API],
-    plans: Mapping[type[DataclassModel], _Operation],
+    plans: Mapping[type[DataclassModel], OperationPlan],
     request: DataclassModel,
-) -> _Operation:
+) -> OperationPlan:
     plan = plans.get(type(request))
     if plan is None:
         raise TypeError(
@@ -527,7 +543,7 @@ class _SyncClient[A: API, Options]:
     def __init__(self, api: type[A], fetch: Fetch[Options]) -> None:
         self._api = api
         self._fetch = fetch
-        self._plans = _prepare_api(api)
+        self._plans = initialize_api(api)
 
     def request[S, E](
         self,
@@ -549,7 +565,7 @@ class _AsyncClient[A: API, Options]:
     def __init__(self, api: type[A], fetch: AsyncFetch[Options]) -> None:
         self._api = api
         self._fetch = fetch
-        self._plans = _prepare_api(api)
+        self._plans = initialize_api(api)
 
     async def request[S, E](
         self,
@@ -588,7 +604,7 @@ class PreparedRequest(Generic[ApiT, ResponseT]):
 
 def _prepare_request[A: API, S, E](
     api: type[A],
-    plans: Mapping[type[DataclassModel], _Operation],
+    plans: Mapping[type[DataclassModel], OperationPlan],
     request: Request[A, S, E],
     options: RequestOptions | None,
 ) -> PreparedRequest[A, Result[S, E]]:
@@ -605,7 +621,7 @@ def prepare[A: API, S, E](
 ) -> PreparedRequest[A, Result[S, E]]:
     """Encode a registered request and retain its typed decoder, without I/O."""
     _require_api(api)
-    return _prepare_request(api, _prepare_api(api), request, options)
+    return _prepare_request(api, initialize_api(api), request, options)
 
 
 def bind[A: API, Options](
@@ -613,6 +629,7 @@ def bind[A: API, Options](
 ) -> Client[A, Options]:
     """Bind an explicit API, inferring transport options from the fetcher.
 
+    Generated APIs prepare their dispatch plans on import; binding reuses them.
     Only registered requests reach fetch(request, transport=transport).
     The adapter owns the option type, defaults, and runtime validation.
     """
@@ -623,6 +640,6 @@ def bind[A: API, Options](
 def bind_async[A: API, Options](
     api: type[A], /, *, fetch: AsyncFetch[Options]
 ) -> AsyncClient[A, Options]:
-    """Bind an explicit API to an async fetcher, preserving cancellation."""
+    """Attach an async fetcher to an API's prepared plans, preserving cancellation."""
     _require_api(api)
     return _AsyncClient(api, fetch)
