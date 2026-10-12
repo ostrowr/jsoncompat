@@ -127,6 +127,44 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             jsoncompat.validator_for("true", options={"unexpected": True})
 
+    def test_validator_backends_preserve_applicators_and_borrowed_values(self):
+        cases = [
+            ({"oneOf": [True, True]}, [(None, False), ({}, False)]),
+            ({"type": "array", "contains": {"type": "integer"},
+              "minContains": 1, "maxContains": 1, "unevaluatedItems": False},
+             [([1], True), ([1, 2], False), ([1, "x"], False)]),
+            ({"anyOf": [{"properties": {"a": True}}, {"properties": {"b": True}}],
+              "unevaluatedProperties": False},
+             [({"a": 1, "b": 2}, True), ({"c": 1}, False)]),
+            ({"type": "object", "propertyNames": {"pattern": "^[a-z]+$"}},
+             [({"name": 1}, True), ({"Name": 1}, False)]),
+            ({"type": "array", "uniqueItems": True},
+             [([1, 1.0], False), ([True, 1], True), ([{"x": 1}, {"x": 1.0}], False)]),
+            ({"type": "object", "properties": {"next": {"$ref": "#"}},
+              "additionalProperties": False},
+             [({"next": {"next": {}}}, True), ({"next": {"bad": 1}}, False)]),
+        ]
+        for schema, examples in cases:
+            validator = jsoncompat.validator_for(json.dumps(schema))
+            for value, expected in examples:
+                with self.subTest(schema=schema, value=value):
+                    self.assertEqual(validator.is_valid_json(json.dumps(value)), expected)
+                    self.assertEqual(validator.is_valid_value(value), expected)
+                    self.assertEqual(validator._is_valid_borrowed_value(value), expected)
+
+    def test_borrowed_validator_rejects_non_json_graphs(self):
+        validator = jsoncompat.validator_for("true")
+        cyclic_list = []
+        cyclic_list.append(cyclic_list)
+        cyclic_dict = {}
+        cyclic_dict["self"] = cyclic_dict
+        for value in (object(), {1: "not a string key"}, float("nan"),
+                      float("inf"), [float("-inf")], cyclic_list, cyclic_dict):
+            with self.subTest(value=type(value).__name__):
+                self.assertFalse(validator._is_valid_borrowed_value(value))
+        shared = {"value": [1, "🐲", None]}
+        self.assertTrue(validator._is_valid_borrowed_value([shared, shared]))
+
     def test_public_verdict_is_structured_and_preserves_exact_witness_json(self):
         result = jsoncompat.analyze_compat('{"type":"string"}', '{"type":"integer"}', "serializer")
         self.assertEqual(result["status"], "incompatible")
