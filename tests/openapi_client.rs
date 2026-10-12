@@ -44,6 +44,21 @@ impl Drop for Work {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+fn model_sources(package: &Path) -> String {
+    fs::read_dir(package)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("_type_")
+        })
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn example() -> Value {
     serde_json::from_str(include_str!("../examples/openapi_client/openapi.json")).unwrap()
 }
@@ -473,7 +488,7 @@ fn inline_only_specs_and_parameter_overrides_are_supported() {
     let work = Work::new();
     let spec = json!({"openapi":"3.1.0","info":{"title":"Inline","version":"1"},"paths":{"/items/{id}":{"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer"}},{"name":"id","in":"query","schema":{"type":"integer"}}],"get":{"parameters":[{"name":"id","in":"query","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"found","content":{"application/problem+json":{"schema":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}}}}}}}}});
     success(work.generate(&spec, &[]));
-    let source = fs::read_to_string(work.0.join("petstore/models_0000.py")).unwrap();
+    let source = model_sources(&work.0.join("petstore"));
     assert!(source.contains("path_id: typing.Annotated[int"));
     assert!(source.contains("query_id: typing.Annotated[str"));
     assert!(source.contains("application/problem+json"));
@@ -501,7 +516,7 @@ fn default_only_responses_and_component_renames_preserve_contracts() {
     let work = Work::new();
     let spec = json!({"openapi":"3.1.0","info":{"title":"Default","version":"1"},"paths":{"/ping":{"get":{"operationId":"ping","responses":{"default":{"description":"result","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Result"}}}}}}}},"components":{"schemas":{"Result":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}}}});
     success(work.generate(&spec, &["--rename", "Result=Outcome"]));
-    let source = fs::read_to_string(work.0.join("petstore/models_0000.py")).unwrap();
+    let source = model_sources(&work.0.join("petstore"));
     assert!(source.contains("body: Outcome"));
     success(
         python_env::python_command()
@@ -653,4 +668,159 @@ for prefix, selectors in (
             .output()
             .unwrap(),
     );
+}
+
+#[test]
+fn operations_and_models_always_use_named_files_and_regenerate_without_repacking() {
+    let work = Work::new();
+    let mut spec = example();
+    success(work.generate(&spec, &[]));
+    let package = work.0.join("petstore");
+    let snapshot = || -> std::collections::BTreeMap<String, Vec<u8>> {
+        fs::read_dir(&package)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "py"))
+            .map(|path| {
+                (
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    fs::read(path).unwrap(),
+                )
+            })
+            .collect()
+    };
+    let before = snapshot();
+    let operations = before
+        .keys()
+        .filter(|name| name.starts_with("_operation_"))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(operations.len(), 10);
+    let declarations = before
+        .keys()
+        .filter(|name| name.contains("_type_"))
+        .collect::<Vec<_>>();
+    assert_eq!(declarations.len(), 71);
+    for name in declarations {
+        assert!(
+            !String::from_utf8_lossy(&before[name]).contains("import *"),
+            "a model should import only its own annotation dependencies"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&before[name])
+                .matches("\nclass ")
+                .count(),
+            1
+        );
+    }
+    success(work.generate(&spec, &[]));
+    assert_eq!(snapshot(), before);
+    let mut added = spec["paths"]["/pets/{petId}"]["get"].clone();
+    added["operationId"] = json!("getPetAgain");
+    spec["paths"]["/pets-again/{petId}"] =
+        json!({"parameters":spec["paths"]["/pets/{petId}"]["parameters"], "get":added});
+    // Preserve path-level parameters whether they live on the original path or
+    // the operation itself in the example specification.
+    if spec["paths"]["/pets-again/{petId}"]["parameters"].is_null() {
+        spec["paths"]["/pets-again/{petId}"]
+            .as_object_mut()
+            .unwrap()
+            .remove("parameters");
+    }
+    success(work.generate(&spec, &[]));
+    let grown = snapshot();
+    assert!(
+        before.keys().all(|name| grown.contains_key(name)),
+        "adding an operation should not rename existing files"
+    );
+    for name in &operations {
+        assert_eq!(
+            grown[name], before[name],
+            "unrelated operation changed: {name}"
+        );
+    }
+    fs::write(package.join("notes.txt"), "caller owned").unwrap();
+    spec["paths"]
+        .as_object_mut()
+        .unwrap()
+        .remove("/pets-again/{petId}");
+    success(work.generate(&spec, &[]));
+    assert_eq!(snapshot(), before);
+    assert_eq!(
+        fs::read_to_string(package.join("notes.txt")).unwrap(),
+        "caller owned"
+    );
+    for stale in grown.keys().filter(|name| !before.contains_key(*name)) {
+        assert!(!package.join(stale).exists());
+    }
+}
+
+#[test]
+fn large_shared_recursive_api_dispatches_across_all_generated_modules() {
+    let work = Work::new();
+    let mut paths = serde_json::Map::new();
+    for i in 0..96 {
+        paths.insert(format!("/nodes/{{id}}/v{i}"), json!({"put":{
+            "operationId":format!("putNode{i:03}"),
+            "parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer"}}],
+            "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Node"}}}},
+            "responses":{"200":{"description":"Updated","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Node"}}}}}
+        }}));
+    }
+    let spec = json!({"openapi":"3.1.0","info":{"title":"Shared recursive API","version":"1"},"paths":paths,"components":{"schemas":{
+        "Node":{"type":"object","properties":{"label":{"type":"string"},"children":{"type":"array","items":{"$ref":"#/components/schemas/Node"}}},"required":["label","children"],"additionalProperties":false}
+    }}});
+    success(work.generate(&spec, &[]));
+    let package = work.0.join("petstore");
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(package.join(".jsoncompat-manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        manifest["modules"].as_object().unwrap().len(),
+        1,
+        "the reference graph must stay connected"
+    );
+    let files = manifest["files"].as_object().unwrap();
+    assert_eq!(
+        files
+            .keys()
+            .filter(|name| name.starts_with("_operation_"))
+            .count(),
+        96
+    );
+    assert!(
+        files.keys().any(|name| name.contains("_nodes_0001")),
+        "exercise multiple conversion graph shards"
+    );
+    assert!(
+        files
+            .keys()
+            .all(|name| fs::metadata(package.join(name)).unwrap().len() < 512 * 1024)
+    );
+    success(python_env::python_command().current_dir(&work.0).arg("-c").arg(r#"
+import compileall, dataclasses, inspect, zlib
+from unittest.mock import patch
+import jsoncompat
+import jsoncompat.http
+assert compileall.compile_dir('petstore', quiet=1)
+def forbidden(*args, **kwargs): raise AssertionError('runtime schema compilation')
+with patch.object(dataclasses, 'dataclass', forbidden), patch.object(inspect, 'get_annotations', forbidden), patch.object(jsoncompat, 'validator_for', forbidden), patch.object(zlib, 'decompress', forbidden):
+    import petstore
+    from petstore import Node, PetstoreAPI
+    from jsoncompat.http import RawResponse, bind
+    calls = []
+    def fetch(request, /, *, transport=None):
+        calls.append(request)
+        return RawResponse(200, (('Content-Type', 'application/json'),), request.body)
+    client = bind(PetstoreAPI, fetch=fetch)
+    assert len(PetstoreAPI.operations()) == 96
+    tree = Node(label='root', children=[Node(label='leaf', children=[])])
+    for i in range(96):
+        request = getattr(petstore, f'PutNode{i:03}Request')(id=i, body=tree)
+        response = client.request(request).unwrap()
+        assert type(response.body) is Node
+        assert type(response.body.children[0]) is Node
+        assert response.body.to_value() == tree.to_value()
+        assert calls[-1].target == f'/nodes/{i}/v{i}'
+"#).output().unwrap());
 }

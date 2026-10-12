@@ -6,6 +6,7 @@ use jsoncompat_openapi::{
     ParameterEncoding, ParameterLocation, SchemaSerialization,
 };
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -319,7 +320,10 @@ impl ApiPackage {
             self.name
         )
     }
-    pub fn source(&self, exports: &BTreeMap<String, String>) -> Result<(String, Vec<String>)> {
+    pub fn sources(
+        &self,
+        exports: &BTreeMap<String, String>,
+    ) -> Result<(BTreeMap<String, String>, Vec<String>)> {
         let mut names: BTreeSet<String> = exports.keys().cloned().collect();
         let mut public = Vec::new();
         for name in std::iter::once(format!("{}API", self.name))
@@ -341,7 +345,7 @@ impl ApiPackage {
             public.push(name);
         }
         let mut source = String::from(
-            "# Generated operation registry. Dispatch is prepared once on import.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeForm as _TypeForm, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.http._binding import initialize_api as _initialize_api\n",
+            "# Generated operation registry. Dispatch is prepared once on import.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.http._binding import initialize_api as _initialize_api\n",
         );
         writeln!(source, "from ._api import {0}API as {0}API", self.name)?;
         writeln!(
@@ -349,20 +353,23 @@ impl ApiPackage {
             "\n_TransportOptions = _TypeVar(\"_TransportOptions\", default=_typing.Never)\n{0}Client = _TypeAliasType(\"{0}Client\", _http.Client[{0}API, _TransportOptions], type_params=(_TransportOptions,))\n{0}AsyncClient = _TypeAliasType(\"{0}AsyncClient\", _http.AsyncClient[{0}API, _TransportOptions], type_params=(_TransportOptions,))",
             self.name
         )?;
-        let imported: BTreeSet<_> = self
-            .operations
-            .iter()
-            .flat_map(|o| {
-                std::iter::once(&o.input).chain(o.responses.iter().map(|(_, name, _)| name))
-            })
-            .collect();
-        for name in imported {
+        let mut files = BTreeMap::new();
+        for operation in &self.operations {
+            let name = &operation.input;
+            let digest = format!("{:x}", Sha256::digest(name.as_bytes()));
+            let module = format!(
+                "_operation_{}_{}",
+                &name[..name.len().min(64)],
+                &digest[..16]
+            );
+            files.insert(
+                format!("{module}.py"),
+                Self::operation_source(std::slice::from_ref(operation), exports)?,
+            );
             writeln!(
                 source,
-                "from .{} import {name} as {name}",
-                exports
-                    .get(name)
-                    .with_context(|| format!("missing generated export {name}"))?
+                "from .{module} import *\nfrom .{module} import OPERATIONS as _operations_{}",
+                operation.input
             )?;
         }
         writeln!(
@@ -370,7 +377,49 @@ impl ApiPackage {
             "\nSECURITY_SCHEMES: _typing.Final[dict[str, _JsonValue]] = _json.loads({})",
             py(&self.security_schemes.to_string())
         )?;
-        for operation in &self.operations {
+        writeln!(
+            source,
+            "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = tuple(_operation for _group in ({},) for _operation in _group)\n",
+            self.operations
+                .iter()
+                .map(|o| format!("_operations_{}", o.input))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
+        writeln!(source, "_initialize_api({}API)\n", self.name)?;
+        writeln!(
+            source,
+            "__all__ = {}",
+            tuple(&public.iter().map(|s| py(s)).collect::<Vec<_>>())
+        )?;
+        files.insert("api.py".into(), source);
+        files.insert("_api.py".into(), self.identity_source());
+        Ok((files, public))
+    }
+
+    fn operation_source(
+        operations: &[Operation],
+        exports: &BTreeMap<String, String>,
+    ) -> Result<String> {
+        let mut source = String::from(
+            "# Generated operation shard. Import the public API instead.\nfrom __future__ import annotations\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import http as _http\n",
+        );
+        let imported: BTreeSet<_> = operations
+            .iter()
+            .flat_map(|o| {
+                std::iter::once(&o.input).chain(o.responses.iter().map(|(_, name, _)| name))
+            })
+            .collect();
+        for name in &imported {
+            writeln!(
+                source,
+                "from .{} import {name} as {name}",
+                exports
+                    .get(*name)
+                    .with_context(|| format!("missing generated export {name}"))?
+            )?;
+        }
+        for operation in operations {
             writeln!(
                 source,
                 "\ntype {} = {}",
@@ -383,7 +432,7 @@ impl ApiPackage {
                     .join(" | ")
             )?;
         }
-        for operation in &self.operations {
+        for operation in operations {
             writeln!(
                 source,
                 "type {} = {}",
@@ -406,7 +455,7 @@ impl ApiPackage {
             source,
             "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = ("
         )?;
-        for operation in &self.operations {
+        for operation in operations {
             let contract = &operation.contract;
             let responses = operation
                 .responses
@@ -499,13 +548,23 @@ impl ApiPackage {
             )?;
         }
         writeln!(source, ")\n")?;
-        writeln!(source, "_initialize_api({}API)\n", self.name)?;
-        writeln!(
-            source,
-            "__all__ = {}",
-            tuple(&public.iter().map(|s| py(s)).collect::<Vec<_>>())
-        )?;
-        Ok((source, public))
+        let public = imported
+            .into_iter()
+            .map(String::as_str)
+            .chain(operations.iter().flat_map(|o| {
+                [
+                    &o.response_alias,
+                    &o.success_alias,
+                    &o.error_alias,
+                    &o.result_alias,
+                ]
+                .into_iter()
+                .map(String::as_str)
+            }))
+            .map(py)
+            .collect::<Vec<_>>();
+        writeln!(source, "__all__ = {}", tuple(&public))?;
+        Ok(source)
     }
 }
 

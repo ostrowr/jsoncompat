@@ -137,12 +137,21 @@ else: raise AssertionError('unknown export')
     assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
     let after = contents(&work.0.join("models"));
     assert_eq!(
-        before
-            .iter()
-            .filter(|(name, data)| after.get(*name) != Some(*data))
-            .count(),
-        1,
-        "only the generated companion's constraint should change"
+        before.keys().collect::<Vec<_>>(),
+        after.keys().collect::<Vec<_>>(),
+        "a constraint edit must not repack neighboring models"
+    );
+    let changed = before
+        .iter()
+        .filter(|(name, data)| after.get(*name) != Some(*data))
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
+    assert!(!changed.is_empty());
+    assert!(
+        changed.iter().all(|name| name.contains("_schema_Wide_")
+            || name.contains("_program_Wide_")
+            || name.contains("_plan_")),
+        "only Wide's prepared data and the shared decision plan should change: {changed:?}"
     );
     fs::write(work.0.join("models/notes.txt"), "keep me").unwrap();
     success(work.generate(&["--component", "Order"]));
@@ -184,4 +193,126 @@ fn component_names_resources_and_failed_regeneration_are_explicit() {
     let output = python_env::python_command().arg("-c").arg("import sys; sys.path.insert(0,sys.argv[1]); from models import RemoteRecord; assert RemoteRecord.deserialize('{\"f000\":0,\"f001\":1,\"f002\":2,\"f003\":3,\"f004\":4}').serialize()")
         .arg(&work.0).output().unwrap();
     success(output);
+}
+
+#[test]
+fn split_model_artifacts_recover_missing_and_modified_chunks_and_remove_stale_ones() {
+    let work = Work::new();
+    let mut spec = api();
+    spec["components"]["schemas"]["Wide"] = record(1200);
+    // High-entropy constants exercise a large *single* prepared program, rather
+    // than relying on repeated fields which compress extremely well.
+    let mut state = 17_u64;
+    let marker = (0..160_000)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (b'a' + (state % 26) as u8) as char
+        })
+        .collect::<String>();
+    spec["components"]["schemas"]["Wide"]["properties"]["marker"] = json!({"const":marker});
+    spec["components"]["schemas"]["Wide"]["required"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("marker"));
+    let mut payload: serde_json::Map<String, Value> =
+        (0..1200).map(|i| (format!("f{i:03}"), json!(i))).collect();
+    payload.insert("marker".into(), json!(marker));
+    fs::write(
+        work.0.join("payload.json"),
+        serde_json::to_vec(&payload).unwrap(),
+    )
+    .unwrap();
+    work.write(&spec);
+    success(work.generate(&[]));
+    let package = work.0.join("models");
+    let before = contents(&package);
+    let chunks = before
+        .keys()
+        .filter(|name| name.contains("_program_Wide_"))
+        .collect::<Vec<_>>();
+    assert!(
+        chunks.len() > 1,
+        "a single large prepared model must span data files"
+    );
+    for name in &chunks {
+        assert!(before[*name].len() < 4 * 64 * 1024 + 128, "{name}");
+    }
+    fs::remove_file(package.join(chunks[0])).unwrap();
+    assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
+    assert_eq!(contents(&package), before);
+    fs::write(package.join(chunks[1]), "broken prepared data").unwrap();
+    assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
+    assert_eq!(contents(&package), before);
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import json, sys
+from pathlib import Path
+from typing import get_type_hints
+sys.path.insert(0, sys.argv[1])
+from models import Customer, Order, Wide
+assert get_type_hints(Order)['customer'] is Customer
+payload = json.loads(Path(sys.argv[1], 'payload.json').read_text())
+assert Wide.from_value(payload).to_value() == payload
+assert Wide.deserialize(Wide.from_value(payload).serialize()).to_value() == payload
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+    spec["components"]["schemas"]["Wide"] = record(5);
+    work.write(&spec);
+    success(work.generate(&[]));
+    let after = contents(&package);
+    assert!(chunks.iter().any(|name| !after.contains_key(*name)));
+    assert!(
+        before
+            .keys()
+            .filter(|name| name.contains("_type_"))
+            .all(|name| after.contains_key(name)),
+        "shrinking a model must retain the declaration layout"
+    );
+    for removed in before.keys().filter(|name| !after.contains_key(*name)) {
+        assert!(!package.join(removed).exists(), "stale artifact: {removed}");
+    }
+}
+
+#[test]
+fn named_model_files_handle_long_names_and_case_insensitive_filesystems() {
+    let work = Work::new();
+    let long_name = format!("Long{}", "Component".repeat(40));
+    let spec = json!({"openapi":"3.1.0","info":{"title":"Names","version":"1"},"components":{"schemas":{
+        "URL":{"type":"integer"}, "Url":{"type":"string"}, long_name.clone():{"type":"boolean"}
+    }}});
+    work.write(&spec);
+    success(work.generate(&[]));
+    let package = work.0.join("models");
+    let files = contents(&package);
+    let lower: std::collections::BTreeSet<_> =
+        files.keys().map(|name| name.to_ascii_lowercase()).collect();
+    assert_eq!(files.len(), lower.len());
+    assert!(files.keys().all(|name| name.len() < 255));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import sys
+sys.path.insert(0, sys.argv[1])
+import models
+assert models.URL.from_value(1).root == 1
+assert models.Url.from_value('one').root == 'one'
+assert getattr(models, sys.argv[2]).from_value(True).root is True
+"#,
+            )
+            .arg(&work.0)
+            .arg(long_name)
+            .output()
+            .unwrap(),
+    );
 }

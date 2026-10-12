@@ -21,6 +21,8 @@ struct Manifest {
     version: u32,
     compiler: String,
     modules: BTreeMap<String, String>,
+    #[serde(default)]
+    module_files: BTreeMap<String, Vec<String>>,
     files: BTreeMap<String, String>,
     #[serde(default)]
     exports: BTreeMap<String, String>,
@@ -96,7 +98,7 @@ pub(super) fn generate(
         Manifest::default()
     };
     ensure!(
-        previous.version <= 2,
+        previous.version <= 3,
         "unsupported package manifest; use a new output directory"
     );
     ensure!(
@@ -112,7 +114,7 @@ pub(super) fn generate(
     );
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
     let mut manifest = Manifest {
-        version: 2,
+        version: 3,
         compiler,
         ..Default::default()
     };
@@ -128,9 +130,6 @@ pub(super) fn generate(
     let mut rebuilt = 0;
     for (index, mut group) in groups.into_iter().enumerate() {
         let module_name = format!("models_{index:04}");
-        let companion = format!("_{module_name}_generated");
-        let public_file = format!("{module_name}.py");
-        let private_file = format!("{companion}.py");
         let declarations: BTreeMap<_, _> = group
             .schemas
             .keys()
@@ -164,20 +163,29 @@ pub(super) fn generate(
             metadata.imports,
             metadata.base_imports,
             metadata.fields,
-            metadata.bases
+            metadata.bases,
         ]))?);
+        let cached_files = previous.module_files.get(&module_name);
         let cached = previous.compiler == manifest.compiler
             && previous.modules.get(&module_name) == Some(&input_digest)
-            && [&public_file, &private_file].iter().all(|file| {
-                previous.files.get(*file).is_some_and(|expected| {
-                    fs::read(destination.join(file)).is_ok_and(|bytes| digest(&bytes) == *expected)
-                })
+            && cached_files.is_some_and(|files| {
+                !files.is_empty()
+                    && files.iter().all(|file| {
+                        previous.files.get(file).is_some_and(|expected| {
+                            fs::read(destination.join(file))
+                                .is_ok_and(|bytes| digest(&bytes) == *expected)
+                        })
+                    })
             });
         let nested_exports = if cached {
-            for file in [public_file, private_file] {
+            let files = cached_files.unwrap();
+            manifest
+                .module_files
+                .insert(module_name.clone(), files.clone());
+            for file in files {
                 manifest
                     .files
-                    .insert(file.clone(), previous.files[&file].clone());
+                    .insert(file.clone(), previous.files[file].clone());
             }
             previous
                 .exports
@@ -190,18 +198,13 @@ pub(super) fn generate(
             let module =
                 generate_dataclass_declarations_with_metadata(&schema, &declarations, metadata)
                     .with_context(|| format!("generating {module_name}"))?;
-            stage(
-                &staging,
-                &mut manifest,
-                &public_file,
-                &module.public_file(&companion),
-            )?;
-            stage(
-                &staging,
-                &mut manifest,
-                &private_file,
-                &module.private_file(),
-            )?;
+            let files = module.package_files(&module_name);
+            manifest
+                .module_files
+                .insert(module_name.clone(), files.keys().cloned().collect());
+            for (file, source) in files {
+                stage(&staging, &mut manifest, &file, &source)?;
+            }
             rebuilt += 1;
             module.models
         };
@@ -214,9 +217,10 @@ pub(super) fn generate(
     }
     let model_count = exports.len();
     if let Some(api) = api {
-        let (source, public) = api.source(&exports)?;
-        stage(&staging, &mut manifest, "api.py", &source)?;
-        stage(&staging, &mut manifest, "_api.py", &api.identity_source())?;
+        let (files, public) = api.sources(&exports)?;
+        for (file, source) in files {
+            stage(&staging, &mut manifest, &file, &source)?;
+        }
         for name in public {
             exports.insert(name, "api".into());
         }
@@ -250,6 +254,7 @@ pub(super) fn generate(
             "{INITIALIZER}\nif _TYPE_CHECKING:\n{type_exports}\n__all__ = ({public_names},)\n"
         ),
     )?;
+    let manifest_source = serde_json::to_string_pretty(&manifest)?;
     // Finish every build before modifying the existing package. Unmanaged
     // files are never replaced. Deploy the resulting directory as one unit.
     for file in manifest.files.keys() {
@@ -279,10 +284,7 @@ pub(super) fn generate(
             Err(error) => return Err(error.into()),
         }
     }
-    write_atomic(
-        &destination.join(MANIFEST),
-        &serde_json::to_string_pretty(&manifest)?,
-    )?;
+    write_atomic(&destination.join(MANIFEST), &manifest_source)?;
     eprintln!(
         "Generated {} models in {} modules ({} rebuilt) at {}",
         model_count,

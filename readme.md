@@ -148,15 +148,19 @@ jsoncompat codegen --openapi openapi.json --output my_models --models-per-module
 ```
 
 Use `from my_models import Order`. The package loads model modules on demand;
-reference-connected models share identities and independent models stay in
-bounded modules. `--component` selects roots and `--rename` resolves name
-collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
+reference-connected models share identities. Each model has its own declaration
+and implementation files, with large prepared data stored separately.
+`--component` selects roots and `--rename` resolves name collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
 Generate API-scoped HTTP requests alongside the models with `--api`:
 
 ```bash
 jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
+
+The generated package always uses separate files for each operation and model,
+so growing an API does not turn the client into one huge file. Keep the whole
+package together; your imports stay simple: `from petstore import GetPetRequest`.
 
 Install the integration for your HTTP library, then bind your own session:
 

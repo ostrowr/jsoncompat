@@ -22,6 +22,11 @@ Each example starts a local Petstore server and exercises all ten operations.
 No account or external service is needed. The HTTPX example runs both sync and
 async clients. Generated files are ignored; regenerate them with the command above.
 
+The package always splits operations and models into named files, with prepared
+data stored separately. Adding endpoints does not combine or reshuffle existing
+operation files. Import from `petstore` as shown below and publish the entire
+generated directory.
+
 ## An aiohttp client
 
 Importing `PetstoreAPI` prepares the API once, before creating a session or

@@ -36,7 +36,8 @@ pub(crate) struct CodegenArgs {
     /// Rename a component: COMPONENT=PythonName.
     #[arg(long, requires = "openapi")]
     rename: Vec<String>,
-    /// Target module size; connected references stay together even above it.
+    /// Target model count per binding group; each model has separate source files.
+    /// Connected references stay in one group even above this target.
     #[arg(long, default_value = "128")]
     models_per_module: std::num::NonZeroUsize,
     /// JSON SchemaOptions: offline resources and optional format assertions.

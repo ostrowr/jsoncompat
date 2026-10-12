@@ -326,16 +326,28 @@ from my_models import Order, Customer
 ```
 
 The package exports component models by name. `__init__.pyi` makes those exports
-visible to type checkers. Public `models_0000.py` modules contain readable class
-and field declarations; private companions contain the prepared implementation.
-Package import loads only the export index. Accessing a model loads its module
-and binds all models in that module. No model compilation moves to first access.
+visible to type checkers. Each model always gets its own readable declaration
+file and private initializer file. Public `models_0000.py` modules re-export a
+reference group and bind its shared model identities. Package import loads only
+the export index; accessing a model loads its group. No model compilation moves
+to first access.
+
+File layout does not depend on a source-size budget: growing one model never
+merges or redistributes neighboring declarations. Names include a short digest
+to support long names and case-insensitive filesystems. Prepared validation data
+lives in separate Python modules, in 64 KiB byte chunks, and conversion graph
+metadata uses groups of 256 nodes. Even one large connected schema graph can
+therefore span many files. These are ordinary Python files: no extra package-data
+configuration, runtime source compilation, or Git LFS is needed for prepared data.
+Individual model declarations still stay whole.
 
 `--component Order` selects a component and its dependencies; repeat the flag
 for several roots. `--rename Order=Purchase` changes a public class name.
 Name collisions fail with a diagnostic. Reference-connected models stay together,
 including mutually recursive models, so class identities do not depend on import
-order. A connected group may exceed `--models-per-module`. Resource identifiers
+order. `--models-per-module` controls the target size of these logical import
+and binding groups, not physical file sizes. A connected group may exceed it
+while still using separate files for every model. Resource identifiers
 and anchor references conservatively keep all components in one group to retain
 scope. Without `--api`, this command emits component schema models only.
 
@@ -678,8 +690,11 @@ parameters: the API is invariant and transport options are contravariant.
 ### Generated metadata and dispatch
 
 The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
-`Cookie`, `Body`) and an operation registry in `api.py`. Each entry pairs a request
-class with its response type and HTTP endpoint metadata. `_api.py` holds the
+`Cookie`, `Body`) and one named private module per operation, containing its
+response aliases and HTTP endpoint metadata. `api.py` re-exports these aliases,
+collects the operation registry, and exports the client types. Small and large
+APIs use this same split layout; adding an operation does not repack existing
+operation files. `_api.py` holds the
 API identity separately so request/response model imports remain acyclic.
 The public `api.py` validates all registered operations and prepares immutable
 dispatch plans when imported, including through the package's API or client-alias

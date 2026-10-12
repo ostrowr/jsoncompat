@@ -1,3 +1,4 @@
+mod package;
 mod plan;
 mod plan_proof;
 mod render;
