@@ -9,7 +9,7 @@ import aiohttp
 import httpx
 import requests
 from jsoncompat import MISSING
-from jsoncompat.http import AsyncClient, Client, bind, bind_async
+from jsoncompat.http import AsyncClient, Client, Err, HTTPStatusError, bind, bind_async
 from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 from jsoncompat.http.requests import RequestsFetch, RequestsOptions
@@ -17,9 +17,8 @@ from jsonplaceholder import (
     CreatePost201,
     CreatePostRequest,
     GetPost200,
-    GetPost404,
     GetPostRequest,
-    GetPostResponse,
+    GetPostResult,
     JsonPlaceholderAPI,
     ListPosts200,
     ListPostsRequest,
@@ -40,8 +39,7 @@ class TitleUpdate(TypedDict):
     title: str
 
 
-def check_get(response: GetPostResponse) -> Post:
-    assert isinstance(response, GetPost200), response
+def check_get(response: GetPost200) -> Post:
     assert response.status == 200
     assert response.body.id == 1
     assert response.body.userId == 1
@@ -84,21 +82,30 @@ def check_patch(response: PatchPost200, original: Post) -> None:
     assert response.body.to_value() == {**original_value, "title": TITLE}
 
 
-def check_missing(response: GetPostResponse) -> None:
-    assert isinstance(response, GetPost404), response
-    assert response.status == 404
-    assert response.body.to_value() == {}
+def check_missing(result: GetPostResult) -> None:
+    assert isinstance(result, Err)
+    assert result.error.status == 404
+    assert result.error.body.to_value() == {}
+    try:
+        result.unwrap()
+    except HTTPStatusError as error:
+        assert error.error is result.error
+        assert error.response is result.response
+    else:
+        raise AssertionError("unwrap() should raise for the declared 404")
 
 
 def exercise[Options](
     client: Client[JsonPlaceholderAPI, Options], transport: Options
 ) -> None:
-    original = check_get(client.request(GetPostRequest(post_id=1), transport=transport))
-    check_list(client.request(ListPostsRequest(user_id=1)))
-    check_create(client.request(new_post()))
-    check_patch(client.request(patch_post()), original)
+    original = check_get(
+        client.request(GetPostRequest(post_id=1), transport=transport).unwrap()
+    )
+    check_list(client.request(ListPostsRequest(user_id=1)).unwrap())
+    check_create(client.request(new_post()).unwrap())
+    check_patch(client.request(patch_post()).unwrap(), original)
     # JSONPlaceholder simulates writes: a fresh read must still match the original.
-    assert check_get(client.request(GetPostRequest(post_id=1))) == original
+    assert check_get(client.request(GetPostRequest(post_id=1)).unwrap()) == original
     check_missing(client.request(GetPostRequest(post_id=999999)))
 
 
@@ -106,12 +113,15 @@ async def exercise_async[Options](
     client: AsyncClient[JsonPlaceholderAPI, Options], transport: Options
 ) -> None:
     original = check_get(
-        await client.request(GetPostRequest(post_id=1), transport=transport)
+        (await client.request(GetPostRequest(post_id=1), transport=transport)).unwrap()
     )
-    check_list(await client.request(ListPostsRequest(user_id=1)))
-    check_create(await client.request(new_post()))
-    check_patch(await client.request(patch_post()), original)
-    assert check_get(await client.request(GetPostRequest(post_id=1))) == original
+    check_list((await client.request(ListPostsRequest(user_id=1))).unwrap())
+    check_create((await client.request(new_post())).unwrap())
+    check_patch((await client.request(patch_post())).unwrap(), original)
+    assert (
+        check_get((await client.request(GetPostRequest(post_id=1))).unwrap())
+        == original
+    )
     check_missing(await client.request(GetPostRequest(post_id=999999)))
 
 

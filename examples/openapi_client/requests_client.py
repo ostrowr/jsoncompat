@@ -15,7 +15,7 @@ def main() -> None:
         client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
         result = client.request(
             HealthRequest(), transport=RequestsOptions(timeout=(1, 2))
-        )
+        ).unwrap()
         assert isinstance(result, Health200)
         exercise(client)
     print("requests: all ten operations passed")

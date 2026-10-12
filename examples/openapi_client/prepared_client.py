@@ -3,7 +3,7 @@
 import httpx
 from jsoncompat.http import RequestOptions, prepare
 from jsoncompat.http.httpx import HttpxFetch, HttpxOptions
-from petstore import GetPet200, GetPetRequest, PetstoreAPI
+from petstore import GetPetRequest, PetstoreAPI
 from server import serve
 
 
@@ -26,8 +26,8 @@ def main() -> None:
             call.request, transport=HttpxOptions(timeout=httpx.Timeout(5, connect=1))
         )
         assert raw.status == 200 and raw.body
-        result = call.decode(raw)  # GetPetResponse, validated only when decoded.
-        assert isinstance(result, GetPet200) and result.body.name == "Mochi"
+        result = call.decode(raw).unwrap()  # GetPet200, validated and unwrapped.
+        assert result.body.name == "Mochi"
     print(
         "prepared request: transport controls, raw response, and typed decoding passed"
     )

@@ -352,14 +352,15 @@ jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
 This adds a nominal `PetstoreAPI` identity, operation request models such as
-`GetPetRequest`, response models, and response aliases to the generated package.
-Every request inherits `Request[PetstoreAPI, ItsResponse]`. One shared client
-method handles every operation and preserves its inferred response type:
+`GetPetRequest`, response models, and success/error/result aliases to the
+generated package. Every request inherits
+`Request[PetstoreAPI, ItsSuccess, ItsError]`. One shared client method handles
+every operation and preserves its inferred response type:
 
 ```python
 from typing import Never
 
-from petstore import PetstoreAPI, GetPetRequest, GetPet200, GetPetResponse
+from petstore import PetstoreAPI, GetPetRequest, GetPet200
 from jsoncompat.http import Client, EncodedRequest, RawResponse, bind
 
 def fetch(
@@ -370,12 +371,11 @@ def fetch(
     ...
 
 client: Client[PetstoreAPI, Never] = bind(PetstoreAPI, fetch=fetch)
-result = client.request(GetPetRequest(pet_id="p_123"))  # GetPetResponse
-if isinstance(result, GetPet200):
-    print(result.body.name, result.headers.etag)
+pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()  # GetPet200
+print(pet.body.name, pet.headers.etag)
 
-def get_pet(client: Client[PetstoreAPI, Never], pet_id: str) -> GetPetResponse:
-    return client.request(GetPetRequest(pet_id=pet_id))
+def get_pet(client: Client[PetstoreAPI, Never], pet_id: str) -> GetPet200:
+    return client.request(GetPetRequest(pet_id=pet_id)).unwrap()
 ```
 
 `bind_async(PetstoreAPI, fetch=async_fetch)` provides the async equivalent;
@@ -392,6 +392,54 @@ before encoding or fetching, including when callers bypass static checking.
 there are no generated operation methods or per-service client protocols.
 Sessions, authentication, retries, and cleanup stay outside this interface.
 Generated packages include a `py.typed` marker; include it when publishing them.
+
+### Working with results
+
+`request()` returns `Result[Success, Error]`, an alias for `Ok[Success] | Err[Error]`.
+The same applies to `PreparedRequest.decode()`. These immutable wrappers support
+`isinstance` and Python pattern matching. They hold the existing generated
+response models, including typed bodies, headers, and status.
+
+```python
+from jsoncompat.http import Ok, Err
+from petstore import GetPetRequest, GetPet404
+
+result = client.request(GetPetRequest(pet_id="p_123"))  # GetPetResult
+match result:
+    case Ok(value=pet):
+        print(pet.body.name)  # GetPet200; no additional narrowing needed.
+    case Err(error=GetPet404(body=problem)):
+        print(problem.message)
+    case Err(error=other):
+        print(other.status)  # For this operation, the remaining variant is 304.
+```
+
+`Ok.unwrap()` returns its exact `value`. `Err.unwrap()` always raises
+`HTTPStatusError`, so `result.unwrap()` has only the success type. Unwrapping
+performs no I/O, decoding, or copying; it never retries the request. An exception's
+`error` is the same decoded object as `Err.error`, and its `response` is the same
+original `RawResponse` as `Err.response`. Match the decoded error with
+`isinstance` when handling an exception; Python exception handlers do not infer
+an operation-specific error type.
+
+Success means **200–299**. Redirects, 304, and all other declared statuses are
+`Err`; callers can handle them as values instead of unwrapping. Timeouts and
+cancellation still propagate from the transport. Invalid or undeclared responses
+raise `ResponseError` during the request/decode, before a `Result` exists—even
+for an error status with malformed JSON. `HTTPStatusError` specifically means
+that a validated `Err` was unwrapped.
+
+The generator exports `GetPetSuccess`, `GetPetError`, and
+`GetPetResult = Result[GetPetSuccess, GetPetError]`. `GetPetResponse` remains the
+union of the decoded response models, without wrappers. Selection uses exact
+status, then range, then `default`. A default model appears in both success and
+error aliases if it can match both; `default` is not inherently an error. An
+unreachable side is `Never`. Multiple legitimate success variants still need
+narrowing after `unwrap()`; an uncovered 2xx matched by `default` is one example.
+
+Regenerate API packages created before the Result interface: request bases now
+carry `Request[API, Success, Error]`, and custom client implementations return
+`Result[S, E]`. HTTP fetchers and their `RawResponse` contract are unchanged.
 
 ### The fetcher contract
 
@@ -460,17 +508,17 @@ The resulting client has this structural interface (the async version uses
 `async def` with the same parameters and result annotation):
 
 ```python
-from jsoncompat.http import API, Request, RequestOptions
+from jsoncompat.http import API, Request, RequestOptions, Result
 
 class Client[A: API, Options](Protocol):
-    def request[R](
+    def request[S, E](
         self,
-        request: Request[A, R],
+        request: Request[A, S, E],
         /,
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> R: ...
+    ) -> Result[S, E]: ...
 ```
 
 Implement that method directly for a custom client or test double. At a boundary
@@ -541,13 +589,12 @@ configures authentication, TLS, proxies, pooling, hooks, and session cleanup.
 import httpx
 from jsoncompat.http import bind
 from jsoncompat.http.httpx import HttpxFetch
-from petstore import PetstoreAPI, GetPetRequest, GetPet200
+from petstore import PetstoreAPI, GetPetRequest
 
 with httpx.Client(timeout=30) as session:
     client = bind(PetstoreAPI, fetch=HttpxFetch(session, "https://api.example.com/v1"))
-    result = client.request(GetPetRequest(pet_id="p_123"))
-    if isinstance(result, GetPet200):
-        print(result.body.name)
+    pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()
+    print(pet.body.name)
     # session remains available for other native or generated requests here.
 ```
 
@@ -556,8 +603,8 @@ repeated response headers. Redirects are returned without following them.
 Adapters return every HTTP status for typed decoding and do not call
 `raise_for_status`; aiohttp's session-level setting is disabled per call.
 Caller-configured hooks can still raise, and native I/O errors and cancellation
-propagate unchanged. Declared error responses remain values; no throwing API is
-added by these integrations.
+propagate unchanged. The binder wraps declared responses in `Ok` or `Err`;
+`Err.unwrap()` raises `HTTPStatusError` without performing another request.
 
 Aiohttp explicitly enables response decompression and suppresses its automatic
 Content-Type header so an omitted body stays omitted. Requests cannot transmit
@@ -591,7 +638,7 @@ async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as ses
         GetPetRequest(pet_id="p_123"),
         transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
         options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
-    )  # GetPetResponse
+    )  # GetPetResult
     # Later calls without transport= still use the session's 30-second timeout.
 ```
 
@@ -657,11 +704,12 @@ call = prepare(
     PetstoreAPI,
     GetPetRequest(pet_id="p_123"),
     options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
-)  # PreparedRequest[PetstoreAPI, GetPetResponse]
+)  # PreparedRequest[PetstoreAPI, GetPetResult]
 
 # Your fetcher defines its own typed transport options.
 raw = await my_fetch(call.request, timeout=5, follow_redirects=False)
-result = call.decode(raw)  # GetPetResponse
+result = call.decode(raw)  # GetPetResult
+pet = result.unwrap()  # GetPet200
 ```
 
 Preparation is synchronous and performs no I/O. The immutable result contains
@@ -685,9 +733,11 @@ Response models contain `status`, a typed `body`, typed `headers`, and
 representations produce distinct response variants. Explicit statuses take
 precedence over ranges, then `default`. Exact statuses have literal Python types;
 range/default statuses remain integers with generated runtime constraints.
-Narrow with `isinstance(result, Operation200)` to access a variant's body.
+Use `result.unwrap()` for success-only inference, or match `Ok`/`Err` and inspect
+its generated model. Multiple success media/status variants can still require
+`isinstance` checks within the success union.
 
-Declared errors such as 404 are returned as values. Undeclared statuses/media,
+Declared non-2xx responses such as 304 and 404 are returned as `Err`. Undeclared statuses/media,
 malformed bodies, missing required response headers, and schema failures raise
 `ResponseError`, which retains the `RawResponse` and chains the underlying error.
 Invalid API metadata raises `ContractError` at binding. Invalid request models

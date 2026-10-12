@@ -13,9 +13,12 @@ from ._metadata import ContractError as ContractError
 from ._metadata import Cookie as Cookie
 from ._metadata import EncodedRequest as EncodedRequest
 from ._metadata import Endpoint as Endpoint
+from ._metadata import Err as Err
 from ._metadata import Fetch as Fetch
 from ._metadata import Header as Header
 from ._metadata import HeaderPairs as HeaderPairs
+from ._metadata import HTTPStatusError as HTTPStatusError
+from ._metadata import Ok as Ok
 from ._metadata import Operation as Operation
 from ._metadata import Path as Path
 from ._metadata import Query as Query
@@ -24,6 +27,7 @@ from ._metadata import Request as Request
 from ._metadata import RequestOptions as RequestOptions
 from ._metadata import Response as Response
 from ._metadata import ResponseError as ResponseError
+from ._metadata import Result as Result
 from ._metadata import SecurityRequirement as SecurityRequirement
 from ._metadata import Server as Server
 from ._metadata import operation as operation

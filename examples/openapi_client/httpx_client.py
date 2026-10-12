@@ -15,9 +15,12 @@ async def async_main(base_url: str) -> None:
         headers={"Authorization": "Bearer example-token"}, timeout=10, trust_env=False
     ) as session:
         client = bind_async(PetstoreAPI, fetch=AsyncHttpxFetch(session, base_url))
-        result = await client.request(
-            HealthRequest(), transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1))
-        )
+        result = (
+            await client.request(
+                HealthRequest(),
+                transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1)),
+            )
+        ).unwrap()
         assert isinstance(result, Health200)
         await exercise_async(client)
 
@@ -33,7 +36,7 @@ def main() -> None:
             result = client.request(
                 HealthRequest(),
                 transport=HttpxOptions(timeout=httpx.Timeout(2, connect=1)),
-            )
+            ).unwrap()
             assert isinstance(result, Health200)
             exercise(client)
         asyncio.run(async_main(base_url))

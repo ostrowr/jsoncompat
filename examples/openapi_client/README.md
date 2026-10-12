@@ -4,7 +4,7 @@ This example generates a publishable Python contract from a ten-operation
 OpenAPI 3.1 Petstore. The generated package contains validated request/response
 models and a nominal `PetstoreAPI` identity. `jsoncompat.http.bind` and
 `bind_async` provide one shared `client.request(request)` method. Every request
-carries its API and response types, preserving inference and rejecting cross-API
+carries its API, success, and error types, preserving inference and rejecting cross-API
 calls. Each transport implements one fetch function; sessions, pools, timeouts,
 credentials, retries, and cleanup remain application decisions.
 
@@ -42,23 +42,35 @@ jsoncompat version supporting this HTTP runtime.
 
 ```python
 import httpx
-from petstore import PetstoreAPI, GetPetRequest, GetPet200, GetPet404
-from jsoncompat.http import bind
+from petstore import PetstoreAPI, GetPetRequest, GetPet404
+from jsoncompat.http import bind, Ok, Err
 from jsoncompat.http.httpx import HttpxFetch
 
 with httpx.Client(headers={"Authorization": "Bearer example-token"}) as session:
     client = bind(PetstoreAPI, fetch=HttpxFetch(session, "http://127.0.0.1:8000"))
     request = GetPetRequest(pet_id="p_123")
     result = client.request(request)
-    if isinstance(result, GetPet200):
-        print(result.body.name, result.headers.etag)
-    elif isinstance(result, GetPet404):
-        print(result.body.message)
+    match result:
+        case Ok(value=pet):
+            print(pet.body.name, pet.headers.etag)
+        case Err(error=GetPet404(body=problem)):
+            print(problem.message)
+        case Err(error=other):
+            print(other.status)
 ```
 
 Run `server.py` separately to use the snippet with a persistent server; it
 prints its dynamically assigned URL. Substitute that URL in the snippet.
 The runnable examples above handle this automatically.
+
+For the ordinary success path, use `pet = client.request(request).unwrap()`
+or `pet = (await client.request(request)).unwrap()`. `unwrap()` returns only the
+success type and raises `HTTPStatusError` on `Err`; the exception retains the
+decoded error and original buffered response. The shared workflow demonstrates
+explicit 304/404/412 handling and unwrapping an already inspected error.
+Malformed responses still raise `ResponseError` before a result is returned.
+See [result semantics](../../pybindings/README.md#working-with-results), including
+status ranges, default responses that can match 2xx, and `Never` branches.
 
 ## Per-call transport options
 
@@ -115,8 +127,9 @@ result = client.request(
 ```
 
 For async HTTPX, use `AsyncHttpxFetch`, `bind_async`, and `await`; it shares
-`HttpxOptions`. All of these calls infer `GetPetResponse`. Passing
-`RequestsOptions` to the aiohttp client, for example, is a static type error.
+`HttpxOptions`. All of these calls infer `GetPetResult`; `.unwrap()` infers
+`GetPet200`. Passing `RequestsOptions` to the aiohttp client, for example, is a
+static type error.
 
 Omitting `transport` or passing `None` uses the existing aiohttp/HTTPX session's
 timeout or the requests adapter's configured default. Passing
@@ -161,8 +174,8 @@ checks, request validation, and the original response decoder remain in place.
 [`prepared_client.py`](prepared_client.py) demonstrates the lower-level API:
 `prepare(PetstoreAPI, request, options=...)` returns an immutable typed call,
 `call.request` is sent through a caller-owned fetcher with native HTTPX timeout
-settings using the shipped `HttpxFetch`, and `call.decode(raw)` validates the
-response. Preparation performs no network I/O; the same call works with a
+settings using the shipped `HttpxFetch`, and `call.decode(raw)` validates and wraps the
+response in `Ok` or `Err`; the example then calls `unwrap()`. Preparation performs no network I/O; the same call works with a
 synchronous or asynchronous fetcher.
 Raw responses can also be inspected without decoding. See the
 [full contract](../../pybindings/README.md#per-call-overrides-and-prepared-requests).
@@ -177,7 +190,7 @@ Raw responses can also be inspected without decoding. See the
 - Request headers and cookies, typed response headers, repeated raw response
   headers, conditional requests, 204 and 304 responses.
 - Optional bodies and fields using `MISSING`, nullable JSON values, body media
-  variants, validation failures, and declared 400/404/412 errors as values.
+  variants, validation failures, and declared 400/404/412 errors as `Err` values.
 - Inherited security/server metadata, with credentials supplied by the transport.
 
 The shipped adapters buffer decompressed response bytes, retain repeated headers,
@@ -224,7 +237,8 @@ the same six checks (24 requests total):
 - PATCH only its title; verify `MISSING` fields are omitted and existing fields
   survive in the response.
 - Read the original post again to verify the patch did not persist.
-- Read a nonexistent post and receive a typed 404 with an empty JSON object.
+- Read a nonexistent post, inspect `Err(GetPost404)`, and verify that `unwrap()`
+  raises `HTTPStatusError` retaining the typed response and original bytes.
 
 Each transport passes its native timeout option on the first read and also
 exercises ordinary calls without transport options.

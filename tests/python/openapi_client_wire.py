@@ -193,29 +193,29 @@ async def async_edges(fetch):
 
 
 def sync(client, fetch):
-    check_get(client.request(GET))
-    client.request(PATCH)
+    check_get(client.request(GET).unwrap())
+    client.request(PATCH).unwrap()
     check_patch(True)
-    client.request(OMITTED)
+    client.request(OMITTED).unwrap()
     check_patch(False)
     call = prepared()
     raw = fetch(call.request)
     assert raw.status == 200 and raw.body
-    check_override(call.decode(raw))
-    check_get(client.request(GET))
+    check_override(call.decode(raw).unwrap())
+    check_get(client.request(GET).unwrap())
 
 
 async def asynchronous(client, fetch):
-    check_get(await client.request(GET))
-    await client.request(PATCH)
+    check_get((await client.request(GET)).unwrap())
+    (await client.request(PATCH)).unwrap()
     check_patch(True)
-    await client.request(OMITTED)
+    (await client.request(OMITTED)).unwrap()
     check_patch(False)
     call = prepared()
     raw = await fetch(call.request)
     assert raw.status == 200 and raw.body
-    check_override(call.decode(raw))
-    check_get(await client.request(GET))
+    check_override(call.decode(raw).unwrap())
+    check_get((await client.request(GET)).unwrap())
 
 
 def sync_timeout(client, fetch, transport, exception):
@@ -227,12 +227,14 @@ def sync_timeout(client, fetch, transport, exception):
     with patch.object(fetch.session, "request", wraps=fetch.session.request) as send:
         try:
             with unittest.TestCase().assertRaises(exception):
-                client.request(GetPetRequest(pet_id="slow"), transport=transport)
+                client.request(
+                    GetPetRequest(pet_id="slow"), transport=transport
+                ).unwrap()
         finally:
             release.set()
-        check_get(client.request(GET))
+        check_get(client.request(GET).unwrap())
         disabled = type(transport)(timeout=None)
-        check_get(client.request(GET, transport=disabled))
+        check_get(client.request(GET, transport=disabled).unwrap())
         assert send.call_args_list[0].kwargs["timeout"] is transport.timeout
         assert send.call_args_list[1].kwargs["timeout"] == default
         assert send.call_args_list[2].kwargs["timeout"] is None
@@ -248,16 +250,20 @@ async def async_timeout(client, fetch, transport, exception):
     with patch.object(fetch.session, "request", wraps=fetch.session.request) as send:
         try:
             with unittest.TestCase().assertRaises(exception):
-                await client.request(GetPetRequest(pet_id="slow"), transport=transport)
+                (
+                    await client.request(
+                        GetPetRequest(pet_id="slow"), transport=transport
+                    )
+                ).unwrap()
         finally:
             release.set()
-        check_get(await client.request(GET))
+        check_get((await client.request(GET)).unwrap())
         disabled = (
             AiohttpOptions(timeout=aiohttp.ClientTimeout(total=None))
             if isinstance(fetch, AiohttpFetch)
             else HttpxOptions(timeout=None)
         )
-        check_get(await client.request(GET, transport=disabled))
+        check_get((await client.request(GET, transport=disabled)).unwrap())
         assert send.call_args_list[0].kwargs["timeout"] is transport.timeout
         assert send.call_args_list[1].kwargs["timeout"] == default
         assert send.call_args_list[2].kwargs["timeout"] is disabled.timeout

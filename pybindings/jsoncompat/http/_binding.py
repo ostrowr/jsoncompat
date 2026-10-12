@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import (
     Annotated,
     Generic,
+    Never,
     TypeAliasType,
     Union,
     cast,
@@ -34,8 +35,10 @@ from ._metadata import (
     Cookie,
     EncodedRequest,
     Endpoint,
+    Err,
     Fetch,
     Header,
+    Ok,
     Operation,
     Parameter,
     Path,
@@ -46,6 +49,7 @@ from ._metadata import (
     Response,
     ResponseError,
     ResponseT,
+    Result,
 )
 from ._options import apply_options
 from ._parameters import check_header, decode_header, encode_parameter
@@ -140,7 +144,7 @@ class _Operation:
             self.endpoint.method, target, tuple(headers), body, self.endpoint
         )
 
-    def decode(self, raw: object) -> DataclassModel:
+    def decode(self, raw: object) -> Result[DataclassModel, DataclassModel]:
         if not isinstance(raw, RawResponse):
             raise TypeError("fetch must return RawResponse")
         try:
@@ -200,7 +204,8 @@ class _Operation:
             }
             if plan.response.content_type is not None:
                 value["content_type"] = content_type
-            return plan.response.model.from_value(value)
+            decoded = plan.response.model.from_value(value)
+            return Ok(decoded) if 200 <= raw.status < 300 else Err(decoded, raw)
         except (ValueError, TypeError, UnicodeError) as error:
             raise ResponseError(
                 f"{self.endpoint.method} {self.endpoint.path}: {error}", raw
@@ -322,6 +327,8 @@ def _model(value: object) -> type[DataclassModel]:
 
 
 def _return_models(value: object) -> set[type[DataclassModel]]:
+    if value is Never:
+        return set()
     if isinstance(value, TypeAliasType):
         return _return_models(value.__value__)
     if get_origin(value) in (Union, types.UnionType):
@@ -336,7 +343,11 @@ def _prepare(spec: Operation, api: type[API]) -> _Operation:
     bases = [
         base for base in types.get_original_bases(model) if get_origin(base) is Request
     ]
-    if len(bases) != 1 or get_args(bases[0])[0] is not api:
+    if (
+        len(bases) != 1
+        or len(get_args(bases[0])) != 3
+        or get_args(bases[0])[0] is not api
+    ):
         raise ContractError(
             f"{model.__name__} must be a Request scoped to {api.__name__}"
         )
@@ -427,10 +438,26 @@ def _prepare(spec: Operation, api: type[API]) -> _Operation:
             raise ContractError("invalid generated response envelope")
         header_model = _model(response_hints.get("headers"))
         plans.append(_ResponsePlan(response, _fields(header_model, headers=True)))
-    if not plans or _return_models(spec.response) != {
-        plan.response.model for plan in plans
-    }:
-        raise ContractError("response type must match all declared response models")
+    # Resolve status precedence before partitioning models. A default model may
+    # appear in both sets, or be unreachable when ranges cover all statuses.
+    by_status: dict[int | str, set[type[DataclassModel]]] = {}
+    for plan in plans:
+        by_status.setdefault(plan.response.status, set()).add(plan.response.model)
+    success_models: set[type[DataclassModel]] = set()
+    error_models: set[type[DataclassModel]] = set()
+    for status in range(100, 600):
+        models = by_status.get(
+            status, by_status.get(f"{status // 100}XX", by_status.get("default", set()))
+        )
+        (success_models if 200 <= status < 300 else error_models).update(models)
+    if (
+        not plans
+        or _return_models(spec.success) != success_models
+        or _return_models(spec.error) != error_models
+    ):
+        raise ContractError(
+            "success and error types must match reachable response models"
+        )
     accepted = tuple(
         dict.fromkeys(
             plan.response.content_type
@@ -493,14 +520,14 @@ class _SyncClient[A: API, Options]:
         self._fetch = fetch
         self._plans = _prepare_api(api)
 
-    def request[R](
+    def request[S, E](
         self,
-        request: Request[A, R],
+        request: Request[A, S, E],
         /,
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> R:
+    ) -> Result[S, E]:
         call = _prepare_request(self._api, self._plans, request, options)
         return call.decode(self._fetch(call.request, transport=transport))
 
@@ -513,14 +540,14 @@ class _AsyncClient[A: API, Options]:
         self._fetch = fetch
         self._plans = _prepare_api(api)
 
-    async def request[R](
+    async def request[S, E](
         self,
-        request: Request[A, R],
+        request: Request[A, S, E],
         /,
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> R:
+    ) -> Result[S, E]:
         call = _prepare_request(self._api, self._plans, request, options)
         return call.decode(await self._fetch(call.request, transport=transport))
 
@@ -546,23 +573,23 @@ class PreparedRequest(Generic[ApiT, ResponseT]):
         return self._decode(response)
 
 
-def _prepare_request[A: API, R](
+def _prepare_request[A: API, S, E](
     api: type[A],
     plans: Mapping[type[DataclassModel], _Operation],
-    request: Request[A, R],
+    request: Request[A, S, E],
     options: RequestOptions | None,
-) -> PreparedRequest[A, R]:
+) -> PreparedRequest[A, Result[S, E]]:
     operation = _select(api, plans, request)
     encoded = apply_options(operation.encode(request), options)
-    # The registered operation's validated response models define R.
+    # The registered operation validates both sides of the result type.
     return PreparedRequest(
-        api, encoded, cast(Callable[[RawResponse], R], operation.decode)
+        api, encoded, cast(Callable[[RawResponse], Result[S, E]], operation.decode)
     )
 
 
-def prepare[A: API, R](
-    api: type[A], request: Request[A, R], /, *, options: RequestOptions | None = None
-) -> PreparedRequest[A, R]:
+def prepare[A: API, S, E](
+    api: type[A], request: Request[A, S, E], /, *, options: RequestOptions | None = None
+) -> PreparedRequest[A, Result[S, E]]:
     """Encode a registered request and retain its typed decoder, without I/O."""
     _require_api(api)
     return _prepare_request(api, _prepare_api(api), request, options)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import types
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Generic, Literal, Protocol, TypeVar, cast
+from typing import Generic, Literal, Never, Protocol, TypeVar, cast
 
 from typing_extensions import TypeForm
 
@@ -96,14 +96,16 @@ class API:
         raise ContractError("API must declare its registered operations")
 
 
-# Keep both parameters invariant: API boundaries cannot widen, and operation
+# Keep all parameters invariant: API boundaries cannot widen, and operation
 # declarations must pair a request with its exact response type.
 ApiT = TypeVar("ApiT", bound=API)
 ResponseT = TypeVar("ResponseT")
+SuccessT = TypeVar("SuccessT")
+ErrorT = TypeVar("ErrorT")
 
 
-class Request(DataclassModel, Generic[ApiT, ResponseT]):
-    """A generated operation request, scoped to one API and response type."""
+class Request(DataclassModel, Generic[ApiT, SuccessT, ErrorT]):
+    """A generated operation request, scoped to one API and its success/error types."""
 
     __slots__ = ()
 
@@ -118,27 +120,27 @@ class Client[A: API, Options](Protocol):
     Use Client[MyAPI, Never] at transport-independent application boundaries.
     """
 
-    def request[R](
+    def request[S, E](
         self,
-        request: Request[A, R],
+        request: Request[A, S, E],
         /,
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> R: ...
+    ) -> Result[S, E]: ...
 
 
 class AsyncClient[A: API, Options](Protocol):
     """Async counterpart of Client; transport options belong to the adapter."""
 
-    async def request[R](
+    async def request[S, E](
         self,
-        request: Request[A, R],
+        request: Request[A, S, E],
         /,
         *,
         options: RequestOptions | None = None,
         transport: Options | None = None,
-    ) -> R: ...
+    ) -> Result[S, E]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,13 +148,15 @@ class Operation:
     """One registered request/response pair and its HTTP metadata."""
 
     request: type[DataclassModel]
-    response: object
+    success: object
+    error: object
     endpoint: Endpoint
 
 
-def operation[A: API, R](
-    request: type[Request[A, R]],
-    response: TypeForm[R],
+def operation[A: API, S, E](
+    request: type[Request[A, S, E]],
+    success: TypeForm[S],
+    error: TypeForm[E],
     /,
     *,
     method: str,
@@ -165,7 +169,8 @@ def operation[A: API, R](
     """Declare an operation while checking its request/response type pairing."""
     return Operation(
         request,
-        response,
+        success,
+        error,
         Endpoint(method, path, responses, operation_id, security, servers),
     )
 
@@ -267,3 +272,38 @@ class ResponseError(ValueError):
     def __init__(self, message: str, response: RawResponse) -> None:
         super().__init__(message)
         self.response = response
+
+
+class HTTPStatusError(Exception):
+    """A validated non-2xx result was unwrapped. Retains its model and wire data."""
+
+    def __init__(self, error: object, response: RawResponse) -> None:
+        super().__init__(f"HTTP status {response.status}")
+        self.error = error
+        self.response = response
+
+
+@dataclass(frozen=True, slots=True)
+class Ok[S]:
+    """A validated 2xx response. Supports ``case Ok(value=value)``."""
+
+    value: S
+
+    def unwrap(self) -> S:
+        """Return the success value unchanged."""
+        return self.value
+
+
+@dataclass(frozen=True, slots=True)
+class Err[E]:
+    """A validated non-2xx response. Inspect error or call unwrap() to raise."""
+
+    error: E
+    response: RawResponse
+
+    def unwrap(self) -> Never:
+        """Raise with the typed error model and original buffered response."""
+        raise HTTPStatusError(self.error, self.response)
+
+
+type Result[S, E] = Ok[S] | Err[E]

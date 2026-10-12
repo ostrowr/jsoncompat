@@ -19,8 +19,39 @@ pub(super) struct ApiPackage {
 struct Operation {
     input: String,
     response_alias: String,
+    success_alias: String,
+    error_alias: String,
+    result_alias: String,
     responses: Vec<(String, String, Option<String>)>,
     contract: ApiOperation,
+}
+
+impl Operation {
+    fn partition(&self, success: bool) -> String {
+        let mut models = BTreeSet::new();
+        for status in (100..600).filter(|status| (200..300).contains(status) == success) {
+            let exact = status.to_string();
+            let range = format!("{}XX", status / 100);
+            let selector = if self.responses.iter().any(|(s, _, _)| *s == exact) {
+                &exact
+            } else if self.responses.iter().any(|(s, _, _)| *s == range) {
+                &range
+            } else {
+                "default"
+            };
+            models.extend(
+                self.responses
+                    .iter()
+                    .filter(|(s, _, _)| s == selector)
+                    .map(|(_, name, _)| name.as_str()),
+            );
+        }
+        if models.is_empty() {
+            "_typing.Never".into()
+        } else {
+            models.into_iter().collect::<Vec<_>>().join(" | ")
+        }
+    }
 }
 
 impl ApiPackage {
@@ -78,6 +109,9 @@ impl ApiPackage {
             let prefix = super::codegen_package::class_name(operation_name);
             let input = format!("{prefix}Request");
             let response_alias = format!("{prefix}Response");
+            let success_alias = format!("{prefix}Success");
+            let error_alias = format!("{prefix}Error");
+            let result_alias = format!("{prefix}Result");
             let mut properties = Map::new();
             let mut required = Vec::new();
             let mut metadata = BTreeMap::new();
@@ -251,13 +285,17 @@ impl ApiPackage {
             package.metadata.bases.insert(
                 input.clone(),
                 format!(
-                    "_jsoncompat_http.Request[_jsoncompat_api.{name}API, {}]",
-                    py(&format!("_jsoncompat_api_types.{response_alias}"))
+                    "_jsoncompat_http.Request[_jsoncompat_api.{name}API, {}, {}]",
+                    py(&format!("_jsoncompat_api_types.{success_alias}")),
+                    py(&format!("_jsoncompat_api_types.{error_alias}"))
                 ),
             );
             package.operations.push(Operation {
                 input,
                 response_alias,
+                success_alias,
+                error_alias,
+                result_alias,
                 responses,
                 contract,
             });
@@ -286,7 +324,14 @@ impl ApiPackage {
         let mut public = Vec::new();
         for name in std::iter::once(format!("{}API", self.name))
             .chain(std::iter::once("SECURITY_SCHEMES".into()))
-            .chain(self.operations.iter().map(|o| o.response_alias.clone()))
+            .chain(self.operations.iter().flat_map(|o| {
+                [
+                    o.response_alias.clone(),
+                    o.success_alias.clone(),
+                    o.error_alias.clone(),
+                    o.result_alias.clone(),
+                ]
+            }))
         {
             ensure!(names.insert(name.clone()), "API export collides at {name}");
             public.push(name);
@@ -327,6 +372,25 @@ impl ApiPackage {
                     .map(|(_, name, _)| name.as_str())
                     .collect::<Vec<_>>()
                     .join(" | ")
+            )?;
+        }
+        for operation in &self.operations {
+            writeln!(
+                source,
+                "type {} = {}",
+                operation.success_alias,
+                operation.partition(true)
+            )?;
+            writeln!(
+                source,
+                "type {} = {}",
+                operation.error_alias,
+                operation.partition(false)
+            )?;
+            writeln!(
+                source,
+                "type {} = _http.Result[{}, {}]",
+                operation.result_alias, operation.success_alias, operation.error_alias
             )?;
         }
         writeln!(
@@ -409,9 +473,10 @@ impl ApiPackage {
                 .collect::<Result<Vec<_>>>()?;
             writeln!(
                 source,
-                "    _http.operation({}, _TypeForm({}), method={}, path={}, responses={}, operation_id={}, security={}, servers={}),",
+                "    _http.operation({}, _TypeForm({}), _TypeForm({}), method={}, path={}, responses={}, operation_id={}, security={}, servers={}),",
                 operation.input,
-                operation.response_alias,
+                operation.success_alias,
+                operation.error_alias,
                 py(&contract.key.method),
                 py(&contract.key.path),
                 tuple(&responses),

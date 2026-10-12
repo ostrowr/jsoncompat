@@ -3,14 +3,12 @@
 from typing import Never
 
 from jsoncompat import MISSING
-from jsoncompat.http import AsyncClient, Client, RequestOptions
+from jsoncompat.http import AsyncClient, Client, Err, HTTPStatusError, RequestOptions
 from petstore import (
     CreatePet201,
     CreatePetRequest,
-    DeletePet204,
     DeletePetRequest,
     GetGroupPetsRequest,
-    GetPet200,
     GetPet304,
     GetPet404,
     GetPetNote200ApplicationJson,
@@ -25,13 +23,10 @@ from petstore import (
     PetPatch,
     PetstoreAPI,
     SearchCriteria,
-    SearchPets200,
     SearchPetsRequest,
-    SetPetNote200,
     SetPetNoteBodyApplicationJson,
     SetPetNoteBodyTextPlain,
     SetPetNoteRequest,
-    UpdatePet200,
     UpdatePet412,
     UpdatePetRequest,
 )
@@ -40,22 +35,25 @@ from petstore import (
 def exercise(client: Client[PetstoreAPI, Never]) -> None:
     page = client.request(
         ListPetsRequest(
-            limit=10, tags=["cat", "a&b"], filter=PetFilter(adopted=False), locale="en"
+            limit=10,
+            tags=["cat", "a&b"],
+            filter=PetFilter(adopted=False),
+            locale="en",
         )
-    )
+    ).unwrap()
+    # A default response can also match 2xx, so this success union still narrows.
     assert isinstance(page, ListPets200) and page.headers.x_total_count == 1
     assert page.body.items[0].nickname is MISSING
     created = client.request(
         CreatePetRequest(body=PetCreate(name="Mochi", species="cat"))
-    )
+    ).unwrap()
     assert (
         isinstance(created, CreatePet201) and created.headers.location == "/pets/p_123"
     )
     found = client.request(
         GetPetRequest(pet_id="p_123", include_history=False),
         options=RequestOptions(extra_headers={"X-Trace-ID": "sync-example"}),
-    )
-    assert isinstance(found, GetPet200)
+    ).unwrap()
     assert [pair[1] for pair in found.raw_headers if pair[0].lower() == "x-trace"] == [
         "first",
         "second",
@@ -63,18 +61,33 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
     cached = client.request(
         GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
     )
-    assert isinstance(cached, GetPet304) and cached.body is None
+    assert isinstance(cached, Err)
+    assert isinstance(cached.error, GetPet304) and cached.error.body is None
     missing = client.request(GetPetRequest(pet_id="unknown"))
-    assert isinstance(missing, GetPet404) and missing.body.code == "not_found"
+    match missing:
+        case Err(error=GetPet404(body=problem)):
+            assert problem.code == "not_found"
+        case _:
+            raise AssertionError("expected the declared 404")
+    # The same result can be converted to an exception after inspection.
+    assert isinstance(missing, Err)
+    try:
+        missing.unwrap()
+    except HTTPStatusError as error:
+        assert error.error is missing.error and error.response.status == 404
+    else:
+        raise AssertionError("unwrap() should raise for a 404")
     updated = client.request(
         UpdatePetRequest(
-            pet_id="p_123", body=PetPatch(nickname=None), if_match=found.headers.etag
+            pet_id="p_123",
+            body=PetPatch(nickname=None),
+            if_match=found.headers.etag,
         )
-    )
-    assert isinstance(updated, UpdatePet200) and updated.body.nickname is None
+    ).unwrap()
+    assert updated.body.nickname is None
     conflict = client.request(UpdatePetRequest(pet_id="p_123", if_match='"stale"'))
-    assert isinstance(conflict, UpdatePet412)
-    note = client.request(GetPetNoteRequest(pet_id="p_123"))
+    assert isinstance(conflict, Err) and isinstance(conflict.error, UpdatePet412)
+    note = client.request(GetPetNoteRequest(pet_id="p_123")).unwrap()
     assert (
         isinstance(note, GetPetNote200ApplicationJson) and note.body == "A friendly cat"
     )
@@ -83,8 +96,8 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
             pet_id="p_123",
             body=SetPetNoteBodyTextPlain(content_type="text/plain", value="Hello!"),
         )
-    )
-    assert isinstance(saved, SetPetNote200) and saved.body == "Hello!"
+    ).unwrap()
+    assert saved.body == "Hello!"
     cleared = client.request(
         SetPetNoteRequest(
             pet_id="p_123",
@@ -92,103 +105,134 @@ def exercise(client: Client[PetstoreAPI, Never]) -> None:
                 content_type="application/json", value=None
             ),
         )
-    )
-    assert isinstance(cleared, SetPetNote200) and cleared.body is None
+    ).unwrap()
+    assert cleared.body is None
     matches = client.request(
         SearchPetsRequest(
             criteria=SearchCriteria(name="Mochi"),
             fields=["name", "species"],
             x_flags=["a", "b"],
         )
-    )
-    assert isinstance(matches, SearchPets200) and matches.headers.x_selected_fields == [
+    ).unwrap()
+    assert matches.headers.x_selected_fields == [
         "name",
         "species",
     ]
     assert (
-        client.request(GetGroupPetsRequest(group_id="shelter", pet_ids=[1, 2])).status
+        client.request(GetGroupPetsRequest(group_id="shelter", pet_ids=[1, 2]))
+        .unwrap()
+        .status
         == 200
     )
-    assert isinstance(client.request(HealthRequest()), Health200)
-    assert isinstance(client.request(DeletePetRequest(pet_id="p_123")), DeletePet204)
+    assert isinstance(client.request(HealthRequest()).unwrap(), Health200)
+    assert client.request(DeletePetRequest(pet_id="p_123")).unwrap().body is None
 
 
 async def exercise_async(client: AsyncClient[PetstoreAPI, Never]) -> None:
-    page = await client.request(
-        ListPetsRequest(
-            limit=10, tags=["cat", "a&b"], filter=PetFilter(adopted=False), locale="en"
+    page = (
+        await client.request(
+            ListPetsRequest(
+                limit=10,
+                tags=["cat", "a&b"],
+                filter=PetFilter(adopted=False),
+                locale="en",
+            )
         )
-    )
+    ).unwrap()
     assert isinstance(page, ListPets200) and page.headers.x_total_count == 1
     assert page.body.items[0].nickname is MISSING
-    created = await client.request(
-        CreatePetRequest(body=PetCreate(name="Mochi", species="cat"))
-    )
+    created = (
+        await client.request(
+            CreatePetRequest(body=PetCreate(name="Mochi", species="cat"))
+        )
+    ).unwrap()
     assert (
         isinstance(created, CreatePet201) and created.headers.location == "/pets/p_123"
     )
-    found = await client.request(
-        GetPetRequest(pet_id="p_123", include_history=False),
-        options=RequestOptions(extra_headers={"X-Trace-ID": "async-example"}),
-    )
-    assert isinstance(found, GetPet200)
+    found = (
+        await client.request(
+            GetPetRequest(pet_id="p_123", include_history=False),
+            options=RequestOptions(extra_headers={"X-Trace-ID": "async-example"}),
+        )
+    ).unwrap()
     assert [pair[1] for pair in found.raw_headers if pair[0].lower() == "x-trace"] == [
         "first",
         "second",
     ]
-    assert isinstance(
-        await client.request(
-            GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
-        ),
-        GetPet304,
+    cached = await client.request(
+        GetPetRequest(pet_id="p_123", if_none_match=found.headers.etag)
     )
+    assert isinstance(cached, Err)
+    assert isinstance(cached.error, GetPet304) and cached.error.body is None
     missing = await client.request(GetPetRequest(pet_id="unknown"))
-    assert isinstance(missing, GetPet404) and missing.body.code == "not_found"
-    updated = await client.request(
-        UpdatePetRequest(
-            pet_id="p_123", body=PetPatch(nickname=None), if_match=found.headers.etag
+    match missing:
+        case Err(error=GetPet404(body=problem)):
+            assert problem.code == "not_found"
+        case _:
+            raise AssertionError("expected the declared 404")
+    # The same result can be converted to an exception after inspection.
+    assert isinstance(missing, Err)
+    try:
+        missing.unwrap()
+    except HTTPStatusError as error:
+        assert error.error is missing.error and error.response.status == 404
+    else:
+        raise AssertionError("unwrap() should raise for a 404")
+    updated = (
+        await client.request(
+            UpdatePetRequest(
+                pet_id="p_123",
+                body=PetPatch(nickname=None),
+                if_match=found.headers.etag,
+            )
         )
+    ).unwrap()
+    assert updated.body.nickname is None
+    conflict = await client.request(
+        UpdatePetRequest(pet_id="p_123", if_match='"stale"')
     )
-    assert isinstance(updated, UpdatePet200) and updated.body.nickname is None
-    assert isinstance(
-        await client.request(UpdatePetRequest(pet_id="p_123", if_match='"stale"')),
-        UpdatePet412,
+    assert isinstance(conflict, Err) and isinstance(conflict.error, UpdatePet412)
+    note = (await client.request(GetPetNoteRequest(pet_id="p_123"))).unwrap()
+    assert (
+        isinstance(note, GetPetNote200ApplicationJson) and note.body == "A friendly cat"
     )
-    assert isinstance(
-        await client.request(GetPetNoteRequest(pet_id="p_123")),
-        GetPetNote200ApplicationJson,
-    )
-    saved = await client.request(
-        SetPetNoteRequest(
-            pet_id="p_123",
-            body=SetPetNoteBodyTextPlain(content_type="text/plain", value="Hello!"),
+    saved = (
+        await client.request(
+            SetPetNoteRequest(
+                pet_id="p_123",
+                body=SetPetNoteBodyTextPlain(content_type="text/plain", value="Hello!"),
+            )
         )
-    )
-    assert isinstance(saved, SetPetNote200) and saved.body == "Hello!"
-    cleared = await client.request(
-        SetPetNoteRequest(
-            pet_id="p_123",
-            body=SetPetNoteBodyApplicationJson(
-                content_type="application/json", value=None
-            ),
+    ).unwrap()
+    assert saved.body == "Hello!"
+    cleared = (
+        await client.request(
+            SetPetNoteRequest(
+                pet_id="p_123",
+                body=SetPetNoteBodyApplicationJson(
+                    content_type="application/json", value=None
+                ),
+            )
         )
-    )
-    assert isinstance(cleared, SetPetNote200) and cleared.body is None
-    matches = await client.request(
-        SearchPetsRequest(
-            criteria=SearchCriteria(name="Mochi"),
-            fields=["name", "species"],
-            x_flags=["a", "b"],
+    ).unwrap()
+    assert cleared.body is None
+    matches = (
+        await client.request(
+            SearchPetsRequest(
+                criteria=SearchCriteria(name="Mochi"),
+                fields=["name", "species"],
+                x_flags=["a", "b"],
+            )
         )
-    )
-    assert isinstance(matches, SearchPets200) and matches.headers.x_selected_fields == [
+    ).unwrap()
+    assert matches.headers.x_selected_fields == [
         "name",
         "species",
     ]
     assert (
         await client.request(GetGroupPetsRequest(group_id="shelter", pet_ids=[1, 2]))
-    ).status == 200
-    assert isinstance(await client.request(HealthRequest()), Health200)
-    assert isinstance(
-        await client.request(DeletePetRequest(pet_id="p_123")), DeletePet204
-    )
+    ).unwrap().status == 200
+    assert isinstance((await client.request(HealthRequest())).unwrap(), Health200)
+    assert (
+        await client.request(DeletePetRequest(pet_id="p_123"))
+    ).unwrap().body is None
