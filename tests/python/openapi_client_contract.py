@@ -14,6 +14,8 @@ import petstore as api
 from jsoncompat import MISSING, ValidationError
 from jsoncompat.http import (
     API,
+    Body,
+    FormField,
     ClientResponse,
     ContractError,
     Cookie,
@@ -206,6 +208,22 @@ class BindingTests(unittest.TestCase):
         with patch.object(api.GetPet200, "from_value", return_value=decoded) as decode:
             self.assertIs(self.client.request(api.GetPetRequest(pet_id="p_123")).unwrap(), decoded)
         decode.assert_called_once()
+
+    def test_manual_json_charset_has_same_native_and_reference_failure(self):
+        request = api.UpdatePetRequest(pet_id="p_123", body=api.PetPatch(name="é"))
+        specification = next(operation for operation in api.PetstoreAPI.operations()
+                             if operation.request is api.UpdatePetRequest)
+        reflected = _binding._prepare(specification, api.PetstoreAPI)
+        plan = replace(reflected, fields=tuple(
+            replace(field, metadata=Body("application/json; charset=iso-8859-1"))
+            if isinstance(field.metadata, Body) else field
+            for field in reflected.fields
+        ))
+        native = api.UpdatePetRequest.__jsoncompat_runtime__
+        for runtime in (native, ValuePathRuntime(native)):
+            with patch.object(api.UpdatePetRequest, "__jsoncompat_runtime__", runtime):
+                with self.assertRaisesRegex(ValueError, "only UTF-8"):
+                    plan.encode(request)
 
     def test_direct_response_matches_value_path_numbers_and_diagnostics(self):
         cases = [
@@ -522,7 +540,9 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(
             parse_qs(urlsplit(wire.target).query)["criteria"], ['{"name":"a&b"}']
         )
-        self.assertIn("fields=name|species", wire.target)
+        # OAS 3.1.2 Appendix E.6 requires percent-encoding pipe delimiters.
+        # https://spec.openapis.org/oas/v3.1.2.html#e6-percent-encoding-and-illegal-or-reserved-delimiters
+        self.assertIn("fields=name%7Cspecies", wire.target)
         self.assertIn(("X-Flags", "a,b"), wire.headers)
         self.assertEqual(result.headers.x_selected_fields, ["name", "species"])
 
@@ -962,7 +982,7 @@ class PreparationTests(unittest.TestCase):
             options=RequestOptions(transform=lambda request: request),
         )
         self.assertEqual(transformed.request, original.request)
-        self.assertIn("name|species", transformed.request.target)
+        self.assertIn("name%7Cspecies", transformed.request.target)
 
     def test_prepared_decoder_validates_independently_and_preserves_raw_failures(
         self,
@@ -1104,6 +1124,34 @@ class ParameterTests(unittest.TestCase):
         ]
         for metadata, value, expected in cases:
             self.assertEqual(encode_parameter(metadata, value), expected)
+
+    def test_reserved_expansion_preserves_only_existing_valid_percent_triplets(self):
+        # OAS 3.1.2 Appendix C.4.2 / RFC6570 reserved expansion: preserve one
+        # existing escape layer without decoding nested escapes or stray '%'.
+        cases = {
+            "x%2By": "x%2By",
+            "%2f%2F": "%2f%2F",
+            "%252F": "%252F",
+            "%%2F": "%25%2F",
+            "%": "%25",
+            "%2": "%252",
+            "%GG": "%25GG",
+            "a:/?#[]": "a:/?%23%5B%5D",
+        }
+        for original, expected in cases.items():
+            with self.subTest(original=original):
+                self.assertEqual(encode_parameter(Query("q", allow_reserved=True), original), [("q", expected)])
+        self.assertEqual(encode_parameter(Query("q"), "x%2By"), [("q", "x%252By")])
+        self.assertEqual(encode_parameter(Query("q", allow_reserved=True), ["%2B", "%252B"]), [("q", "%2B"), ("q", "%252B")])
+        self.assertEqual(encode_parameter(Query("q", allow_reserved=True), {"key": "%2B"}), [("key", "%2B")])
+
+    def test_multipart_parameter_expansion_keeps_literal_percent_signs(self):
+        from jsoncompat.http._body import encode_body
+        metadata = Body("multipart/form-data", encoding=(
+            FormField("query", parameter_encoding=True, allow_reserved=True),
+        ))
+        _, body = encode_body(metadata, {"query": "x%2By%252F%bad%"})
+        self.assertIn(b"\r\n\r\nx%2By%252F%bad%\r\n", body)
 
     def test_unrepresentable_values_are_rejected(self):
         for value in [None, [None], [[1]], {"x": {"y": 1}}]:

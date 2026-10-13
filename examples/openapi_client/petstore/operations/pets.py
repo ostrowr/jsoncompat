@@ -828,7 +828,7 @@ class SetPetNoteRequest(_http.Request[PetstoreAPI, "SetPetNoteSuccess", "SetPetN
 
     body: typing.Annotated[
         (SetPetNoteBodyApplicationJson | SetPetNoteBodyTextPlain),
-        _http.Body(None),
+        _http.Body(None, variants=(_http.Body(), _http.Body("text/plain", codec="text"),)),
     ] = dc.field("body")
     pet_id: typing.Annotated[str, _http.Path("petId")] = dc.field("pet_id")
 
@@ -841,7 +841,7 @@ class SetPetNoteRequest(_http.Request[PetstoreAPI, "SetPetNoteSuccess", "SetPetN
         skip_validation: bool = False,
         body: typing.Annotated[
             (SetPetNoteBodyApplicationJson | SetPetNoteBodyTextPlain),
-            _http.Body(None),
+            _http.Body(None, variants=(_http.Body(), _http.Body("text/plain", codec="text"),)),
         ],
         pet_id: typing.Annotated[str, _http.Path("petId")],
     ) -> None:
@@ -905,7 +905,7 @@ OPERATIONS: typing.Final[tuple[_http.Operation, ...]] = (
         path="/pets/{petId}/note",
         responses=(
             _http.Response(200, GetPetNote200ApplicationJson, "application/json"),
-            _http.Response(200, GetPetNote200TextPlain, "text/plain"),
+            _http.Response(200, GetPetNote200TextPlain, "text/plain", codec="text"),
             _http.Response(404, GetPetNote404, "application/json"),
         ),
         operation_id="getPetNote",
@@ -1055,5 +1055,5 @@ _JSONCOMPAT_OPERATIONS: typing.Final[tuple[_http_codegen.OperationPlan, ...]] = 
     _http_codegen.OperationPlan(OPERATIONS[3].endpoint, GetPetNoteRequest, (_http_codegen.Field("pet_id", _http.Path("petId")),), (_http_codegen.ResponsePlan(OPERATIONS[3].endpoint.responses[0], ()), _http_codegen.ResponsePlan(OPERATIONS[3].endpoint.responses[1], ()), _http_codegen.ResponsePlan(OPERATIONS[3].endpoint.responses[2], ()),), "application/json, text/plain", ((False, "/pets/"), (True, "petId"), (False, "/note"),)),
     _http_codegen.OperationPlan(OPERATIONS[4].endpoint, UpdatePetRequest, (_http_codegen.Field("body", _http.Body()), _http_codegen.Field("dry_run", _http.Query("dryRun")), _http_codegen.Field("if_match", _http.Header("If-Match")), _http_codegen.Field("pet_id", _http.Path("petId")),), (_http_codegen.ResponsePlan(OPERATIONS[4].endpoint.responses[0], (_http_codegen.Field("etag", _http.Header("etag")),)), _http_codegen.ResponsePlan(OPERATIONS[4].endpoint.responses[1], ()), _http_codegen.ResponsePlan(OPERATIONS[4].endpoint.responses[2], ()),), "application/json", ((False, "/pets/"), (True, "petId"), (False, ""),)),
     _http_codegen.OperationPlan(OPERATIONS[5].endpoint, CreatePetRequest, (_http_codegen.Field("body", _http.Body()),), (_http_codegen.ResponsePlan(OPERATIONS[5].endpoint.responses[0], (_http_codegen.Field("etag", _http.Header("etag")), _http_codegen.Field("location", _http.Header("location")),)), _http_codegen.ResponsePlan(OPERATIONS[5].endpoint.responses[1], ()), _http_codegen.ResponsePlan(OPERATIONS[5].endpoint.responses[2], ()),), "application/json", ((False, "/pets"),)),
-    _http_codegen.OperationPlan(OPERATIONS[6].endpoint, SetPetNoteRequest, (_http_codegen.Field("body", _http.Body(None)), _http_codegen.Field("pet_id", _http.Path("petId")),), (_http_codegen.ResponsePlan(OPERATIONS[6].endpoint.responses[0], ()), _http_codegen.ResponsePlan(OPERATIONS[6].endpoint.responses[1], ()),), "application/json", ((False, "/pets/"), (True, "petId"), (False, "/note"),)),
+    _http_codegen.OperationPlan(OPERATIONS[6].endpoint, SetPetNoteRequest, (_http_codegen.Field("body", _http.Body(None, variants=(_http.Body(), _http.Body("text/plain", codec="text"),))), _http_codegen.Field("pet_id", _http.Path("petId")),), (_http_codegen.ResponsePlan(OPERATIONS[6].endpoint.responses[0], ()), _http_codegen.ResponsePlan(OPERATIONS[6].endpoint.responses[1], ()),), "application/json", ((False, "/pets/"), (True, "petId"), (False, "/note"),)),
 )

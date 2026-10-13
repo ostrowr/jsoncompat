@@ -53,6 +53,7 @@ from ._metadata import (
     Result,
     UnexpectedResponse,
 )
+from ._body import decode_body, encode_body, matches_media, media_type, text_encoding
 from ._options import apply_options
 from ._parameters import check_header, decode_header, encode_parameter
 
@@ -92,7 +93,7 @@ class _Operation:
                 for field in self.fields
                 if isinstance(field.metadata, Body)
                 and field.metadata.content_type is not None
-                and field.metadata.content_type != "text/plain"
+                and field.metadata.codec == "json"
             ),
             None,
         )
@@ -137,11 +138,21 @@ class _Operation:
                         )
                     content_type = cast(str, item["content_type"])
                     item = item["value"]
-                body = (
-                    encoded_body
-                    if field.name == json_body and encoded_body is not None
-                    else _encode_body(content_type, item)
-                )
+                    metadata = next(
+                        (
+                            variant
+                            for variant in metadata.variants
+                            if variant.content_type == content_type
+                        ),
+                        Body(content_type),
+                    )
+                if field.name == json_body and encoded_body is not None:
+                    # Match the reference codec even for manually declared
+                    # metadata: native JSON bytes are always UTF-8.
+                    text_encoding(content_type)
+                    body = encoded_body
+                else:
+                    content_type, body = encode_body(metadata, item)
                 headers.append(("Content-Type", content_type))
                 continue
             encoded = encode_parameter(metadata, item)
@@ -211,7 +222,7 @@ class _Operation:
             content_types = headers.get("content-type", [])
             if len(content_types) > 1:
                 raise ValueError("multiple Content-Type headers")
-            content_type = _media_type(content_types[0]) if content_types else None
+            content_type = content_types[0] if content_types else None
             if all(plan.response.content_type is None for plan in candidates):
                 plan = candidates[0]
                 if raw.body:
@@ -220,11 +231,22 @@ class _Operation:
                 matching = [
                     plan
                     for plan in candidates
-                    if plan.response.content_type == content_type
+                    if plan.response.content_type is not None
+                    and content_type is not None
+                    and matches_media(plan.response.content_type, content_type)
                 ]
                 if not matching:
                     raise ValueError(f"undeclared response media type {content_type!r}")
-                plan = matching[0]
+                # A media selector with more declared parameters is more specific.
+                plan = max(
+                    matching,
+                    key=lambda candidate: (
+                        -media_type(cast(str, candidate.response.content_type))[
+                            0
+                        ].count("*"),
+                        len(media_type(cast(str, candidate.response.content_type))[1]),
+                    ),
+                )
             typed_headers: dict[str, JsonValue] = {}
             try:
                 for field in plan.headers:
@@ -235,7 +257,7 @@ class _Operation:
             except (ValueError, TypeError, UnicodeError):
                 if plan.response.content_type is not None:
                     # The original decoder checks body syntax before headers.
-                    _decode_body(cast(str, content_type), raw.body)
+                    decode_body(plan.response.codec, cast(str, content_type), raw.body)
                 raise
             value: dict[str, JsonValue] = {
                 "status": raw.status,
@@ -243,8 +265,8 @@ class _Operation:
                 "raw_headers": [[key, value] for key, value in raw.headers],
             }
             if plan.response.content_type is not None:
-                value["content_type"] = content_type
-            decoded = _decode_model(plan.response, value, raw.body)
+                value["content_type"] = plan.response.content_type
+            decoded = _decode_model(plan.response, value, raw.body, content_type)
             return Ok(decoded) if 200 <= raw.status < 300 else Err(decoded, raw)
         except (ValueError, TypeError, UnicodeError) as error:
             failure = ResponseError(
@@ -257,12 +279,19 @@ class _Operation:
 
 
 def _decode_model(
-    response: Response, fields: dict[str, JsonValue], body: bytes
+    response: Response,
+    fields: dict[str, JsonValue],
+    body: bytes,
+    actual_content_type: str | None = None,
 ) -> DataclassModel:
     content_type = response.content_type
+    if content_type is not None:
+        # Check the actual charset before entering the optimized JSON decoder.
+        if response.codec in ("json", "text", "ndjson"):
+            text_encoding(actual_content_type or content_type)
     if (
         content_type is not None
-        and content_type != "text/plain"
+        and response.codec == "json"
         and getattr(response.model.from_value, "__func__", None) is _DEFAULT_FROM_VALUE
     ):
         try:
@@ -276,49 +305,24 @@ def _decode_model(
             # UnexpectedResponse behavior as the ordinary value path.
             pass
     fields["body"] = (
-        None if content_type is None else _decode_body(content_type, body)
+        None
+        if content_type is None
+        else decode_body(response.codec, actual_content_type or content_type, body)
     )
     return response.model.from_value(fields)
 
 
-def _media_type(value: str) -> str:
-    parts = value.split(";")
-    media = parts[0].strip().lower()
-    for part in parts[1:]:
-        key, sep, item = part.strip().partition("=")
-        if (
-            sep
-            and key.lower() == "charset"
-            and item.strip('"').lower() not in ("utf-8", "utf8")
-        ):
-            raise ValueError("only UTF-8 response bodies are supported")
-    return media
-
-
 def _supported_media(value: str) -> bool:
-    return (
-        value == "text/plain"
-        or value == "application/json"
-        or (value.startswith("application/") and value.endswith("+json"))
-    )
+    try:
+        media_type(value)
+        return True
+    except ValueError:
+        return False
 
 
-def _encode_body(content_type: str, value: JsonValue) -> bytes:
-    if not _supported_media(content_type):
-        raise ValueError(f"unsupported media type {content_type!r}")
-    if content_type == "text/plain":
-        if not isinstance(value, str):
-            raise ValueError("text/plain requires a string")
-        return value.encode("utf-8")
-    return serialize_json_value(value).encode("utf-8")
-
-
-def _decode_body(content_type: str, value: bytes) -> JsonValue:
-    return (
-        value.decode("utf-8")
-        if content_type == "text/plain"
-        else deserialize_json_value(value)
-    )
+def _json_media(value: str) -> bool:
+    media, _ = media_type(value)
+    return media == "application/json" or media.endswith("+json")
 
 
 def _fields(
@@ -347,7 +351,7 @@ def _fields(
                 raise ContractError("invalid parameter name")
             if item.content_type is not None and (
                 not _supported_media(item.content_type)
-                or item.content_type == "text/plain"
+                or not _json_media(item.content_type)
             ):
                 raise ContractError("parameter content must be JSON")
         if isinstance(item, Path) and field.default is not dataclasses.MISSING:

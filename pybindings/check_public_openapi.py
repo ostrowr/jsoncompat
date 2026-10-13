@@ -19,6 +19,7 @@ import argparse
 import ast
 from collections import Counter
 from decimal import Decimal
+from email.message import Message
 import hashlib
 import importlib
 import json
@@ -294,6 +295,66 @@ def example_values(document: dict[str, Any], owner: Any, pointer: str, seen: fro
     return result[:4]
 
 
+def normalized_media_type(value: str) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Compare source and generated spelling without losing source JSON pointers."""
+    message = Message()
+    message["content-type"] = value
+    parts = message.get_params(header="content-type", unquote=True)
+    if not parts:
+        raise ValueError("missing media type")
+    parameters = tuple(sorted((name.lower(), item.lower() if name.lower() == "charset" else item)
+                              for name, item in parts[1:]))
+    return parts[0][0].lower(), parameters
+
+
+def response_examples(document: dict[str, Any], owner: Any, pointer: str,
+                      declared: str) -> list[tuple[str, Any]]:
+    # A referenced Response Object keeps its source pointer. Do not report an
+    # invented /content child beneath the operation's {$ref: ...} object.
+    seen: set[str] = set()
+    while isinstance(owner, dict) and "content" not in owner and "$ref" in owner:
+        reference = owner["$ref"]
+        if not isinstance(reference, str) or not reference.startswith("#/") or reference in seen:
+            break
+        seen.add(reference)
+        target: Any = document
+        try:
+            for part in reference[2:].split("/"):
+                target = target[part.replace("~1", "/").replace("~0", "~")]
+        except (KeyError, TypeError):
+            break
+        owner, pointer = target, reference
+    owner = resolve(document, owner)
+    expected = normalized_media_type(declared)
+    for source_name, media in owner.get("content", {}).items():
+        if normalized_media_type(source_name) == expected:
+            return example_values(document, media, pointer + "/content/" + pointer_segment(source_name))
+    return []
+
+
+def inline_example_bytes(codec: str, media: str, value: Any) -> bytes:
+    """Encode only a representation established by the selected media codec.
+
+    Binary schema examples and wildcard selectors do not establish wire bytes;
+    callers record them as uncovered rather than inventing an encoding.
+    """
+    if "*" in normalized_media_type(media)[0]:
+        raise ValueError("wildcard media example has no declared concrete Content-Type")
+    if codec == "json":
+        return json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    if codec == "text":
+        if not isinstance(value, str):
+            raise ValueError("text example is not a string; no wire representation was inferred")
+        return value.encode("utf-8")
+    if codec == "ndjson":
+        # The declared schema describes one record, including array-valued records.
+        return json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8") + b"\n"
+    if codec == "yaml":
+        from jsoncompat.codegen.serialization import SerializationFormat, serialize_value
+        return serialize_value(value, format=SerializationFormat.YAML).encode("utf-8")
+    raise ValueError(f"{codec} example has no explicit wire bytes; no representation was inferred")
+
+
 def response_status(label: int | str, declarations: set[int | str]) -> int | None:
     if isinstance(label, int):
         return label
@@ -378,23 +439,26 @@ def runtime_worker(directory: Path, package_name: str) -> None:
         original = resolve(document, document["paths"][endpoint.path])[endpoint.method.lower()]
         declarations = {response.status for response in endpoint.responses}
         for response in endpoint.responses:
-            raw_definition = resolve(document, original["responses"][str(response.status)])
+            raw_definition = original["responses"][str(response.status)]
             pointer = f"#/paths/{pointer_segment(endpoint.path)}/{endpoint.method.lower()}/responses/{response.status}"
-            candidates = [(pointer, None)] if response.content_type is None else example_values(
-                document, raw_definition.get("content", {}).get(response.content_type, {}),
-                pointer + "/content/" + pointer_segment(response.content_type),
+            candidates = [(pointer, None)] if response.content_type is None else response_examples(
+                document, raw_definition, pointer, response.content_type,
             )
             status = response_status(response.status, declarations)
             identity = {"method": endpoint.method, "path": endpoint.path, "declared_status": response.status,
-                        "media_type": response.content_type, "model": response.model.__name__}
+                        "media_type": response.content_type, "codec": response.codec, "model": response.model.__name__}
             if not candidates or status is None:
                 uncovered.append({**identity, "reason": "no inline example" if not candidates else "fully shadowed response"})
                 continue
             for origin, value in candidates:
                 headers = () if response.content_type is None else (("Content-Type", response.content_type),)
-                body = b"" if response.content_type is None else (
-                    str(value).encode() if response.content_type == "text/plain" else json.dumps(value, ensure_ascii=False).encode()
-                )
+                try:
+                    body = b"" if response.content_type is None else inline_example_bytes(
+                        response.codec, response.content_type, value,
+                    )
+                except ValueError as error:
+                    uncovered.append({**identity, "origin": origin, "reason": str(error)})
+                    continue
                 raw = RawResponse(status, headers, body)
                 model = response.model
                 original_runtime = model.__jsoncompat_runtime__

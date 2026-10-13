@@ -67,6 +67,8 @@ class Query:
     style: Literal["form", "spaceDelimited", "pipeDelimited", "deepObject"] = "form"
     explode: bool = True
     content_type: str | None = None
+    allow_reserved: bool = False
+    allow_empty_value: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,10 +88,57 @@ class Cookie:
     content_type: str | None = None
 
 
+type BodyCodec = Literal[
+    "auto", "json", "text", "binary", "ndjson", "urlencoded", "multipart", "yaml"
+]
+
+
+@dataclass(frozen=True, slots=True)
+class FormField:
+    """A codegen-selected form property encoding, including binary file parts."""
+
+    name: str
+    content_type: str | None = None
+    style: Literal["form", "spaceDelimited", "pipeDelimited", "deepObject"] = "form"
+    explode: bool = True
+    allow_reserved: bool = False
+    binary: bool = False
+    parameter_encoding: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class Body:
     # None denotes explicit {content_type, value} variants for multiple media types.
     content_type: str | None = "application/json"
+    codec: BodyCodec = "auto"
+    encoding: tuple[FormField, ...] = ()
+    variants: tuple[Body, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.codec == "auto":
+            object.__setattr__(self, "codec", _default_body_codec(self.content_type))
+
+
+def _default_body_codec(content_type: str | None) -> BodyCodec:
+    media = (content_type or "application/json").partition(";")[0].strip().lower()
+    if media in (
+        "application/yaml",
+        "application/x-yaml",
+        "text/yaml",
+        "application/vnd.oai.openapi",
+    ):
+        return "yaml"
+    if media.startswith("text/"):
+        return "text"
+    if media in ("application/x-ndjson", "application/ndjson"):
+        return "ndjson"
+    if media == "application/x-www-form-urlencoded":
+        return "urlencoded"
+    if media == "multipart/form-data":
+        return "multipart"
+    if media == "application/json" or media.endswith("+json"):
+        return "json"
+    return "binary"
 
 
 type Parameter = Path | Query | Header | Cookie
@@ -100,6 +149,11 @@ class Response:
     status: int | Literal["1XX", "2XX", "3XX", "4XX", "5XX", "default"]
     model: type[DataclassModel]
     content_type: str | None = None
+    codec: BodyCodec = "auto"
+
+    def __post_init__(self) -> None:
+        if self.codec == "auto":
+            object.__setattr__(self, "codec", _default_body_codec(self.content_type))
 
 
 @dataclass(frozen=True, slots=True)

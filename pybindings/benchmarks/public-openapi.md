@@ -6,6 +6,8 @@ The remaining 26 native 3.1 documents are rejected by current media/contract sup
 
 [Pinned sources and hashes](public-openapi-manifest.json) · [Results and diagnostics](public-openapi-results.json) · [Explicit runtime cases](public-openapi-samples.json) · [Slice cases](public-openapi-slice-samples.json)
 
+See the [support follow-up](public-openapi-support.md) for the classification and rerun after adding more wire formats. The results below record the original audit.
+
 ## Defects fixed
 
 - Generated requests, responses, aliases, nested definitions, and inline helpers now avoid existing component names. Explicit component identities stay intact; generated names receive deterministic numeric suffixes. This unblocked Unkey, LSProxy, Renegade, Luma, and Asterwise.
@@ -76,7 +78,7 @@ These are first observed diagnostics, not an exhaustive classification of each d
 | [airflow_simple_auth](https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/airflow-core/src/airflow/api_fastapi/auth/managers/simple/openapi/v2-simple-auth-manager-generated.yaml) | `application/x-www-form-urlencoded`. |
 | [aivisspeech](https://raw.githubusercontent.com/Aivis-Project/AivisSpeech/77a3675f7b76865cfa0253ac30f41ef1dd822e27/openapi.json) | `text/html` (other operations also use unsupported media). |
 | [chroma_core](https://raw.githubusercontent.com/chroma-core/chroma/5f30478c11ffdcf8cba1f872993c29d8f84ce0d9/docs/mintlify/sync.openapi.json) | Unresolved `SourceTypeFilter` schema reference. |
-| [cohere_ai](https://raw.githubusercontent.com/cohere-ai/cohere-developer-experience/57596d8d2a8df5e3cdeb072cdc602c17805c72d4/cohere-openapi.yaml) | Empty `enum` in `TruncationStrategy`. |
+| [cohere_ai](https://raw.githubusercontent.com/cohere-ai/cohere-developer-experience/57596d8d2a8df5e3cdeb072cdc602c17805c72d4/cohere-openapi.yaml) | Empty `oneOf` in `TruncationStrategy` (corrected from the original enum label). |
 | [marimo](https://raw.githubusercontent.com/marimo-team/marimo/feaf0b2464be52fb43005d8622708d0af89cf645/packages/openapi/api.yaml) | Non-string `info.version`. |
 | [papr_memory](https://raw.githubusercontent.com/Papr-ai/memory-opensource/a0a816eb00f73b0819ef3fd7115bb6835cd18c39/openapi.json) | `multipart/form-data`. |
 | [openai](https://raw.githubusercontent.com/openai/openai-openapi/77618e641a840768f1e58197ca53ddedffea6df9/openapi.json) | Discriminator attached to an array schema rather than its union. |

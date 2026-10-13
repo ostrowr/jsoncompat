@@ -12,6 +12,9 @@ impl ModelConverterPy {
             ConversionNode::Scalar {
                 kind: ScalarKind::Any,
             } => canonical_python_scalar(py, value),
+            ConversionNode::Scalar {
+                kind: ScalarKind::Bytes,
+            } => binary_json_projection(py, value).map(Some),
             ConversionNode::Scalar { kind } => convert_scalar(py, *kind, value)
                 .map(Some)
                 .map_err(ConversionFailure::into_pyerr),
@@ -704,6 +707,7 @@ impl ModelConverterPy {
             ConversionNode::Scalar { kind, .. } => match kind {
                 ScalarKind::Any => true,
                 ScalarKind::String => value.is_instance_of::<PyString>(),
+                ScalarKind::Bytes => value.is_instance_of::<PyBytes>(),
                 ScalarKind::Integer => {
                     value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>()
                 }

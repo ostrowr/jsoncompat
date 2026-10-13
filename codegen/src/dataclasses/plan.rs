@@ -17,6 +17,7 @@ pub(super) struct NodeId(pub usize);
 pub(super) enum ScalarKind {
     Any,
     String,
+    Bytes,
     Integer,
     Number,
     Boolean,
@@ -146,7 +147,7 @@ impl ModelConverterPlan {
             for (field, original, guard) in candidates {
                 if guard.is_leaf()
                     && !guard.rules.is_empty()
-                    && matches!(self.node(original),ConversionNode::Scalar {kind} if !matches!(kind,ScalarKind::Any))
+                    && matches!(self.node(original),ConversionNode::Scalar {kind} if !matches!(kind,ScalarKind::Any | ScalarKind::Bytes))
                 {
                     patches.push(GuardCandidate {
                         owner,
@@ -404,6 +405,9 @@ impl Builder<'_> {
             },
             Kind::String => ConversionNode::Scalar {
                 kind: ScalarKind::String,
+            },
+            Kind::Bytes => ConversionNode::Scalar {
+                kind: ScalarKind::Bytes,
             },
             Kind::Integer => ConversionNode::Scalar {
                 kind: ScalarKind::Integer,

@@ -16,6 +16,7 @@ from ._metadata import EncodedRequest as EncodedRequest
 from ._metadata import Endpoint as Endpoint
 from ._metadata import Err as Err
 from ._metadata import Fetch as Fetch
+from ._metadata import FormField as FormField
 from ._metadata import Header as Header
 from ._metadata import HeaderPairs as HeaderPairs
 from ._metadata import HTTPStatusError as HTTPStatusError

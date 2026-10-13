@@ -9,7 +9,10 @@ main public corpus audit first, retaining its generated packages and source.json
 from __future__ import annotations
 
 import argparse
+import base64
 from collections import Counter
+from email import policy
+from email.parser import BytesParser
 import importlib
 import json
 import os
@@ -18,10 +21,32 @@ import subprocess
 import sys
 from typing import Any
 
-from check_public_openapi import TY_VERSION, run
+from check_public_openapi import TY_VERSION, normalized_media_type, run
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SAMPLES = ROOT / "pybindings/benchmarks/public-openapi-samples.json"
+
+
+def multipart_parts(content_type: str, body: bytes) -> list[dict[str, Any]]:
+    message = BytesParser(policy=policy.default).parsebytes(
+        ("Content-Type: " + content_type + "\r\nMIME-Version: 1.0\r\n\r\n").encode() + body)
+    if not message.is_multipart():
+        raise AssertionError("request is not multipart")
+    return [{"name": part.get_param("name", header="content-disposition"),
+             "content_type": part.get_content_type(), "filename": part.get_filename(),
+             "body_base64": base64.b64encode(part.get_payload(decode=True)).decode("ascii")}
+            for part in message.iter_parts()]
+
+
+def request_observation(request: Any) -> object:
+    content_type = next((value for key, value in request.headers if key.lower() == "content-type"), "")
+    if not content_type.lower().startswith("multipart/"):
+        return request
+    # Independently parse each random boundary; compare actual part bytes/headers.
+    media, parameters = normalized_media_type(content_type)
+    headers = tuple((key, (media, tuple((name, value) for name, value in parameters if name != "boundary")))
+                    if key.lower() == "content-type" else (key, value) for key, value in request.headers)
+    return request.method, request.target, headers, multipart_parts(content_type, request.body)
 
 
 def check_case(directory: Path, case: dict[str, Any]) -> dict[str, Any]:
@@ -65,15 +90,34 @@ def check_case(directory: Path, case: dict[str, Any]) -> dict[str, Any]:
             ordinary = plan.encode(request)
         finally:
             operation.request.__jsoncompat_runtime__ = original
-        assert native == ordinary, "native/value request encoding differs"
+        assert request_observation(native) == request_observation(ordinary), "native/value request encoding differs"
         assert native.body is not None
-        assert json.loads(native.body) == case["body"], "request body changed"
+        if "wire_body" in case:
+            assert native.body == case["wire_body"].encode("utf-8"), "request body changed"
+        elif "wire_body_base64" in case:
+            assert native.body == base64.b64decode(case["wire_body_base64"], validate=True)
+        elif "multipart_parts" in case:
+            content_type = next(value for key, value in native.headers if key.lower() == "content-type")
+            actual = multipart_parts(content_type, native.body)
+            expected_parts = case["multipart_parts"]
+            assert len(actual) == len(expected_parts)
+            for part, expected_part in zip(actual, expected_parts):
+                assert part["name"] == expected_part["name"]
+                assert part["content_type"] == expected_part["content_type"]
+                assert part["filename"] == expected_part.get("filename")
+                payload = base64.b64decode(part["body_base64"], validate=True)
+                if "json" in expected_part:
+                    assert json.loads(payload) == expected_part["json"]
+                else:
+                    assert payload == base64.b64decode(expected_part["body_base64"], validate=True)
+        else:
+            assert json.loads(native.body) == case["body"], "request body changed"
         return {"id": case["id"], "status": "passed", "direction": "request",
                 "body_shape": type(case["body"]).__name__, "native_value_equivalent": True}
 
     status = case["status"]
     media = case.get("media_type", "application/json")
-    body = case["raw_body"].encode() if "raw_body" in case else (
+    body = base64.b64decode(case["raw_body_base64"], validate=True) if "raw_body_base64" in case else case["raw_body"].encode() if "raw_body" in case else (
         b"" if media is None else json.dumps(case["body"], ensure_ascii=False).encode()
     )
     headers = (() if media is None else (("Content-Type", media),)) + (
@@ -136,7 +180,7 @@ def check_case(directory: Path, case: dict[str, Any]) -> dict[str, Any]:
     value = result.value if isinstance(result, Ok) else result.error
     if expected == "unexpected":
         assert isinstance(result, Err) and isinstance(value, UnexpectedResponse)
-        assert value.status == status and value.body == body and value.text() == body.decode()
+        assert value.status == status and value.body == body and value.text() == body.decode(errors="replace")
         assert value.headers["x-corpus-sample"] == case["id"]
         assert value.decode_error.response is raw
         if "body" in case:
@@ -145,6 +189,8 @@ def check_case(directory: Path, case: dict[str, Any]) -> dict[str, Any]:
         assert not isinstance(value, UnexpectedResponse), getattr(value, "decode_error", None)
         decoded = value.to_value()
         assert decoded["body"] == case["body"], "response body changed"
+        if case.get("body_is_bytes"):
+            assert isinstance(value.body, bytes) and value.body == body
         assert decoded["status"] == status
         assert decoded["raw_headers"] == [list(pair) for pair in headers], "response headers changed"
         assert isinstance(result, Ok) if 200 <= status < 300 else isinstance(result, Err)

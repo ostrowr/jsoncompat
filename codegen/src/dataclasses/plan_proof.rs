@@ -46,7 +46,7 @@ impl ModelConverterPlan {
                             (
                                 JsonType::String,
                                 ConversionNode::Scalar {
-                                    kind: ScalarKind::String
+                                    kind: ScalarKind::String | ScalarKind::Bytes
                                 }
                             ) | (
                                 JsonType::Integer | JsonType::Number,
@@ -249,7 +249,7 @@ impl ModelConverterPlan {
                     }
                     let node_type = match node {
                         ConversionNode::Scalar {
-                            kind: ScalarKind::String,
+                            kind: ScalarKind::String | ScalarKind::Bytes,
                         } => Some(JsonType::String),
                         ConversionNode::Scalar {
                             kind: ScalarKind::Integer | ScalarKind::Number,

@@ -7,6 +7,7 @@ use std::{cmp::Ordering, fmt, ops::Deref};
 pub(super) enum Kind {
     Any,
     String,
+    Bytes,
     Integer,
     Number,
     Boolean,
@@ -39,6 +40,9 @@ impl Annotation {
     }
     pub fn string() -> Self {
         Self::new("str", Kind::String)
+    }
+    pub fn bytes() -> Self {
+        Self::new("builtins.bytes", Kind::Bytes)
     }
     pub fn integer() -> Self {
         Self::new("int", Kind::Integer)

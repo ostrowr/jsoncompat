@@ -12,6 +12,7 @@ use std::ops::Deref;
 use std::ops::Range;
 use std::sync::Arc;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use jiter::JsonValue as JiterJsonValue;
 use jsonschema::{
     InstanceRef as JsonInstanceRef, ProjectedPythonKind, ProjectedPythonValue,
@@ -79,6 +80,7 @@ impl BranchOrdinal {
 enum ScalarKind {
     Any,
     String,
+    Bytes,
     Integer,
     Number,
     Boolean,
@@ -491,6 +493,7 @@ pub(crate) enum ConversionMismatch {
         actual: Option<String>,
     },
     JsonObjectKey,
+    BinaryEncoding,
     Literal,
     Depth,
     UnknownProperty(String),
@@ -511,6 +514,9 @@ impl std::fmt::Display for ConversionMismatch {
                 expected,
                 actual: None,
             } => write!(formatter, "expected {expected}"),
+            Self::BinaryEncoding => {
+                formatter.write_str("expected canonical base64 string for bytes")
+            }
             Self::JsonObjectKey => formatter.write_str("JSON object keys must be strings"),
             Self::Literal => formatter.write_str("value does not match the generated literal"),
             Self::Depth => {
@@ -535,9 +541,17 @@ impl std::fmt::Display for ConversionMismatch {
 }
 
 impl ConversionMismatch {
+    pub(crate) fn is_representation_error(&self) -> bool {
+        match self {
+            Self::BinaryEncoding => true,
+            Self::NoUnionBranch { first: Some(first) } => first.is_representation_error(),
+            _ => false,
+        }
+    }
+
     fn into_pyerr(self) -> PyErr {
         match self {
-            Self::Depth => PyErr::new::<PyValueError, _>(self.to_string()),
+            Self::Depth | Self::BinaryEncoding => PyErr::new::<PyValueError, _>(self.to_string()),
             _ => PyErr::new::<PyTypeError, _>(self.to_string()),
         }
     }
@@ -574,7 +588,7 @@ fn branch_attempt<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(ConversionFailure::Mismatch(error)) => {
-            if first_mismatch.is_none() {
+            if first_mismatch.is_none() || error.is_representation_error() {
                 *first_mismatch = Some(error);
             }
             Ok(None)
@@ -1016,6 +1030,7 @@ impl ModelConverterPlan {
 pub(crate) struct ModelProjection<'a> {
     converter: &'a ModelConverterPy,
     retained: RefCell<Vec<Py<PyAny>>>,
+    binary_strings: RefCell<HashMap<usize, Py<PyAny>>>,
     union_branches: RefCell<HashMap<(NodeId, usize), NodeId>>,
 }
 
@@ -1121,6 +1136,7 @@ impl ModelConverterPy {
         ModelProjection {
             converter: self,
             retained: RefCell::new(Vec::new()),
+            binary_strings: RefCell::new(HashMap::new()),
             union_branches: RefCell::new(HashMap::new()),
         }
     }
@@ -1367,7 +1383,7 @@ fn convert_jiter_scalar_value(
 ) -> ConversionResult<Py<PyAny>> {
     let valid = match kind {
         ScalarKind::Any => true,
-        ScalarKind::String => matches!(value, JiterJsonValue::Str(_)),
+        ScalarKind::String | ScalarKind::Bytes => matches!(value, JiterJsonValue::Str(_)),
         ScalarKind::Integer => match value {
             JiterJsonValue::Int(_) | JiterJsonValue::BigInt(_) => true,
             JiterJsonValue::Float(value) => value.fract() == 0.0,
@@ -1389,6 +1405,12 @@ fn convert_jiter_scalar_value(
         ));
     }
 
+    if matches!(kind, ScalarKind::Bytes) {
+        let JiterJsonValue::Str(text) = value else {
+            unreachable!()
+        };
+        return binary_from_base64(py, text);
+    }
     let python_value = if matches!(kind, ScalarKind::Integer) {
         if let JiterJsonValue::Float(number) = value {
             number
@@ -1729,6 +1751,21 @@ fn json_serialization_error(error: serde_json::Error) -> PyErr {
     PyErr::new::<PyValueError, _>(format!("JSON serialization failed: {error}"))
 }
 
+/// Decode the canonical JSON projection; malformed base64 is a union mismatch.
+fn binary_from_base64(py: Python<'_>, text: &str) -> ConversionResult<Py<PyAny>> {
+    let bytes = BASE64
+        .decode(text)
+        .map_err(|_| ConversionFailure::Mismatch(ConversionMismatch::BinaryEncoding))?;
+    Ok(PyBytes::new(py, &bytes).into_any().unbind())
+}
+
+fn binary_json_projection(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    let bytes = value.cast::<PyBytes>()?;
+    Ok(PyString::new(py, &BASE64.encode(bytes.as_bytes()))
+        .into_any()
+        .unbind())
+}
+
 fn convert_scalar(
     py: Python<'_>,
     kind: ScalarKind,
@@ -1736,7 +1773,7 @@ fn convert_scalar(
 ) -> ConversionResult<Py<PyAny>> {
     let valid = match kind {
         ScalarKind::Any => true,
-        ScalarKind::String => value.is_instance_of::<PyString>(),
+        ScalarKind::String | ScalarKind::Bytes => value.is_instance_of::<PyString>(),
         ScalarKind::Integer => {
             (value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>())
                 || (value.is_instance_of::<PyFloat>() && {
@@ -1758,6 +1795,9 @@ fn convert_scalar(
         )?));
     }
 
+    if matches!(kind, ScalarKind::Bytes) {
+        return binary_from_base64(py, value.cast::<PyString>().map_err(PyErr::from)?.to_str()?);
+    }
     if matches!(kind, ScalarKind::Integer) && value.is_instance_of::<PyFloat>() {
         return Ok(py
             .get_type::<PyFloat>()
@@ -1778,6 +1818,19 @@ fn convert_direct_scalar(
     kind: ScalarKind,
     value: &Bound<'_, PyAny>,
 ) -> ConversionResult<Py<PyAny>> {
+    if matches!(kind, ScalarKind::Bytes) {
+        let bytes = value.cast::<PyBytes>().map_err(|_| {
+            ConversionFailure::Mismatch(ConversionMismatch::ExpectedType {
+                expected: "bytes".into(),
+                actual: None,
+            })
+        })?;
+        return Ok(if value.is_exact_instance_of::<PyBytes>() {
+            value.clone().unbind()
+        } else {
+            PyBytes::new(py, bytes.as_bytes()).into_any().unbind()
+        });
+    }
     if matches!(kind, ScalarKind::Integer)
         && (value.is_instance_of::<PyBool>() || !value.is_instance_of::<PyInt>())
     {
@@ -1792,6 +1845,7 @@ fn scalar_name(kind: ScalarKind) -> &'static str {
     match kind {
         ScalarKind::Any => "JSON value",
         ScalarKind::String => "str",
+        ScalarKind::Bytes => "base64 string",
         ScalarKind::Integer => "int",
         ScalarKind::Number => "number",
         ScalarKind::Boolean => "bool",
@@ -2109,6 +2163,7 @@ fn parse_node(
     match tag.as_str() {
         "any" => parse_scalar_node(descriptor, ScalarKind::Any),
         "str" => parse_scalar_node(descriptor, ScalarKind::String),
+        "bytes" => parse_scalar_node(descriptor, ScalarKind::Bytes),
         "int" => parse_scalar_node(descriptor, ScalarKind::Integer),
         "float" => parse_scalar_node(descriptor, ScalarKind::Number),
         "bool" => parse_scalar_node(descriptor, ScalarKind::Boolean),

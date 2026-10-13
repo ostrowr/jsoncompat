@@ -2,7 +2,7 @@ use serde_json::{Map, Value};
 
 pub(crate) const JSONCOMPAT_METADATA_KEY: &str = "x-jsoncompat";
 
-pub(crate) const SCHEMA_METADATA_KEYS: [&str; 10] = [
+pub(crate) const SCHEMA_METADATA_KEYS: [&str; 11] = [
     crate::options::ASSERT_FORMAT,
     "$schema",
     "$id",
@@ -13,9 +13,10 @@ pub(crate) const SCHEMA_METADATA_KEYS: [&str; 10] = [
     "definitions",
     "title",
     JSONCOMPAT_METADATA_KEY,
+    "x-jsoncompat-http-binary",
 ];
 
-pub(crate) const PRESERVED_SCHEMA_METADATA_KEYS: [&str; 9] = [
+pub(crate) const PRESERVED_SCHEMA_METADATA_KEYS: [&str; 10] = [
     crate::options::ASSERT_FORMAT,
     "$schema",
     "$id",
@@ -25,12 +26,13 @@ pub(crate) const PRESERVED_SCHEMA_METADATA_KEYS: [&str; 9] = [
     "definitions",
     "title",
     JSONCOMPAT_METADATA_KEY,
+    "x-jsoncompat-http-binary",
 ];
 
 // Terminal schemas preserve identity metadata, but not `$defs` / `definitions`:
 // once an object collapses to `{"not": true}` there are no remaining subschemas
 // that can reference local definitions.
-pub(crate) const TERMINAL_SCHEMA_METADATA_KEYS: [&str; 7] = [
+pub(crate) const TERMINAL_SCHEMA_METADATA_KEYS: [&str; 8] = [
     crate::options::ASSERT_FORMAT,
     "$schema",
     "$id",
@@ -38,6 +40,7 @@ pub(crate) const TERMINAL_SCHEMA_METADATA_KEYS: [&str; 7] = [
     "$dynamicAnchor",
     "title",
     JSONCOMPAT_METADATA_KEY,
+    "x-jsoncompat-http-binary",
 ];
 
 #[must_use]

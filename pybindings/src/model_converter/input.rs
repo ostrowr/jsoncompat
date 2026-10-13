@@ -693,7 +693,7 @@ impl ModelConverterPy {
         Ok(match node {
             ConversionNode::Scalar { kind, .. } => match kind {
                 ScalarKind::Any => true,
-                ScalarKind::String => value.is_instance_of::<PyString>(),
+                ScalarKind::String | ScalarKind::Bytes => value.is_instance_of::<PyString>(),
                 ScalarKind::Integer => {
                     (value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>())
                         || (value.is_instance_of::<PyFloat>()
@@ -1352,7 +1352,7 @@ impl ModelConverterPy {
         match node {
             ConversionNode::Scalar { kind, .. } => match kind {
                 ScalarKind::Any => true,
-                ScalarKind::String => matches!(value, JiterJsonValue::Str(_)),
+                ScalarKind::String | ScalarKind::Bytes => matches!(value, JiterJsonValue::Str(_)),
                 ScalarKind::Integer => match value {
                     JiterJsonValue::Int(_) | JiterJsonValue::BigInt(_) => true,
                     JiterJsonValue::Float(value) => value.fract() == 0.0,

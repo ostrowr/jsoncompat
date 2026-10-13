@@ -2201,6 +2201,7 @@ fn should_strip_keyword(key: &str) -> bool {
 
 fn is_known_keyword(key: &str) -> bool {
     key == crate::options::ASSERT_FORMAT
+        || key == "x-jsoncompat-http-binary"
         || matches!(
             key,
             "$schema"
