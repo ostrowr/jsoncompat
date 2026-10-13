@@ -33,6 +33,11 @@ and generated model paths can retain larger values, but that does not make every
 schema, validation, or conversion path exact. See
 [numeric precision](../readme.md#numeric-precision).
 
+Prepared model artifacts preserve the schema's represented numeric constraints
+without further rounding, including every 64-bit integer. If a validation path
+must materialize a value outside the configured numeric range, it reports a
+validation error, including for `uniqueItems`, decimal bounds, and `multipleOf`.
+
 To opt in, build a wheel from this repository with the Cargo feature enabled,
 then install that wheel:
 

@@ -112,6 +112,56 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             constant.from_value(10**400)
 
+    def test_prepared_numeric_materialization_never_panics(self):
+        huge = 10**400
+        for name, value in (("numeric_unique", [huge]),
+                            ("numeric_unique", [{"nested": [huge]}]),
+                            ("numeric_minimum", huge),
+                            ("numeric_multiple", huge)):
+            for negated in (False, True):
+                model = self.modules[name + ("_not" if negated else "")].JSONCOMPAT_MODEL
+                trusted = model.from_value(value, skip_validation=True)
+                with self.subTest(schema=name, negated=negated, value=value):
+                    for operation in (lambda: model.from_value(value),
+                                      trusted.to_value, trusted.serialize):
+                        if ARBITRARY_PRECISION and not negated:
+                            operation()
+                        else:
+                            # Serialization may reject during JSON conversion,
+                            # before structured schema diagnostics are available.
+                            with self.assertRaises(ValueError):
+                                operation()
+                    # JSON parsing can reject out-of-range values before validation.
+                    for wire in (json.dumps(value), json.dumps(value).encode()):
+                        if ARBITRARY_PRECISION and not negated:
+                            self.assertEqual(model.deserialize(wire).to_value(), value)
+                        else:
+                            with self.assertRaises(ValueError):
+                                model.deserialize(wire)
+
+    def test_prepared_artifacts_preserve_large_integer_divisors(self):
+        model = self.modules["large_multiple"].JSONCOMPAT_MODEL
+        validator = jsoncompat.validator_for(model.__jsoncompat_schema__)
+        divisor = 10_000_000_000_000_001
+        for value in (0, divisor, -divisor, 2 * divisor,
+                      divisor - 1, divisor + 1, -(divisor - 1)):
+            expected = value % divisor == 0
+            with self.subTest(value=value):
+                self.assertEqual(validator.is_valid_value(value), expected)
+                trusted = model.from_value(value, skip_validation=True)
+                for operation in (lambda: model.from_value(value),
+                                  lambda: model(root=value),
+                                  lambda: model.deserialize(str(value)),
+                                  trusted.to_value, trusted.serialize):
+                    if expected:
+                        operation()
+                    else:
+                        with self.assertRaises(jsoncompat.ValidationError):
+                            operation()
+                if expected:
+                    self.assertEqual(model.from_value(value).to_value(), value)
+                    self.assertEqual(json.loads(trusted.serialize()), value)
+
     def test_schema_options_are_explicit_and_shared(self):
         schema = '{"$ref":"https://example.com/name"}'
         options = {"resources": {"https://example.com/name": {"type":"string", "minLength":2}}}
