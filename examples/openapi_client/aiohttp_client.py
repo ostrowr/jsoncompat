@@ -6,7 +6,8 @@ import aiohttp
 from exercise import exercise_async
 from jsoncompat.http import Err, UnexpectedResponse, bind_async
 from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
-from petstore import GetPet404, GetPetRequest, PetstoreAPI
+from petstore.api import PetstoreAPI
+from petstore.operations.pets import GetPet404, GetPetRequest
 from server import serve
 
 

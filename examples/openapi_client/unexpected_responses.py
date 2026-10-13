@@ -13,14 +13,8 @@ from jsoncompat.http import (
     ResponseError,
     UnexpectedResponse,
 )
-from petstore import (
-    GetPetError,
-    GetPetRequest,
-    GetPetSuccess,
-    PetstoreAPI,
-    PetstoreAsyncClient,
-    PetstoreClient,
-)
+from petstore.api import PetstoreAPI, PetstoreAsyncClient, PetstoreClient
+from petstore.operations.pets import GetPetError, GetPetRequest, GetPetSuccess
 
 
 def inspect_error(

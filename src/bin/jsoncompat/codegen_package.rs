@@ -4,7 +4,7 @@ use super::codegen::write_atomic;
 use anyhow::{Context, Result, bail, ensure};
 use jsoncompat::{OpenApiDocument, SchemaDocument, SchemaOptions};
 use jsoncompat_codegen::{
-    DataclassMetadata, generate_dataclass_package_declarations_with_metadata,
+    DataclassMetadata, generate_dataclass_resource_package_with_metadata,
     python_names::module_names,
 };
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,10 @@ struct Manifest {
     // `files` keeps each chunk until its final owner stops referencing it.
     #[serde(default)]
     module_files: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    module_exports: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default)]
+    module_data: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     files: BTreeMap<String, String>,
     #[serde(default)]
     exports: BTreeMap<String, String>,
@@ -83,7 +87,11 @@ pub(super) fn generate(
     let metadata = api.as_ref().map(|p| &p.metadata).unwrap_or(&empty_metadata);
     let groups = document.component_schema_groups_with_schemas(
         &components.iter().cloned().collect(),
-        models_per_module,
+        if api.is_some() {
+            NonZeroUsize::new(usize::MAX).unwrap()
+        } else {
+            models_per_module
+        },
         api.as_ref().map(|p| &p.schemas).unwrap_or(&empty_schemas),
     )?;
     timings.mark("group component schemas");
@@ -130,7 +138,7 @@ pub(super) fn generate(
         Manifest::default()
     };
     ensure!(
-        previous.version <= 5,
+        previous.version <= 6,
         "unsupported package manifest; use a new output directory"
     );
     ensure!(
@@ -149,7 +157,7 @@ pub(super) fn generate(
     }
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
     let mut manifest = Manifest {
-        version: 5,
+        version: 6,
         compiler,
         ..Default::default()
     };
@@ -163,18 +171,35 @@ pub(super) fn generate(
     let mut exports = BTreeMap::new();
     let mut stub = String::from("# Generated public model exports.\n");
     let mut rebuilt = 0;
-    stage(
-        &staging,
-        &mut manifest,
-        "_models/__init__.py",
-        "# Private model binding groups.\n",
-    )?;
-    stage(
-        &staging,
-        &mut manifest,
-        "_schemas/__init__.py",
-        "# Shared compressed schema chunks; no model imports.\n",
-    )?;
+    let mut schema_data: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for directory in ["models", "operations", "_cycles", "_data"] {
+        stage(
+            &staging,
+            &mut manifest,
+            &format!("{directory}/__init__.py"),
+            "# Generated package; import modules directly.\n",
+        )?;
+    }
+    let component_modules = module_names(
+        names
+            .iter()
+            .filter(|(schema, _)| {
+                !api.as_ref()
+                    .is_some_and(|p| p.schemas.contains_key(*schema))
+            })
+            .map(|(_, name)| name.as_str()),
+    );
+    let owners: BTreeMap<_, _> = names
+        .iter()
+        .map(|(schema, name)| {
+            let module = api
+                .as_ref()
+                .and_then(|p| p.owners.get(schema))
+                .cloned()
+                .unwrap_or_else(|| format!("models.{}", component_modules[name]));
+            (name.clone(), module)
+        })
+        .collect();
     let group_names = module_names(
         groups
             .iter()
@@ -202,7 +227,7 @@ pub(super) fn generate(
             .collect();
         for name in group.schemas.keys() {
             let model = &names[name];
-            add_export(&mut exports, model, &module_name)?;
+            add_export(&mut exports, model, &owners[model])?;
         }
         for (name, schema) in &mut group.schemas {
             if schema.is_boolean() {
@@ -227,9 +252,14 @@ pub(super) fn generate(
             metadata.base_imports,
             metadata.fields,
             metadata.bases,
+            declarations
+                .values()
+                .map(|name| (name, &owners[name]))
+                .collect::<BTreeMap<_, _>>(),
         ]))?);
         let cached_files = previous.module_files.get(&module_name);
-        let cached = previous.compiler == manifest.compiler
+        let cached = previous.version == 6
+            && previous.compiler == manifest.compiler
             && previous.modules.get(&module_name) == Some(&input_digest)
             && cached_files.is_some_and(|files| {
                 !files.is_empty()
@@ -251,12 +281,22 @@ pub(super) fn generate(
                     .files
                     .insert(file.clone(), previous.files[file].clone());
             }
-            previous
-                .exports
-                .iter()
-                .filter(|(_, module)| *module == &module_name)
-                .map(|(name, _)| name.clone())
-                .collect::<Vec<_>>()
+            for (file, symbols) in &previous.module_data[&module_name] {
+                for line in fs::read_to_string(destination.join(file))?.lines() {
+                    let symbol = line.split(':').next().unwrap();
+                    if symbols.contains(symbol) {
+                        schema_data
+                            .entry(file.clone())
+                            .or_default()
+                            .insert(symbol.into(), line.into());
+                    }
+                }
+            }
+            manifest.module_data.insert(
+                module_name.clone(),
+                previous.module_data[&module_name].clone(),
+            );
+            previous.module_exports[&module_name].clone()
         } else {
             let schema = SchemaDocument::from_json_with_options_and_cache(
                 &input,
@@ -264,11 +304,11 @@ pub(super) fn generate(
                 document.schema_validation_cache(),
             )?;
             timings.mark(&format!("{module_name}: validate schema document"));
-            let module = generate_dataclass_package_declarations_with_metadata(
+            let module = generate_dataclass_resource_package_with_metadata(
                 &schema,
                 &declarations,
                 metadata,
-                &module_name,
+                &owners,
             )
             .with_context(|| format!("generating {module_name}"))?;
             timings.mark(&format!(
@@ -278,21 +318,55 @@ pub(super) fn generate(
             manifest
                 .module_files
                 .insert(module_name.clone(), files.keys().cloned().collect());
+            let mut module_data: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
             for (file, source) in files {
-                stage(&staging, &mut manifest, &file, &source)?;
+                if file.starts_with("_data/s_") {
+                    for line in source.lines() {
+                        let symbol = line.split(':').next().unwrap().to_owned();
+                        module_data
+                            .entry(file.clone())
+                            .or_default()
+                            .insert(symbol.clone());
+                        schema_data
+                            .entry(file.clone())
+                            .or_default()
+                            .insert(symbol, line.into());
+                    }
+                } else {
+                    stage(&staging, &mut manifest, &file, &source)?;
+                }
             }
+            manifest
+                .module_data
+                .insert(module_name.clone(), module_data);
             timings.mark(&format!("{module_name}: stage package files"));
             rebuilt += 1;
-            module.models
+            module.exports
         };
         if api.is_some() {
-            for name in nested_exports {
-                add_export(&mut exports, &name, &module_name)?;
+            for (name, owner) in &nested_exports {
+                add_export(&mut exports, name, owner)?;
             }
         }
+        manifest
+            .module_exports
+            .insert(module_name.clone(), nested_exports);
         manifest.modules.insert(module_name, input_digest);
     }
+    for (file, entries) in schema_data {
+        stage(
+            &staging,
+            &mut manifest,
+            &file,
+            &format!("{}\n", entries.into_values().collect::<Vec<_>>().join("\n")),
+        )?;
+    }
     let model_count = exports.len();
+    if let Some(api) = &api {
+        for (alias, (_, owner)) in &api.aliases {
+            add_export(&mut exports, alias, owner)?;
+        }
+    }
     let model_exports = exports.clone();
     let model_stub = model_exports
         .iter()
@@ -303,27 +377,48 @@ pub(super) fn generate(
         .map(|s| format!("{s:?}"))
         .collect::<Vec<_>>()
         .join(", ");
-    let model_type_exports = model_stub
-        .lines()
-        .map(|s| format!("    {s}\n"))
-        .collect::<String>();
-    let model_initializer = INITIALIZER.replace("EXPORTS as _MODELS", "MODELS as _MODELS");
+    let model_initializer = INITIALIZER
+        .replace("from ._exports", "from .._exports")
+        .replace("EXPORTS as _MODELS", "MODELS as _MODELS");
+    let model_initializer = model_initializer.replace("f\".{module}\"", "f\"..{module}\"");
     stage(
         &staging,
         &mut manifest,
-        "models.py",
-        &format!(
-            "{model_initializer}\nif _TYPE_CHECKING:\n{model_type_exports}\n__all__: tuple[str, ...] = ({model_names},)\n"
-        ),
+        "models/__init__.py",
+        &format!("{model_initializer}\n__all__: tuple[str, ...] = ({model_names},)\n"),
     )?;
-    stage(&staging, &mut manifest, "models.pyi", &model_stub)?;
+    stage(
+        &staging,
+        &mut manifest,
+        "models/__init__.pyi",
+        &model_stub.replace("from .", "from .."),
+    )?;
     if let Some(api) = api {
         let (files, public) = api.sources(&exports)?;
         for (file, source) in files {
+            let source = if file.starts_with("operations/") {
+                let path = if staging.0.join(&file).exists() {
+                    staging.0.join(&file)
+                } else {
+                    destination.join(&file)
+                };
+                let declarations = fs::read_to_string(path)?;
+                format!(
+                    "{}\n\n{source}",
+                    declarations
+                        .split("# --- Operation metadata ---")
+                        .next()
+                        .unwrap()
+                        .trim_end()
+                )
+            } else {
+                source
+            };
             stage(&staging, &mut manifest, &file, &source)?;
         }
         for name in public {
-            exports.insert(name, "api".into());
+            let owner = api.alias_owner(&name).unwrap_or("api");
+            exports.insert(name, owner.into());
         }
     }
     let mut routing =
@@ -348,18 +443,11 @@ pub(super) fn generate(
         .map(|name| format!("{name:?}"))
         .collect::<Vec<_>>()
         .join(", ");
-    let type_exports = stub
-        .lines()
-        .filter(|line| line.starts_with("from "))
-        .map(|line| format!("    {line}\n"))
-        .collect::<String>();
     stage(
         &staging,
         &mut manifest,
         "__init__.py",
-        &format!(
-            "{INITIALIZER}\nif _TYPE_CHECKING:\n{type_exports}\n__all__: tuple[str, ...] = ({public_names},)\n"
-        ),
+        &format!("{INITIALIZER}\n__all__: tuple[str, ...] = ({public_names},)\n"),
     )?;
     let manifest_source = serde_json::to_string_pretty(&manifest)?;
     timings.mark("render and stage package exports");
@@ -527,7 +615,6 @@ pub(super) fn class_name(name: &str) -> String {
 }
 const INITIALIZER: &str = r#""""Generated model package. Import a model by name; unrelated modules stay unloaded."""
 from importlib import import_module as _import_module
-from typing import TYPE_CHECKING as _TYPE_CHECKING
 from ._exports import EXPORTS as _MODELS
 
 def __getattr__(name: str):

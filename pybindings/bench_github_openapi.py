@@ -7,6 +7,7 @@ Run with the repository's Python 3.12 environment after building release binarie
 from __future__ import annotations
 
 import argparse
+import ast
 import copy
 import hashlib
 import json
@@ -139,22 +140,25 @@ def inventory(package: Path) -> dict[str, object]:
     sources = [item for item in files if item[1].endswith((".py", ".pyi"))]
     manifest = json.loads((package / ".jsoncompat-manifest.json").read_text())
     model_files = [package / path for _, path in sources
-                   if path.startswith("_models/") and not Path(path).name.startswith("_")]
-    empty_headers = sum(
-        bool(re.search(r"^class \w+Headers\(", source, re.MULTILINE))
-        and "__slots__ = ()" in source
-        for source in (path.read_text() for path in model_files)
-    )
+                   if path.startswith(("models/", "operations/", "_cycles/")) and not Path(path).name.startswith("__")]
+    classes = [node for path in model_files for node in ast.parse(path.read_text()).body
+               if isinstance(node, ast.ClassDef)]
+    empty_headers = sum(node.name.endswith("Headers") and any(
+        isinstance(item, ast.If) and any(isinstance(assign, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "__slots__" for t in assign.targets)
+            and isinstance(assign.value, ast.Tuple) and not assign.value.elts for assign in item.body)
+        for item in node.body) for node in classes)
     return {
         "files": len(files), "bytes": sum(size for size, _ in files),
         "python_files": len(sources), "python_bytes": sum(size for size, _ in sources),
         "largest_files": list(reversed(files[-10:])),
         "largest_python_file": sources[-1], "p95_python_bytes": sources[int(.95 * (len(sources) - 1))][0],
         "binding_groups": len(manifest["modules"]),
-        "declarations": sum(p.startswith("_models/") and not Path(p).name.startswith("_")
-                            for _, p in sources),
-        "schema_storage_bytes": sum(size for size, p in sources if Path(p).name.startswith("_schema_")),
-        "schema_chunk_files": sum(Path(p).name.startswith("_schema_") for _, p in sources),
+        "declarations": len(classes),
+        "component_modules": sum(p.startswith("models/") and not Path(p).name.startswith("__") for _, p in sources),
+        "resource_modules": sum(p.startswith("operations/") and not Path(p).name.startswith("__") for _, p in sources),
+        "schema_storage_bytes": sum(size for size, p in sources if p.startswith("_data/s_")),
+        "schema_chunk_files": sum(p.startswith("_data/s_") for _, p in sources),
         "empty_header_models": empty_headers,
     }
 
@@ -211,17 +215,19 @@ def inspect(directory: Path, case: str, package: Path, timeout: float, repeats: 
         for repeat in range(repeats):
             measure(directory, f"{case}-import-{phase}-{repeat}", timeout, [sys.executable, "-c", source])
         # Diagnose the import graph separately from loading the complete API.
-        # These private paths are measurements, not supported public imports.
+        # Direct resource/component imports avoid initializing the full API registry.
         if case == "models":
             selective_load = f"getattr(importlib.import_module({name!r}), 'SimpleUser')"
         else:
-            selective_load = f"importlib.import_module({(name + '._operations.issues_get')!r})"
+            selective_load = f"importlib.import_module({(name + '.operations.issues')!r})"
         selective = (
             "import importlib,json,sys,time; t=time.perf_counter(); "
             f"{selective_load}; elapsed=time.perf_counter()-t; "
-            f"models=[n for n in sys.modules if n.startswith({(name + '._models.')!r}) "
-            "and n.count('.')==3 and not n.rsplit('.',1)[1].startswith('_')]; "
-            "print(json.dumps(dict(load_seconds=elapsed,loaded_models=len(models))))"
+            f"modules=[m for n,m in sys.modules.items() if n.startswith({(name + '.')!r})]; "
+            "from jsoncompat.codegen.dataclasses import DataclassModel; "
+            "models={v for m in modules for v in vars(m).values() if isinstance(v,type) and issubclass(v,DataclassModel) "
+            f"and v.__module__.startswith({(name + '.')!r})}}; "
+            "print(json.dumps(dict(load_seconds=elapsed,loaded_models=len(models),loaded_modules=len(modules))))"
         )
         for repeat in range(repeats):
             measure(directory, f"{case}-selective-import-{phase}-{repeat}", timeout,
@@ -236,8 +242,8 @@ def typecheck(directory: Path, case: str, package: Path, timeout: float) -> None
     if case == "models":
         consumer.write_text(f"""from typing import assert_type
 from {name} import SimpleUser
-from {name}.models import SimpleUser as BarrelUser
-def check(user: BarrelUser) -> SimpleUser:
+from {name}.models.simple_user import SimpleUser as DirectUser
+def check(user: DirectUser) -> SimpleUser:
     assert_type(user.login, str)
     assert_type(user.id, int)
     assert_type(SimpleUser.deserialize(user.serialize()), SimpleUser)
@@ -245,7 +251,8 @@ def check(user: BarrelUser) -> SimpleUser:
 """)
     else:
         consumer.write_text(f"""from typing import assert_type
-from {name} import GitHubClient, GitHubAsyncClient, IssuesGetRequest, IssuesGet200
+from {name}.api import GitHubClient, GitHubAsyncClient
+from {name}.operations.issues import IssuesGetRequest, IssuesGet200
 def get_issue(client: GitHubClient) -> IssuesGet200:
     result = client.request(IssuesGetRequest(owner="octocat", repo="Hello-World", issue_number=1))
     response = result.unwrap()

@@ -8,9 +8,9 @@
   "environment": {
     "platform": "macOS-26.6.2-arm64-arm-64bit",
     "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
-    "revision": "cdfa13c40fe4bff8b811ba4f1bcc7c6d38c9e5d1",
-    "working_tree": " M codegen/src/dataclasses/package.rs\n M openapi/src/lib.rs\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M readme.md\n M schema/src/ast.rs\n M schema/src/canonicalize.rs\n M schema/src/lib.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n?? pybindings/benchmarks/github-openapi-before-merged-models.json\n?? schema/src/validation_cache.rs\n",
-    "generator_sha256": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+    "revision": "384d5ecc1b320e637649e87a03d45ff87d3950eb",
+    "working_tree": " M codegen/src/dataclasses.rs\n M codegen/src/dataclasses/package.rs\n M codegen/src/dataclasses/render.rs\n M codegen/src/lib.rs\n M codegen/src/model_plan.rs\n M examples/openapi_client/README.md\n M examples/openapi_client/aiohttp_client.py\n M examples/openapi_client/exercise.py\n M examples/openapi_client/httpx_client.py\n M examples/openapi_client/live_jsonplaceholder.py\n M examples/openapi_client/prepared_client.py\n M examples/openapi_client/requests_client.py\n M examples/openapi_client/unexpected_responses.py\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M pybindings/src/model_converter.rs\n M readme.md\n M src/bin/jsoncompat/codegen.rs\n M src/bin/jsoncompat/codegen_api.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n M tests/openapi_client.rs\n?? codegen/src/dataclasses/resource_package.rs\n?? pybindings/src/model_converter/link.rs\n",
+    "generator_sha256": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648",
     "native_profile": "release",
     "repeats": 3,
     "node_options": null
@@ -22,124 +22,126 @@
         "component_schemas": 973
       },
       "generation": {
-        "seconds": 3.8729335829848424,
+        "seconds": 3.627040041028522,
         "exit_code": 0,
-        "max_rss_bytes": 759709696
+        "max_rss_bytes": 754647040
       },
       "files": {
-        "files": 4095,
-        "bytes": 29398964,
-        "python_files": 4093,
-        "python_bytes": 28383276,
+        "files": 999,
+        "bytes": 27045319,
+        "python_files": 997,
+        "python_bytes": 26420960,
         "largest_files": [
           [
-            1015688,
+            1217697,
+            "_data/s_d.py"
+          ],
+          [
+            658623,
+            "models/webhook_pull_request_review_request_removed.py"
+          ],
+          [
+            654931,
+            "models/webhook_pull_request_review_requested.py"
+          ],
+          [
+            624359,
             ".jsoncompat-manifest.json"
           ],
           [
-            797076,
-            "_models/actions_policy/__init__.py"
+            306644,
+            "models/webhook_pull_request_review_comment_created.py"
           ],
           [
-            702243,
-            "_models/actions_policy/_binding.py"
+            306597,
+            "models/webhook_pull_request_review_thread_resolved.py"
           ],
           [
-            190083,
-            "_schemas/_schema_f8639a067b9f80a8e54844dbad326cadc4a6ef4895f8a99a2ad496557636b138.py"
+            306593,
+            "models/webhook_pull_request_review_thread_unresolved.py"
           ],
           [
-            189766,
-            "_schemas/_schema_dba2e2339bd9801da1d246ddcac72e638ab293c1b5be89eaeea19a409e4428de.py"
+            293251,
+            "models/webhook_pull_request_review_dismissed.py"
           ],
           [
-            189519,
-            "_schemas/_schema_f6b4c8f35978bc5147cc02e6de43cb4c27b57eeb83ddc44b6a354f3fd8b743a5.py"
+            290234,
+            "_data/s_a.py"
           ],
           [
-            189120,
-            "_schemas/_schema_8022d5bbf36f540d7a9954daeff3b7627ed5eb3ffd6a74ab568f147180174921.py"
-          ],
-          [
-            188944,
-            "_schemas/_schema_b4d6685cf9f0e231a2a08835f69c285cb698fc6b4fefb1a86faeea7fc7209de0.py"
-          ],
-          [
-            118201,
-            "__init__.py"
-          ],
-          [
-            118200,
-            "models.py"
+            285547,
+            "models/webhook_pull_request_labeled.py"
           ]
         ],
         "largest_python_file": [
-          797076,
-          "_models/actions_policy/__init__.py"
+          1217697,
+          "_data/s_d.py"
         ],
-        "p95_python_bytes": 24945,
+        "p95_python_bytes": 124515,
         "binding_groups": 4,
         "declarations": 3133,
-        "schema_storage_bytes": 2128087,
-        "schema_chunk_files": 913,
+        "component_modules": 973,
+        "resource_modules": 0,
+        "schema_storage_bytes": 4366660,
+        "schema_chunk_files": 16,
         "empty_header_models": 0
       },
       "imports": {
         "source": {
           "samples": [
             {
-              "package_seconds": 0.008483041019644588,
-              "load_seconds": 1.894923290994484,
-              "seconds": 2.0136492499732412,
+              "package_seconds": 0.004295875027310103,
+              "load_seconds": 1.4435610829968937,
+              "seconds": 1.5320875839679502,
               "exit_code": 0,
-              "max_rss_bytes": 171950080
+              "max_rss_bytes": 179912704
             },
             {
-              "package_seconds": 0.008791083993855864,
-              "load_seconds": 1.4245437500067055,
-              "seconds": 1.5371577919577248,
+              "package_seconds": 0.004249125020578504,
+              "load_seconds": 1.1059232499683276,
+              "seconds": 1.2125424160039984,
               "exit_code": 0,
-              "max_rss_bytes": 172212224
+              "max_rss_bytes": 177586176
             },
             {
-              "package_seconds": 0.00830670801224187,
-              "load_seconds": 1.4368621660396457,
-              "seconds": 1.5450053329695947,
+              "package_seconds": 0.004298834013752639,
+              "load_seconds": 1.117686124984175,
+              "seconds": 1.2135554170235991,
               "exit_code": 0,
-              "max_rss_bytes": 173277184
+              "max_rss_bytes": 179748864
             }
           ],
-          "median_package_seconds": 0.008483041019644588,
-          "median_load_seconds": 1.4368621660396457,
-          "max_rss_bytes": 173277184
+          "median_package_seconds": 0.004295875027310103,
+          "median_load_seconds": 1.117686124984175,
+          "max_rss_bytes": 179912704
         },
         "bytecode": {
           "samples": [
             {
-              "package_seconds": 0.002551332989241928,
-              "load_seconds": 0.4514477500342764,
-              "seconds": 0.5633468329906464,
+              "package_seconds": 0.0005790420109406114,
+              "load_seconds": 0.2598287079599686,
+              "seconds": 0.343468832958024,
               "exit_code": 0,
-              "max_rss_bytes": 142196736
+              "max_rss_bytes": 153583616
             },
             {
-              "package_seconds": 0.003053541004192084,
-              "load_seconds": 0.4564804169931449,
-              "seconds": 0.5626139580272138,
+              "package_seconds": 0.0005823339452035725,
+              "load_seconds": 0.2607985830400139,
+              "seconds": 0.34804020798765123,
               "exit_code": 0,
-              "max_rss_bytes": 142147584
+              "max_rss_bytes": 153845760
             },
             {
-              "package_seconds": 0.0028661249671131372,
-              "load_seconds": 0.4476805839804001,
-              "seconds": 0.561020000022836,
+              "package_seconds": 0.0005898750387132168,
+              "load_seconds": 0.25718750001396984,
+              "seconds": 0.34662287501851097,
               "exit_code": 0,
-              "max_rss_bytes": 142802944
+              "max_rss_bytes": 153681920
             }
           ],
-          "median_package_seconds": 0.0028661249671131372,
-          "median_load_seconds": 0.4514477500342764,
-          "max_rss_bytes": 142802944
+          "median_package_seconds": 0.0005823339452035725,
+          "median_load_seconds": 0.2598287079599686,
+          "max_rss_bytes": 153845760
         }
       },
       "typing": {
@@ -164,28 +166,28 @@
             "ty",
             "check",
             "--project",
-            "/private/tmp/jsoncompat-github-merged-final",
+            "/private/tmp/jsoncompat-github-resource-final",
             "--python-version",
             "3.12",
             "--extra-search-path",
             "/Users/robbie/developer/jsoncompat/pybindings",
             "--extra-search-path",
-            "/private/tmp/jsoncompat-github-merged-final",
+            "/private/tmp/jsoncompat-github-resource-final",
             "--error",
             "all",
             "--output-format",
             "gitlab"
           ],
-          "revision": "cdfa13c40fe4bff8b811ba4f1bcc7c6d38c9e5d1",
-          "working_tree": " M codegen/src/dataclasses/package.rs\n M openapi/src/lib.rs\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M readme.md\n M schema/src/ast.rs\n M schema/src/canonicalize.rs\n M schema/src/lib.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n?? pybindings/benchmarks/github-openapi-before-merged-models.json\n?? schema/src/validation_cache.rs\n",
-          "package": "/private/tmp/jsoncompat-github-merged-final/github_models",
-          "package_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+          "revision": "384d5ecc1b320e637649e87a03d45ff87d3950eb",
+          "working_tree": " M codegen/src/dataclasses.rs\n M codegen/src/dataclasses/package.rs\n M codegen/src/dataclasses/render.rs\n M codegen/src/lib.rs\n M codegen/src/model_plan.rs\n M examples/openapi_client/README.md\n M examples/openapi_client/aiohttp_client.py\n M examples/openapi_client/exercise.py\n M examples/openapi_client/httpx_client.py\n M examples/openapi_client/live_jsonplaceholder.py\n M examples/openapi_client/prepared_client.py\n M examples/openapi_client/requests_client.py\n M examples/openapi_client/unexpected_responses.py\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M pybindings/src/model_converter.rs\n M readme.md\n M src/bin/jsoncompat/codegen.rs\n M src/bin/jsoncompat/codegen_api.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n M tests/openapi_client.rs\n?? codegen/src/dataclasses/resource_package.rs\n?? pybindings/src/model_converter/link.rs\n",
+          "package": "/private/tmp/jsoncompat-github-resource-final/github_models",
+          "package_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648",
           "node_options": null
         },
         "measurement": {
-          "seconds": 0.6670432499959134,
+          "seconds": 0.34584033297142014,
           "exit_code": 0,
-          "max_rss_bytes": 499957760
+          "max_rss_bytes": 310312960
         },
         "diagnostics": 0,
         "rules": {}
@@ -194,73 +196,115 @@
         "source": {
           "samples": [
             {
-              "load_seconds": 1.2795228749746457,
-              "loaded_models": 2679,
-              "seconds": 1.38032070803456,
+              "load_seconds": 0.021663709019776434,
+              "loaded_models": 1,
+              "loaded_modules": 5,
+              "seconds": 0.07774487498681992,
               "exit_code": 0,
-              "max_rss_bytes": 170147840
+              "max_rss_bytes": 23691264
             },
             {
-              "load_seconds": 1.2675339169800282,
-              "loaded_models": 2679,
-              "seconds": 1.368880458001513,
+              "load_seconds": 0.021194291999563575,
+              "loaded_models": 1,
+              "loaded_modules": 5,
+              "seconds": 0.07596504199318588,
               "exit_code": 0,
-              "max_rss_bytes": 166035456
+              "max_rss_bytes": 23691264
             },
             {
-              "load_seconds": 1.32610200002091,
-              "loaded_models": 2679,
-              "seconds": 1.4178450419567525,
+              "load_seconds": 0.02090083295479417,
+              "loaded_models": 1,
+              "loaded_modules": 5,
+              "seconds": 0.07759250001981854,
               "exit_code": 0,
-              "max_rss_bytes": 170115072
+              "max_rss_bytes": 23674880
             }
           ],
-          "median_load_seconds": 1.2795228749746457,
-          "loaded_models": 2679
+          "median_load_seconds": 0.021194291999563575,
+          "loaded_models": 1,
+          "loaded_modules": 5,
+          "max_rss_bytes": 23691264
         },
         "bytecode": {
           "samples": [
             {
-              "load_seconds": 0.3629816659959033,
-              "loaded_models": 2679,
-              "seconds": 0.4501899169990793,
+              "load_seconds": 0.0157729999627918,
+              "loaded_models": 1,
+              "loaded_modules": 5,
+              "seconds": 0.0705389580107294,
               "exit_code": 0,
-              "max_rss_bytes": 135168000
+              "max_rss_bytes": 20873216
             },
             {
-              "load_seconds": 0.35787654196610674,
-              "loaded_models": 2679,
-              "seconds": 0.45704566600034013,
+              "load_seconds": 0.016265999991446733,
+              "loaded_models": 1,
+              "loaded_modules": 5,
+              "seconds": 0.04061874997569248,
               "exit_code": 0,
-              "max_rss_bytes": 134856704
+              "max_rss_bytes": 20873216
             },
             {
-              "load_seconds": 0.3493707089801319,
-              "loaded_models": 2679,
-              "seconds": 0.4464909579837695,
+              "load_seconds": 0.016204375016968697,
+              "loaded_models": 1,
+              "loaded_modules": 5,
+              "seconds": 0.07153745897812769,
               "exit_code": 0,
-              "max_rss_bytes": 134791168
+              "max_rss_bytes": 20742144
             }
           ],
-          "median_load_seconds": 0.35787654196610674,
-          "loaded_models": 2679
+          "median_load_seconds": 0.016204375016968697,
+          "loaded_models": 1,
+          "loaded_modules": 5,
+          "max_rss_bytes": 20873216
         }
       },
-      "artifact_equivalence": {
-        "models": 3133,
-        "prepared_node_pairs": 60993,
-        "prepared_programs_byte_identical": 3133,
-        "schema_bytes_compared": 4455281588,
-        "old_prepared_nodes": 60993,
-        "new_prepared_nodes": 60993,
-        "exact_schema_text_equal": true,
-        "prepared_programs_bisimilar": true,
-        "before": "/tmp/jsoncompat-github-fast-final/github_models",
-        "after": "/tmp/jsoncompat-github-merged-final/github_models",
-        "seconds": 6.352845916990191,
-        "before_compiler": "57271c4e164d01bf1be908f5d29123a6c06c4e35952918b3325c92a1a1ec96cf",
-        "after_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242"
-      }
+      "stage_profile": [
+        "Codegen timing: validate OpenAPI document: 1.063792s (1.063792s total)",
+        "Codegen timing: prepare operation contracts: 0.000102s (1.063894s total)",
+        "Codegen timing: group component schemas: 0.064624s (1.128517s total)",
+        "Codegen timing: prepare output and compiler fingerprint: 0.032524s (1.161041s total)",
+        "Codegen timing: _models.actions_artifact_and_log_retention: prepare group and check cache: 0.000501s (1.161542s total)",
+        "Codegen timing: _models.actions_artifact_and_log_retention: validate schema document: 0.002476s (1.164017s total)",
+        "codegen model-group ActionsArtifactAndLogRetention (35) prepare: 0.001s",
+        "codegen model-group ActionsArtifactAndLogRetention (35) declarations: 0.000s",
+        "codegen model-group ActionsArtifactAndLogRetention (35) program serialization: 0.000s",
+        "codegen model-group ActionsArtifactAndLogRetention (35) schema sources: 0.001s",
+        "codegen model-group ActionsArtifactAndLogRetention (35) conversion descriptors: 0.000s",
+        "Codegen timing: _models.actions_artifact_and_log_retention: generate and render prepared models: 0.003782s (1.167800s total)",
+        "Codegen timing: _models.actions_artifact_and_log_retention: stage package files: 0.002472s (1.170272s total)",
+        "Codegen timing: _models.actions_policy: prepare group and check cache: 0.037987s (1.208259s total)",
+        "Codegen timing: _models.actions_policy: validate schema document: 0.734106s (1.942365s total)",
+        "codegen model-group ActionsPolicy (2679) prepare: 0.212s",
+        "codegen model-group ActionsPolicy (2679) declarations: 0.030s",
+        "codegen model-group ActionsPolicy (2679) program serialization: 0.012s",
+        "codegen model-group ActionsPolicy (2679) schema sources: 0.397s",
+        "codegen model-group ActionsPolicy (2679) conversion descriptors: 0.010s",
+        "Codegen timing: _models.actions_policy: generate and render prepared models: 0.954421s (2.896786s total)",
+        "Codegen timing: _models.actions_policy: stage package files: 0.113042s (3.009828s total)",
+        "Codegen timing: _models.actions_public_key: prepare group and check cache: 0.021299s (3.031127s total)",
+        "Codegen timing: _models.actions_public_key: validate schema document: 0.018727s (3.049854s total)",
+        "codegen model-group ActionsPublicKey (221) prepare: 0.007s",
+        "codegen model-group ActionsPublicKey (221) declarations: 0.001s",
+        "codegen model-group ActionsPublicKey (221) program serialization: 0.000s",
+        "codegen model-group ActionsPublicKey (221) schema sources: 0.009s",
+        "codegen model-group ActionsPublicKey (221) conversion descriptors: 0.000s",
+        "Codegen timing: _models.actions_public_key: generate and render prepared models: 0.027847s (3.077701s total)",
+        "Codegen timing: _models.actions_public_key: stage package files: 0.011329s (3.089030s total)",
+        "Codegen timing: _models.interaction_expiry: prepare group and check cache: 0.002931s (3.091961s total)",
+        "Codegen timing: _models.interaction_expiry: validate schema document: 0.018396s (3.110356s total)",
+        "codegen model-group InteractionExpiry (198) prepare: 0.006s",
+        "codegen model-group InteractionExpiry (198) declarations: 0.001s",
+        "codegen model-group InteractionExpiry (198) program serialization: 0.000s",
+        "codegen model-group InteractionExpiry (198) schema sources: 0.009s",
+        "codegen model-group InteractionExpiry (198) conversion descriptors: 0.001s",
+        "Codegen timing: _models.interaction_expiry: generate and render prepared models: 0.027497s (3.137853s total)",
+        "Codegen timing: _models.interaction_expiry: stage package files: 0.010563s (3.148416s total)",
+        "Codegen timing: render and stage package exports: 0.017586s (3.166002s total)",
+        "Codegen timing: check publication paths: 0.001256s (3.167259s total)",
+        "Codegen timing: publish package files: 0.000882s (3.168141s total)",
+        "Codegen timing: remove obsolete files and publish manifest: 0.015059s (3.183200s total)",
+        "Generated 973 models in 4 modules (4 rebuilt) at /private/tmp/jsoncompat-github-resource-final/github_models"
+      ]
     },
     "issues": {
       "projection": {
@@ -268,124 +312,126 @@
         "component_schemas": 973
       },
       "generation": {
-        "seconds": 1.6462933339644223,
+        "seconds": 1.5146690420224331,
         "exit_code": 0,
-        "max_rss_bytes": 403537920
+        "max_rss_bytes": 431702016
       },
       "files": {
-        "files": 1119,
-        "bytes": 4623697,
-        "python_files": 1117,
-        "python_bytes": 4302938,
+        "files": 105,
+        "bytes": 3527389,
+        "python_files": 103,
+        "python_bytes": 3397409,
         "largest_files": [
           [
-            320759,
+            1824260,
+            "operations/issues.py"
+          ],
+          [
+            129980,
             ".jsoncompat-manifest.json"
           ],
           [
-            124521,
-            "__init__.py"
+            97539,
+            "_data/s_f.py"
           ],
           [
-            97280,
-            "models.py"
-          ],
-          [
-            92427,
+            82542,
             "__init__.pyi"
           ],
           [
-            73737,
-            "models.pyi"
+            66840,
+            "models/timeline_issue_events.py"
           ],
           [
-            68809,
-            "_models/issues_add_assignees201/issues_list_events_for_timeline200.py"
+            61101,
+            "models/__init__.pyi"
           ],
           [
-            67392,
-            "_models/issues_add_assignees201/timeline_issue_events.py"
-          ],
-          [
-            65657,
-            "_models/issues_add_blocked_by_dependency301/_binding.py"
-          ],
-          [
-            61917,
-            "_models/issues_add_assignees201/_binding.py"
-          ],
-          [
-            61899,
+            51985,
             "_exports.py"
+          ],
+          [
+            43883,
+            "models/issue_event_for_issue.py"
+          ],
+          [
+            41568,
+            "models/timeline_cross_referenced_event.py"
+          ],
+          [
+            37260,
+            "models/issue_event.py"
           ]
         ],
         "largest_python_file": [
-          124521,
-          "__init__.py"
+          1824260,
+          "operations/issues.py"
         ],
-        "p95_python_bytes": 10512,
-        "binding_groups": 5,
-        "declarations": 664,
-        "schema_storage_bytes": 323994,
-        "schema_chunk_files": 364,
-        "empty_header_models": 192
+        "p95_python_bytes": 43883,
+        "binding_groups": 1,
+        "declarations": 473,
+        "component_modules": 76,
+        "resource_modules": 1,
+        "schema_storage_bytes": 539118,
+        "schema_chunk_files": 16,
+        "empty_header_models": 1
       },
       "imports": {
         "source": {
           "samples": [
             {
-              "package_seconds": 0.009072499989997596,
-              "load_seconds": 0.305238000000827,
-              "seconds": 0.39726699999300763,
+              "package_seconds": 0.0037481249892152846,
+              "load_seconds": 0.16395666700555012,
+              "seconds": 0.23792575002880767,
               "exit_code": 0,
-              "max_rss_bytes": 48283648
+              "max_rss_bytes": 90669056
             },
             {
-              "package_seconds": 0.009005667001474649,
-              "load_seconds": 0.28672379098134115,
-              "seconds": 0.35275137500138953,
+              "package_seconds": 0.0036902500432915986,
+              "load_seconds": 0.16048754198709503,
+              "seconds": 0.23912716697668657,
               "exit_code": 0,
-              "max_rss_bytes": 47824896
+              "max_rss_bytes": 89899008
             },
             {
-              "package_seconds": 0.008161583042237908,
-              "load_seconds": 0.2821195409633219,
-              "seconds": 0.343258082983084,
+              "package_seconds": 0.003657916036900133,
+              "load_seconds": 0.1625326669891365,
+              "seconds": 0.2398095420212485,
               "exit_code": 0,
-              "max_rss_bytes": 47628288
+              "max_rss_bytes": 95141888
             }
           ],
-          "median_package_seconds": 0.009005667001474649,
-          "median_load_seconds": 0.28672379098134115,
-          "max_rss_bytes": 48283648
+          "median_package_seconds": 0.0036902500432915986,
+          "median_load_seconds": 0.1625326669891365,
+          "max_rss_bytes": 95141888
         },
         "bytecode": {
           "samples": [
             {
-              "package_seconds": 0.0027949580107815564,
-              "load_seconds": 0.1425565000390634,
-              "seconds": 0.1872264999547042,
+              "package_seconds": 0.0004902090295217931,
+              "load_seconds": 0.08071458403719589,
+              "seconds": 0.1311561250477098,
               "exit_code": 0,
-              "max_rss_bytes": 41435136
+              "max_rss_bytes": 36274176
             },
             {
-              "package_seconds": 0.002738167007919401,
-              "load_seconds": 0.14170375000685453,
-              "seconds": 0.1879669579793699,
+              "package_seconds": 0.00047208298929035664,
+              "load_seconds": 0.07996454200474545,
+              "seconds": 0.12860162503784522,
               "exit_code": 0,
-              "max_rss_bytes": 41435136
+              "max_rss_bytes": 36061184
             },
             {
-              "package_seconds": 0.002437042014207691,
-              "load_seconds": 0.14891145803267136,
-              "seconds": 0.23695049999514595,
+              "package_seconds": 0.000491208047606051,
+              "load_seconds": 0.08015641698148102,
+              "seconds": 0.132493750017602,
               "exit_code": 0,
-              "max_rss_bytes": 41336832
+              "max_rss_bytes": 36454400
             }
           ],
-          "median_package_seconds": 0.002738167007919401,
-          "median_load_seconds": 0.1425565000390634,
-          "max_rss_bytes": 41435136
+          "median_package_seconds": 0.0004902090295217931,
+          "median_load_seconds": 0.08015641698148102,
+          "max_rss_bytes": 36454400
         }
       },
       "typing": {
@@ -410,28 +456,28 @@
             "ty",
             "check",
             "--project",
-            "/private/tmp/jsoncompat-github-merged-final",
+            "/private/tmp/jsoncompat-github-resource-final",
             "--python-version",
             "3.12",
             "--extra-search-path",
             "/Users/robbie/developer/jsoncompat/pybindings",
             "--extra-search-path",
-            "/private/tmp/jsoncompat-github-merged-final",
+            "/private/tmp/jsoncompat-github-resource-final",
             "--error",
             "all",
             "--output-format",
             "gitlab"
           ],
-          "revision": "cdfa13c40fe4bff8b811ba4f1bcc7c6d38c9e5d1",
-          "working_tree": " M codegen/src/dataclasses/package.rs\n M openapi/src/lib.rs\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M readme.md\n M schema/src/ast.rs\n M schema/src/canonicalize.rs\n M schema/src/lib.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n?? pybindings/benchmarks/github-openapi-before-merged-models.json\n?? schema/src/validation_cache.rs\n",
-          "package": "/private/tmp/jsoncompat-github-merged-final/github_issues",
-          "package_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+          "revision": "384d5ecc1b320e637649e87a03d45ff87d3950eb",
+          "working_tree": " M codegen/src/dataclasses.rs\n M codegen/src/dataclasses/package.rs\n M codegen/src/dataclasses/render.rs\n M codegen/src/lib.rs\n M codegen/src/model_plan.rs\n M examples/openapi_client/README.md\n M examples/openapi_client/aiohttp_client.py\n M examples/openapi_client/exercise.py\n M examples/openapi_client/httpx_client.py\n M examples/openapi_client/live_jsonplaceholder.py\n M examples/openapi_client/prepared_client.py\n M examples/openapi_client/requests_client.py\n M examples/openapi_client/unexpected_responses.py\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M pybindings/src/model_converter.rs\n M readme.md\n M src/bin/jsoncompat/codegen.rs\n M src/bin/jsoncompat/codegen_api.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n M tests/openapi_client.rs\n?? codegen/src/dataclasses/resource_package.rs\n?? pybindings/src/model_converter/link.rs\n",
+          "package": "/private/tmp/jsoncompat-github-resource-final/github_issues",
+          "package_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648",
           "node_options": null
         },
         "measurement": {
-          "seconds": 0.18807212501997128,
+          "seconds": 0.18558216700330377,
           "exit_code": 0,
-          "max_rss_bytes": 113082368
+          "max_rss_bytes": 93569024
         },
         "diagnostics": 0,
         "rules": {}
@@ -441,9 +487,9 @@
         "expected_errors_detected": true,
         "stderr_file": "issues-ty-negative.stderr",
         "measurement": {
-          "seconds": 0.0793474999954924,
+          "seconds": 0.1341196249704808,
           "exit_code": 1,
-          "max_rss_bytes": 45744128
+          "max_rss_bytes": 63209472
         },
         "diagnostics": 2,
         "rules": {
@@ -455,73 +501,88 @@
         "source": {
           "samples": [
             {
-              "load_seconds": 0.22794200002681464,
-              "loaded_models": 609,
-              "seconds": 0.2950494580436498,
+              "load_seconds": 0.12835150002501905,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.18439054203918204,
               "exit_code": 0,
-              "max_rss_bytes": 47529984
+              "max_rss_bytes": 88113152
             },
             {
-              "load_seconds": 0.224561833019834,
-              "loaded_models": 609,
-              "seconds": 0.29280937497969717,
+              "load_seconds": 0.12945437501184642,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.1835618750192225,
               "exit_code": 0,
-              "max_rss_bytes": 47087616
+              "max_rss_bytes": 89423872
             },
             {
-              "load_seconds": 0.23713237495394424,
-              "loaded_models": 609,
-              "seconds": 0.29747337504522875,
+              "load_seconds": 0.12908929103286937,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.1843260420137085,
               "exit_code": 0,
-              "max_rss_bytes": 47480832
+              "max_rss_bytes": 88981504
             }
           ],
-          "median_load_seconds": 0.22794200002681464,
-          "loaded_models": 609
+          "median_load_seconds": 0.12908929103286937,
+          "loaded_models": 442,
+          "loaded_modules": 80,
+          "max_rss_bytes": 89423872
         },
         "bytecode": {
           "samples": [
             {
-              "load_seconds": 0.09897983400151134,
-              "loaded_models": 609,
-              "seconds": 0.13097545795608312,
+              "load_seconds": 0.04621837503509596,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.13032820803346112,
               "exit_code": 0,
-              "max_rss_bytes": 38912000
+              "max_rss_bytes": 35569664
             },
             {
-              "load_seconds": 0.09290183300618082,
-              "loaded_models": 609,
-              "seconds": 0.1304782920051366,
+              "load_seconds": 0.045469333010260016,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.07738458301173523,
               "exit_code": 0,
-              "max_rss_bytes": 39223296
+              "max_rss_bytes": 35815424
             },
             {
-              "load_seconds": 0.09227708296384662,
-              "loaded_models": 609,
-              "seconds": 0.13043183396803215,
+              "load_seconds": 0.045278666948433965,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.07652854197658598,
               "exit_code": 0,
-              "max_rss_bytes": 38961152
+              "max_rss_bytes": 35422208
             }
           ],
-          "median_load_seconds": 0.09290183300618082,
-          "loaded_models": 609
+          "median_load_seconds": 0.045469333010260016,
+          "loaded_models": 442,
+          "loaded_modules": 80,
+          "max_rss_bytes": 35815424
         }
       },
-      "artifact_equivalence": {
-        "models": 664,
-        "prepared_node_pairs": 11087,
-        "prepared_programs_byte_identical": 664,
-        "schema_bytes_compared": 64454467,
-        "old_prepared_nodes": 11087,
-        "new_prepared_nodes": 11087,
-        "exact_schema_text_equal": true,
-        "prepared_programs_bisimilar": true,
-        "before": "/tmp/jsoncompat-github-fast-final/github_issues",
-        "after": "/tmp/jsoncompat-github-merged-final/github_issues",
-        "seconds": 0.9514442500076257,
-        "before_compiler": "57271c4e164d01bf1be908f5d29123a6c06c4e35952918b3325c92a1a1ec96cf",
-        "after_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242"
-      }
+      "stage_profile": [
+        "Codegen timing: validate OpenAPI document: 1.055532s (1.055532s total)",
+        "Codegen timing: prepare operation contracts: 0.103680s (1.159213s total)",
+        "Codegen timing: group component schemas: 0.064475s (1.223688s total)",
+        "Codegen timing: prepare output and compiler fingerprint: 0.030014s (1.253701s total)",
+        "Codegen timing: _models.shared: prepare group and check cache: 0.005111s (1.258812s total)",
+        "Codegen timing: _models.shared: validate schema document: 0.054508s (1.313321s total)",
+        "codegen model-group IssuesAddAssignees201 (473) prepare: 0.023s",
+        "codegen model-group IssuesAddAssignees201 (473) declarations: 0.003s",
+        "codegen model-group IssuesAddAssignees201 (473) program serialization: 0.002s",
+        "codegen model-group IssuesAddAssignees201 (473) schema sources: 0.019s",
+        "codegen model-group IssuesAddAssignees201 (473) conversion descriptors: 0.001s",
+        "Codegen timing: _models.shared: generate and render prepared models: 0.071023s (1.384344s total)",
+        "Codegen timing: _models.shared: stage package files: 0.013690s (1.398033s total)",
+        "Codegen timing: render and stage package exports: 0.017195s (1.415229s total)",
+        "Codegen timing: check publication paths: 0.000177s (1.415406s total)",
+        "Codegen timing: publish package files: 0.000665s (1.416071s total)",
+        "Codegen timing: remove obsolete files and publish manifest: 0.008667s (1.424738s total)",
+        "Generated 473 models in 1 modules (1 rebuilt) at /private/tmp/jsoncompat-github-resource-final/github_issues"
+      ]
     },
     "client": {
       "projection": {
@@ -529,124 +590,126 @@
         "component_schemas": 973
       },
       "generation": {
-        "seconds": 7.817182166967541,
+        "seconds": 5.407660374999978,
         "exit_code": 0,
-        "max_rss_bytes": 1023442944
+        "max_rss_bytes": 1516208128
       },
       "files": {
-        "files": 19599,
-        "bytes": 91015182,
-        "python_files": 19597,
-        "python_bytes": 84322820,
+        "files": 1047,
+        "bytes": 66561744,
+        "python_files": 1045,
+        "python_bytes": 63944139,
         "largest_files": [
           [
-            6692362,
+            3718810,
+            "operations/repos.py"
+          ],
+          [
+            2893930,
+            "operations/actions.py"
+          ],
+          [
+            2617605,
             ".jsoncompat-manifest.json"
           ],
           [
-            3046001,
-            "__init__.py"
+            2174300,
+            "_data/s_c.py"
           ],
           [
-            2364952,
-            "models.py"
-          ],
-          [
-            2262306,
+            1989996,
             "__init__.pyi"
           ],
           [
-            1798448,
-            "models.pyi"
+            1979422,
+            "operations/orgs.py"
           ],
           [
-            1496512,
+            1823437,
+            "operations/issues.py"
+          ],
+          [
+            1464014,
+            "models/__init__.pyi"
+          ],
+          [
+            1363022,
+            "operations/codespaces.py"
+          ],
+          [
+            1224173,
             "_exports.py"
-          ],
-          [
-            1100556,
-            "_models/actions_approve_workflow_run201/__init__.py"
-          ],
-          [
-            1066758,
-            "_models/actions_add_custom_labels_to_self_hosted_runner_for_org404/__init__.py"
-          ],
-          [
-            955706,
-            "_models/actions_approve_workflow_run201/_binding.py"
-          ],
-          [
-            927218,
-            "_models/actions_add_custom_labels_to_self_hosted_runner_for_org404/_binding.py"
           ]
         ],
         "largest_python_file": [
-          3046001,
-          "__init__.py"
+          3718810,
+          "operations/repos.py"
         ],
-        "p95_python_bytes": 9868,
-        "binding_groups": 34,
-        "declarations": 12351,
-        "schema_storage_bytes": 6186815,
-        "schema_chunk_files": 5854,
-        "empty_header_models": 3228
+        "p95_python_bytes": 285109,
+        "binding_groups": 1,
+        "declarations": 9124,
+        "component_modules": 974,
+        "resource_modules": 45,
+        "schema_storage_bytes": 10566759,
+        "schema_chunk_files": 16,
+        "empty_header_models": 1
       },
       "imports": {
         "source": {
           "samples": [
             {
-              "package_seconds": 0.1324293750221841,
-              "load_seconds": 5.800576000008732,
-              "seconds": 6.409475540975109,
+              "package_seconds": 0.060899582982528955,
+              "load_seconds": 2.0655214579892345,
+              "seconds": 2.34216841700254,
               "exit_code": 0,
-              "max_rss_bytes": 414842880
+              "max_rss_bytes": 286130176
             },
             {
-              "package_seconds": 0.12479870900278911,
-              "load_seconds": 5.547536249971017,
-              "seconds": 6.107522042002529,
+              "package_seconds": 0.058864584018010646,
+              "load_seconds": 2.08953370800009,
+              "seconds": 2.3472484999801964,
               "exit_code": 0,
-              "max_rss_bytes": 411484160
+              "max_rss_bytes": 287195136
             },
             {
-              "package_seconds": 0.1210758329834789,
-              "load_seconds": 5.141804624989163,
-              "seconds": 5.662543958052993,
+              "package_seconds": 0.05872124998131767,
+              "load_seconds": 2.059053125034552,
+              "seconds": 2.3034717910340987,
               "exit_code": 0,
-              "max_rss_bytes": 416940032
+              "max_rss_bytes": 282542080
             }
           ],
-          "median_package_seconds": 0.12479870900278911,
-          "median_load_seconds": 5.547536249971017,
-          "max_rss_bytes": 416940032
+          "median_package_seconds": 0.058864584018010646,
+          "median_load_seconds": 2.0655214579892345,
+          "max_rss_bytes": 287195136
         },
         "bytecode": {
           "samples": [
             {
-              "package_seconds": 0.010261334013193846,
-              "load_seconds": 2.4074229169636965,
-              "seconds": 2.8361183750093915,
+              "package_seconds": 0.006315584003459662,
+              "load_seconds": 0.8947014169534668,
+              "seconds": 1.0453638750477694,
               "exit_code": 0,
-              "max_rss_bytes": 344768512
+              "max_rss_bytes": 155140096
             },
             {
-              "package_seconds": 0.010980000020936131,
-              "load_seconds": 2.321849250001833,
-              "seconds": 2.947394750022795,
+              "package_seconds": 0.006387416971847415,
+              "load_seconds": 0.8456466249772348,
+              "seconds": 1.0020552919595502,
               "exit_code": 0,
-              "max_rss_bytes": 345980928
+              "max_rss_bytes": 152993792
             },
             {
-              "package_seconds": 0.012214665999636054,
-              "load_seconds": 2.454203416011296,
-              "seconds": 2.896223792049568,
+              "package_seconds": 0.0061478749848902225,
+              "load_seconds": 0.8518991669989191,
+              "seconds": 1.0554732919554226,
               "exit_code": 0,
-              "max_rss_bytes": 345309184
+              "max_rss_bytes": 153616384
             }
           ],
-          "median_package_seconds": 0.010980000020936131,
-          "median_load_seconds": 2.4074229169636965,
-          "max_rss_bytes": 345980928
+          "median_package_seconds": 0.006315584003459662,
+          "median_load_seconds": 0.8518991669989191,
+          "max_rss_bytes": 155140096
         }
       },
       "typing": {
@@ -671,28 +734,28 @@
             "ty",
             "check",
             "--project",
-            "/private/tmp/jsoncompat-github-merged-final",
+            "/private/tmp/jsoncompat-github-resource-final",
             "--python-version",
             "3.12",
             "--extra-search-path",
             "/Users/robbie/developer/jsoncompat/pybindings",
             "--extra-search-path",
-            "/private/tmp/jsoncompat-github-merged-final",
+            "/private/tmp/jsoncompat-github-resource-final",
             "--error",
             "all",
             "--output-format",
             "gitlab"
           ],
-          "revision": "cdfa13c40fe4bff8b811ba4f1bcc7c6d38c9e5d1",
-          "working_tree": " M codegen/src/dataclasses/package.rs\n M openapi/src/lib.rs\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M readme.md\n M schema/src/ast.rs\n M schema/src/canonicalize.rs\n M schema/src/lib.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n?? pybindings/benchmarks/github-openapi-before-merged-models.json\n?? schema/src/validation_cache.rs\n",
-          "package": "/private/tmp/jsoncompat-github-merged-final/github_client",
-          "package_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+          "revision": "384d5ecc1b320e637649e87a03d45ff87d3950eb",
+          "working_tree": " M codegen/src/dataclasses.rs\n M codegen/src/dataclasses/package.rs\n M codegen/src/dataclasses/render.rs\n M codegen/src/lib.rs\n M codegen/src/model_plan.rs\n M examples/openapi_client/README.md\n M examples/openapi_client/aiohttp_client.py\n M examples/openapi_client/exercise.py\n M examples/openapi_client/httpx_client.py\n M examples/openapi_client/live_jsonplaceholder.py\n M examples/openapi_client/prepared_client.py\n M examples/openapi_client/requests_client.py\n M examples/openapi_client/unexpected_responses.py\n M pybindings/README.md\n M pybindings/bench_codegen_equivalence.py\n M pybindings/bench_github_openapi.py\n M pybindings/src/model_converter.rs\n M readme.md\n M src/bin/jsoncompat/codegen.rs\n M src/bin/jsoncompat/codegen_api.rs\n M src/bin/jsoncompat/codegen_package.rs\n M tests/codegen_package.rs\n M tests/openapi_client.rs\n?? codegen/src/dataclasses/resource_package.rs\n?? pybindings/src/model_converter/link.rs\n",
+          "package": "/private/tmp/jsoncompat-github-resource-final/github_client",
+          "package_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648",
           "node_options": null
         },
         "measurement": {
-          "seconds": 5.714230249985121,
+          "seconds": 1.1173441669670865,
           "exit_code": 0,
-          "max_rss_bytes": 1361248256
+          "max_rss_bytes": 782270464
         },
         "diagnostics": 0,
         "rules": {}
@@ -702,9 +765,9 @@
         "expected_errors_detected": true,
         "stderr_file": "client-ty-negative.stderr",
         "measurement": {
-          "seconds": 0.6598129590274766,
+          "seconds": 0.28621079196454957,
           "exit_code": 1,
-          "max_rss_bytes": 143081472
+          "max_rss_bytes": 261423104
         },
         "diagnostics": 2,
         "rules": {
@@ -716,139 +779,111 @@
         "source": {
           "samples": [
             {
-              "load_seconds": 2.9570037499652244,
-              "loaded_models": 7779,
-              "seconds": 3.122166959044989,
+              "load_seconds": 0.2750288749812171,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.34688041696790606,
               "exit_code": 0,
-              "max_rss_bytes": 334561280
+              "max_rss_bytes": 111001600
             },
             {
-              "load_seconds": 2.9783682500128634,
-              "loaded_models": 7779,
-              "seconds": 3.1778387500089593,
+              "load_seconds": 0.2760425829910673,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.34750291699310765,
               "exit_code": 0,
-              "max_rss_bytes": 331038720
+              "max_rss_bytes": 104480768
             },
             {
-              "load_seconds": 3.106689042004291,
-              "loaded_models": 7779,
-              "seconds": 3.3143332920153625,
+              "load_seconds": 0.27510616701329127,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.3477326249703765,
               "exit_code": 0,
-              "max_rss_bytes": 336396288
+              "max_rss_bytes": 106610688
             }
           ],
-          "median_load_seconds": 2.9783682500128634,
-          "loaded_models": 7779
+          "median_load_seconds": 0.27510616701329127,
+          "loaded_models": 442,
+          "loaded_modules": 80,
+          "max_rss_bytes": 111001600
         },
         "bytecode": {
           "samples": [
             {
-              "load_seconds": 0.9751152499811724,
-              "loaded_models": 7779,
-              "seconds": 1.161248375021387,
+              "load_seconds": 0.05798616696847603,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.12830820796079934,
               "exit_code": 0,
-              "max_rss_bytes": 252362752
+              "max_rss_bytes": 44908544
             },
             {
-              "load_seconds": 0.9929707090486772,
-              "loaded_models": 7779,
-              "seconds": 1.1606152090243995,
+              "load_seconds": 0.0588249170104973,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.13002433301880956,
               "exit_code": 0,
-              "max_rss_bytes": 251576320
+              "max_rss_bytes": 44908544
             },
             {
-              "load_seconds": 1.0842984999762848,
-              "loaded_models": 7779,
-              "seconds": 1.3117295829579234,
+              "load_seconds": 0.058422708010766655,
+              "loaded_models": 442,
+              "loaded_modules": 80,
+              "seconds": 0.12672187498537824,
               "exit_code": 0,
-              "max_rss_bytes": 253018112
+              "max_rss_bytes": 44695552
             }
           ],
-          "median_load_seconds": 0.9929707090486772,
-          "loaded_models": 7779
+          "median_load_seconds": 0.058422708010766655,
+          "loaded_models": 442,
+          "loaded_modules": 80,
+          "max_rss_bytes": 44908544
         }
       },
-      "artifact_equivalence": {
-        "models": 12351,
-        "prepared_node_pairs": 148805,
-        "prepared_programs_byte_identical": 12351,
-        "schema_bytes_compared": 17087446037,
-        "old_prepared_nodes": 148805,
-        "new_prepared_nodes": 148805,
-        "exact_schema_text_equal": true,
-        "prepared_programs_bisimilar": true,
-        "before": "/tmp/jsoncompat-github-fast-final/github_client",
-        "after": "/tmp/jsoncompat-github-merged-final/github_client",
-        "seconds": 16.531676375016104,
-        "before_compiler": "57271c4e164d01bf1be908f5d29123a6c06c4e35952918b3325c92a1a1ec96cf",
-        "after_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242"
-      }
+      "stage_profile": [
+        "Codegen timing: validate OpenAPI document: 1.148509s (1.148509s total)",
+        "Codegen timing: prepare operation contracts: 0.163516s (1.312025s total)",
+        "Codegen timing: group component schemas: 0.095721s (1.407745s total)",
+        "Codegen timing: prepare output and compiler fingerprint: 0.036353s (1.444098s total)",
+        "Codegen timing: _models.shared: prepare group and check cache: 0.104941s (1.549039s total)",
+        "Codegen timing: _models.shared: validate schema document: 1.468015s (3.017054s total)",
+        "codegen model-group ActionsAddCustomLabelsToSelfHostedRunnerForOrg200 (9124) prepare: 0.464s",
+        "codegen model-group ActionsAddCustomLabelsToSelfHostedRunnerForOrg200 (9124) declarations: 0.060s",
+        "codegen model-group ActionsAddCustomLabelsToSelfHostedRunnerForOrg200 (9124) program serialization: 0.025s",
+        "codegen model-group ActionsAddCustomLabelsToSelfHostedRunnerForOrg200 (9124) schema sources: 0.606s",
+        "codegen model-group ActionsAddCustomLabelsToSelfHostedRunnerForOrg200 (9124) conversion descriptors: 0.022s",
+        "Codegen timing: _models.shared: generate and render prepared models: 1.779849s (4.796903s total)",
+        "Codegen timing: _models.shared: stage package files: 0.208782s (5.005685s total)",
+        "Codegen timing: render and stage package exports: 0.275973s (5.281658s total)",
+        "Codegen timing: check publication paths: 0.001453s (5.283111s total)",
+        "Codegen timing: publish package files: 0.001118s (5.284229s total)",
+        "Codegen timing: remove obsolete files and publish manifest: 0.010793s (5.295023s total)",
+        "Generated 9124 models in 1 modules (1 rebuilt) at /private/tmp/jsoncompat-github-resource-final/github_client"
+      ]
     },
     "original": {
-      "seconds": 0.07563625002512708,
+      "seconds": 0.07491195801412687,
       "exit_code": 1,
-      "max_rss_bytes": 89964544,
+      "max_rss_bytes": 89915392,
       "error": "Error: OpenAPI value at '#/paths/~1orgs~1{org}~1attestations~1{subject_digest}' must be a path template shape that is not already declared with different parameter names"
     }
   },
   "schema_equivalence": {
     "models": 3133,
-    "prepared_node_pairs": 60993,
+    "new_classes": 3133,
+    "empty_header_aliases": 0,
     "prepared_programs_byte_identical": 3133,
-    "schema_bytes_compared": 4455281588,
-    "old_prepared_nodes": 60993,
-    "new_prepared_nodes": 60993,
-    "exact_schema_text_equal": true,
+    "schema_root_text_equal": 3133,
+    "prepared_node_pairs": 60993,
+    "model_schema_roots_equal": true,
     "prepared_programs_bisimilar": true,
-    "before": "/tmp/jsoncompat-github-fast-final/github_models",
-    "after": "/tmp/jsoncompat-github-merged-final/github_models",
-    "seconds": 6.352845916990191,
-    "before_compiler": "57271c4e164d01bf1be908f5d29123a6c06c4e35952918b3325c92a1a1ec96cf",
-    "after_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242"
-  },
-  "generation_profile": {
-    "models": {
-      "validate OpenAPI document": 1.090251,
-      "prepare operation contracts": 0.000165,
-      "group component schemas": 0.06309,
-      "prepare output and compiler fingerprint": 0.030568,
-      "prepare group and check cache": 0.063243,
-      "validate schema document": 0.7878120000000001,
-      "generate and render prepared models": 1.0370689999999998,
-      "stage package files": 0.381695,
-      "render and stage package exports": 0.004761,
-      "check publication paths": 0.007125,
-      "publish package files": 0.001002,
-      "remove obsolete files and publish manifest": 0.011401
-    },
-    "issues": {
-      "validate OpenAPI document": 1.108919,
-      "prepare operation contracts": 0.10445,
-      "group component schemas": 0.066652,
-      "prepare output and compiler fingerprint": 0.031466,
-      "prepare group and check cache": 0.010646999999999998,
-      "validate schema document": 0.062085,
-      "generate and render prepared models": 0.07943399999999999,
-      "stage package files": 0.08373,
-      "render and stage package exports": 0.011756,
-      "check publication paths": 0.001875,
-      "publish package files": 0.000856,
-      "remove obsolete files and publish manifest": 0.02331
-    },
-    "client": {
-      "validate OpenAPI document": 1.291901,
-      "prepare operation contracts": 0.182979,
-      "group component schemas": 0.114756,
-      "prepare output and compiler fingerprint": 0.042618,
-      "prepare group and check cache": 0.41074200000000005,
-      "validate schema document": 1.6126369999999992,
-      "generate and render prepared models": 1.9523309999999998,
-      "stage package files": 1.8087010000000003,
-      "render and stage package exports": 0.226993,
-      "check publication paths": 0.034966,
-      "publish package files": 0.003826,
-      "remove obsolete files and publish manifest": 0.021863
-    }
+    "diagnostic_normalization": "only renamed empty-header definition references",
+    "before": "/tmp/jsoncompat-github-merged-final/github_models",
+    "after": "/tmp/jsoncompat-github-resource-final/github_models",
+    "seconds": 11.257607874984387,
+    "before_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+    "after_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648"
   },
   "generation_repeats": {
     "models": {
@@ -858,46 +893,42 @@
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/private/tmp/jsoncompat-github-merged-final/models.json",
+            "/private/tmp/jsoncompat-github-resource-final/models.json",
             "--output",
-            "/private/tmp/jsoncompat-github-merged-final/github_models"
+            "/private/tmp/jsoncompat-github-resource-final/github_models"
           ],
-          "seconds": 3.8729335829848424,
+          "seconds": 3.627040041028522,
           "exit_code": 0,
-          "max_rss_bytes": 759709696
+          "max_rss_bytes": 754647040
         },
         {
           "command": [
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/tmp/jsoncompat-github-merged-final/models.json",
+            "/private/tmp/jsoncompat-github-resource-final/models.json",
             "--output",
-            "/tmp/jsoncompat-github-merged-final/generation-repeats/models_1"
+            "/tmp/jsoncompat-github-resource-final/repeat_models_1"
           ],
-          "seconds": 3.7085059999953955,
+          "seconds": 3.262756292009726,
           "exit_code": 0,
-          "max_rss_bytes": 785170432
+          "max_rss_bytes": 753254400
         },
         {
           "command": [
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/tmp/jsoncompat-github-merged-final/models.json",
+            "/private/tmp/jsoncompat-github-resource-final/models.json",
             "--output",
-            "/tmp/jsoncompat-github-merged-final/generation-repeats/models_2"
+            "/tmp/jsoncompat-github-resource-final/repeat_models_2"
           ],
-          "seconds": 3.731968291976955,
+          "seconds": 3.282174166000914,
           "exit_code": 0,
-          "max_rss_bytes": 779911168
+          "max_rss_bytes": 755253248
         }
       ],
-      "median_seconds": 3.731968291976955,
-      "range_seconds": [
-        3.7085059999953955,
-        3.8729335829848424
-      ]
+      "median_seconds": 3.282174166000914
     },
     "issues": {
       "samples": [
@@ -906,58 +937,54 @@
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/private/tmp/jsoncompat-github-merged-final/issues.json",
+            "/private/tmp/jsoncompat-github-resource-final/issues.json",
             "--output",
-            "/private/tmp/jsoncompat-github-merged-final/github_issues",
+            "/private/tmp/jsoncompat-github-resource-final/github_issues",
             "--api",
             "GitHub",
             "--component",
             "basic-error"
           ],
-          "seconds": 1.6462933339644223,
+          "seconds": 1.5146690420224331,
           "exit_code": 0,
-          "max_rss_bytes": 403537920
+          "max_rss_bytes": 431702016
         },
         {
           "command": [
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/tmp/jsoncompat-github-merged-final/issues.json",
+            "/private/tmp/jsoncompat-github-resource-final/issues.json",
             "--output",
-            "/tmp/jsoncompat-github-merged-final/generation-repeats/issues_1",
+            "/tmp/jsoncompat-github-resource-final/repeat_issues_1",
             "--api",
             "GitHub",
             "--component",
             "basic-error"
           ],
-          "seconds": 1.6335079160053283,
+          "seconds": 1.5344499579514377,
           "exit_code": 0,
-          "max_rss_bytes": 402145280
+          "max_rss_bytes": 432406528
         },
         {
           "command": [
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/tmp/jsoncompat-github-merged-final/issues.json",
+            "/private/tmp/jsoncompat-github-resource-final/issues.json",
             "--output",
-            "/tmp/jsoncompat-github-merged-final/generation-repeats/issues_2",
+            "/tmp/jsoncompat-github-resource-final/repeat_issues_2",
             "--api",
             "GitHub",
             "--component",
             "basic-error"
           ],
-          "seconds": 1.64281624997966,
+          "seconds": 1.487728500040248,
           "exit_code": 0,
-          "max_rss_bytes": 379322368
+          "max_rss_bytes": 410599424
         }
       ],
-      "median_seconds": 1.64281624997966,
-      "range_seconds": [
-        1.6335079160053283,
-        1.6462933339644223
-      ]
+      "median_seconds": 1.5146690420224331
     },
     "client": {
       "samples": [
@@ -966,94 +993,105 @@
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/private/tmp/jsoncompat-github-merged-final/client.json",
+            "/private/tmp/jsoncompat-github-resource-final/client.json",
             "--output",
-            "/private/tmp/jsoncompat-github-merged-final/github_client",
+            "/private/tmp/jsoncompat-github-resource-final/github_client",
             "--api",
             "GitHub"
           ],
-          "seconds": 7.817182166967541,
+          "seconds": 5.407660374999978,
           "exit_code": 0,
-          "max_rss_bytes": 1023442944
+          "max_rss_bytes": 1516208128
         },
         {
           "command": [
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/tmp/jsoncompat-github-merged-final/client.json",
+            "/private/tmp/jsoncompat-github-resource-final/client.json",
             "--output",
-            "/tmp/jsoncompat-github-merged-final/generation-repeats/client_1",
+            "/tmp/jsoncompat-github-resource-final/repeat_client_1",
             "--api",
             "GitHub"
           ],
-          "seconds": 7.484916292014532,
+          "seconds": 5.423115665966179,
           "exit_code": 0,
-          "max_rss_bytes": 1024819200
+          "max_rss_bytes": 1522745344
         },
         {
           "command": [
             "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
             "codegen",
             "--openapi",
-            "/tmp/jsoncompat-github-merged-final/client.json",
+            "/private/tmp/jsoncompat-github-resource-final/client.json",
             "--output",
-            "/tmp/jsoncompat-github-merged-final/generation-repeats/client_2",
+            "/tmp/jsoncompat-github-resource-final/repeat_client_2",
             "--api",
             "GitHub"
           ],
-          "seconds": 7.287223958002869,
+          "seconds": 5.436286708980333,
           "exit_code": 0,
-          "max_rss_bytes": 1031618560
+          "max_rss_bytes": 1555054592
         }
       ],
-      "median_seconds": 7.484916292014532,
-      "range_seconds": [
-        7.287223958002869,
-        7.817182166967541
-      ]
+      "median_seconds": 5.423115665966179
     }
   },
-  "matched_client_typing": {
-    "before": {
-      "samples": [
-        {
-          "seconds": 2.5606217500171624,
-          "exit_code": 0,
-          "max_rss_bytes": 1296646144
-        },
-        {
-          "seconds": 3.0736597079667263,
-          "exit_code": 0,
-          "max_rss_bytes": 1275363328
-        },
-        {
-          "seconds": 2.5679014999768697,
-          "exit_code": 0,
-          "max_rss_bytes": 1305788416
-        }
-      ],
-      "median_seconds": 2.5679014999768697
+  "equivalence": {
+    "models": {
+      "models": 3133,
+      "new_classes": 3133,
+      "empty_header_aliases": 0,
+      "prepared_programs_byte_identical": 3133,
+      "schema_root_text_equal": 3133,
+      "prepared_node_pairs": 60993,
+      "model_schema_roots_equal": true,
+      "prepared_programs_bisimilar": true,
+      "diagnostic_normalization": "only renamed empty-header definition references",
+      "before": "/tmp/jsoncompat-github-merged-final/github_models",
+      "after": "/tmp/jsoncompat-github-resource-final/github_models",
+      "seconds": 11.257607874984387,
+      "before_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+      "after_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648"
     },
-    "after": {
-      "samples": [
-        {
-          "seconds": 2.1237189170205966,
-          "exit_code": 0,
-          "max_rss_bytes": 1304788992
-        },
-        {
-          "seconds": 2.295568917004857,
-          "exit_code": 0,
-          "max_rss_bytes": 1313308672
-        },
-        {
-          "seconds": 2.235804541967809,
-          "exit_code": 0,
-          "max_rss_bytes": 1291010048
-        }
-      ],
-      "median_seconds": 2.235804541967809
+    "issues": {
+      "models": 664,
+      "new_classes": 473,
+      "empty_header_aliases": 192,
+      "prepared_programs_byte_identical": 465,
+      "schema_root_text_equal": 273,
+      "prepared_node_pairs": 11087,
+      "model_schema_roots_equal": true,
+      "prepared_programs_bisimilar": true,
+      "diagnostic_normalization": "only renamed empty-header definition references",
+      "before": "/tmp/jsoncompat-github-merged-final/github_issues",
+      "after": "/tmp/jsoncompat-github-resource-final/github_issues",
+      "seconds": 1.1961378749692813,
+      "before_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+      "after_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648"
+    },
+    "client": {
+      "models": 12351,
+      "new_classes": 9124,
+      "empty_header_aliases": 3228,
+      "prepared_programs_byte_identical": 9048,
+      "schema_root_text_equal": 5820,
+      "prepared_node_pairs": 148805,
+      "model_schema_roots_equal": true,
+      "prepared_programs_bisimilar": true,
+      "diagnostic_normalization": "only renamed empty-header definition references",
+      "before": "/tmp/jsoncompat-github-merged-final/github_client",
+      "after": "/tmp/jsoncompat-github-resource-final/github_client",
+      "seconds": 27.02136670803884,
+      "before_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
+      "after_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648"
     }
+  },
+  "layout": {
+    "resource_rule": "operationId namespace before slash, else first literal path segment, else root",
+    "schema_data_buckets": 16,
+    "module_cycles": "strongly connected components only",
+    "empty_headers": "one closed record with operation-specific aliases",
+    "build_namespace": "single namespace for API generation; model-only compilation batches retained"
   }
 }

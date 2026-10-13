@@ -6,33 +6,31 @@ from jsoncompat.http import (
     HTTPStatusError,
     RequestOptions,
 )
-from petstore import (
+from petstore.api import PetstoreAsyncClient, PetstoreClient
+from petstore.models.pet_create import PetCreate
+from petstore.models.pet_filter import PetFilter
+from petstore.models.pet_patch import PetPatch
+from petstore.models.search_criteria import SearchCriteria
+from petstore.operations.groups import GetGroupPetsRequest
+from petstore.operations.health import Health200, HealthRequest
+from petstore.operations.pets import (
     CreatePet201,
     CreatePetRequest,
     DeletePetRequest,
-    GetGroupPetsRequest,
     GetPet304,
     GetPet404,
     GetPetNote200ApplicationJson,
     GetPetNoteRequest,
     GetPetRequest,
-    Health200,
-    HealthRequest,
     ListPets200,
     ListPetsRequest,
-    PetCreate,
-    PetFilter,
-    PetPatch,
-    PetstoreAsyncClient,
-    PetstoreClient,
-    SearchCriteria,
-    SearchPetsRequest,
     SetPetNoteBodyApplicationJson,
     SetPetNoteBodyTextPlain,
     SetPetNoteRequest,
     UpdatePet412,
     UpdatePetRequest,
 )
+from petstore.operations.search import SearchPetsRequest
 from unexpected_responses import exercise_unexpected, exercise_unexpected_async
 
 

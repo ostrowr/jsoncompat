@@ -4,7 +4,8 @@ import requests
 from exercise import exercise
 from jsoncompat.http import bind
 from jsoncompat.http.requests import RequestsFetch, RequestsOptions
-from petstore import Health200, HealthRequest, PetstoreAPI
+from petstore.api import PetstoreAPI
+from petstore.operations.health import Health200, HealthRequest
 from server import serve
 
 

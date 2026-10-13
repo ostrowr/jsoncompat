@@ -2,6 +2,7 @@ mod package;
 mod plan;
 mod plan_proof;
 mod render;
+mod resource_package;
 mod types;
 pub use package::DataclassPackage;
 pub use render::{DataclassMetadata, DataclassModule};
@@ -791,9 +792,26 @@ pub fn generate_dataclass_package_declarations_with_metadata(
 ) -> Result<DataclassPackage, DataclassError> {
     let module = generate_declarations(document, declarations, metadata, true)?;
     Ok(DataclassPackage {
+        exports: module
+            .models
+            .iter()
+            .map(|name| (name.clone(), module_path.to_owned()))
+            .collect(),
         files: module.package_files(module_path),
         models: module.models,
     })
+}
+
+/// Render modules owned by named components and API resources. References bind
+/// in dependency order; only strongly connected module cycles share a binder.
+pub fn generate_dataclass_resource_package_with_metadata(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+    owners: &BTreeMap<String, String>,
+) -> Result<DataclassPackage, DataclassError> {
+    let module = generate_declarations(document, declarations, metadata, true)?;
+    Ok(module.resource_files(owners))
 }
 
 fn generate_declarations(
@@ -902,7 +920,10 @@ fn generate_declarations(
         .next()
         .ok_or_else(|| invalid_schema("#".into(), "at least one declaration is required"))?;
     if package {
-        render::module_with_metadata_for_package(&builder.classes, root, metadata, document)
+        let mut module =
+            render::module_with_metadata_for_package(&builder.classes, root, metadata, document)?;
+        module.parts.named_declarations = declarations;
+        Ok(module)
     } else {
         render::module_with_metadata(&builder.classes, root, metadata)
     }

@@ -6,7 +6,8 @@ import httpx
 from exercise import exercise, exercise_async
 from jsoncompat.http import bind, bind_async
 from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
-from petstore import Health200, HealthRequest, PetstoreAPI
+from petstore.api import PetstoreAPI
+from petstore.operations.health import Health200, HealthRequest
 from server import serve
 
 

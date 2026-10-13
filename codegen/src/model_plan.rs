@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Only portable decisions are persisted. Python classes and slot offsets are
 /// rebound against the installed interpreter when the module is imported.
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedPlan {
     pub version: u32,
@@ -14,7 +14,7 @@ pub struct PreparedPlan {
     pub json_keys: Vec<(usize, Vec<String>)>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuardPatch {
     pub owner: usize,
@@ -22,7 +22,7 @@ pub struct GuardPatch {
     pub guard: usize,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedGuard {
     pub original: usize,

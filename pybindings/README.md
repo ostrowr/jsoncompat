@@ -325,25 +325,41 @@ python -m compileall -q my_models
 from my_models import Order, Customer
 ```
 
-The package exports component models by name. `__init__.pyi` makes those exports
-visible to type checkers. Each model always gets one file containing its readable
-declaration followed by its prepared initializer. The public `models.py` barrel exports models
-by name; `from my_models.models import Order` and `from my_models import Order`
-return the same class. Reference groups live under private `_models/<group>/`
-packages and bind their shared model identities. Package and barrel imports load
-only the export index; accessing a model loads its group. No model compilation
-moves to first access.
+Each named component owns a readable module, including its nested types:
 
-File layout does not depend on a source-size budget: growing one model never
-merges or redistributes neighboring declarations. Files use readable names such
-as `order.py`; only long or colliding names receive a short digest to remain
-portable across case-insensitive filesystems. Each model file includes the first
-64 KiB of its prepared validation data; further chunks use separate Python
-modules. Conversion graph
-metadata uses groups of 256 nodes. Even one large connected schema graph can
-therefore span many files. These are ordinary Python files: no extra package-data
-configuration, runtime source compilation, or Git LFS is needed for prepared data.
-Individual model declarations still stay whole.
+```python
+from my_models.models.order import Order
+from my_models.models.customer import Customer
+```
+
+The package root and `models` package also provide lazy convenience exports;
+all import paths return the same classes. Their `.pyi` files expose these names
+to type checkers. Direct imports load the component's directed dependencies,
+without loading other components that merely reference it. Only actual recursive
+module cycles share a private implementation under `_cycles/`. Canonical helpers
+without a named component owner live in `models/_shared.py`.
+
+With `--api`, operations share a resource module containing their requests,
+responses, nested body types, aliases, and endpoint metadata:
+
+```python
+from petstore.api import PetstoreAPI, PetstoreAsyncClient
+from petstore.operations.pets import GetPetRequest, GetPet404
+from petstore.models.pet import Pet
+```
+
+The resource is the prefix before `/` in `operationId` (for example,
+`issues/get` becomes `operations/issues.py`). Otherwise it is the first literal
+URL path segment, or `root` when none exists. Named component boundaries and
+resource boundaries do not depend on file sizes. Long or colliding names receive
+a digest for portability across case-insensitive filesystems.
+
+Empty response-header records share one generated closed-object type. Existing
+names such as `GetPet404Headers` remain aliases to that type. Header records with
+any declared fields remain distinct. Validation still rejects fields in an empty
+typed record; actual HTTP headers, including undeclared names and repeated values,
+remain available on the response envelope's `raw_headers` and buffered response's
+`headers`.
 
 Generation prepares each shared definition graph once, while preserving every
 model's own validation root. It also serializes and compresses shared definition
@@ -356,36 +372,34 @@ wrappers separately. Changed definitions, resource scopes, dynamic references,
 and unsupported reference shapes use the full validation path. This changes no
 model constraints, instance validation, or error reporting.
 
-Shared schema chunks live in `_schemas/`.
-Their filenames contain a SHA-256 digest of the compressed bytes, so identical
-chunks have one file and one in-memory byte string, even across independent
-model groups. Small, model-specific fragments stay in the initializer. Joining
-and decompressing the fragments happens only when you explicitly read
-`Model.__jsoncompat_schema__`, preserving its exact JSON text. Validation uses
-its prepared program; import and first use do not compile or decompress schemas.
+Compressed schema fragments are interned by SHA-256 and packed into sixteen
+fixed `_data/s_<hex>.py` modules, selected by the first digest digit. Identical
+fragments share one constant and one in-memory byte string across the package.
+These ordinary Python files need no package-data configuration. Data placement
+has no file-size threshold; growing a spec does not split or merge model modules.
+Joining and decompressing fragments happens only on explicit
+`Model.__jsoncompat_schema__` introspection. Validation uses prepared programs;
+imports and first use do not compile schemas.
 
 See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
 file sizes, generation/import costs, strict type checking, and current limits.
 
 `--component Order` selects a component and its dependencies; repeat the flag
 for several roots. `--rename Order=Purchase` changes a public class name.
-Name collisions fail with a diagnostic. Reference-connected models stay together,
-including mutually recursive models, so class identities do not depend on import
-order. `--models-per-module` controls the target size of these logical import
-and binding groups, not physical file sizes. A connected group may exceed it
-while still using separate files for every model. Resource identifiers
-and anchor references conservatively keep all components in one group to retain
-scope. Without `--api`, this command emits component schema models only.
-
-Operations live in `_operations/get_pet.py`, with public response aliases and
-client aliases in `api.py`. Numbered files are reserved for chunks of prepared
-data, where the number is a chunk index. Regenerating an older package migrates
-its managed files to this layout.
+Name collisions fail with a diagnostic. `--models-per-module` retains its
+legacy spelling but controls internal compilation batches for model-only output,
+not public modules or runtime imports. API generation uses one shared build
+namespace so resource-owned declarations and header aliases are consistent.
+Resource scopes stay intact during compilation. Without `--api`, only component
+models are emitted. `api.py` exports the API identity and client types and prepares
+the complete operation registry on import. Direct resource imports do not prepare
+the complete API; binding the API still does. Regeneration migrates older managed
+packages to this layout.
 
 An output manifest fingerprints the compiler, schemas, options, and managed
 files. Unchanged groups reuse their artifacts; edited schemas rebuild affected
-groups. A shared chunk stays until its last model group stops using it; missing
-or edited chunks rebuild every affected group. Regeneration removes obsolete
+groups. Shared data constants are retained until their last compilation batch stops
+using them; missing or edited data files rebuild their affected batches. Regeneration removes obsolete
 managed files, preserves unrelated files, and refuses to overwrite unmanaged
 files. Deploy the complete directory as one
 build artifact; generation is not a live-reload or concurrent-writer protocol.
@@ -728,11 +742,11 @@ parameters: the API is invariant and transport options are contravariant.
 ### Generated metadata and dispatch
 
 The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
-`Cookie`, `Body`) and one named private module per operation, containing its
-response aliases and HTTP endpoint metadata. `api.py` re-exports these aliases,
+`Cookie`, `Body`) in public resource modules alongside request/response classes,
+response aliases, and HTTP endpoint metadata. `api.py` re-exports these aliases,
 collects the operation registry, and exports the client types. Small and large
-APIs use this same split layout; adding an operation does not repack existing
-operation files. `_api.py` holds the
+APIs use this same layout; adding an operation updates its resource module.
+Component and resource boundaries stay independent of spec size. `_api.py` holds the
 API identity separately so request/response model imports remain acyclic.
 The public `api.py` validates all registered operations and prepares immutable
 dispatch plans when imported, including through the package's API or client-alias

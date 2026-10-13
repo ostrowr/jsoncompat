@@ -22,10 +22,11 @@ Each example starts a local Petstore server and exercises all ten operations.
 No account or external service is needed. The HTTPX example runs both sync and
 async clients. Generated files are ignored; regenerate them with the command above.
 
-The package always splits operations and models into named files, with prepared
-data stored separately. Adding endpoints does not combine or reshuffle existing
-operation files. Import from `petstore` as shown below and publish the entire
-generated directory.
+The package groups operations into `operations/pets.py`, `operations/groups.py`,
+`operations/search.py`, and `operations/health.py`. Each component owns a module
+such as `models/pet.py`, including its nested types. Direct resource/component
+imports load their dependencies; importing `api.py` prepares the full API for
+binding. Publish the whole generated directory.
 
 ## An aiohttp client
 
@@ -38,7 +39,8 @@ import asyncio
 import aiohttp
 from jsoncompat.http import bind_async
 from jsoncompat.http.aiohttp import AiohttpFetch
-from petstore import GetPet200, GetPetRequest, PetstoreAPI, PetstoreAsyncClient
+from petstore.api import PetstoreAPI, PetstoreAsyncClient
+from petstore.operations.pets import GetPet200, GetPetRequest
 from server import serve
 
 async def get_pet(client: PetstoreAsyncClient, pet_id: str) -> GetPet200:
@@ -64,7 +66,8 @@ code, use `PetstoreClient` and `bind`:
 import requests
 from jsoncompat.http import bind
 from jsoncompat.http.requests import RequestsFetch
-from petstore import GetPetRequest, PetstoreAPI
+from petstore.api import PetstoreAPI
+from petstore.operations.pets import GetPetRequest
 from server import serve
 
 with serve() as base_url, requests.Session() as session:
@@ -102,7 +105,7 @@ Use `.result()` when you want to branch on the outcome:
 
 ```python
 from jsoncompat.http import Err, UnexpectedResponse
-from petstore import GetPet404, GetPetRequest
+from petstore.operations.pets import GetPet404, GetPetRequest
 
 response = await client.request(GetPetRequest(pet_id="unknown"))
 match response.result():

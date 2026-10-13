@@ -3,7 +3,8 @@
 import httpx
 from jsoncompat.http import RequestOptions, prepare
 from jsoncompat.http.httpx import HttpxFetch, HttpxOptions
-from petstore import GetPetRequest, PetstoreAPI
+from petstore.api import PetstoreAPI
+from petstore.operations.pets import GetPetRequest
 from server import serve
 
 

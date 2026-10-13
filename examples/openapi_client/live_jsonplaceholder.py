@@ -13,23 +13,25 @@ from jsoncompat.http import Err, HTTPStatusError, bind, bind_async
 from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
 from jsoncompat.http.httpx import AsyncHttpxFetch, HttpxFetch, HttpxOptions
 from jsoncompat.http.requests import RequestsFetch, RequestsOptions
-from jsonplaceholder import (
+from jsonplaceholder.api import (
+    JsonPlaceholderAPI,
+    JsonPlaceholderAsyncClient,
+    JsonPlaceholderClient,
+)
+from jsonplaceholder.models.new_post import NewPost
+from jsonplaceholder.models.post import Post
+from jsonplaceholder.models.post_patch import PostPatch
+from jsonplaceholder.operations.posts import (
     CreatePost201,
     CreatePostRequest,
     GetPost200,
     GetPost404,
     GetPostRequest,
     GetPostResult,
-    JsonPlaceholderAPI,
-    JsonPlaceholderAsyncClient,
-    JsonPlaceholderClient,
     ListPosts200,
     ListPostsRequest,
-    NewPost,
     PatchPost200,
     PatchPostRequest,
-    Post,
-    PostPatch,
 )
 
 BASE_URL = "https://jsonplaceholder.typicode.com"

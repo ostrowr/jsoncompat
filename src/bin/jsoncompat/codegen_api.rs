@@ -13,11 +13,15 @@ use std::fmt::Write;
 pub(super) struct ApiPackage {
     pub schemas: Map<String, Value>,
     pub metadata: DataclassMetadata,
+    pub owners: BTreeMap<String, String>,
+    pub aliases: BTreeMap<String, (String, String)>,
+    current_owner: String,
     name: String,
     operations: Vec<Operation>,
     security_schemes: Value,
 }
 struct Operation {
+    resource: String,
     input: String,
     response_alias: String,
     success_alias: String,
@@ -66,6 +70,9 @@ impl ApiPackage {
         let lowerer = OpenApiOperationLowerer::new(document)?;
         let mut package = Self {
             schemas: Map::new(),
+            owners: BTreeMap::new(),
+            aliases: BTreeMap::new(),
+            current_owner: String::new(),
             metadata: DataclassMetadata {
                 imports: "from jsoncompat import http as _jsoncompat_http\n".into(),
                 base_imports: "from . import _api as _jsoncompat_api\nif typing.TYPE_CHECKING:\n    from . import api as _jsoncompat_api_types\n".into(),
@@ -86,11 +93,34 @@ impl ApiPackage {
             "$defs".into(),
             Value::Object(definitions),
         )]));
+        let contracts = lowerer
+            .operation_keys()?
+            .iter()
+            .map(|key| {
+                lowerer
+                    .operation_contract(key)
+                    .map(|c| c.expect("operation key exists"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let resources: BTreeSet<_> = contracts.iter().map(resource_name).collect();
+        let resource_modules = module_names(resources.iter().map(String::as_str));
+        let component_names: BTreeSet<_> = definitions["$defs"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|name| super::codegen_package::class_name(name))
+            .collect();
+        let mut empty_headers = "JsoncompatEmptyHeaders".to_owned();
+        let mut suffix = 2;
+        while component_names.contains(&empty_headers) {
+            empty_headers = format!("JsoncompatEmptyHeaders{suffix}");
+            suffix += 1;
+        }
         let mut ids = BTreeSet::new();
-        for key in lowerer.operation_keys()? {
-            let contract = lowerer
-                .operation_contract(&key)?
-                .expect("operation key exists");
+        for contract in contracts {
+            let key = &contract.key;
+            let resource = format!("operations.{}", resource_modules[&resource_name(&contract)]);
+            package.current_owner = resource.clone();
             if let Some(id) = &contract.operation_id {
                 ensure!(ids.insert(id.clone()), "duplicate operationId {id}");
             }
@@ -221,7 +251,22 @@ impl ApiPackage {
                         })?,
                     );
                 }
-                package.insert(&headers_name, json!({"type":"object", "properties":properties, "required":required, "additionalProperties":false}))?;
+                let headers_schema = json!({"type":"object", "properties":properties, "required":required, "additionalProperties":false});
+                let headers_name = if response.headers.is_empty() {
+                    package
+                        .aliases
+                        .insert(headers_name, (empty_headers.clone(), resource.clone()));
+                    if !package.schemas.contains_key(&empty_headers) {
+                        package.insert(&empty_headers, headers_schema)?;
+                        package
+                            .owners
+                            .insert(empty_headers.clone(), "models._empty_headers".into());
+                    }
+                    empty_headers.clone()
+                } else {
+                    package.insert(&headers_name, headers_schema)?;
+                    headers_name
+                };
                 package
                     .metadata
                     .fields
@@ -293,6 +338,7 @@ impl ApiPackage {
                 ),
             );
             package.operations.push(Operation {
+                resource,
                 input,
                 response_alias,
                 success_alias,
@@ -313,7 +359,22 @@ impl ApiPackage {
             self.schemas.insert(name.into(), schema).is_none(),
             "generated model names collide at {name}"
         );
+        self.owners.insert(name.into(), self.current_owner.clone());
         Ok(())
+    }
+    pub fn alias_owner(&self, name: &str) -> Option<&str> {
+        self.operations
+            .iter()
+            .find(|o| {
+                [
+                    o.response_alias.as_str(),
+                    o.success_alias.as_str(),
+                    o.error_alias.as_str(),
+                    o.result_alias.as_str(),
+                ]
+                .contains(&name)
+            })
+            .map(|o| o.resource.as_str())
     }
     pub fn identity_source(&self) -> String {
         format!(
@@ -355,26 +416,29 @@ impl ApiPackage {
             self.name
         )?;
         let mut files = BTreeMap::new();
-        files.insert(
-            "_operations/__init__.py".into(),
-            "# Generated operation metadata.\n".into(),
-        );
-        let filenames = module_names(
-            self.operations
-                .iter()
-                .map(|o| o.input.strip_suffix("Request").unwrap()),
-        );
+        let mut resources: BTreeMap<&str, Vec<&Operation>> = BTreeMap::new();
         for operation in &self.operations {
-            let name = operation.input.strip_suffix("Request").unwrap();
-            let module = format!("_operations.{}", filenames[name]);
-            files.insert(
-                format!("{}.py", module.replace('.', "/")),
-                Self::operation_source(std::slice::from_ref(operation), exports)?,
-            );
+            resources
+                .entry(&operation.resource)
+                .or_default()
+                .push(operation);
+        }
+        for (module, operations) in &resources {
+            let mut declarations = Self::operation_source(operations, exports, module)?;
+            for (alias, (target, owner)) in &self.aliases {
+                if owner == module {
+                    writeln!(
+                        declarations,
+                        "from ..{} import {target} as {alias}",
+                        exports[target]
+                    )?;
+                }
+            }
+            files.insert(format!("{}.py", module.replace('.', "/")), declarations);
             writeln!(
                 source,
                 "from .{module} import *\nfrom .{module} import OPERATIONS as _operations_{}",
-                operation.input
+                module.replace('.', "_")
             )?;
         }
         writeln!(
@@ -385,9 +449,9 @@ impl ApiPackage {
         writeln!(
             source,
             "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = tuple(_operation for _group in ({},) for _operation in _group)\n",
-            self.operations
-                .iter()
-                .map(|o| format!("_operations_{}", o.input))
+            resources
+                .keys()
+                .map(|module| format!("_operations_{}", module.replace('.', "_")))
                 .collect::<Vec<_>>()
                 .join(", ")
         )?;
@@ -403,11 +467,12 @@ impl ApiPackage {
     }
 
     fn operation_source(
-        operations: &[Operation],
+        operations: &[&Operation],
         exports: &BTreeMap<String, String>,
+        module: &str,
     ) -> Result<String> {
         let mut source = String::from(
-            "# Generated operation shard. Import the public API instead.\nfrom __future__ import annotations\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import http as _http\n",
+            "# --- Operation metadata ---\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import http as _http\n",
         );
         let imported: BTreeSet<_> = operations
             .iter()
@@ -416,6 +481,9 @@ impl ApiPackage {
             })
             .collect();
         for name in &imported {
+            if exports.get(*name).is_some_and(|owner| owner == module) {
+                continue;
+            }
             writeln!(
                 source,
                 "from ..{} import {name} as {name}",
@@ -558,19 +626,35 @@ impl ApiPackage {
             .map(String::as_str)
             .chain(operations.iter().flat_map(|o| {
                 [
-                    &o.response_alias,
-                    &o.success_alias,
-                    &o.error_alias,
-                    &o.result_alias,
+                    o.response_alias.as_str(),
+                    o.success_alias.as_str(),
+                    o.error_alias.as_str(),
+                    o.result_alias.as_str(),
                 ]
                 .into_iter()
-                .map(String::as_str)
             }))
             .map(py)
             .collect::<Vec<_>>();
-        writeln!(source, "__all__: tuple[str, ...] = {}", tuple(&public))?;
+        writeln!(source, "__all__ += {}", tuple(&public))?;
         Ok(source)
     }
+}
+
+fn resource_name(operation: &ApiOperation) -> String {
+    operation
+        .operation_id
+        .as_deref()
+        .and_then(|id| id.split_once('/').map(|(resource, _)| resource))
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            operation
+                .key
+                .path
+                .split('/')
+                .find(|s| !s.is_empty() && !s.starts_with('{'))
+        })
+        .unwrap_or("root")
+        .to_owned()
 }
 
 fn tuple(items: &[String]) -> String {

@@ -17,11 +17,15 @@ use std::{
 pub struct DataclassPackage {
     pub models: Vec<String>,
     pub files: BTreeMap<String, String>,
+    pub exports: BTreeMap<String, String>,
 }
 
 #[derive(Default)]
 pub(super) struct Parts {
     pub imports: Vec<String>,
+    pub pointers: Vec<String>,
+    pub named_declarations: BTreeMap<String, String>,
+    pub prepared: Option<super::plan::PreparedModule>,
     pub references: Vec<BTreeSet<String>>,
     pub declarations: Vec<String>,
     pub initializers: Vec<String>,

@@ -31,6 +31,7 @@ use pyo3::{exceptions::PyAttributeError, types::PyModule};
 use super::prepared_schema::{NodeExt, PreparedSchema};
 
 mod input;
+mod link;
 mod output;
 mod prepared;
 mod projection;
@@ -146,7 +147,7 @@ impl<'a> IntoIterator for &'a UnionPlan {
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 enum DiscriminatorKey {
     Null,
     Boolean(bool),
@@ -736,6 +737,7 @@ enum ConversionNode {
 }
 
 pub(crate) struct ModelConverterPlan {
+    origins: Vec<link::NodeOrigin>,
     nodes: Vec<ConversionNode>,
     conversion_validates: Vec<bool>,
     leaf_guards: Vec<Option<super::prepared_schema::Node>>,
@@ -1814,11 +1816,36 @@ pub(crate) fn compile_model_converter_plan(
     let mut nodes = Vec::with_capacity(descriptors.len());
     let node_count = descriptors.len();
     let mut schemas = HashMap::new();
+    let mut dependencies = Vec::new();
     for descriptor in descriptors {
-        nodes.push(parse_node(py, &descriptor, node_count, &mut schemas)?);
+        let tuple = descriptor.cast::<PyTuple>()?;
+        if !tuple.is_empty() && tuple.get_item(0)?.extract::<String>()? == "external" {
+            require_arity(tuple, 2, "external model node")?;
+            let model = tuple.get_item(1)?.cast_into::<PyType>()?;
+            let runtime = model
+                .getattr("__dict__")?
+                .get_item("__jsoncompat_runtime__")?;
+            let converter = runtime
+                .extract::<PyRef<'_, super::ModelRuntimePy>>()?
+                .converter(py)?;
+            if !converter.model_type()?.bind(py).is(&model) {
+                return Err(PyTypeError::new_err(
+                    "external runtime belongs to a different model",
+                ));
+            }
+            dependencies.push((nodes.len(), converter));
+            // Install this module's precomputed local decisions before linking
+            // imported nodes, whose own decisions have already been installed.
+            nodes.push(ConversionNode::Scalar {
+                kind: ScalarKind::Any,
+            });
+        } else {
+            nodes.push(parse_node(py, &descriptor, node_count, &mut schemas)?);
+        }
     }
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
     let mut plan = ModelConverterPlan {
+        origins: Vec::new(),
         conversion_validates: vec![false; nodes.len()],
         leaf_guards: vec![None; nodes.len()],
         nodes,
@@ -1829,6 +1856,7 @@ pub(crate) fn compile_model_converter_plan(
         frozen_dict_items_attribute: ModelAttribute::compile(py, frozen_dict_type, "_items")?,
     };
     plan.install_prepared_plan(prepared_plan)?;
+    plan.link_dependencies(py, dependencies);
     Ok(Arc::new(plan))
 }
 

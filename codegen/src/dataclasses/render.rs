@@ -374,81 +374,13 @@ fn render_module(
         .map(|(class, id)| format!("({}, {})", class.name, id.0))
         .collect::<Vec<_>>()
         .join(", ");
-    let render_descriptor =
-        |node: &ConversionNode, models: &[String], programs: &[String]| match node {
-            ConversionNode::Scalar { kind } => format!(
-                "({:?},)",
-                match kind {
-                    ScalarKind::Any => "any",
-                    ScalarKind::String => "str",
-                    ScalarKind::Integer => "int",
-                    ScalarKind::Number => "float",
-                    ScalarKind::Boolean => "bool",
-                    ScalarKind::Null => "null",
-                }
-            ),
-            ConversionNode::Literal { values } => format!(
-                "('literal', {})",
-                tuple(values.iter().map(python_json_literal))
-            ),
-            ConversionNode::List { item } => format!("('list', {})", item.0),
-            ConversionNode::Dict { value } => format!("('dict', {})", value.0),
-            ConversionNode::Root { model, value } => {
-                format!(
-                    "('root', {}, {}, {})",
-                    models[*model], value.0, programs[*model]
-                )
-            }
-            ConversionNode::Model {
-                model,
-                fields,
-                extra,
-            } => format!(
-                "('model', {}, {}, {}, {})",
-                models[*model],
-                tuple(fields.iter().map(|f| format!(
-                    "({}, {}, {}, {})",
-                    python_string_literal(&f.json_name),
-                    python_string_literal(&f.py_name),
-                    f.value_node.0,
-                    if f.presence.is_omittable() {
-                        "True"
-                    } else {
-                        "False"
-                    }
-                ))),
-                extra
-                    .as_ref()
-                    .map(|e| e.value_node.0.to_string())
-                    .unwrap_or_else(|| "None".into()),
-                programs[*model]
-            ),
-            ConversionNode::Union(union) => {
-                let (name, entries) = union
-                    .discriminator
-                    .as_ref()
-                    .map(|(name, entries)| {
-                        (
-                            python_string_literal(name),
-                            tuple(entries.iter().map(|(value, index)| {
-                                format!("({}, {index})", python_json_literal(value))
-                            })),
-                        )
-                    })
-                    .unwrap_or_else(|| ("None".into(), "None".into()));
-                format!(
-                    "('union', {}, {name}, {entries})",
-                    tuple(union.branches.iter().map(|id| id.0.to_string()))
-                )
-            }
-        };
     let models = classes.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
     let descriptors = if standalone {
         prepared
             .graph
             .nodes
             .iter()
-            .map(|node| render_descriptor(node, &models, &programs))
+            .map(|node| descriptor(node, &models, &programs, |id| id.0))
             .collect::<Vec<_>>()
             .join(",\n        ")
     } else {
@@ -464,7 +396,7 @@ fn render_module(
         .graph
         .nodes
         .iter()
-        .map(|node| render_descriptor(node, &model_references, &program_references))
+        .map(|node| descriptor(node, &model_references, &program_references, |id| id.0))
         .collect();
     parts.roots = prepared.roots.iter().map(|id| id.0).collect();
     let plan = serde_json::to_vec(&prepared.decisions).expect("serializable model plan");
@@ -486,6 +418,8 @@ fn render_module(
         imports = imports.replace("import collections.abc\n", "");
     }
     parts.plan = plan;
+    parts.prepared = Some(prepared);
+    parts.pointers = classes.iter().map(|c| c.schema.pointer.clone()).collect();
     finish_stage("conversion descriptors");
     Ok(DataclassModule {
         parts,
@@ -594,6 +528,83 @@ fn source_member(value_key: &str, value: &impl serde::Serialize) -> Result<Strin
         super::invalid_schema("#".into(), format!("schema is not JSON: {error}"))
     })?;
     Ok(format!("  {key}: {}", value.replace('\n', "\n  ")))
+}
+
+pub(super) fn descriptor(
+    node: &ConversionNode,
+    models: &[String],
+    programs: &[String],
+    index: impl Fn(super::plan::NodeId) -> usize,
+) -> String {
+    match node {
+        ConversionNode::Scalar { kind } => format!(
+            "({:?},)",
+            match kind {
+                ScalarKind::Any => "any",
+                ScalarKind::String => "str",
+                ScalarKind::Integer => "int",
+                ScalarKind::Number => "float",
+                ScalarKind::Boolean => "bool",
+                ScalarKind::Null => "null",
+            }
+        ),
+        ConversionNode::Literal { values } => format!(
+            "('literal', {})",
+            tuple(values.iter().map(python_json_literal))
+        ),
+        ConversionNode::List { item } => format!("('list', {})", index(*item)),
+        ConversionNode::Dict { value } => format!("('dict', {})", index(*value)),
+        ConversionNode::Root { model, value } => {
+            format!(
+                "('root', {}, {}, {})",
+                models[*model],
+                index(*value),
+                programs[*model]
+            )
+        }
+        ConversionNode::Model {
+            model,
+            fields,
+            extra,
+        } => format!(
+            "('model', {}, {}, {}, {})",
+            models[*model],
+            tuple(fields.iter().map(|f| format!(
+                "({}, {}, {}, {})",
+                python_string_literal(&f.json_name),
+                python_string_literal(&f.py_name),
+                index(f.value_node),
+                if f.presence.is_omittable() {
+                    "True"
+                } else {
+                    "False"
+                }
+            ))),
+            extra
+                .as_ref()
+                .map(|e| index(e.value_node).to_string())
+                .unwrap_or_else(|| "None".into()),
+            programs[*model]
+        ),
+        ConversionNode::Union(union) => {
+            let (name, entries) = union
+                .discriminator
+                .as_ref()
+                .map(|(name, entries)| {
+                    (
+                        python_string_literal(name),
+                        tuple(entries.iter().map(|(value, index)| {
+                            format!("({}, {index})", python_json_literal(value))
+                        })),
+                    )
+                })
+                .unwrap_or_else(|| ("None".into(), "None".into()));
+            format!(
+                "('union', {}, {name}, {entries})",
+                tuple(union.branches.iter().map(|id| index(*id).to_string()))
+            )
+        }
+    }
 }
 
 #[cfg(test)]

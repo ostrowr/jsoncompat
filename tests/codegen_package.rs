@@ -102,7 +102,7 @@ fn contents(directory: &Path) -> BTreeMap<String, Vec<u8>> {
     out
 }
 fn declaration(name: &str) -> bool {
-    name.starts_with("_models/") && !name.rsplit('/').next().unwrap().starts_with('_')
+    name.starts_with("models/") && !name.rsplit('/').next().unwrap().starts_with('_')
 }
 
 #[test]
@@ -189,11 +189,12 @@ fn older_packages_migrate_without_removing_unmanaged_files() {
         .unwrap();
         success(work.generate(&[]));
         assert!(!output.join(previous_file).exists());
-        assert!(output.join("models.py").exists());
+        assert!(output.join("models/__init__.py").exists());
         assert_eq!(
             fs::read_to_string(output.join("notes.txt")).unwrap(),
             "keep me"
         );
+        fs::create_dir_all(output.join("_models/wide")).unwrap();
         fs::write(output.join("_models/wide/notes.txt"), "nested note").unwrap();
         success(work.generate(&["--component", "Order"]));
         assert_eq!(
@@ -217,13 +218,13 @@ fn schema_chunks_share_storage_across_independent_groups_and_cache_owners() {
     let manifest: Value =
         serde_json::from_slice(&fs::read(package.join(".jsoncompat-manifest.json")).unwrap())
             .unwrap();
-    assert_eq!(manifest["version"], 5);
+    assert_eq!(manifest["version"], 6);
     let a = manifest["module_files"]["_models.a"].as_array().unwrap();
     let b = manifest["module_files"]["_models.b"].as_array().unwrap();
     let shared = a
         .iter()
         .filter_map(Value::as_str)
-        .filter(|name| name.starts_with("_schemas/") && b.contains(&json!(name)))
+        .filter(|name| name.starts_with("_data/") && b.contains(&json!(name)))
         .collect::<Vec<_>>();
     assert!(
         !shared.is_empty(),
@@ -240,7 +241,7 @@ sys.path.insert(0, sys.argv[1])
 def forbidden(*a, **k): raise AssertionError('schema introspection during model use')
 with patch.object(zlib, 'decompress', forbidden):
     from models import A
-    assert 'models._models.b' not in sys.modules
+    assert 'models.models.b' not in sys.modules
     value = {'payload': {'f000': 0, 'f001': 1, 'f002': 2}}
     first = A.from_value(value)
     from models import B
@@ -270,20 +271,27 @@ assert json.loads(source)['properties']['f002']['minimum'] == 0
     fs::write(package.join(shared[0]), "# corrupted chunk\n").unwrap();
     assert!(success(work.generate_with_group_size("1", &[])).contains("(2 rebuilt)"));
     assert_eq!(contents(&package), before);
-    fs::write(package.join("_schemas/notes.txt"), "caller owned").unwrap();
+    fs::write(package.join("_data/notes.txt"), "caller owned").unwrap();
     assert!(
         success(work.generate_with_group_size("1", &["--component", "A"])).contains("(0 rebuilt)")
     );
     for file in &shared {
-        assert_eq!(fs::read(package.join(file)).unwrap(), before[*file]);
+        let retained = fs::read_to_string(package.join(file)).unwrap();
+        let old = String::from_utf8_lossy(&before[*file]);
+        assert!(
+            retained
+                .lines()
+                .all(|line| old.lines().any(|old| old == line)),
+            "only unowned data may be pruned"
+        );
     }
-    assert!(!package.join("_models/b/__init__.py").exists());
+    assert!(!package.join("models/b.py").exists());
     success(work.generate_with_group_size("1", &["--component", "C"]));
     for file in &shared {
         assert!(!package.join(file).exists(), "last owner removed: {file}");
     }
     assert_eq!(
-        fs::read_to_string(package.join("_schemas/notes.txt")).unwrap(),
+        fs::read_to_string(package.join("_data/notes.txt")).unwrap(),
         "caller owned"
     );
 }
@@ -297,7 +305,7 @@ fn nested_output_does_not_follow_directory_symlinks() {
     let outside = work.0.join("unmanaged");
     fs::create_dir_all(&output).unwrap();
     fs::create_dir_all(&outside).unwrap();
-    std::os::unix::fs::symlink(&outside, output.join("_models")).unwrap();
+    std::os::unix::fs::symlink(&outside, output.join("models")).unwrap();
     let result = work.generate(&[]);
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("symlink"));
@@ -311,14 +319,15 @@ fn publication_preserves_unchanged_files_and_checks_all_conflicts_before_writing
     work.write(&api());
     let output = work.0.join("models");
     fs::create_dir(&output).unwrap();
-    let conflict = output.join("models.py");
+    fs::create_dir(output.join("models")).unwrap();
+    let conflict = output.join("models/__init__.py");
     fs::write(&conflict, "# caller owned\n").unwrap();
     let rejected = work.generate(&[]);
     assert!(!rejected.status.success());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("unmanaged package file"));
     assert_eq!(
         contents(&output),
-        BTreeMap::from([("models.py".into(), b"# caller owned\n".to_vec())]),
+        BTreeMap::from([("models/__init__.py".into(), b"# caller owned\n".to_vec())]),
         "a conflict discovered late in preflight must leave every generated file unpublished"
     );
     assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
@@ -484,11 +493,11 @@ else: raise AssertionError('unknown export')
     assert_eq!(
         before
             .keys()
-            .filter(|name| !name.starts_with("_schemas/"))
+            .filter(|name| !name.starts_with("_data/"))
             .collect::<Vec<_>>(),
         after
             .keys()
-            .filter(|name| !name.starts_with("_schemas/"))
+            .filter(|name| !name.starts_with("_data/"))
             .collect::<Vec<_>>(),
         "a constraint edit must not repack neighboring models"
     );
@@ -499,10 +508,10 @@ else: raise AssertionError('unknown export')
         .collect::<Vec<_>>();
     assert!(!changed.is_empty());
     assert!(
-        changed.iter().all(|name| name.starts_with("_schemas/")
+        changed.iter().all(|name| name.starts_with("_data/")
             || name.ends_with("/wide.py")
             || name.contains("_program_wide_")
-            || name.as_str() == "_models/wide/_binding.py"
+            || name.as_str() == "models/wide.py"
             || name.contains("_plan_")),
         "only Wide's prepared data and the shared decision plan should change: {changed:?}"
     );
@@ -583,19 +592,17 @@ fn split_model_artifacts_recover_missing_and_modified_chunks_and_remove_stale_on
     let before = contents(&package);
     let chunks = before
         .keys()
-        .filter(|name| name.contains("_program_wide_"))
+        .filter(|name| name.starts_with("_data/s_"))
         .collect::<Vec<_>>();
+    assert!(!chunks.is_empty());
     assert!(
-        chunks.len() > 1,
-        "a single large prepared model must span data files"
+        before["models/wide.py"].len() > 160_000,
+        "large model stays in its named component module"
     );
-    for name in &chunks {
-        assert!(before[*name].len() < 4 * 64 * 1024 + 128, "{name}");
-    }
-    fs::remove_file(package.join(chunks[0])).unwrap();
+    fs::remove_file(package.join("models/wide.py")).unwrap();
     assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
     assert_eq!(contents(&package), before);
-    fs::write(package.join(chunks[1]), "broken prepared data").unwrap();
+    fs::write(package.join("models/wide.py"), "broken prepared data").unwrap();
     assert!(success(work.generate(&[])).contains("(1 rebuilt)"));
     assert_eq!(contents(&package), before);
     success(
@@ -613,8 +620,7 @@ payload = json.loads(Path(sys.argv[1], 'payload.json').read_text())
 assert Wide.from_value(payload).to_value() == payload
 assert Wide.deserialize(Wide.from_value(payload).serialize()).to_value() == payload
 chunks = vars(Wide)['__jsoncompat_schema__']._compressed
-assert isinstance(chunks, tuple) and len(chunks) > 1
-assert all(len(chunk) <= 64 * 1024 for chunk in chunks)
+assert isinstance(chunks, tuple) and chunks
 source = Wide.__jsoncompat_schema__
 assert Wide.__jsoncompat_schema__ is source
 assert payload['marker'] in json.dumps(json.loads(source)['properties']['marker'])
@@ -628,7 +634,7 @@ assert payload['marker'] in json.dumps(json.loads(source)['properties']['marker'
     work.write(&spec);
     success(work.generate(&[]));
     let after = contents(&package);
-    assert!(chunks.iter().any(|name| !after.contains_key(*name)));
+    assert!(after["models/wide.py"].len() < before["models/wide.py"].len());
     assert!(
         before
             .keys()
@@ -674,4 +680,77 @@ assert getattr(models, sys.argv[2]).from_value(True).root is True
             .output()
             .unwrap(),
     );
+}
+
+#[test]
+fn directed_imports_link_shared_dependencies_without_loading_reverse_users() {
+    let work = Work::new();
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Directed","version":"1"},"components":{"schemas":{
+        "Leaf":{"type":"object","properties":{"n":{"type":"integer","minimum":2},"tag":{"type":"string","pattern":"^ok"}},"required":["n","tag"],"additionalProperties":false},
+        "Left":{"type":"object","properties":{"leaf":{"$ref":"#/components/schemas/Leaf"}},"required":["leaf"],"additionalProperties":false},
+        "Right":{"type":"object","properties":{"leaf":{"$ref":"#/components/schemas/Leaf"}},"required":["leaf"],"additionalProperties":false},
+        "Parent":{"type":"object","properties":{"left":{"$ref":"#/components/schemas/Left"},"right":{"$ref":"#/components/schemas/Right"},"items":{"type":"array","items":{"$ref":"#/components/schemas/Leaf"}}},"required":["left","right","items"],"additionalProperties":false},
+        "Unused":{"type":"object","properties":{"leaf":{"$ref":"#/components/schemas/Leaf"}},"required":["leaf"]}
+    }}}));
+    success(work.generate(&[]));
+    success(python_env::python_command().arg("-c").arg(r#"
+import builtins, compileall, dataclasses, gc, inspect, json, sys, zlib
+from pathlib import Path
+from typing import get_type_hints
+from unittest.mock import patch
+import jsoncompat
+from jsoncompat.codegen import dataclasses as dc
+sys.path.insert(0, sys.argv[1])
+compileall.compile_dir(str(Path(sys.argv[1], 'models')), quiet=1)
+def forbidden(*a, **k): raise AssertionError('runtime compilation')
+with patch.object(builtins, 'compile', forbidden), patch.object(dataclasses, 'dataclass', forbidden), patch.object(inspect, 'get_annotations', forbidden), patch.object(jsoncompat, 'validator_for', forbidden), patch.object(zlib, 'decompress', forbidden):
+    from models.models.leaf import Leaf
+    assert 'models.models.parent' not in sys.modules
+    from models.models.parent import Parent
+    assert 'models.models.unused' not in sys.modules
+    leaf = {'n': 3, 'tag': 'okay'}
+    value = {'left': {'leaf': leaf}, 'right': {'leaf': leaf}, 'items': [leaf]}
+    for parse, payload in ((Parent.from_value, value), (Parent.deserialize, json.dumps(value))):
+        obj = parse(payload)
+        assert type(obj.left.leaf) is type(obj.right.leaf) is type(obj.items[0]) is Leaf
+        assert obj.to_value() == value and json.loads(obj.serialize()) == value
+        gc.collect()
+        assert obj.to_value() == value
+    for invalid in ({'n': 1, 'tag': 'okay'}, {'n': 3, 'tag': 'wrong'}, {'n': True, 'tag': 'okay'}, {'n': 3, 'tag': 'okay', 'extra': 1}):
+        bad = dict(value, right={'leaf': invalid})
+        for parse, payload in ((Parent.from_value, bad), (Parent.deserialize, json.dumps(bad))):
+            try: parse(payload)
+            except (ValueError, TypeError): pass
+            else: raise AssertionError(('dependency validation omitted', bad))
+from models.models.left import Left
+assert get_type_hints(Parent)['left'] is Left
+assert get_type_hints(Left)['leaf'] is Leaf
+"#).arg(&work.0).output().unwrap());
+}
+
+#[test]
+fn external_component_nested_types_have_stable_ownership() {
+    let work = Work::new();
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"External","version":"1"},"components":{"schemas":{
+        "Remote":{"$ref":"https://example.test/remote"}, "Unrelated":{"type":"boolean"}
+    }}}));
+    fs::write(work.0.join("options.json"), json!({"resources":{"https://example.test/remote":{
+        "type":"object","properties":{"child":{"type":"object","properties":{"n":{"type":"integer","minimum":0}},"required":["n"],"additionalProperties":false}},"required":["child"],"additionalProperties":false
+    }}}).to_string()).unwrap();
+    success(work.generate(&["--schema-options", "options.json"]));
+    success(python_env::python_command().arg("-c").arg(r#"
+import sys
+from typing import get_type_hints
+sys.path.insert(0, sys.argv[1])
+from models.models.remote import Remote
+value = Remote.deserialize('{"child":{"n":1}}')
+assert value.to_value() == {'child': {'n': 1}}
+assert get_type_hints(Remote)['root'] is type(value.root)
+assert get_type_hints(type(value.root))['child'] is type(value.root.child)
+assert type(value.root.child).__module__ in {'models.models.remote', 'models.models._shared'}
+assert 'models.models.unrelated' not in sys.modules
+try: Remote.deserialize('{"child":{"n":-1}}')
+except ValueError: pass
+else: raise AssertionError('external component constraint lost')
+"#).arg(&work.0).output().unwrap());
 }

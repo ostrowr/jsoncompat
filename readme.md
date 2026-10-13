@@ -147,13 +147,12 @@ Generate an explicitly selected OpenAPI component package in the same build step
 jsoncompat codegen --openapi openapi.json --output my_models --models-per-module 128
 ```
 
-Use `from my_models import Order`. The package loads model modules on demand;
-reference-connected models share identities. Each model has one file containing
-its declaration and prepared initializer, with large prepared data stored separately.
-Identical schema chunks share storage across the package and in memory.
-Generation also reuses shared validation graphs and compressed definitions,
-while keeping all model preparation in the build step.
-`--component` selects roots and `--rename` resolves name collisions. See [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
+Import a component directly: `from my_models.models.order import Order`.
+Each named component owns one module, including its nested types. Dependencies
+keep the same class identity across imports; unrelated models stay unloaded.
+`from my_models import Order` remains available as a lazy convenience import.
+`--component` selects roots and `--rename` resolves name collisions. See
+[OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
 Generate API-scoped HTTP requests alongside the models with `--api`:
 
@@ -161,11 +160,10 @@ Generate API-scoped HTTP requests alongside the models with `--api`:
 jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
-The generated package always uses separate files for each operation and model,
-so growing an API does not turn the client into one huge file. Keep the whole
-package together; your imports stay simple: `from petstore import GetPetRequest`.
-The public barrels are `models.py` and `api.py`; private operation files have
-names such as `_operations/get_pet.py`.
+Operations share resource modules such as `operations/pets.py`; component models
+live in modules such as `models/pet.py`. Each module includes its prepared
+implementation. Shared schema data is packed separately. Publish the complete
+generated directory.
 
 Install the integration for your HTTP library, then bind your own session:
 
@@ -177,7 +175,8 @@ pip install 'jsoncompat[requests]'
 import requests
 from jsoncompat.http import bind
 from jsoncompat.http.requests import RequestsFetch
-from petstore import GetPetRequest, PetstoreAPI
+from petstore.api import PetstoreAPI
+from petstore.operations.pets import GetPetRequest
 
 with requests.Session() as session:
     client = bind(PetstoreAPI, fetch=RequestsFetch(session, "https://example.com"))

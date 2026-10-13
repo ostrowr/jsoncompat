@@ -59,7 +59,7 @@ class Package:
             self.chunks[path] = value
         return self.chunks[path]
 
-    def initializer(self, path: Path) -> tuple[bytes, bytes]:
+    def initializer(self, path: Path, *, omit_context=False) -> tuple[bytes, bytes]:
         namespace: dict[str, bytes] = {}
         schema = program = None
 
@@ -79,7 +79,7 @@ class Package:
                         key = hashlib.sha256(compressed).digest()
                         if key not in self.streams:
                             self.streams[key] = zlib.decompress(compressed)
-                        expanded.append(self.streams[key])
+                        expanded.append(schema_fragment(self.streams[key], omit_context))
                     return b"".join(expanded)
                 if node.func.attr == "join":
                     ensure(
@@ -120,6 +120,151 @@ class Package:
                     namespace[target.id] = value(node.value)
         ensure(isinstance(schema, bytes) and isinstance(program, bytes), path)
         return schema, program
+
+
+class ResourcePackage(Package):
+    """Read co-located declarations and packed constants without executing code."""
+
+    def __init__(self, root: Path):
+        super().__init__(root)
+        self.constants = {}
+        self.models = {}
+        self.aliases = {}
+        for filename in self.manifest["files"]:
+            path = root / filename
+            if not filename.startswith(("models/", "operations/", "_cycles/")) or path.suffix != ".py":
+                continue
+            namespace = {}
+            for node in ast.parse(path.read_text()).body:
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module.startswith("_data.s_"):
+                        data_path = root / (node.module.replace(".", "/") + ".py")
+                        if data_path not in self.constants:
+                            self.constants[data_path] = {
+                                item.target.id: ast.literal_eval(item.value)
+                                for item in ast.parse(data_path.read_text()).body
+                                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+                            }
+                        for alias in node.names:
+                            namespace[alias.asname or alias.name] = self.constants[data_path][alias.name]
+                    elif node.module == "models._empty_headers":
+                        for alias in node.names:
+                            if alias.asname and alias.asname != alias.name:
+                                self.aliases[alias.asname] = alias.name
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    name = node.targets[0].id
+                    if name.startswith("_jsoncompat_schema_"):
+                        def chunks(expr):
+                            ensure(isinstance(expr, ast.Tuple), (path, ast.dump(expr)))
+                            return tuple(namespace[item.id] for item in expr.elts)
+                        if isinstance(node.value, ast.Call):
+                            ensure(isinstance(node.value.func, ast.Attribute) and node.value.func.attr == "SchemaSource", path)
+                            namespace[name] = tuple(chunks(part) for part in node.value.args[0].elts)
+                        else:
+                            namespace[name] = (chunks(node.value),)
+                    elif name.startswith("_jsoncompat_program_"):
+                        model = name.removeprefix("_jsoncompat_program_")
+                        program = ast.literal_eval(node.value)
+                        ensure(isinstance(program, bytes), path)
+                        self.models[model] = (namespace[f"_jsoncompat_schema_{model}"], program)
+
+    def model(self, name, *, omit_context=False):
+        parts, program = self.models[self.aliases.get(name, name)]
+        expanded = []
+        for part in parts:
+            compressed = b"".join(part)
+            key = hashlib.sha256(compressed).digest()
+            if key not in self.streams:
+                self.streams[key] = zlib.decompress(compressed)
+            expanded.append(schema_fragment(self.streams[key], omit_context))
+        return b"".join(expanded), program
+
+
+def schema_fragment(data, omit_context):
+    if omit_context:
+        for keyword in (b'"$defs"', b'"definitions"'):
+            if data.lstrip().startswith(keyword + b": "):
+                return b"  " + keyword + b": {}"
+    return data
+
+
+def normalize_header_names(value, aliases, *, program=False):
+    def pointer(text):
+        for prefix in ("#/$defs/", "/$defs/"):
+            if isinstance(text, str) and text.startswith(prefix):
+                name, *suffix = text[len(prefix):].split("/", 1)
+                if name in aliases:
+                    return prefix + aliases[name] + ("/" + suffix[0] if suffix else "")
+        return text
+    result = copy.deepcopy(value)
+    if program:
+        for node in result["nodes"]:
+            for rule in node["rules"]:
+                if "ref" in rule:
+                    rule["ref"]["pointer"] = pointer(rule["ref"]["pointer"])
+        return result
+    if not isinstance(result, dict):
+        return result
+    # Walk schema-bearing keywords only. Objects in const/enum/examples remain
+    # literal data even when they contain keys named $ref or x-jsoncompat.
+    for key in ("properties", "patternProperties", "$defs", "definitions", "dependentSchemas"):
+        if isinstance(result.get(key), dict):
+            result[key] = {name: normalize_header_names(schema, aliases) for name, schema in result[key].items()}
+    for key in ("allOf", "anyOf", "oneOf", "prefixItems"):
+        if isinstance(result.get(key), list):
+            result[key] = [normalize_header_names(schema, aliases) for schema in result[key]]
+    for key in ("not", "if", "then", "else", "items", "contains", "additionalProperties", "unevaluatedProperties", "unevaluatedItems", "propertyNames", "contentSchema"):
+        if key in result:
+            result[key] = normalize_header_names(result[key], aliases)
+    for key in ("$ref", "$dynamicRef"):
+        if key in result:
+            result[key] = pointer(result[key])
+    metadata = result.get("x-jsoncompat")
+    if isinstance(metadata, dict) and metadata.get("kind") == "declaration":
+        if "name" in metadata:
+            metadata["name"] = aliases.get(metadata["name"], metadata["name"])
+        for key in ("stable_id", "schema_ref"):
+            if key in metadata:
+                metadata[key] = pointer(metadata[key])
+    return result
+
+
+def compare_resource_layout(old, new, output, started):
+    previous = {}
+    for group in old.manifest["modules"]:
+        for path in old.model_files(Path(*group.split("."))).values():
+            tree = ast.parse(path.read_text())
+            classes = [n.name for n in tree.body if isinstance(n, ast.ClassDef)]
+            ensure(len(classes) == 1, path)
+            previous[classes[0]] = path
+    ensure(set(previous) == (set(new.models) - set(new.aliases.values())) | set(new.aliases), "class inventory differs beyond declared empty-header aliases")
+    counts = dict(models=0, new_classes=len(new.models), empty_header_aliases=len(new.aliases),
+                  prepared_programs_byte_identical=0, schema_root_text_equal=0, prepared_node_pairs=0)
+    for name, path in sorted(previous.items()):
+        before_schema, before_program = old.initializer(path, omit_context=True)
+        after_schema, after_program = new.model(name, omit_context=True)
+        counts["schema_root_text_equal"] += before_schema == after_schema
+        # Build namespaces can differ. Compare model roots separately; every
+        # reachable dependency is checked by the complete prepared programs below.
+        roots = []
+        for schema in (before_schema, after_schema):
+            root = json.loads(schema, parse_float=Decimal)
+            if isinstance(root, dict):
+                root = {key: value for key, value in root.items() if key not in {"$defs", "definitions"}}
+            roots.append(normalize_header_names(root, new.aliases))
+        ensure(exact_json(roots[0]) == exact_json(roots[1]), (name, "model schema root differs"))
+        counts["prepared_programs_byte_identical"] += before_program == after_program
+        a, b = (normalize_header_names(json.loads(data, parse_float=Decimal), new.aliases, program=True) for data in (before_program, after_program))
+        counts["prepared_node_pairs"] += compare_programs(a, b, name)
+        counts["models"] += 1
+        if counts["models"] % 500 == 0:
+            print(json.dumps({"progress": counts["models"], "seconds": time.perf_counter() - started}), flush=True)
+    result = dict(**counts, model_schema_roots_equal=True, prepared_programs_bisimilar=True,
+                  diagnostic_normalization="only renamed empty-header definition references",
+                  before=str(old.root), after=str(new.root), seconds=time.perf_counter()-started,
+                  before_compiler=old.manifest["compiler"], after_compiler=new.manifest["compiler"])
+    output.write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result), flush=True)
 
 
 EDGE_SCALARS = {"not", "property_names", "unevaluated_properties", "unevaluated_items"}
@@ -249,6 +394,12 @@ def compare_programs(left, right, name):
 
 
 class VerifierTests(unittest.TestCase):
+    def test_empty_header_normalization_does_not_rewrite_literal_values(self):
+        aliases = {"GetPet404Headers": "JsoncompatEmptyHeaders"}
+        literal = {"const": {"$ref": "#/$defs/GetPet404Headers"}, "enum": ["GetPet404Headers", "#/$defs/GetPet404Headers"]}
+        self.assertEqual(normalize_header_names(literal, aliases), literal)
+        self.assertEqual(normalize_header_names({"$ref": "#/$defs/GetPet404Headers"}, aliases), {"$ref": "#/$defs/JsoncompatEmptyHeaders"})
+
     def test_program_reindexing_and_meaningful_changes(self) -> None:
         integer = {"types": ["integer"], "choices": None, "rules": []}
         text = {"types": ["string"], "choices": None, "rules": [{"pattern": 0}]}
@@ -390,6 +541,9 @@ def main():
         )
     started = time.perf_counter()
     old, new = Package(args.before), Package(args.after)
+    if new.manifest["version"] >= 6:
+        compare_resource_layout(old, ResourcePackage(args.after), args.output, started)
+        return
     ensure(
         old.manifest["modules"].keys() == new.manifest["modules"].keys(),
         "old.manifest['modules'].keys() == new.manifest['modules'].keys()",

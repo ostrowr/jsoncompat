@@ -15,6 +15,7 @@ pub use dataclasses::{
     generate_dataclass_declarations, generate_dataclass_declarations_with_metadata,
     generate_dataclass_models, generate_dataclass_models_from_document,
     generate_dataclass_module_from_document, generate_dataclass_package_declarations_with_metadata,
+    generate_dataclass_resource_package_with_metadata,
 };
 use serde::{Deserialize, Serialize};
 
