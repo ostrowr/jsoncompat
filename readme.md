@@ -162,8 +162,7 @@ jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 
 Operations share resource modules such as `operations/pets.py`; component models
 live in modules such as `models/pet.py`. Each module includes its prepared
-implementation. Shared schema data is packed separately. Publish the complete
-generated directory.
+implementation. Publish the complete generated directory.
 
 Browse the [checked-in Petstore client](examples/openapi_client/petstore/) and
 [run its examples](examples/openapi_client/README.md) with aiohttp, HTTPX, or

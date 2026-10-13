@@ -133,6 +133,44 @@ fn cached_leaves_and_parallel_namespaces_preserve_context_and_first_errors() {
 }
 
 #[test]
+fn plain_objects_preserve_full_rewrite_results_with_metadata_and_references() {
+    let base = json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema#",
+        "$defs": {"a/b~c": {"type":["string", "null"], "minLength":3}},
+        "definitions": {"reject":false},
+        "type":"object",
+        "properties": {"nested":{"type":"object", "additionalProperties":false},
+            "ref":{"$ref":"#/$defs/a~1b~0c"}},
+        "x-jsoncompat":{"kind":"declaration", "name":"Container"}
+    });
+    let mut cases = vec![base.clone(), json!({"type":"object"})];
+    for (key, value) in [
+        ("additionalProperties", json!(false)),
+        (
+            "additionalProperties",
+            json!({"type":"integer", "minimum":2}),
+        ),
+        ("minProperties", json!(0)),
+        ("minProperties", json!(4)),
+        ("required", json!(["missing", "ref"])),
+        ("unevaluatedProperties", json!(false)),
+        ("$ref", json!("#/properties/nested")),
+        ("not", json!(true)),
+    ] {
+        let mut case = base.clone();
+        case[key] = value;
+        cases.push(case);
+    }
+    for raw in cases {
+        assert_eq!(
+            canonicalize_schema(&raw).unwrap(),
+            super::canonicalize_schema_with_optimizations(&raw, false).unwrap(),
+            "{raw}"
+        );
+    }
+}
+
+#[test]
 fn canonicalize_every_fuzz_fixture_schema_preserves_validation_semantics()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut files = Vec::new();

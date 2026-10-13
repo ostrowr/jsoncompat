@@ -75,10 +75,10 @@ impl SchemaValidationCache {
         {
             return false;
         }
-        let mut reused = Vec::new();
+        let mut reused = BTreeSet::new();
         for (name, schema) in definitions {
             if let Some(previous) = self.definitions.get(name) {
-                if *previous != without_declaration_metadata(schema) {
+                if !matches_without_declaration_metadata(previous, schema) {
                     return false;
                 }
                 // A reused definition must retain its entire dependency closure
@@ -91,21 +91,66 @@ impl SchemaValidationCache {
                 {
                     return false;
                 }
-                reused.push(name.clone());
+                reused.insert(name.as_str());
             }
         }
         if reused.is_empty() {
             return false;
         }
-        let mut remaining = raw.clone();
-        let definitions = remaining["$defs"].as_object_mut().expect("checked above");
-        for name in reused {
-            definitions.insert(name, Value::Bool(true));
-        }
+        // Do not deep-copy the proven definitions just to discard their copies.
+        let remaining = Value::Object(
+            raw.as_object()
+                .expect("definitions object")
+                .iter()
+                .map(|(key, value)| {
+                    let value = if key == "$defs" {
+                        Value::Object(
+                            definitions
+                                .iter()
+                                .map(|(name, schema)| {
+                                    (
+                                        name.clone(),
+                                        if reused.contains(name.as_str()) {
+                                            Value::Bool(true)
+                                        } else {
+                                            schema.clone()
+                                        },
+                                    )
+                                })
+                                .collect(),
+                        )
+                    } else {
+                        value.clone()
+                    };
+                    (key.clone(), value)
+                })
+                .collect(),
+        );
         // New wrappers and definitions are still checked by the same backend.
         // On failure the caller repeats the original path for exact diagnostics.
         compile(&remaining).is_ok()
     }
+}
+
+fn matches_without_declaration_metadata(previous: &Value, value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return previous == value;
+    };
+    if object
+        .keys()
+        .all(|key| matches!(key.as_str(), "allOf" | "x-jsoncompat"))
+        && let Some(values) = object.get("allOf").and_then(Value::as_array)
+        && values.len() == 1
+        && values[0].is_boolean()
+    {
+        return previous == &values[0];
+    }
+    previous.as_object().is_some_and(|previous| {
+        previous.len() == object.len() - usize::from(object.contains_key("x-jsoncompat"))
+            && previous
+                .iter()
+                .all(|(key, value)| object.get(key) == Some(value))
+    })
 }
 
 fn without_declaration_metadata(value: &Value) -> Value {
@@ -159,9 +204,7 @@ fn plain_references(schema: &Value, names: &mut BTreeSet<String>) -> bool {
         };
         names.insert(name);
     }
-    references::children(schema)
-        .iter()
-        .all(|(_, child)| plain_references(child, names))
+    references::child_values(schema).all(|(_, child)| plain_references(child, names))
 }
 
 #[cfg(test)]
@@ -214,6 +257,32 @@ mod tests {
             }
             (Err(ordinary), Err(reused)) => assert_eq!(ordinary.to_string(), reused.to_string()),
             _ => panic!("cached validation changed schema acceptance: {raw}"),
+        }
+    }
+
+    #[test]
+    fn borrowed_definition_comparison_matches_metadata_stripping() {
+        let definitions = [
+            json!(false),
+            json!(true),
+            json!({}),
+            json!({"x-jsoncompat":{"name":"OnlyMetadata"}}),
+            json!({"allOf":[false], "x-jsoncompat":{"name":"Reject"}}),
+            json!({"allOf":[true]}),
+            json!({"allOf":[true], "type":"object"}),
+            json!({"allOf":[true, false]}),
+            json!({"type":"object", "properties":{"a/b~c":{"type":"string"}}, "x-jsoncompat":{"name":"Record"}}),
+            json!({"type":"object", "properties":{"a/b~c":{"type":"integer"}}}),
+        ];
+        for original in &definitions {
+            let previous = without_declaration_metadata(original);
+            for candidate in &definitions {
+                assert_eq!(
+                    matches_without_declaration_metadata(&previous, candidate),
+                    previous == without_declaration_metadata(candidate),
+                    "{original} versus {candidate}"
+                );
+            }
         }
     }
 

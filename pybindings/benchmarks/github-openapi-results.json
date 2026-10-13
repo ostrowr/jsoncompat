@@ -2,1043 +2,55 @@
   "platform": "macOS-26.6.2-arm64-arm-64bit",
   "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
   "source_sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
-  "method": "Sequential warm-filesystem release builds; three fresh generation directories and five fresh import processes per mode.",
+  "baseline_revision": "9165c10e5dcc65a3967a02aa4602854f8a98b3ce",
+  "method": "Sequential warm-filesystem release builds; three fresh generation directories and five fresh import processes per mode. Identical Python runtime for both variants; generated artifacts are byte-identical.",
   "variants": {
     "before": {
-      "compiler_sha256": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f",
-      "cases": {
-        "models": {
-          "generation_samples": [
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/models.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/github_models"
-              ],
-              "seconds": 2.5101052499958314,
-              "exit_code": 0,
-              "max_rss_bytes": 767213568
-            },
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/models.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/repeat_models_1"
-              ],
-              "seconds": 2.1477794160018675,
-              "exit_code": 0,
-              "max_rss_bytes": 735313920
-            },
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/models.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/repeat_models_2"
-              ],
-              "seconds": 2.3080980419763364,
-              "exit_code": 0,
-              "max_rss_bytes": 763707392
-            }
-          ],
-          "generation_median_seconds": 2.3080980419763364,
-          "inventory": {
-            "files": 999,
-            "bytes": 29874380,
-            "python_files": 997,
-            "python_bytes": 29250021,
-            "largest_files": [
-              [
-                2381001,
-                "_data/s_6.py"
-              ],
-              [
-                658623,
-                "models/webhook_pull_request_review_request_removed.py"
-              ],
-              [
-                654931,
-                "models/webhook_pull_request_review_requested.py"
-              ],
-              [
-                624359,
-                ".jsoncompat-manifest.json"
-              ],
-              [
-                520254,
-                "_data/s_4.py"
-              ],
-              [
-                421458,
-                "_data/s_7.py"
-              ],
-              [
-                386157,
-                "_data/s_3.py"
-              ],
-              [
-                375253,
-                "_data/s_9.py"
-              ],
-              [
-                363895,
-                "_data/s_2.py"
-              ],
-              [
-                333950,
-                "_data/s_5.py"
-              ]
-            ],
-            "largest_python_file": [
-              2381001,
-              "_data/s_6.py"
-            ],
-            "p95_python_bytes": 124515,
-            "binding_groups": 4,
-            "declarations": 3133,
-            "component_modules": 973,
-            "resource_modules": 0,
-            "schema_storage_bytes": 7195721,
-            "schema_chunk_files": 16,
-            "empty_header_models": 0
-          },
-          "import_source": {
-            "samples": [
-              {
-                "package_seconds": 0.004083417006768286,
-                "load_seconds": 1.1616028749849647
-              },
-              {
-                "package_seconds": 0.0042085000313818455,
-                "load_seconds": 1.1497771249851212
-              },
-              {
-                "package_seconds": 0.004242833994794637,
-                "load_seconds": 1.1699932080227882
-              },
-              {
-                "package_seconds": 0.00428287498652935,
-                "load_seconds": 1.1678960000281222
-              },
-              {
-                "package_seconds": 0.004259417008142918,
-                "load_seconds": 1.1496949580032378
-              }
-            ],
-            "median_seconds": 1.1616028749849647
-          },
-          "import_bytecode": {
-            "samples": [
-              {
-                "package_seconds": 0.000618667050730437,
-                "load_seconds": 0.2698422080138698
-              },
-              {
-                "package_seconds": 0.00055854202946648,
-                "load_seconds": 0.27088033297332004
-              },
-              {
-                "package_seconds": 0.00062112498562783,
-                "load_seconds": 0.27178641699720174
-              },
-              {
-                "package_seconds": 0.0005876250215806067,
-                "load_seconds": 0.2722453329479322
-              },
-              {
-                "package_seconds": 0.0005826249835081398,
-                "load_seconds": 0.2663286250317469
-              }
-            ],
-            "median_seconds": 0.27088033297332004
-          },
-          "selective-import_source": {
-            "samples": [
-              {
-                "load_seconds": 0.023824334028176963,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.02361249999376014,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.02298516599694267,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.02391745802015066,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.023733292007818818,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              }
-            ],
-            "median_seconds": 0.023733292007818818
-          },
-          "selective-import_bytecode": {
-            "samples": [
-              {
-                "load_seconds": 0.015949291992001235,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.017044875014107674,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.01669454202055931,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.01696820801589638,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              },
-              {
-                "load_seconds": 0.015915874973870814,
-                "loaded_models": 1,
-                "loaded_modules": 5
-              }
-            ],
-            "median_seconds": 0.01669454202055931
-          },
-          "primary_stage_timings": [
-            {
-              "stage": "validate OpenAPI document",
-              "seconds": 0.696893
-            },
-            {
-              "stage": "prepare operation contracts",
-              "seconds": 0.000128
-            },
-            {
-              "stage": "group component schemas",
-              "seconds": 0.06251
-            },
-            {
-              "stage": "prepare output and compiler fingerprint",
-              "seconds": 0.031289
-            },
-            {
-              "stage": "_models.actions_artifact_and_log_retention: prepare group and check cache",
-              "seconds": 0.000256
-            },
-            {
-              "stage": "_models.actions_artifact_and_log_retention: validate schema document",
-              "seconds": 0.001865
-            },
-            {
-              "stage": "_models.actions_artifact_and_log_retention: generate and render prepared models",
-              "seconds": 0.003038
-            },
-            {
-              "stage": "_models.actions_artifact_and_log_retention: stage package files",
-              "seconds": 0.002656
-            },
-            {
-              "stage": "_models.actions_policy: prepare group and check cache",
-              "seconds": 0.011715
-            },
-            {
-              "stage": "_models.actions_policy: validate schema document",
-              "seconds": 0.316284
-            },
-            {
-              "stage": "_models.actions_policy: generate and render prepared models",
-              "seconds": 0.684009
-            },
-            {
-              "stage": "_models.actions_policy: stage package files",
-              "seconds": 0.116147
-            },
-            {
-              "stage": "_models.actions_public_key: prepare group and check cache",
-              "seconds": 0.017424
-            },
-            {
-              "stage": "_models.actions_public_key: validate schema document",
-              "seconds": 0.013539
-            },
-            {
-              "stage": "_models.actions_public_key: generate and render prepared models",
-              "seconds": 0.022717
-            },
-            {
-              "stage": "_models.actions_public_key: stage package files",
-              "seconds": 0.012463
-            },
-            {
-              "stage": "_models.interaction_expiry: prepare group and check cache",
-              "seconds": 0.001931
-            },
-            {
-              "stage": "_models.interaction_expiry: validate schema document",
-              "seconds": 0.012755
-            },
-            {
-              "stage": "_models.interaction_expiry: generate and render prepared models",
-              "seconds": 0.021722
-            },
-            {
-              "stage": "_models.interaction_expiry: stage package files",
-              "seconds": 0.011902
-            },
-            {
-              "stage": "render and stage package exports",
-              "seconds": 0.025727
-            },
-            {
-              "stage": "check publication paths",
-              "seconds": 0.002414
-            },
-            {
-              "stage": "publish package files",
-              "seconds": 0.001009
-            },
-            {
-              "stage": "remove obsolete files and publish manifest",
-              "seconds": 0.012463
-            }
-          ],
-          "primary_model_timings": [
-            {
-              "stage": "prepare",
-              "seconds": 0.001
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.0
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.0
-            },
-            {
-              "stage": "schema sources",
-              "seconds": 0.001
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.0
-            },
-            {
-              "stage": "prepare",
-              "seconds": 0.22
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.03
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.012
-            },
-            {
-              "stage": "schema sources",
-              "seconds": 0.125
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.011
-            },
-            {
-              "stage": "prepare",
-              "seconds": 0.007
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.001
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.0
-            },
-            {
-              "stage": "schema sources",
-              "seconds": 0.004
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.001
-            },
-            {
-              "stage": "prepare",
-              "seconds": 0.007
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.001
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.0
-            },
-            {
-              "stage": "schema sources",
-              "seconds": 0.004
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.001
-            }
-          ]
-        },
-        "issues": {
-          "generation_samples": [
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/issues.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/github_issues",
-                "--api",
-                "GitHub",
-                "--component",
-                "basic-error"
-              ],
-              "seconds": 1.1028460829984397,
-              "exit_code": 0,
-              "max_rss_bytes": 400539648
-            },
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/issues.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/repeat_issues_1",
-                "--api",
-                "GitHub",
-                "--component",
-                "basic-error"
-              ],
-              "seconds": 1.1066106249927543,
-              "exit_code": 0,
-              "max_rss_bytes": 399851520
-            },
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/issues.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/repeat_issues_2",
-                "--api",
-                "GitHub",
-                "--component",
-                "basic-error"
-              ],
-              "seconds": 1.1030043750070035,
-              "exit_code": 0,
-              "max_rss_bytes": 427933696
-            }
-          ],
-          "generation_median_seconds": 1.1030043750070035,
-          "inventory": {
-            "files": 105,
-            "bytes": 3682828,
-            "python_files": 103,
-            "python_bytes": 3552848,
-            "largest_files": [
-              [
-                1824260,
-                "operations/issues.py"
-              ],
-              [
-                188069,
-                "_data/s_1.py"
-              ],
-              [
-                129980,
-                ".jsoncompat-manifest.json"
-              ],
-              [
-                82542,
-                "__init__.pyi"
-              ],
-              [
-                66840,
-                "models/timeline_issue_events.py"
-              ],
-              [
-                61101,
-                "models/__init__.pyi"
-              ],
-              [
-                51985,
-                "_exports.py"
-              ],
-              [
-                43883,
-                "models/issue_event_for_issue.py"
-              ],
-              [
-                42517,
-                "_data/s_3.py"
-              ],
-              [
-                41568,
-                "models/timeline_cross_referenced_event.py"
-              ]
-            ],
-            "largest_python_file": [
-              1824260,
-              "operations/issues.py"
-            ],
-            "p95_python_bytes": 43883,
-            "binding_groups": 1,
-            "declarations": 473,
-            "component_modules": 76,
-            "resource_modules": 1,
-            "schema_storage_bytes": 694557,
-            "schema_chunk_files": 16,
-            "empty_header_models": 1
-          },
-          "import_source": {
-            "samples": [
-              {
-                "package_seconds": 0.0038400409976020455,
-                "load_seconds": 0.1690489999600686
-              },
-              {
-                "package_seconds": 0.0037944579962641,
-                "load_seconds": 0.1667547920369543
-              },
-              {
-                "package_seconds": 0.004047207999974489,
-                "load_seconds": 0.17172066704370081
-              },
-              {
-                "package_seconds": 0.003945791977457702,
-                "load_seconds": 0.16939066699706018
-              },
-              {
-                "package_seconds": 0.0038909169961698353,
-                "load_seconds": 0.17001379100838676
-              }
-            ],
-            "median_seconds": 0.16939066699706018
-          },
-          "import_bytecode": {
-            "samples": [
-              {
-                "package_seconds": 0.0005240840255282819,
-                "load_seconds": 0.0833167500095442
-              },
-              {
-                "package_seconds": 0.00067108403891325,
-                "load_seconds": 0.08250200003385544
-              },
-              {
-                "package_seconds": 0.0005370840081013739,
-                "load_seconds": 0.08166245801839978
-              },
-              {
-                "package_seconds": 0.0005338750197552145,
-                "load_seconds": 0.08240216702688485
-              },
-              {
-                "package_seconds": 0.0005250840331427753,
-                "load_seconds": 0.08197154197841883
-              }
-            ],
-            "median_seconds": 0.08240216702688485
-          },
-          "selective-import_source": {
-            "samples": [
-              {
-                "load_seconds": 0.13465916604036465,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.13617437495850027,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.13523070799419656,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.1362527909805067,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.13384195900289342,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              }
-            ],
-            "median_seconds": 0.13523070799419656
-          },
-          "selective-import_bytecode": {
-            "samples": [
-              {
-                "load_seconds": 0.04694754199590534,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.046403750020544976,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.044734499999322,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.04705279099289328,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.04735458397772163,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              }
-            ],
-            "median_seconds": 0.04694754199590534
-          },
-          "primary_stage_timings": [
-            {
-              "stage": "validate OpenAPI document",
-              "seconds": 0.69845
-            },
-            {
-              "stage": "prepare operation contracts",
-              "seconds": 0.10434
-            },
-            {
-              "stage": "group component schemas",
-              "seconds": 0.066538
-            },
-            {
-              "stage": "prepare output and compiler fingerprint",
-              "seconds": 0.030737
-            },
-            {
-              "stage": "_models.shared: prepare group and check cache",
-              "seconds": 0.002353
-            },
-            {
-              "stage": "_models.shared: validate schema document",
-              "seconds": 0.032906
-            },
-            {
-              "stage": "_models.shared: generate and render prepared models",
-              "seconds": 0.061307
-            },
-            {
-              "stage": "_models.shared: stage package files",
-              "seconds": 0.012091
-            },
-            {
-              "stage": "render and stage package exports",
-              "seconds": 0.017324
-            },
-            {
-              "stage": "check publication paths",
-              "seconds": 0.000283
-            },
-            {
-              "stage": "publish package files",
-              "seconds": 0.000881
-            },
-            {
-              "stage": "remove obsolete files and publish manifest",
-              "seconds": 0.005097
-            }
-          ],
-          "primary_model_timings": [
-            {
-              "stage": "prepare",
-              "seconds": 0.023
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.003
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.002
-            },
-            {
-              "stage": "schema sources",
-              "seconds": 0.01
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.001
-            }
-          ]
-        },
-        "client": {
-          "generation_samples": [
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/client.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/github_client",
-                "--api",
-                "GitHub"
-              ],
-              "seconds": 4.243241166986991,
-              "exit_code": 0,
-              "max_rss_bytes": 1294680064
-            },
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/client.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/repeat_client_1",
-                "--api",
-                "GitHub"
-              ],
-              "seconds": 4.453943625034299,
-              "exit_code": 0,
-              "max_rss_bytes": 1309671424
-            },
-            {
-              "command": [
-                "/tmp/jsoncompat-with-schema",
-                "codegen",
-                "--openapi",
-                "/tmp/jsoncompat-schema-storage/before/client.json",
-                "--output",
-                "/tmp/jsoncompat-schema-storage/before/repeat_client_2",
-                "--api",
-                "GitHub"
-              ],
-              "seconds": 4.019766915997025,
-              "exit_code": 0,
-              "max_rss_bytes": 1292779520
-            }
-          ],
-          "generation_median_seconds": 4.243241166986991,
-          "inventory": {
-            "files": 1047,
-            "bytes": 70939821,
-            "python_files": 1045,
-            "python_bytes": 68322216,
-            "largest_files": [
-              [
-                4197964,
-                "_data/s_6.py"
-              ],
-              [
-                3718810,
-                "operations/repos.py"
-              ],
-              [
-                2893930,
-                "operations/actions.py"
-              ],
-              [
-                2617605,
-                ".jsoncompat-manifest.json"
-              ],
-              [
-                1989996,
-                "__init__.pyi"
-              ],
-              [
-                1979422,
-                "operations/orgs.py"
-              ],
-              [
-                1823437,
-                "operations/issues.py"
-              ],
-              [
-                1464014,
-                "models/__init__.pyi"
-              ],
-              [
-                1363022,
-                "operations/codespaces.py"
-              ],
-              [
-                1224173,
-                "_exports.py"
-              ]
-            ],
-            "largest_python_file": [
-              4197964,
-              "_data/s_6.py"
-            ],
-            "p95_python_bytes": 285109,
-            "binding_groups": 1,
-            "declarations": 9124,
-            "component_modules": 974,
-            "resource_modules": 45,
-            "schema_storage_bytes": 14944836,
-            "schema_chunk_files": 16,
-            "empty_header_models": 1
-          },
-          "import_source": {
-            "samples": [
-              {
-                "package_seconds": 0.06004416599171236,
-                "load_seconds": 2.1023459999705665
-              },
-              {
-                "package_seconds": 0.059625291964039207,
-                "load_seconds": 2.0982401249930263
-              },
-              {
-                "package_seconds": 0.06138004100648686,
-                "load_seconds": 2.0998691659769975
-              },
-              {
-                "package_seconds": 0.06219504098407924,
-                "load_seconds": 2.1071753340074793
-              },
-              {
-                "package_seconds": 0.06039120798232034,
-                "load_seconds": 2.1084590000100434
-              }
-            ],
-            "median_seconds": 2.1023459999705665
-          },
-          "import_bytecode": {
-            "samples": [
-              {
-                "package_seconds": 0.006477999966591597,
-                "load_seconds": 0.8754955410258844
-              },
-              {
-                "package_seconds": 0.0063675420242361724,
-                "load_seconds": 0.8720802090247162
-              },
-              {
-                "package_seconds": 0.006449999986216426,
-                "load_seconds": 0.8756850410136394
-              },
-              {
-                "package_seconds": 0.006265708012506366,
-                "load_seconds": 0.8705141249811277
-              },
-              {
-                "package_seconds": 0.006201916025020182,
-                "load_seconds": 0.868391124997288
-              }
-            ],
-            "median_seconds": 0.8720802090247162
-          },
-          "selective-import_source": {
-            "samples": [
-              {
-                "load_seconds": 0.3111053330358118,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.3080399170285091,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.30786699999589473,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.3067646659910679,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.30861112498678267,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              }
-            ],
-            "median_seconds": 0.3080399170285091
-          },
-          "selective-import_bytecode": {
-            "samples": [
-              {
-                "load_seconds": 0.057256209023762494,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.05866208299994469,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.056273541995324194,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.05862429097760469,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              },
-              {
-                "load_seconds": 0.05863358301576227,
-                "loaded_models": 442,
-                "loaded_modules": 80
-              }
-            ],
-            "median_seconds": 0.05862429097760469
-          },
-          "primary_stage_timings": [
-            {
-              "stage": "validate OpenAPI document",
-              "seconds": 0.8094
-            },
-            {
-              "stage": "prepare operation contracts",
-              "seconds": 0.16794
-            },
-            {
-              "stage": "group component schemas",
-              "seconds": 0.096416
-            },
-            {
-              "stage": "prepare output and compiler fingerprint",
-              "seconds": 0.035646
-            },
-            {
-              "stage": "_models.shared: prepare group and check cache",
-              "seconds": 0.04434
-            },
-            {
-              "stage": "_models.shared: validate schema document",
-              "seconds": 0.865375
-            },
-            {
-              "stage": "_models.shared: generate and render prepared models",
-              "seconds": 1.592144
-            },
-            {
-              "stage": "_models.shared: stage package files",
-              "seconds": 0.1784
-            },
-            {
-              "stage": "render and stage package exports",
-              "seconds": 0.331321
-            },
-            {
-              "stage": "check publication paths",
-              "seconds": 0.002388
-            },
-            {
-              "stage": "publish package files",
-              "seconds": 0.001125
-            },
-            {
-              "stage": "remove obsolete files and publish manifest",
-              "seconds": 0.026291
-            }
-          ],
-          "primary_model_timings": [
-            {
-              "stage": "prepare",
-              "seconds": 0.553
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.076
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.029
-            },
-            {
-              "stage": "schema sources",
-              "seconds": 0.252
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.024
-            }
-          ]
-        }
-      }
-    },
-    "after": {
       "compiler_sha256": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
       "cases": {
         "models": {
           "generation_samples": [
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/tmp/jsoncompat-schema-storage/after/models.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/models.json",
                 "--output",
-                "/tmp/jsoncompat-schema-storage/after/github_models"
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/github_models"
               ],
-              "seconds": 2.3361906250356697,
+              "seconds": 1.9128619579714723,
               "exit_code": 0,
-              "max_rss_bytes": 652034048
+              "max_rss_bytes": 696811520
             },
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/tmp/jsoncompat-schema-storage/after/models.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/models.json",
                 "--output",
-                "/tmp/jsoncompat-schema-storage/after/repeat_models_1"
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_models_1"
               ],
-              "seconds": 1.9787249169894494,
+              "seconds": 1.9350562079926021,
               "exit_code": 0,
-              "max_rss_bytes": 691503104
+              "max_rss_bytes": 690847744
             },
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/tmp/jsoncompat-schema-storage/after/models.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/models.json",
                 "--output",
-                "/tmp/jsoncompat-schema-storage/after/repeat_models_2"
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_models_2"
               ],
-              "seconds": 1.9742993750260212,
+              "seconds": 1.8963105420116335,
               "exit_code": 0,
-              "max_rss_bytes": 692649984
+              "max_rss_bytes": 694108160
             }
           ],
-          "generation_median_seconds": 1.9787249169894494,
+          "generation_median_seconds": 1.9128619579714723,
           "inventory": {
             "files": 982,
             "bytes": 21030811,
@@ -1102,112 +114,112 @@
           "import_source": {
             "samples": [
               {
-                "package_seconds": 0.004273500002454966,
-                "load_seconds": 1.0547096250229515
+                "package_seconds": 0.00398845796007663,
+                "load_seconds": 1.4029088329989463
               },
               {
-                "package_seconds": 0.004160666954703629,
-                "load_seconds": 1.0479597910307348
+                "package_seconds": 0.003928999998606741,
+                "load_seconds": 0.9904032080085017
               },
               {
-                "package_seconds": 0.003970708989072591,
-                "load_seconds": 1.0640468340134248
+                "package_seconds": 0.004070041002705693,
+                "load_seconds": 0.9994744170107879
               },
               {
-                "package_seconds": 0.004217583977151662,
-                "load_seconds": 1.0511823749984615
+                "package_seconds": 0.003921166004147381,
+                "load_seconds": 1.0024573749979027
               },
               {
-                "package_seconds": 0.00441937503637746,
-                "load_seconds": 1.0627663329942152
+                "package_seconds": 0.004052333009894937,
+                "load_seconds": 1.0013602919643745
               }
             ],
-            "median_seconds": 1.0547096250229515
+            "median_seconds": 1.0013602919643745
           },
           "import_bytecode": {
             "samples": [
               {
-                "package_seconds": 0.0006031660013832152,
-                "load_seconds": 0.2610690000001341
+                "package_seconds": 0.0005677919834852219,
+                "load_seconds": 0.24427841696888208
               },
               {
-                "package_seconds": 0.0006664579850621521,
-                "load_seconds": 0.2547224590089172
+                "package_seconds": 0.000558875035494566,
+                "load_seconds": 0.24464237497886643
               },
               {
-                "package_seconds": 0.0006034169928170741,
-                "load_seconds": 0.25376591697568074
+                "package_seconds": 0.0005604170146398246,
+                "load_seconds": 0.24069162498926744
               },
               {
-                "package_seconds": 0.0006374590448103845,
-                "load_seconds": 0.2579677919857204
+                "package_seconds": 0.0005663750343956053,
+                "load_seconds": 0.23914633295498788
               },
               {
-                "package_seconds": 0.0006401250138878822,
-                "load_seconds": 0.26172708300873637
+                "package_seconds": 0.0005564999883063138,
+                "load_seconds": 0.24827820900827646
               }
             ],
-            "median_seconds": 0.2579677919857204
+            "median_seconds": 0.24427841696888208
           },
           "selective-import_source": {
             "samples": [
               {
-                "load_seconds": 0.020630083978176117,
+                "load_seconds": 0.020238832978066057,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.020184958004392684,
+                "load_seconds": 0.02004204096738249,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.02010112500283867,
+                "load_seconds": 0.019870833959430456,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.01955774996895343,
+                "load_seconds": 0.01920149999205023,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.01978616596898064,
+                "load_seconds": 0.01905070903012529,
                 "loaded_models": 1,
                 "loaded_modules": 3
               }
             ],
-            "median_seconds": 0.02010112500283867
+            "median_seconds": 0.019870833959430456
           },
           "selective-import_bytecode": {
             "samples": [
               {
-                "load_seconds": 0.015792917052749544,
+                "load_seconds": 0.015867542009800673,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.0160733750090003,
+                "load_seconds": 0.01571329199941829,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.016296290967147797,
+                "load_seconds": 0.015778958972077817,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.015856500016525388,
+                "load_seconds": 0.015242624969687313,
                 "loaded_models": 1,
                 "loaded_modules": 3
               },
               {
-                "load_seconds": 0.01537074998486787,
+                "load_seconds": 0.015529791999142617,
                 "loaded_models": 1,
                 "loaded_modules": 3
               }
             ],
-            "median_seconds": 0.015856500016525388
+            "median_seconds": 0.01571329199941829
           },
           "ty": {
             "command": [
@@ -1223,120 +235,120 @@
               "ty",
               "check",
               "--project",
-              "/private/tmp/jsoncompat-schema-storage/after",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
               "--python-version",
               "3.12",
               "--extra-search-path",
               "/Users/robbie/developer/jsoncompat/pybindings",
               "--extra-search-path",
-              "/private/tmp/jsoncompat-schema-storage/after",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
               "--error",
               "all",
               "--output-format",
               "gitlab",
-              "/private/tmp/jsoncompat-schema-storage/after/github_models",
-              "/private/tmp/jsoncompat-schema-storage/after/models_consumer.py"
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/github_models",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/models_consumer.py"
             ],
-            "seconds": 0.5082809170125984,
+            "seconds": 0.3270637500099838,
             "exit_code": 0,
-            "max_rss_bytes": 289734656
+            "max_rss_bytes": 292782080
           },
           "primary_stage_timings": [
             {
               "stage": "validate OpenAPI document",
-              "seconds": 0.699912
+              "seconds": 0.679269
             },
             {
               "stage": "prepare operation contracts",
-              "seconds": 9e-05
+              "seconds": 8.7e-05
             },
             {
               "stage": "group component schemas",
-              "seconds": 0.066396
+              "seconds": 0.064034
             },
             {
               "stage": "prepare output and compiler fingerprint",
-              "seconds": 0.030907
+              "seconds": 0.030689
             },
             {
               "stage": "_models.actions_artifact_and_log_retention: prepare group and check cache",
-              "seconds": 0.000287
+              "seconds": 0.000236
             },
             {
               "stage": "_models.actions_artifact_and_log_retention: validate schema document",
-              "seconds": 0.001719
+              "seconds": 0.001756
             },
             {
               "stage": "_models.actions_artifact_and_log_retention: generate and render prepared models",
-              "seconds": 0.002255
+              "seconds": 0.002438
             },
             {
               "stage": "_models.actions_artifact_and_log_retention: stage package files",
-              "seconds": 0.00262
+              "seconds": 0.002455
             },
             {
               "stage": "_models.actions_policy: prepare group and check cache",
-              "seconds": 0.012506
+              "seconds": 0.012352
             },
             {
               "stage": "_models.actions_policy: validate schema document",
-              "seconds": 0.315059
+              "seconds": 0.312005
             },
             {
               "stage": "_models.actions_policy: generate and render prepared models",
-              "seconds": 0.516936
+              "seconds": 0.505108
             },
             {
               "stage": "_models.actions_policy: stage package files",
-              "seconds": 0.111367
+              "seconds": 0.102163
             },
             {
               "stage": "_models.actions_public_key: prepare group and check cache",
-              "seconds": 0.02908
+              "seconds": 0.033344
             },
             {
               "stage": "_models.actions_public_key: validate schema document",
-              "seconds": 0.013213
+              "seconds": 0.012999
             },
             {
               "stage": "_models.actions_public_key: generate and render prepared models",
-              "seconds": 0.017452
+              "seconds": 0.016461
             },
             {
               "stage": "_models.actions_public_key: stage package files",
-              "seconds": 0.013175
+              "seconds": 0.01039
             },
             {
               "stage": "_models.interaction_expiry: prepare group and check cache",
-              "seconds": 0.00182
+              "seconds": 0.001661
             },
             {
               "stage": "_models.interaction_expiry: validate schema document",
-              "seconds": 0.013092
+              "seconds": 0.012536
             },
             {
               "stage": "_models.interaction_expiry: generate and render prepared models",
-              "seconds": 0.016366
+              "seconds": 0.015452
             },
             {
               "stage": "_models.interaction_expiry: stage package files",
-              "seconds": 0.013313
+              "seconds": 0.009319
             },
             {
               "stage": "render and stage package exports",
-              "seconds": 0.003697
+              "seconds": 0.003922
             },
             {
               "stage": "check publication paths",
-              "seconds": 0.002169
+              "seconds": 0.001261
             },
             {
               "stage": "publish package files",
-              "seconds": 0.000886
+              "seconds": 0.000759
             },
             {
               "stage": "remove obsolete files and publish manifest",
-              "seconds": 0.012207
+              "seconds": 0.00952
             }
           ],
           "primary_model_timings": [
@@ -1358,15 +370,15 @@
             },
             {
               "stage": "prepare",
-              "seconds": 0.221
+              "seconds": 0.216
             },
             {
               "stage": "declarations",
-              "seconds": 0.03
+              "seconds": 0.029
             },
             {
               "stage": "program serialization",
-              "seconds": 0.013
+              "seconds": 0.011
             },
             {
               "stage": "conversion descriptors",
@@ -1378,23 +390,7 @@
             },
             {
               "stage": "declarations",
-              "seconds": 0.002
-            },
-            {
-              "stage": "program serialization",
-              "seconds": 0.0
-            },
-            {
-              "stage": "conversion descriptors",
-              "seconds": 0.0
-            },
-            {
-              "stage": "prepare",
-              "seconds": 0.006
-            },
-            {
-              "stage": "declarations",
-              "seconds": 0.002
+              "seconds": 0.001
             },
             {
               "stage": "program serialization",
@@ -1403,82 +399,80 @@
             {
               "stage": "conversion descriptors",
               "seconds": 0.001
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.006
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
             }
-          ],
-          "equivalence": {
-            "models": 3133,
-            "new_classes": 3133,
-            "empty_header_aliases": 0,
-            "prepared_programs_byte_identical": 3133,
-            "prepared_node_pairs": 60993,
-            "full_schema_text_equal": null,
-            "source_schemas_removed": true,
-            "prepared_programs_bisimilar": true,
-            "module_code_equal": true,
-            "modules_compared": 980,
-            "schema_fragments_compared": 0,
-            "before": "/tmp/jsoncompat-schema-storage/before/github_models",
-            "after": "/tmp/jsoncompat-schema-storage/after/github_models",
-            "seconds": 11.040465124999173,
-            "before_compiler": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f",
-            "after_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa"
-          }
+          ]
         },
         "issues": {
           "generation_samples": [
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/private/tmp/jsoncompat-schema-storage/after/issues.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/issues.json",
                 "--output",
-                "/private/tmp/jsoncompat-schema-storage/after/github_issues",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/github_issues",
                 "--api",
                 "GitHub",
                 "--component",
                 "basic-error"
               ],
-              "seconds": 1.056732708006166,
+              "seconds": 1.0349708340363577,
               "exit_code": 0,
-              "max_rss_bytes": 394625024
+              "max_rss_bytes": 396165120
             },
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/private/tmp/jsoncompat-schema-storage/after/issues.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/issues.json",
                 "--output",
-                "/private/tmp/jsoncompat-schema-storage/after/repeat_issues_1",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_issues_1",
                 "--api",
                 "GitHub",
                 "--component",
                 "basic-error"
               ],
-              "seconds": 1.0388181250309572,
+              "seconds": 1.063076334015932,
               "exit_code": 0,
-              "max_rss_bytes": 397721600
+              "max_rss_bytes": 395526144
             },
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/private/tmp/jsoncompat-schema-storage/after/issues.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/issues.json",
                 "--output",
-                "/private/tmp/jsoncompat-schema-storage/after/repeat_issues_2",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_issues_2",
                 "--api",
                 "GitHub",
                 "--component",
                 "basic-error"
               ],
-              "seconds": 1.0450404579751194,
+              "seconds": 1.0231374999857508,
               "exit_code": 0,
-              "max_rss_bytes": 397803520
+              "max_rss_bytes": 395575296
             }
           ],
-          "generation_median_seconds": 1.0450404579751194,
+          "generation_median_seconds": 1.0349708340363577,
           "inventory": {
             "files": 88,
             "bytes": 2636375,
@@ -1542,112 +536,112 @@
           "import_source": {
             "samples": [
               {
-                "package_seconds": 0.0036420829710550606,
-                "load_seconds": 0.14074087503831834
+                "package_seconds": 0.0036320830113254488,
+                "load_seconds": 0.1426868750131689
               },
               {
-                "package_seconds": 0.003765750036109239,
-                "load_seconds": 0.14517220796551555
+                "package_seconds": 0.0035842080251313746,
+                "load_seconds": 0.13912479195278138
               },
               {
-                "package_seconds": 0.004002292000222951,
-                "load_seconds": 0.14254491700557992
+                "package_seconds": 0.0035869170096702874,
+                "load_seconds": 0.13874329201644287
               },
               {
-                "package_seconds": 0.003703917027451098,
-                "load_seconds": 0.1439303329680115
+                "package_seconds": 0.0036263749934732914,
+                "load_seconds": 0.13941862498177215
               },
               {
-                "package_seconds": 0.0037259170203469694,
-                "load_seconds": 0.13900595798622817
+                "package_seconds": 0.0037801250000484288,
+                "load_seconds": 0.1422928330139257
               }
             ],
-            "median_seconds": 0.14254491700557992
+            "median_seconds": 0.13941862498177215
           },
           "import_bytecode": {
             "samples": [
               {
-                "package_seconds": 0.00046312500489875674,
-                "load_seconds": 0.07379275001585484
+                "package_seconds": 0.0004957499913871288,
+                "load_seconds": 0.07204291701782495
               },
               {
-                "package_seconds": 0.0004914579913020134,
-                "load_seconds": 0.074100041994825
+                "package_seconds": 0.0004909160197712481,
+                "load_seconds": 0.07076991599751636
               },
               {
-                "package_seconds": 0.000495875021442771,
-                "load_seconds": 0.07169283297844231
+                "package_seconds": 0.00048733403673395514,
+                "load_seconds": 0.07094491698080674
               },
               {
-                "package_seconds": 0.0004569169832393527,
-                "load_seconds": 0.07389591605169699
+                "package_seconds": 0.0004934999742545187,
+                "load_seconds": 0.0732854999951087
               },
               {
-                "package_seconds": 0.0005143749876879156,
-                "load_seconds": 0.0728967500035651
+                "package_seconds": 0.0004955410258844495,
+                "load_seconds": 0.07178045902401209
               }
             ],
-            "median_seconds": 0.07379275001585484
+            "median_seconds": 0.07178045902401209
           },
           "selective-import_source": {
             "samples": [
               {
-                "load_seconds": 0.11710012500407174,
+                "load_seconds": 0.11125187500147149,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.11128612502943724,
+                "load_seconds": 0.11502766603371128,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.1158724999986589,
+                "load_seconds": 0.11077625001780689,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.11390391696477309,
+                "load_seconds": 0.11153300001751631,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.1170336669893004,
+                "load_seconds": 0.11072041699662805,
                 "loaded_models": 442,
                 "loaded_modules": 63
               }
             ],
-            "median_seconds": 0.1158724999986589
+            "median_seconds": 0.11125187500147149
           },
           "selective-import_bytecode": {
             "samples": [
               {
-                "load_seconds": 0.04160316602792591,
+                "load_seconds": 0.04036041599465534,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.04315858299378306,
+                "load_seconds": 0.04063020896865055,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.04219016700517386,
+                "load_seconds": 0.040493791981134564,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.039636500005144626,
+                "load_seconds": 0.04009787499671802,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.0402020420297049,
+                "load_seconds": 0.04045549995498732,
                 "loaded_models": 442,
                 "loaded_modules": 63
               }
             ],
-            "median_seconds": 0.04160316602792591
+            "median_seconds": 0.04045549995498732
           },
           "ty": {
             "command": [
@@ -1663,23 +657,23 @@
               "ty",
               "check",
               "--project",
-              "/private/tmp/jsoncompat-schema-storage/after",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
               "--python-version",
               "3.12",
               "--extra-search-path",
               "/Users/robbie/developer/jsoncompat/pybindings",
               "--extra-search-path",
-              "/private/tmp/jsoncompat-schema-storage/after",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
               "--error",
               "all",
               "--output-format",
               "gitlab",
-              "/private/tmp/jsoncompat-schema-storage/after/github_issues",
-              "/private/tmp/jsoncompat-schema-storage/after/issues_consumer.py"
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/github_issues",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/issues_consumer.py"
             ],
-            "seconds": 0.181574999995064,
+            "seconds": 0.14497333398321643,
             "exit_code": 0,
-            "max_rss_bytes": 86818816
+            "max_rss_bytes": 84262912
           },
           "ty_negative": {
             "exit_code": 1,
@@ -1689,57 +683,57 @@
           "primary_stage_timings": [
             {
               "stage": "validate OpenAPI document",
-              "seconds": 0.661134
+              "seconds": 0.675132
             },
             {
               "stage": "prepare operation contracts",
-              "seconds": 0.10128
+              "seconds": 0.101944
             },
             {
               "stage": "group component schemas",
-              "seconds": 0.065075
+              "seconds": 0.065534
             },
             {
               "stage": "prepare output and compiler fingerprint",
-              "seconds": 0.030387
+              "seconds": 0.029569
             },
             {
               "stage": "_models.shared: prepare group and check cache",
-              "seconds": 0.00237
+              "seconds": 0.002332
             },
             {
               "stage": "_models.shared: validate schema document",
-              "seconds": 0.032929
+              "seconds": 0.032903
             },
             {
               "stage": "_models.shared: generate and render prepared models",
-              "seconds": 0.045006
+              "seconds": 0.047184
             },
             {
               "stage": "_models.shared: stage package files",
-              "seconds": 0.008148
+              "seconds": 0.008083
             },
             {
               "stage": "render and stage package exports",
-              "seconds": 0.012961
+              "seconds": 0.013002
             },
             {
               "stage": "check publication paths",
-              "seconds": 0.000139
+              "seconds": 0.000141
             },
             {
               "stage": "publish package files",
-              "seconds": 0.000598
+              "seconds": 0.00062
             },
             {
               "stage": "remove obsolete files and publish manifest",
-              "seconds": 0.008658
+              "seconds": 0.007895
             }
           ],
           "primary_model_timings": [
             {
               "stage": "prepare",
-              "seconds": 0.021
+              "seconds": 0.022
             },
             {
               "stage": "declarations",
@@ -1753,75 +747,57 @@
               "stage": "conversion descriptors",
               "seconds": 0.001
             }
-          ],
-          "equivalence": {
-            "models": 473,
-            "new_classes": 473,
-            "empty_header_aliases": 192,
-            "prepared_programs_byte_identical": 473,
-            "prepared_node_pairs": 10705,
-            "full_schema_text_equal": null,
-            "source_schemas_removed": true,
-            "prepared_programs_bisimilar": true,
-            "module_code_equal": true,
-            "modules_compared": 86,
-            "schema_fragments_compared": 0,
-            "before": "/tmp/jsoncompat-schema-storage/before/github_issues",
-            "after": "/tmp/jsoncompat-schema-storage/after/github_issues",
-            "seconds": 1.2673210840439424,
-            "before_compiler": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f",
-            "after_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa"
-          }
+          ]
         },
         "client": {
           "generation_samples": [
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/private/tmp/jsoncompat-schema-storage/after/client.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/client.json",
                 "--output",
-                "/private/tmp/jsoncompat-schema-storage/after/github_client",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/github_client",
                 "--api",
                 "GitHub"
               ],
-              "seconds": 3.3921787079889327,
+              "seconds": 3.4490696670254692,
               "exit_code": 0,
-              "max_rss_bytes": 1145815040
+              "max_rss_bytes": 1242234880
             },
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/private/tmp/jsoncompat-schema-storage/after/client.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/client.json",
                 "--output",
-                "/private/tmp/jsoncompat-schema-storage/after/repeat_client_1",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_client_1",
                 "--api",
                 "GitHub"
               ],
-              "seconds": 3.4238132079481147,
+              "seconds": 3.378338790964335,
               "exit_code": 0,
-              "max_rss_bytes": 1131560960
+              "max_rss_bytes": 1100546048
             },
             {
               "command": [
-                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "/tmp/jsoncompat-profile-next/baseline",
                 "codegen",
                 "--openapi",
-                "/private/tmp/jsoncompat-schema-storage/after/client.json",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/client.json",
                 "--output",
-                "/private/tmp/jsoncompat-schema-storage/after/repeat_client_2",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_client_2",
                 "--api",
                 "GitHub"
               ],
-              "seconds": 3.376293416018598,
+              "seconds": 3.3996571250027046,
               "exit_code": 0,
-              "max_rss_bytes": 1115799552
+              "max_rss_bytes": 1264304128
             }
           ],
-          "generation_median_seconds": 3.3921787079889327,
+          "generation_median_seconds": 3.3996571250027046,
           "inventory": {
             "files": 1030,
             "bytes": 49681953,
@@ -1885,112 +861,112 @@
           "import_source": {
             "samples": [
               {
-                "package_seconds": 0.05854991701198742,
-                "load_seconds": 1.7496033330098726
+                "package_seconds": 0.057579874992370605,
+                "load_seconds": 1.6889701249892823
               },
               {
-                "package_seconds": 0.05831454100552946,
-                "load_seconds": 1.735458249982912
+                "package_seconds": 0.05683383397990838,
+                "load_seconds": 1.7055239590117708
               },
               {
-                "package_seconds": 0.0617212500073947,
-                "load_seconds": 1.942241250013467
+                "package_seconds": 0.056886292004492134,
+                "load_seconds": 1.6794280839967541
               },
               {
-                "package_seconds": 0.0619083329802379,
-                "load_seconds": 1.89795920799952
+                "package_seconds": 0.05677804199513048,
+                "load_seconds": 1.674236082995776
               },
               {
-                "package_seconds": 0.06423891702434048,
-                "load_seconds": 1.9157481250003912
+                "package_seconds": 0.056624915974680334,
+                "load_seconds": 1.6847729590372182
               }
             ],
-            "median_seconds": 1.89795920799952
+            "median_seconds": 1.6847729590372182
           },
           "import_bytecode": {
             "samples": [
               {
-                "package_seconds": 0.0060421249945648015,
-                "load_seconds": 0.8122786249732599
+                "package_seconds": 0.006210041989106685,
+                "load_seconds": 0.7657052089925855
               },
               {
-                "package_seconds": 0.006565792020410299,
-                "load_seconds": 0.8702272080117837
+                "package_seconds": 0.005966958007775247,
+                "load_seconds": 0.7471829169662669
               },
               {
-                "package_seconds": 0.0062973329913802445,
-                "load_seconds": 0.7977293750154786
+                "package_seconds": 0.005880165961571038,
+                "load_seconds": 0.7530030410271138
               },
               {
-                "package_seconds": 0.006232541985809803,
-                "load_seconds": 0.8004438339849003
+                "package_seconds": 0.0057427919819019735,
+                "load_seconds": 0.7470827500219457
               },
               {
-                "package_seconds": 0.006257834029383957,
-                "load_seconds": 0.7963782079750672
+                "package_seconds": 0.006062417000066489,
+                "load_seconds": 0.7562580840312876
               }
             ],
-            "median_seconds": 0.8004438339849003
+            "median_seconds": 0.7530030410271138
           },
           "selective-import_source": {
             "samples": [
               {
-                "load_seconds": 0.22063658299157396,
+                "load_seconds": 0.17930370796239004,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.18531387497205287,
+                "load_seconds": 0.1779757920303382,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.18462487502256408,
+                "load_seconds": 0.17457783402642235,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.18253437505336478,
+                "load_seconds": 0.17476583400275558,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.18242787499912083,
+                "load_seconds": 0.17765079101081938,
                 "loaded_models": 442,
                 "loaded_modules": 63
               }
             ],
-            "median_seconds": 0.18462487502256408
+            "median_seconds": 0.17765079101081938
           },
           "selective-import_bytecode": {
             "samples": [
               {
-                "load_seconds": 0.051715874986257404,
+                "load_seconds": 0.04995937499916181,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.05181274999631569,
+                "load_seconds": 0.05021933402167633,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.05116462497971952,
+                "load_seconds": 0.049723582982551306,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.052309124963358045,
+                "load_seconds": 0.04985324997687712,
                 "loaded_models": 442,
                 "loaded_modules": 63
               },
               {
-                "load_seconds": 0.05459312500897795,
+                "load_seconds": 0.04797520802821964,
                 "loaded_models": 442,
                 "loaded_modules": 63
               }
             ],
-            "median_seconds": 0.05181274999631569
+            "median_seconds": 0.04985324997687712
           },
           "ty": {
             "command": [
@@ -2006,23 +982,23 @@
               "ty",
               "check",
               "--project",
-              "/private/tmp/jsoncompat-schema-storage/after",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
               "--python-version",
               "3.12",
               "--extra-search-path",
               "/Users/robbie/developer/jsoncompat/pybindings",
               "--extra-search-path",
-              "/private/tmp/jsoncompat-schema-storage/after",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
               "--error",
               "all",
               "--output-format",
               "gitlab",
-              "/private/tmp/jsoncompat-schema-storage/after/github_client",
-              "/private/tmp/jsoncompat-schema-storage/after/client_consumer.py"
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/github_client",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/client_consumer.py"
             ],
-            "seconds": 0.9275730829685926,
+            "seconds": 0.8266543329809792,
             "exit_code": 0,
-            "max_rss_bytes": 693403648
+            "max_rss_bytes": 690847744
           },
           "ty_negative": {
             "exit_code": 1,
@@ -2032,57 +1008,1170 @@
           "primary_stage_timings": [
             {
               "stage": "validate OpenAPI document",
-              "seconds": 0.741834
+              "seconds": 0.752962
             },
             {
               "stage": "prepare operation contracts",
-              "seconds": 0.156265
+              "seconds": 0.161461
             },
             {
               "stage": "group component schemas",
-              "seconds": 0.092141
+              "seconds": 0.091869
             },
             {
               "stage": "prepare output and compiler fingerprint",
-              "seconds": 0.035054
+              "seconds": 0.034506
             },
             {
               "stage": "_models.shared: prepare group and check cache",
-              "seconds": 0.043715
+              "seconds": 0.043799
             },
             {
               "stage": "_models.shared: validate schema document",
-              "seconds": 0.830825
+              "seconds": 0.841076
             },
             {
               "stage": "_models.shared: generate and render prepared models",
-              "seconds": 1.013544
+              "seconds": 1.013291
             },
             {
               "stage": "_models.shared: stage package files",
-              "seconds": 0.129583
+              "seconds": 0.128725
             },
             {
               "stage": "render and stage package exports",
-              "seconds": 0.242109
+              "seconds": 0.256417
             },
             {
               "stage": "check publication paths",
-              "seconds": 0.001267
+              "seconds": 0.001397
             },
             {
               "stage": "publish package files",
-              "seconds": 0.001128
+              "seconds": 0.000976
             },
             {
               "stage": "remove obsolete files and publish manifest",
-              "seconds": 0.021215
+              "seconds": 0.012792
             }
           ],
           "primary_model_timings": [
             {
               "stage": "prepare",
-              "seconds": 0.465
+              "seconds": 0.462
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.06
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.026
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.021
+            }
+          ]
+        }
+      }
+    },
+    "after": {
+      "compiler_sha256": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+      "cases": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/github_models"
+              ],
+              "seconds": 1.7384794999961741,
+              "exit_code": 0,
+              "max_rss_bytes": 610222080
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_models_1"
+              ],
+              "seconds": 1.385057749983389,
+              "exit_code": 0,
+              "max_rss_bytes": 609550336
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_models_2"
+              ],
+              "seconds": 1.3584398750099353,
+              "exit_code": 0,
+              "max_rss_bytes": 616988672
+            }
+          ],
+          "generation_median_seconds": 1.385057749983389,
+          "inventory": {
+            "files": 982,
+            "bytes": 21030811,
+            "python_files": 980,
+            "python_bytes": 20534150,
+            "largest_files": [
+              [
+                620749,
+                "models/webhook_pull_request_review_request_removed.py"
+              ],
+              [
+                617877,
+                "models/webhook_pull_request_review_requested.py"
+              ],
+              [
+                496661,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                286882,
+                "models/webhook_pull_request_review_comment_created.py"
+              ],
+              [
+                286407,
+                "models/webhook_pull_request_review_thread_resolved.py"
+              ],
+              [
+                286251,
+                "models/webhook_pull_request_review_thread_unresolved.py"
+              ],
+              [
+                274741,
+                "models/webhook_pull_request_review_dismissed.py"
+              ],
+              [
+                268681,
+                "models/webhook_pull_request_labeled.py"
+              ],
+              [
+                268027,
+                "models/webhook_pull_request_auto_merge_disabled.py"
+              ],
+              [
+                267737,
+                "models/webhook_pull_request_auto_merge_enabled.py"
+              ]
+            ],
+            "largest_python_file": [
+              620749,
+              "models/webhook_pull_request_review_request_removed.py"
+            ],
+            "p95_python_bytes": 70329,
+            "binding_groups": 4,
+            "declarations": 3133,
+            "component_modules": 973,
+            "resource_modules": 0,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 0
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0038889580173417926,
+                "load_seconds": 0.9968587920302525
+              },
+              {
+                "package_seconds": 0.004092916031368077,
+                "load_seconds": 0.9869850000250153
+              },
+              {
+                "package_seconds": 0.004107084008865058,
+                "load_seconds": 1.0010357919964008
+              },
+              {
+                "package_seconds": 0.003933209052775055,
+                "load_seconds": 0.9994926659855992
+              },
+              {
+                "package_seconds": 0.0039774999604560435,
+                "load_seconds": 1.001951000012923
+              }
+            ],
+            "median_seconds": 0.9994926659855992
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0005767910042777658,
+                "load_seconds": 0.23830079199979082
+              },
+              {
+                "package_seconds": 0.0005609160289168358,
+                "load_seconds": 0.24247875000583008
+              },
+              {
+                "package_seconds": 0.0005856670322827995,
+                "load_seconds": 0.2416770420386456
+              },
+              {
+                "package_seconds": 0.0005681660259142518,
+                "load_seconds": 0.23800650000339374
+              },
+              {
+                "package_seconds": 0.000561417022254318,
+                "load_seconds": 0.24102987500373274
+              }
+            ],
+            "median_seconds": 0.24102987500373274
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.01912675000494346,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.02003683301154524,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.019042208034079522,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.019130040949676186,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.018947375006973743,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.01912675000494346
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.015008249960374087,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015030083013698459,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015379833988845348,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01499337499262765,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015010707953479141,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.015010707953479141
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/github_models",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/models_consumer.py"
+            ],
+            "seconds": 0.3853208749787882,
+            "exit_code": 0,
+            "max_rss_bytes": 290963456
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.51093
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.000108
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.061887
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.007643
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: prepare group and check cache",
+              "seconds": 0.000161
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: validate schema document",
+              "seconds": 0.001206
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: generate and render prepared models",
+              "seconds": 0.002216
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: stage package files",
+              "seconds": 0.00205
+            },
+            {
+              "stage": "_models.actions_policy: prepare group and check cache",
+              "seconds": 0.007069
+            },
+            {
+              "stage": "_models.actions_policy: validate schema document",
+              "seconds": 0.082441
+            },
+            {
+              "stage": "_models.actions_policy: generate and render prepared models",
+              "seconds": 0.472953
+            },
+            {
+              "stage": "_models.actions_policy: stage package files",
+              "seconds": 0.058895
+            },
+            {
+              "stage": "_models.actions_public_key: prepare group and check cache",
+              "seconds": 0.018225
+            },
+            {
+              "stage": "_models.actions_public_key: validate schema document",
+              "seconds": 0.008423
+            },
+            {
+              "stage": "_models.actions_public_key: generate and render prepared models",
+              "seconds": 0.01497
+            },
+            {
+              "stage": "_models.actions_public_key: stage package files",
+              "seconds": 0.009045
+            },
+            {
+              "stage": "_models.interaction_expiry: prepare group and check cache",
+              "seconds": 0.001303
+            },
+            {
+              "stage": "_models.interaction_expiry: validate schema document",
+              "seconds": 0.008306
+            },
+            {
+              "stage": "_models.interaction_expiry: generate and render prepared models",
+              "seconds": 0.014185
+            },
+            {
+              "stage": "_models.interaction_expiry: stage package files",
+              "seconds": 0.008807
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.002858
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.001257
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.000747
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.011298
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.001
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.0
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.197
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.029
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.011
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.01
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.006
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.001
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.005
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
+            }
+          ],
+          "equivalence": {
+            "models": 3133,
+            "new_classes": 3133,
+            "empty_header_aliases": 0,
+            "prepared_programs_byte_identical": 3133,
+            "prepared_node_pairs": 60993,
+            "full_schema_text_equal": null,
+            "source_schemas_removed": false,
+            "prepared_programs_bisimilar": true,
+            "module_code_equal": true,
+            "modules_compared": 980,
+            "schema_fragments_compared": 0,
+            "before": "/private/tmp/jsoncompat-profile-next/paired-final/before/github_models",
+            "after": "/private/tmp/jsoncompat-profile-next/paired-final/after/github_models",
+            "seconds": 10.08881216699956,
+            "before_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+            "after_compiler": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+            "byte_identical_files": 981,
+            "sha256_verified_with_python": true,
+            "all_generation_repeats_byte_identical": true
+          }
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/github_issues",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8015631249872968,
+              "exit_code": 0,
+              "max_rss_bytes": 409272320
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7977775000035763,
+              "exit_code": 0,
+              "max_rss_bytes": 430440448
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.787388542026747,
+              "exit_code": 0,
+              "max_rss_bytes": 433651712
+            }
+          ],
+          "generation_median_seconds": 0.7977775000035763,
+          "inventory": {
+            "files": 88,
+            "bytes": 2636375,
+            "python_files": 86,
+            "python_bytes": 2544069,
+            "largest_files": [
+              [
+                1576548,
+                "operations/issues.py"
+              ],
+              [
+                92306,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                82542,
+                "__init__.pyi"
+              ],
+              [
+                65972,
+                "models/timeline_issue_events.py"
+              ],
+              [
+                61101,
+                "models/__init__.pyi"
+              ],
+              [
+                51985,
+                "_exports.py"
+              ],
+              [
+                43017,
+                "models/issue_event_for_issue.py"
+              ],
+              [
+                39784,
+                "models/timeline_cross_referenced_event.py"
+              ],
+              [
+                36410,
+                "models/issue_event.py"
+              ],
+              [
+                34239,
+                "models/issue.py"
+              ]
+            ],
+            "largest_python_file": [
+              1576548,
+              "operations/issues.py"
+            ],
+            "p95_python_bytes": 43017,
+            "binding_groups": 1,
+            "declarations": 473,
+            "component_modules": 76,
+            "resource_modules": 1,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0036390830064192414,
+                "load_seconds": 0.14204770902870223
+              },
+              {
+                "package_seconds": 0.003849291999358684,
+                "load_seconds": 0.14151983405463398
+              },
+              {
+                "package_seconds": 0.0036182079929858446,
+                "load_seconds": 0.1433529169880785
+              },
+              {
+                "package_seconds": 0.0035719999577850103,
+                "load_seconds": 0.1396280420012772
+              },
+              {
+                "package_seconds": 0.003588334016967565,
+                "load_seconds": 0.14055362500948831
+              }
+            ],
+            "median_seconds": 0.14151983405463398
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.000491167011205107,
+                "load_seconds": 0.07324549998156726
+              },
+              {
+                "package_seconds": 0.00047233299119398,
+                "load_seconds": 0.07081141701200977
+              },
+              {
+                "package_seconds": 0.0005033749621361494,
+                "load_seconds": 0.07139708398608491
+              },
+              {
+                "package_seconds": 0.0004949999856762588,
+                "load_seconds": 0.07050570799037814
+              },
+              {
+                "package_seconds": 0.0004859589971601963,
+                "load_seconds": 0.07114408299094066
+              }
+            ],
+            "median_seconds": 0.07114408299094066
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.11387254198780283,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11159941699588671,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11362008296418935,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11137304198928177,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11138070799643174,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.11159941699588671
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04031204100465402,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04070020897779614,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04078262497205287,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.040591874974779785,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.040789458027575165,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04070020897779614
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/github_issues",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/issues_consumer.py"
+            ],
+            "seconds": 0.15226349997101352,
+            "exit_code": 0,
+            "max_rss_bytes": 85688320
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "issues-ty-negative.stderr"
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.496585
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.106059
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.067668
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.006614
+            },
+            {
+              "stage": "_models.shared: prepare group and check cache",
+              "seconds": 0.001442
+            },
+            {
+              "stage": "_models.shared: validate schema document",
+              "seconds": 0.015667
+            },
+            {
+              "stage": "_models.shared: generate and render prepared models",
+              "seconds": 0.044465
+            },
+            {
+              "stage": "_models.shared: stage package files",
+              "seconds": 0.006064
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.006594
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.00014
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.000565
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.007288
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.021
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.002
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.002
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.001
+            }
+          ],
+          "equivalence": {
+            "models": 473,
+            "new_classes": 473,
+            "empty_header_aliases": 192,
+            "prepared_programs_byte_identical": 473,
+            "prepared_node_pairs": 10705,
+            "full_schema_text_equal": null,
+            "source_schemas_removed": false,
+            "prepared_programs_bisimilar": true,
+            "module_code_equal": true,
+            "modules_compared": 86,
+            "schema_fragments_compared": 0,
+            "before": "/private/tmp/jsoncompat-profile-next/paired-final/before/github_issues",
+            "after": "/private/tmp/jsoncompat-profile-next/paired-final/after/github_issues",
+            "seconds": 1.1231775830383413,
+            "before_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+            "after_compiler": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+            "byte_identical_files": 87,
+            "sha256_verified_with_python": true,
+            "all_generation_repeats_byte_identical": true
+          }
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/github_client",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.489264167030342,
+              "exit_code": 0,
+              "max_rss_bytes": 1125515264
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.48499600001378,
+              "exit_code": 0,
+              "max_rss_bytes": 1120206848
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.4729744579526596,
+              "exit_code": 0,
+              "max_rss_bytes": 1120665600
+            }
+          ],
+          "generation_median_seconds": 2.48499600001378,
+          "inventory": {
+            "files": 1030,
+            "bytes": 49681953,
+            "python_files": 1028,
+            "python_bytes": 47611518,
+            "largest_files": [
+              [
+                3144842,
+                "operations/repos.py"
+              ],
+              [
+                2400274,
+                "operations/actions.py"
+              ],
+              [
+                2070435,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                1989996,
+                "__init__.pyi"
+              ],
+              [
+                1638478,
+                "operations/orgs.py"
+              ],
+              [
+                1575725,
+                "operations/issues.py"
+              ],
+              [
+                1464014,
+                "models/__init__.pyi"
+              ],
+              [
+                1224173,
+                "_exports.py"
+              ],
+              [
+                1137372,
+                "operations/codespaces.py"
+              ],
+              [
+                810347,
+                "operations/activity.py"
+              ]
+            ],
+            "largest_python_file": [
+              3144842,
+              "operations/repos.py"
+            ],
+            "p95_python_bytes": 228907,
+            "binding_groups": 1,
+            "declarations": 9124,
+            "component_modules": 974,
+            "resource_modules": 45,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.05744166701333597,
+                "load_seconds": 1.712072416965384
+              },
+              {
+                "package_seconds": 0.05678149999585003,
+                "load_seconds": 1.6978091669734567
+              },
+              {
+                "package_seconds": 0.057842166046611965,
+                "load_seconds": 1.7013445839984342
+              },
+              {
+                "package_seconds": 0.05746016599005088,
+                "load_seconds": 1.7019712090259418
+              },
+              {
+                "package_seconds": 0.05687245796434581,
+                "load_seconds": 1.6743770419852808
+              }
+            ],
+            "median_seconds": 1.7013445839984342
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.005915083980653435,
+                "load_seconds": 0.7419937910162844
+              },
+              {
+                "package_seconds": 0.006271834019571543,
+                "load_seconds": 0.7496596660348587
+              },
+              {
+                "package_seconds": 0.005963750008959323,
+                "load_seconds": 0.7415387079818174
+              },
+              {
+                "package_seconds": 0.0059655000222846866,
+                "load_seconds": 0.7420854999800213
+              },
+              {
+                "package_seconds": 0.005887333012651652,
+                "load_seconds": 0.752835999999661
+              }
+            ],
+            "median_seconds": 0.7420854999800213
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.17983904195716605,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17956804198911414,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17944591597188264,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17399737500818446,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17648679204285145,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.17944591597188264
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04842158395331353,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04831154196290299,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.047961957985535264,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04992920800577849,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04861287499079481,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04842158395331353
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/github_client",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/client_consumer.py"
+            ],
+            "seconds": 0.790095874981489,
+            "exit_code": 0,
+            "max_rss_bytes": 703692800
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "client-ty-negative.stderr"
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.551916
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.165325
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.095852
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.011765
+            },
+            {
+              "stage": "_models.shared: prepare group and check cache",
+              "seconds": 0.026322
+            },
+            {
+              "stage": "_models.shared: validate schema document",
+              "seconds": 0.317078
+            },
+            {
+              "stage": "_models.shared: generate and render prepared models",
+              "seconds": 0.998431
+            },
+            {
+              "stage": "_models.shared: stage package files",
+              "seconds": 0.083993
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.115732
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.001431
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.001006
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.00964
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.456
             },
             {
               "stage": "declarations",
@@ -2104,28 +2193,31 @@
             "prepared_programs_byte_identical": 9124,
             "prepared_node_pairs": 142351,
             "full_schema_text_equal": null,
-            "source_schemas_removed": true,
+            "source_schemas_removed": false,
             "prepared_programs_bisimilar": true,
             "module_code_equal": true,
             "modules_compared": 1028,
             "schema_fragments_compared": 0,
-            "before": "/tmp/jsoncompat-schema-storage/before/github_client",
-            "after": "/tmp/jsoncompat-schema-storage/after/github_client",
-            "seconds": 25.19144912500633,
-            "before_compiler": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f",
-            "after_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa"
+            "before": "/private/tmp/jsoncompat-profile-next/paired-final/before/github_client",
+            "after": "/private/tmp/jsoncompat-profile-next/paired-final/after/github_client",
+            "seconds": 21.34112749999622,
+            "before_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+            "after_compiler": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+            "byte_identical_files": 1029,
+            "sha256_verified_with_python": true,
+            "all_generation_repeats_byte_identical": true
           }
         }
       }
     }
   },
-  "baseline_revision": "366e0766e7a1c359a8a073981293584f607294f9",
   "input": {
     "revision": "58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1",
     "sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
     "original_bytes": 13131466,
     "original_operations": 1232,
-    "original_components": 973
+    "original_components": 973,
+    "original_webhooks": 274
   },
   "projections": {
     "models": {
@@ -2142,7 +2234,7 @@
       "exclusion_counts": {
         "model-only run; no outbound operations": 1
       },
-      "selection": "all component schemas"
+      "projected_sha256": "0633b5c2fbc99eb5cbce2c0352fb1c46b3cdaafec68465c092c8d0048ea87ab4"
     },
     "issues": {
       "url": "https://raw.githubusercontent.com/github/rest-api-description/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json",
@@ -2229,7 +2321,8 @@
         "duplicate path shape: /users/{username}/attestations/{attestation_id}": 1,
         "unsupported by outbound operation lowering": 2
       },
-      "selection": "issues/ operationId prefix and dependencies"
+      "selection": "issues/ operationId prefix and dependencies",
+      "projected_sha256": "c3aaf41ab0c25688268369df00ff1aeb61fd6cbc9efb503fab4fe05bdd8558b9"
     },
     "client": {
       "url": "https://raw.githubusercontent.com/github/rest-api-description/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json",
@@ -2315,7 +2408,7 @@
         "duplicate path shape: /users/{username}/attestations/{attestation_id}": 1,
         "unsupported by outbound operation lowering": 2
       },
-      "selection": "all supported outbound operations"
+      "projected_sha256": "2bf2c168495fe9851f15aed9dcc5d1f7d23d3276537d65fef6519293f460ed0c"
     }
   }
 }

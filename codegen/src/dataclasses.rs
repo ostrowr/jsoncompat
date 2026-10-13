@@ -233,7 +233,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             Value::Bool(_) => self.register_class(
                 ClassSpec {
                     name: name.to_owned(),
-                    schema: self.class_schema(schema, pointer),
+                    schema: self.class_schema(|| schema.clone(), pointer),
                     base_class: DATACLASS_ROOT_MODEL_CLASS,
                     kind: ClassKind::Root {
                         annotation: Annotation::any(),
@@ -275,7 +275,7 @@ impl<'a> DataclassModuleBuilder<'a> {
 
         self.classes.push(ClassSpec {
             name: name.to_owned(),
-            schema: self.class_schema(&Value::Object(obj.clone()), pointer),
+            schema: self.class_schema(|| Value::Object(obj.clone()), pointer),
             base_class: if matches!(kind, ClassKind::Root { .. }) {
                 DATACLASS_ROOT_MODEL_CLASS
             } else {
@@ -355,13 +355,13 @@ impl<'a> DataclassModuleBuilder<'a> {
         }
     }
 
-    fn class_schema(&self, fallback_schema: &Value, pointer: &str) -> ClassSchema {
+    fn class_schema(&self, fallback_schema: impl FnOnce() -> Value, pointer: &str) -> ClassSchema {
         if pointer == "#" {
             return ClassSchema::standalone(self.source_root.clone());
         }
         let value = resolve_json_pointer(self.validation_root, pointer)
-            .unwrap_or(fallback_schema)
-            .clone();
+            .cloned()
+            .unwrap_or_else(fallback_schema);
         let definitions = (value.is_object()
             && (has_definition_entries(self.definitions.defs())
                 || has_definition_entries(self.definitions.legacy_defs()))

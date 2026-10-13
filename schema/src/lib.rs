@@ -81,9 +81,7 @@ pub fn compile(schema: &Value) -> Result<JSONSchema, CompileError> {
 pub fn prepare_for_validation(schema: &Value) -> Result<std::borrow::Cow<'_, Value>, CompileError> {
     fn has_content(schema: &Value) -> bool {
         schema.get("contentSchema").is_some()
-            || references::children(schema)
-                .iter()
-                .any(|(_, child)| has_content(child))
+            || references::child_values(schema).any(|(_, child)| has_content(child))
     }
     if !has_content(schema) && !references::needs_linking(schema) {
         return Ok(std::borrow::Cow::Borrowed(schema));

@@ -33,24 +33,38 @@ struct Operation {
 
 impl Operation {
     fn partition(&self, success: bool) -> String {
-        let mut models = BTreeSet::new();
-        for status in (100..600).filter(|status| (200..300).contains(status) == success) {
-            let exact = status.to_string();
-            let range = format!("{}XX", status / 100);
-            let selector = if self.responses.iter().any(|(s, _, _)| *s == exact) {
-                &exact
-            } else if self.responses.iter().any(|(s, _, _)| *s == range) {
-                &range
-            } else {
-                "default"
-            };
-            models.extend(
-                self.responses
-                    .iter()
-                    .filter(|(s, _, _)| s == selector)
-                    .map(|(_, name, _)| name.as_str()),
-            );
+        // Resolve selectors once. Formatting and searching the same response
+        // list for all 500 status codes made large registries expensive.
+        let mut exact = [None; 500];
+        let mut ranges = [None; 5];
+        let mut fallback = None;
+        for (selector, _, _) in &self.responses {
+            match selector.as_bytes() {
+                b"default" => fallback = Some(selector.as_str()),
+                [class @ b'1'..=b'5', b'X', b'X'] => {
+                    ranges[usize::from(class - b'1')] = Some(selector.as_str());
+                }
+                _ => {
+                    let status: usize = selector.parse().expect("validated response status");
+                    exact[status - 100] = Some(selector.as_str());
+                }
+            }
         }
+        let selectors: BTreeSet<_> = (100..600)
+            .filter(|status| (200..300).contains(status) == success)
+            .filter_map(|status| {
+                exact[status - 100]
+                    .or(ranges[status / 100 - 1])
+                    .or(fallback)
+            })
+            .collect();
+        let mut models = BTreeSet::new();
+        models.extend(
+            self.responses
+                .iter()
+                .filter(|(selector, _, _)| selectors.contains(selector.as_str()))
+                .map(|(_, name, _)| name.as_str()),
+        );
         if models.is_empty() {
             "_typing.Never".into()
         } else {

@@ -86,15 +86,15 @@ impl SchemaDocument {
     /// those should keep producing the schema frontend's more precise typed
     /// reference errors during root resolution.
     pub fn from_json(raw: &Value) -> Result<Self> {
-        Self::from_prepared(raw)
+        Self::from_prepared(raw.clone())
     }
 
     /// Build with explicitly supplied resources and format vocabulary options.
     pub fn from_json_with_options(raw: &Value, options: &crate::SchemaOptions) -> Result<Self> {
-        Self::from_prepared(&crate::options::prepare(raw, options)?)
+        Self::from_prepared(crate::options::prepare(raw, options)?)
     }
 
-    fn from_prepared(raw: &Value) -> Result<Self> {
+    fn from_prepared(raw: Value) -> Result<Self> {
         Self::from_prepared_with_cache(raw, None)
     }
 
@@ -105,7 +105,7 @@ impl SchemaDocument {
         options: &crate::SchemaOptions,
         cache: Option<&crate::SchemaValidationCache>,
     ) -> Result<Self> {
-        Self::from_prepared_with_cache(&crate::options::prepare(raw, options)?, cache)
+        Self::from_prepared_with_cache(crate::options::prepare(raw, options)?, cache)
     }
 
     /// Retain a schema-validity proof for a namespace exposing every definition
@@ -115,12 +115,33 @@ impl SchemaDocument {
     }
 
     fn from_prepared_with_cache(
-        raw: &Value,
+        raw: Value,
         cache: Option<&crate::SchemaValidationCache>,
     ) -> Result<Self> {
+        let (canonical, validation) = prepare_document(&raw, cache)?;
+        let schema = Self {
+            raw,
+            root: OnceCell::new(),
+            canonical: OnceCell::new(),
+            raw_validator: OnceCell::new(),
+            source_validated: matches!(validation, SourceValidation::Proven),
+            #[cfg(test)]
+            canonical_validator: OnceCell::new(),
+        };
+        schema
+            .canonical
+            .set(canonical)
+            .expect("canonical schema cache should be initialized exactly once");
+        if let SourceValidation::Compiled(validator) = validation {
+            assert!(schema.raw_validator.set(validator).is_ok());
+        }
+        Ok(schema)
+    }
+
+    fn prepare_canonical(raw: &Value) -> Result<Value> {
         // Validate the source's dialect and shape before rewriting references.
         let checked = canonicalize_schema(raw)?;
-        let canonical = if crate::references::needs_linking(raw) {
+        Ok(if crate::references::needs_linking(raw) {
             match crate::references::link(raw) {
                 Ok(linked) => canonicalize_schema(&linked)?.into_value(),
                 Err(
@@ -132,24 +153,22 @@ impl SchemaDocument {
             }
         } else {
             checked.into_value()
-        };
-        let schema = Self {
-            raw: raw.clone(),
-            root: OnceCell::new(),
-            canonical: OnceCell::new(),
-            raw_validator: OnceCell::new(),
-            source_validated: cache.is_some_and(|cache| cache.validates(raw)),
-            #[cfg(test)]
-            canonical_validator: OnceCell::new(),
-        };
-        schema
-            .canonical
-            .set(canonical)
-            .expect("canonical schema cache should be initialized exactly once");
-        if !schema_uses_resolver_owned_reference_features(raw) {
-            schema.validate_source_schema()?;
+        })
+    }
+
+    fn prepare_validator(
+        raw: &Value,
+        cache: Option<&crate::SchemaValidationCache>,
+    ) -> Result<SourceValidation> {
+        if cache.is_some_and(|cache| cache.validates(raw)) {
+            Ok(SourceValidation::Proven)
+        } else if schema_uses_resolver_owned_reference_features(raw) {
+            Ok(SourceValidation::Deferred)
+        } else {
+            compile(raw)
+                .map(SourceValidation::Compiled)
+                .map_err(|source| AstError::RawValidator { source })
         }
-        Ok(schema)
     }
 
     /// Return the lazily built resolved root node.
@@ -270,6 +289,39 @@ impl SchemaDocument {
             compile(&self.raw).map_err(|source| AstError::RawValidator { source })
         })
     }
+}
+
+enum SourceValidation {
+    Proven,
+    Compiled(JSONSchema),
+    Deferred,
+}
+
+fn prepare_document(
+    raw: &Value,
+    cache: Option<&crate::SchemaValidationCache>,
+) -> Result<(Value, SourceValidation)> {
+    // Both checks read the same immutable source. For large namespaces overlap
+    // backend compilation with normalization, but observe canonicalization's
+    // result first to retain the sequential diagnostic precedence. Neither
+    // check moves to import or instance validation.
+    #[cfg(not(target_arch = "wasm32"))]
+    if ["$defs", "definitions", "properties"].iter().any(|key| {
+        raw.get(*key)
+            .and_then(Value::as_object)
+            .is_some_and(|entries| entries.len() >= 128)
+    }) {
+        return std::thread::scope(|scope| {
+            let validator = scope.spawn(|| SchemaDocument::prepare_validator(raw, cache));
+            let canonical = SchemaDocument::prepare_canonical(raw);
+            let validator = validator.join().unwrap();
+            Ok((canonical?, validator?))
+        });
+    }
+    Ok((
+        SchemaDocument::prepare_canonical(raw)?,
+        SchemaDocument::prepare_validator(raw, cache)?,
+    ))
 }
 
 fn validation_node(source: Value) -> Result<SchemaNode> {

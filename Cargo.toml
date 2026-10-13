@@ -38,6 +38,11 @@ fancy-regex = "0.17"
 percent-encoding = "2.3"
 sha2 = "0.10.8"
 
+[target.'cfg(all(target_arch = "aarch64", target_family = "unix"))'.dependencies]
+# sha2 0.10 gates ARM SHA instructions behind this feature. It retains runtime
+# CPU detection and the portable fallback; artifact digests remain SHA-256.
+sha2 = { version = "0.10.8", features = ["asm"] }
+
 [dev-dependencies]
 json_schema_fuzz = { path = "fuzz" }
 criterion = "0.8"
