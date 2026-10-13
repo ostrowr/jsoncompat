@@ -92,6 +92,8 @@ delegates numeric/equality assertions to the shared compiler to preserve
 jsoncompat's semantics. Ordinary Python validator calls use
 `serde_json::Value`; the private borrowed-value entrypoint checks the JSON
 shape and materializes a value before calling upstream.
+The workspace explicitly enables `idna` to retain internationalized hostname
+and email format assertions while keeping remote resolution disabled.
 
 Upstream enables `serde_json/float_roundtrip` for accurate `f64` parsing, which is distinct from
 `arbitrary_precision`. This dependency feature is unconditional even with

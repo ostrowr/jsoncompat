@@ -29,7 +29,8 @@ members = [
 
 [workspace.dependencies]
 # Disable remote resolution so the same backend also works in WebAssembly.
-jsonschema = { version = "0.58.6", default-features = false }
+# Retain internationalized hostname/email validation, now an optional feature.
+jsonschema = { version = "0.58.6", default-features = false, features = ["idna"] }
 
 [dependencies]
 rand = "0.10.0"
