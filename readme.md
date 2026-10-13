@@ -41,6 +41,9 @@ very small numbers can underflow to zero, and numbers beyond that range can fail
 to parse. Validation, compatibility checks, generation, and code generation work
 with the represented values; they cannot recover digits lost during parsing.
 This trades complete numeric correctness for speed and serialization compatibility.
+The validator backend enables `serde_json/float_roundtrip`, so serialized finite
+`f64` values parse back to the same value. This does not preserve arbitrary
+decimal precision or extend the numeric range.
 
 Enable exact JSON number parsing explicitly:
 

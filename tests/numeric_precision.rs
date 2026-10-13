@@ -4,6 +4,25 @@ use jsoncompat::{Role, SchemaDocument, check_compat};
 use serde_json::{Value, json};
 
 #[test]
+fn finite_floats_round_trip_without_changing_the_represented_value() {
+    for number in [
+        0.1,
+        1.234_567_890_123_456_7,
+        1.000_000_000_000_000_2,
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        f64::MAX,
+        -f64::MAX,
+    ] {
+        let original = json!(number);
+        let parsed: Value = serde_json::from_str(&original.to_string()).unwrap();
+        assert_eq!(parsed.as_f64().unwrap().to_bits(), number.to_bits());
+        let schema = SchemaDocument::from_json(&json!({"const": original})).unwrap();
+        assert!(schema.is_valid(&parsed).unwrap());
+    }
+}
+
+#[test]
 fn bounded_integer_values_remain_exact_in_both_modes() {
     let value: Value = serde_json::from_str("18446744073709551615").unwrap();
     assert_eq!(value.as_u64(), Some(u64::MAX));
