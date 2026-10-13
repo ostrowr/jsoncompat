@@ -182,27 +182,28 @@ impl Node {
                         Ordering::Less => !lower,
                     })
                 }),
-                Rule::MultipleOf(divisor) => multiple_of(value, divisor),
+                Rule::MultipleOf(divisor) => multiple_of(value, divisor).unwrap_or(false),
                 _ => unreachable!("leaf guards contain only scalar constraints"),
             })
     }
 }
 
-fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &Decimal) -> bool {
-    value.as_number().is_none_or(|number| {
-        // Keep machine-sized integer divisibility exact and allocation-free.
-        if divisor.is_integer()
-            && let Some(divisor) = divisor.to_u64().filter(|value| *value != 0)
-        {
-            if let Some(number) = number.as_i64() {
-                return i128::from(number) % i128::from(divisor) == 0;
-            }
-            if let Some(number) = number.as_u64() {
-                return number % divisor == 0;
-            }
+fn multiple_of<'a>(value: impl InstanceView<'a>, divisor: &Decimal) -> Option<bool> {
+    let Some(number) = value.as_number() else {
+        return Some(true);
+    };
+    // Keep machine-sized integer divisibility exact and allocation-free.
+    if divisor.is_integer()
+        && let Some(divisor) = divisor.to_u64().filter(|value| *value != 0)
+    {
+        if let Some(number) = number.as_i64() {
+            return Some(i128::from(number) % i128::from(divisor) == 0);
         }
-        exact_instance_number(value).is_some_and(|number| number.is_multiple_of(divisor))
-    })
+        if let Some(number) = number.as_u64() {
+            return Some(number % divisor == 0);
+        }
+    }
+    exact_instance_number(value).map(|number| number.is_multiple_of(divisor))
 }
 
 impl Rule {
@@ -566,14 +567,23 @@ impl PreparedSchema {
             Rule::UnevaluatedProperties(_) | Rule::UnevaluatedItems(_) => {
                 unreachable!("handled at the containing node")
             }
-            Rule::MultipleOf(divisor) => multiple_of(value, divisor),
+            Rule::MultipleOf(divisor) => multiple_of(value, divisor).unwrap_or_else(|| {
+                context.incomplete = true;
+                false
+            }),
             Rule::Unique => value.as_array().is_none_or(|array| {
                 let mut seen = Vec::with_capacity(array.len());
                 for value in array.iter() {
                     if seen.iter().any(|previous| value.equals(previous)) {
                         return false;
                     }
-                    seen.push(value.to_owned());
+                    let Ok(value) = value.try_to_owned() else {
+                        // Conversion failure is not a failed assertion that a
+                        // surrounding `not` or conditional may turn into success.
+                        context.incomplete = true;
+                        return false;
+                    };
+                    seen.push(value);
                 }
                 true
             }),
@@ -592,16 +602,17 @@ impl PreparedSchema {
                 lower,
                 exclusive,
             } => value.as_number().is_none_or(|_| {
-                let comparison = compare_bound(value, limit, exact.as_ref());
-                comparison.is_some_and(|order| {
-                    if order == Ordering::Equal {
-                        !exclusive
-                    } else if *lower {
-                        order == Ordering::Greater
-                    } else {
-                        order == Ordering::Less
-                    }
-                })
+                let Some(order) = compare_bound(value, limit, exact.as_ref()) else {
+                    context.incomplete = true;
+                    return false;
+                };
+                if order == Ordering::Equal {
+                    !exclusive
+                } else if *lower {
+                    order == Ordering::Greater
+                } else {
+                    order == Ordering::Less
+                }
             }),
         }
     }
@@ -665,7 +676,7 @@ fn exact_instance_number<'a>(value: impl InstanceView<'a>) -> Option<Decimal> {
             Some(value) => exact_decimal(&value.to_string())?,
             // Use the decimal representation of a Python float, just as the
             // public value validator does; preserve raw JSON decimal lexemes.
-            _ => exact_decimal(&value.to_owned().to_string())?,
+            _ => Decimal::from_value(&value.try_to_owned().ok()?)?,
         }
     })
 }

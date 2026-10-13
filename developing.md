@@ -12,6 +12,25 @@ just check
 
 That is the full local validation gate. It runs the Rust checks and tests, the web checks, and the production website build.
 
+The full Rust/Python suite runs once with `--all-features`, including exact
+numeric-lexeme fixtures. Focused numeric and prepared-Python tests also check the
+default rounding and range limits. Build the Python extension with the same
+precision feature as its Rust integration tests. CI runs these extra default-mode
+checks only on Ubuntu/stable, without adding another matrix dimension or full
+suite run.
+
+`tests/check_cargo_features.py` checks the resolved feature metadata for every
+crate from isolated consumers, with defaults and with `arbitrary-precision`.
+It does not compile those consumers: the focused runtime tests cover numeric
+behavior, while metadata detects accidental feature unification and missing
+forwarding. CI exercises the default WebAssembly release exports. To additionally
+check the opt-in WebAssembly build locally:
+
+```bash
+wasm-pack build wasm --release --target web --out-dir pkg-precise --features arbitrary-precision
+node wasm/tests/verdicts.mjs --arbitrary-precision
+```
+
 Use the pnpm version declared in `package.json` when updating JavaScript
 dependencies. Keep routine dependency refreshes within compatible version
 ranges, preserve the exact Python benchmark pins, and commit the Cargo, pnpm,
@@ -67,11 +86,39 @@ invent declared properties from `required`, or discard successful `anyOf`/`if`
 annotations. When annotation expansion exceeds the proof engine’s scope,
 `analyze_compat` returns `Unknown` unless it finds a validated counterexample.
 
-Publishable Rust crates depend on the upstream `jsonschema` package from
-crates.io. The unpublished Python extension separately owns its forked
-validator, which provides borrowed Python/Jiter instance validation for the
-generated-model runtime. Fork-only validator types must never appear in a
-published crate's dependencies or public interfaces.
+All crates use the same published upstream `jsonschema` 0.58.6 package from
+crates.io, declared in the workspace dependencies. Python's schema validator
+delegates numeric/equality assertions to the shared compiler to preserve
+jsoncompat's semantics. Ordinary Python validator calls use
+`serde_json::Value`; the private borrowed-value entrypoint checks the JSON
+shape and materializes a value before calling upstream.
+The workspace explicitly enables `idna` to retain internationalized hostname
+and email format assertions while keeping remote resolution disabled.
+
+Upstream enables `serde_json/float_roundtrip` for accurate `f64` parsing, which is distinct from
+`arbitrary_precision`. This dependency feature is unconditional even with
+`default-features = false`; decimal-heavy raw JSON parsing can be slower.
+Arbitrary precision remains opt-in. Sharing the backend version across Rust and
+Python avoids including two versions of the validator in the Python extension.
+
+Generated models keep their prepared evaluator and allocation-free Python,
+Jiter, and model-slot views in the unpublished extension. These application
+adapters live in `pybindings/src/instance.rs` and contain no forked schema
+validator. They are independent of upstream's representation API and retain
+fallible conversion for out-of-range numeric diagnostics.
+
+To compare the migration with an unchanged fork worktree, build both Python
+extensions with `just _build-python-release`, build the candidate CLI, and run:
+
+```bash
+JSONCOMPAT_NATIVE_PROFILE=release uv run --no-config --project pybindings --all-extras --group benchmark --locked python pybindings/bench_validator_backends.py --baseline /path/to/fork/worktree --output target/python-upstream/benchmark.json
+```
+
+The comparison alternates fresh processes using the same interpreter and
+generated artifacts. It measures checked JSON round trips, validator calls,
+compilation, import, and first use separately, and records each native library's
+path and hash. Run it with other builds/tests idle. Both extensions must use
+the same numeric feature setting; the default comparison keeps precision off.
 
 The compatibility layer works over the resolved schema graph:
 
@@ -254,14 +301,14 @@ maturin sdist --manifest-path pybindings/Cargo.toml --out target/sdist
 python3 pybindings/tests/check_sdist.py target/sdist/*.tar.gz
 ```
 
-Prepared validation programs use a generic borrowed-value interface in `codegen/src/prepared_schema/instance.rs`. The Python extension implements it for its parser and Python views. The published codegen crate must not depend on the Python validator fork.
+Prepared validation programs use a generic borrowed-value interface in `codegen/src/prepared_schema/instance.rs`. The Python extension implements it for its parser and Python views. The published codegen crate has no Python-specific dependencies.
 
 
 ### Prepared runtime boundaries
 
 `codegen/src/prepared_schema` owns portable validation, annotations, precompiled
 patterns, and cold structured diagnostics. `pybindings/src/prepared_schema.rs`
-adapts Python/Jiter values without leaking fork types into published crates.
+adapts Python/Jiter values without exposing Python-specific types in published crates.
 `pybindings/src/model_converter/{input,output,projection}.rs` separate construction,
 serialization, and borrowed model views; binding/layout remains in the parent.
 `openapi/src/validation.rs` validates document shapes before lowering, while
@@ -269,7 +316,7 @@ serialization, and borrowed model views; binding/layout remains in the parent.
 
 Use `just check-packages` before release: it packages every published Rust crate
 and builds the resulting dependency closure from archives. CI runs this gate
-independently of workspace tests. Keep the Python-specific validator fork confined
+independently of workspace tests. Keep Python-specific instance adapters confined
 to the unpublished extension.
 
 Representative generated Python snapshots remain in source control; the full

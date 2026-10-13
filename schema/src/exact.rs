@@ -385,8 +385,8 @@ struct NumericKeyword {
     bound: crate::Decimal,
     small: Option<f64>,
 }
-impl jsonschema::Keyword for NumericKeyword {
-    fn is_valid(&self, instance: &Value) -> bool {
+impl<'i> jsonschema::Keyword<'i> for NumericKeyword {
+    fn is_valid(&self, instance: &'i Value) -> bool {
         if !instance.is_number() {
             return true;
         }
@@ -425,7 +425,7 @@ impl jsonschema::Keyword for NumericKeyword {
             _ => unreachable!(),
         }
     }
-    fn validate<'i>(&self, instance: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
+    fn validate(&self, instance: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
         if self.is_valid(instance) {
             Ok(())
         } else {

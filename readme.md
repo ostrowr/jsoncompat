@@ -32,6 +32,37 @@ Python and JavaScript/WebAssembly packages are documented separately:
 - [Python bindings](pybindings/README.md)
 - [JavaScript/WebAssembly bindings](wasm/README.md)
 
+## Numeric precision
+
+Arbitrary precision is **off by default**, including in the Python and
+WebAssembly builds. Rust crates use the ordinary `serde_json` representation:
+signed/unsigned 64-bit integers and finite `f64` values. Decimal input can round,
+very small numbers can underflow to zero, and numbers beyond that range can fail
+to parse. Validation, compatibility checks, generation, and code generation work
+with the represented values; they cannot recover digits lost during parsing.
+This trades complete numeric correctness for speed and serialization compatibility.
+The validator backend enables `serde_json/float_roundtrip`, so serialized finite
+`f64` values parse back to the same value. This does not preserve arbitrary
+decimal precision or extend the numeric range.
+
+Enable exact JSON number parsing explicitly:
+
+```toml
+jsoncompat = { version = "0.5.0", features = ["arbitrary-precision"] }
+```
+
+The same opt-in feature is available on `json_schema_ast`, `json_schema_fuzz`,
+`jsoncompat_codegen`, and `jsoncompat_openapi`, and is forwarded to their internal
+dependencies. To enable it in the CLI, build with
+`cargo install jsoncompat --features arbitrary-precision`.
+
+The feature enables `serde_json/arbitrary_precision` throughout the shared Cargo
+dependency graph. It changes number storage and serialization behavior and adds
+allocation and parsing costs, even for ordinary numbers. `default-features = false`
+cannot disable it if another dependency explicitly enables it. Existing exact
+arithmetic remains in use in either mode, but only the enabled mode preserves
+arbitrary JSON number text. See the binding READMEs for opt-in build commands.
+
 ## Quick start
 
 Check a serializer-facing schema change:

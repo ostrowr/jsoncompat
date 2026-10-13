@@ -166,9 +166,51 @@ impl PartialOrd for Decimal {
 impl TryFrom<String> for Decimal {
     type Error = serde_json::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let number = value.parse::<Number>()?;
-        Ok(Self::from_number(&number))
+        // Prepared artifacts store exact decimals as strings. Validate the JSON
+        // number grammar without passing through Number: its default f64 path
+        // would round exponent notation even for coefficients that fit in u64.
+        if !is_json_number(&value) {
+            return Err(serde::de::Error::custom("invalid JSON decimal"));
+        }
+        Ok(Self::parse_number(&value))
     }
+}
+
+fn is_json_number(text: &str) -> bool {
+    fn digits(bytes: &mut &[u8]) -> bool {
+        let count = bytes
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        *bytes = &bytes[count..];
+        count != 0
+    }
+
+    let mut bytes = text.as_bytes();
+    bytes = bytes.strip_prefix(b"-").unwrap_or(bytes);
+    match bytes.first() {
+        Some(b'0') => bytes = &bytes[1..],
+        Some(b'1'..=b'9') => {
+            digits(&mut bytes);
+        }
+        _ => return false,
+    }
+    if let Some(rest) = bytes.strip_prefix(b".") {
+        bytes = rest;
+        if !digits(&mut bytes) {
+            return false;
+        }
+    }
+    if matches!(bytes.first(), Some(b'e' | b'E')) {
+        bytes = &bytes[1..];
+        if matches!(bytes.first(), Some(b'+' | b'-')) {
+            bytes = &bytes[1..];
+        }
+        if !digits(&mut bytes) {
+            return false;
+        }
+    }
+    bytes.is_empty()
 }
 impl From<Decimal> for String {
     fn from(value: Decimal) -> Self {
@@ -207,6 +249,42 @@ mod tests {
     }
     fn number_exponent_plus_one(text: &str) -> BigInt {
         text.parse::<BigInt>().unwrap() + 1
+    }
+    #[test]
+    fn serialization_preserves_exact_values_in_both_precision_modes() {
+        for value in [
+            Decimal::from_u64(10_000_000_000_000_001),
+            Decimal::from_u64(u64::MAX),
+            Decimal::from_i64(i64::MIN),
+            number("0.10000000000000001"),
+            number("-123456789012345678901234567890.125"),
+            number("1e2147483648"),
+            number("1e-2147483648"),
+        ] {
+            let encoded = serde_json::to_string(&value).unwrap();
+            let decoded: Decimal = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(decoded, value, "{encoded}");
+        }
+        assert_eq!(
+            number("1.0000000000000001e16"),
+            Decimal::from_u64(10_000_000_000_000_001)
+        );
+        assert_eq!(number("-0.00E+999"), number("0"));
+        assert_eq!(number("12.30E-2"), number("0.123"));
+    }
+
+    #[test]
+    fn deserialization_rejects_invalid_number_syntax() {
+        for text in [
+            "", " ", " 1", "1 ", "-", "+1", "01", "-01", ".1", "1.", "1e", "1e+", "1e-", "--1",
+            "1e1e1", "NaN", "Infinity", "0x10", "1_0", "[1]", "null", "\"1\"", "١", "1e١",
+        ] {
+            let encoded = serde_json::to_string(text).unwrap();
+            assert!(
+                serde_json::from_str::<Decimal>(&encoded).is_err(),
+                "{text:?}"
+            );
+        }
     }
     #[test]
     fn decimal_semantics_match_bounded_rationals() {

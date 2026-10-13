@@ -73,6 +73,29 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
         json!({"if":{"minimum":0},"then":false,"else":true}),
     ));
     schemas.push(("tiny_integer", json!({"type":"integer"})));
+    for (name, schema) in [
+        (
+            "numeric_unique",
+            json!({"type":"array", "uniqueItems":true}),
+        ),
+        ("numeric_minimum", json!({"type":"number", "minimum":0.5})),
+        (
+            "numeric_multiple",
+            json!({"type":"number", "multipleOf":0.5}),
+        ),
+    ] {
+        schemas.push((name, schema.clone()));
+        let negated_name = match name {
+            "numeric_unique" => "numeric_unique_not",
+            "numeric_minimum" => "numeric_minimum_not",
+            _ => "numeric_multiple_not",
+        };
+        schemas.push((negated_name, json!({"not":schema})));
+    }
+    schemas.push((
+        "large_multiple",
+        json!({"type":"integer", "multipleOf":10_000_000_000_000_001_u64}),
+    ));
     schemas.push(("duplicate_oneof", json!({"oneOf":[true,true,true]})));
     schemas.push((
         "duplicate_leaf_oneof",

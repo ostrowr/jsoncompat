@@ -19,6 +19,11 @@ pub trait InstanceView<'a>: Copy {
     fn as_object(self) -> Option<Self::Object>;
     fn equals(self, expected: &Value) -> bool;
     fn to_owned(self) -> Value;
+    /// Materialize diagnostics without panicking on a borrowed number outside
+    /// serde_json's configured range. Native adapters can report conversion errors.
+    fn try_to_owned(self) -> Result<Value, serde_json::Error> {
+        Ok(self.to_owned())
+    }
     fn is_string(self) -> bool {
         self.as_str().is_some()
     }

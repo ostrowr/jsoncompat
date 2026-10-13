@@ -7,6 +7,10 @@ repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
 readme = "README.md"
 
+[features]
+default = []
+arbitrary-precision = ["json_schema_ast/arbitrary-precision"]
+
 [dependencies]
 email_address = "0.2.9"
 json_schema_ast = { path = "../schema", version = "0.5.0" }
