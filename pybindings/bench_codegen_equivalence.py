@@ -1,6 +1,8 @@
 """Compare generated packages without importing models or retaining expanded schemas.
 
-Schema introspection text must be byte-for-byte identical. Prepared validation
+When both packages retain source schemas, introspection text must be byte-for-byte
+identical. Format 7 removes source storage entirely; validation and conversion
+programs must remain unchanged. Prepared validation
 programs must be graph-bisimilar from their model roots: node and pattern IDs
 may change, but every rule, constant, pattern, diagnostic reference, and edge
 must be preserved. This checks storage and graph restructuring independently of
@@ -166,7 +168,9 @@ class ResourcePackage(Package):
                         model = name.removeprefix("_jsoncompat_program_")
                         program = ast.literal_eval(node.value)
                         ensure(isinstance(program, bytes), path)
-                        self.models[model] = (namespace[f"_jsoncompat_schema_{model}"], program)
+                        parts = namespace.get(f"_jsoncompat_schema_{model}")
+                        ensure((parts is None) == (self.manifest["version"] >= 7), (path, "unexpected schema storage"))
+                        self.models[model] = (parts, program)
 
     def model(self, name, *, omit_context=False):
         parts, program = self.models[self.aliases.get(name, name)]
@@ -278,12 +282,16 @@ def compare_resource_packages(old, new, output, started):
     checked_fragments = set()
     for name, (before_parts, before_program) in sorted(old.models.items()):
         after_parts, after_program = new.models[name]
-        ensure(len(before_parts) == len(after_parts), (name, "schema fragment count differs"))
-        for before, after in zip(before_parts, after_parts):
-            pair = (b"".join(before), b"".join(after))
-            if pair not in checked_fragments:
-                ensure(zlib.decompress(pair[0]) == zlib.decompress(pair[1]), (name, "full schema text differs"))
-                checked_fragments.add(pair)
+        if new.manifest["version"] >= 7:
+            ensure(after_parts is None, (name, "schema storage should be absent"))
+        else:
+            ensure(before_parts is not None and after_parts is not None, (name, "missing schema storage"))
+            ensure(len(before_parts) == len(after_parts), (name, "schema fragment count differs"))
+            for before, after in zip(before_parts, after_parts):
+                pair = (b"".join(before), b"".join(after))
+                if pair not in checked_fragments:
+                    ensure(zlib.decompress(pair[0]) == zlib.decompress(pair[1]), (name, "full schema text differs"))
+                    checked_fragments.add(pair)
         ensure(before_program == after_program, (name, "prepared program bytes differ"))
         counts["prepared_programs_byte_identical"] += 1
         counts["prepared_node_pairs"] += compare_programs(
@@ -298,7 +306,7 @@ def compare_resource_packages(old, new, output, started):
             if filename.startswith("_data/") or not filename.endswith((".py", ".pyi")):
                 continue
             tree = ast.parse((package.root / filename).read_text())
-            # Only compression and the names of its stored fragments may differ.
+            # Only source-schema storage and its removed installer argument may differ.
             # Constructors, metadata, complete conversion descriptors, binding
             # plans, and type declarations must be identical Python syntax.
             tree.body = [node for node in tree.body if not (
@@ -307,13 +315,22 @@ def compare_resource_packages(old, new, output, started):
                 and isinstance(node.targets[0], ast.Name)
                 and node.targets[0].id.startswith("_jsoncompat_schema_")
             )]
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id == "dc" and node.func.attr == "install_model":
+                    if package.manifest["version"] < 7:
+                        ensure(len(node.args) == 4 and isinstance(node.args[2], ast.Name) and node.args[2].id.startswith("_jsoncompat_schema_"), (filename, "unexpected legacy install"))
+                        del node.args[2]
+                    else:
+                        ensure(len(node.args) == 3, (filename, "unexpected install"))
             result[filename] = ast.dump(tree)
         return result
     before_code, after_code = module_code(old), module_code(new)
     ensure(before_code.keys() == after_code.keys(), "module inventory differs")
     for filename in before_code:
         ensure(before_code[filename] == after_code[filename], (filename, "generated module code differs"))
-    result = dict(**counts, full_schema_text_equal=True, prepared_programs_bisimilar=True,
+    result = dict(**counts, full_schema_text_equal=True if new.manifest["version"] < 7 else None,
+                  source_schemas_removed=new.manifest["version"] >= 7 and old.manifest["version"] < 7,
+                  prepared_programs_bisimilar=True,
                   module_code_equal=True, modules_compared=len(before_code),
                   schema_fragments_compared=len(checked_fragments),
                   before=str(old.root), after=str(new.root), seconds=time.perf_counter()-started,
@@ -469,6 +486,7 @@ class VerifierTests(unittest.TestCase):
                     f"class Example: value: {annotation}\n"
                     f"_jsoncompat_schema_Example = (_jsoncompat_S_{name},)\n"
                     f"_jsoncompat_program_Example = {source_program!r}\n"
+                    "dc.install_model(Example, init, _jsoncompat_schema_Example, globals())\n"
                     "raise RuntimeError('never execute generated modules')\n"
                 )
                 return ResourcePackage(root)
@@ -479,6 +497,22 @@ class VerifierTests(unittest.TestCase):
             for changes in [{"source_schema":b'{"type":"string"}'}, {"source_program":program+b" "}, {"annotation":"int"}]:
                 with self.subTest(changes=changes), self.assertRaises(AssertionError):
                     compare_resource_packages(before, package("after", 1, **changes), output, time.perf_counter())
+
+            removed = package("removed", 1)
+            path = removed.root / "models/example.py"
+            path.write_text("\n".join(line for line in path.read_text().splitlines() if not line.startswith(("from .._data", "_jsoncompat_schema_"))).replace("init, _jsoncompat_schema_Example, globals()", "init, globals()") + "\n")
+            manifest_path = removed.root / ".jsoncompat-manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["version"] = 7
+            del manifest["files"]["_data/s_a.py"]
+            manifest_path.write_text(json.dumps(manifest))
+            compare_resource_packages(before, ResourcePackage(removed.root), output, time.perf_counter())
+            result = json.loads(output.read_text())
+            self.assertTrue(result["source_schemas_removed"])
+            self.assertIsNone(result["full_schema_text_equal"])
+            path.write_text(path.read_text().replace("value: str", "value: int"))
+            with self.assertRaises(AssertionError):
+                compare_resource_packages(before, ResourcePackage(removed.root), output, time.perf_counter())
 
     def test_empty_header_normalization_does_not_rewrite_literal_values(self):
         aliases = {"GetPet404Headers": "JsoncompatEmptyHeaders"}

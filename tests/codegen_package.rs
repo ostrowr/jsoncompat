@@ -170,6 +170,7 @@ fn older_packages_migrate_without_removing_unmanaged_files() {
         (3, "models_0000.py"),
         (4, "_models/wide/_schema_wide_0000.py"),
         (5, "_models/wide/_init_wide.py"),
+        (6, "_data/s_a.py"),
     ] {
         let work = Work::new();
         work.write(&api());
@@ -206,94 +207,56 @@ fn older_packages_migrate_without_removing_unmanaged_files() {
 }
 
 #[test]
-fn schema_chunks_share_storage_across_independent_groups_and_cache_owners() {
+fn packages_omit_source_schema_and_cache_independent_models() {
     let work = Work::new();
-    let object = json!({"type":"object","properties":{"payload":record(3)},"required":["payload"]});
-    work.write(&json!({"openapi":"3.1.0","info":{"title":"Shared schemas","version":"1"},"components":{"schemas":{
+    let object = json!({"type":"object","properties":{"payload":record(3)},"required":["payload"],"description":"SOURCE_ONLY_MARKER"});
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Independent models","version":"1"},"components":{"schemas":{
         "A":object, "B":object, "C":{"type":"string"}
     }}}));
     assert!(success(work.generate_with_group_size("1", &[])).contains("(3 rebuilt)"));
     let package = work.0.join("models");
     let before = contents(&package);
-    let manifest: Value =
-        serde_json::from_slice(&fs::read(package.join(".jsoncompat-manifest.json")).unwrap())
-            .unwrap();
-    assert_eq!(manifest["version"], 6);
-    let a = manifest["module_files"]["_models.a"].as_array().unwrap();
-    let b = manifest["module_files"]["_models.b"].as_array().unwrap();
-    let shared = a
-        .iter()
-        .filter_map(Value::as_str)
-        .filter(|name| name.starts_with("_data/") && b.contains(&json!(name)))
-        .collect::<Vec<_>>();
-    assert!(
-        !shared.is_empty(),
-        "independent groups must reuse identical chunks"
-    );
+    assert!(!package.join("_data").exists());
+    for source in before.values() {
+        let source = String::from_utf8_lossy(source);
+        assert!(!source.contains("SOURCE_ONLY_MARKER"));
+        assert!(!source.contains("_jsoncompat_schema"));
+    }
     success(
         python_env::python_command()
             .arg("-c")
             .arg(
                 r#"
-import json, sys, zlib
-from unittest.mock import patch
+import json, sys
 sys.path.insert(0, sys.argv[1])
-def forbidden(*a, **k): raise AssertionError('schema introspection during model use')
-with patch.object(zlib, 'decompress', forbidden):
-    from models import A
-    assert 'models.models.b' not in sys.modules
-    value = {'payload': {'f000': 0, 'f001': 1, 'f002': 2}}
-    first = A.from_value(value)
-    from models import B
-    second = B.from_value(value)
-    assert type(first.payload) is not type(second.payload)
-    assert json.loads(first.serialize()) == json.loads(second.serialize()) == value
-    a = vars(type(first.payload))['__jsoncompat_schema__']._compressed
-    b = vars(type(second.payload))['__jsoncompat_schema__']._compressed
-    assert isinstance(a, tuple) and isinstance(b, tuple) and a
-    assert len(a) == len(b) and all(x is y for x, y in zip(a, b))
-with patch.object(zlib, 'decompress', wraps=zlib.decompress) as decompress:
-    source = type(first.payload).__jsoncompat_schema__
-    assert type(first.payload).__jsoncompat_schema__ is source
-    assert decompress.call_count == 1
-    assert type(second.payload).__jsoncompat_schema__ == source
-    assert decompress.call_count == 2
-assert json.loads(source)['properties']['f002']['minimum'] == 0
+from models import A
+assert 'models.models.b' not in sys.modules
+value = {'payload': {'f000': 0, 'f001': 1, 'f002': 2}}
+first = A.from_value(value)
+from models import B
+second = B.from_value(value)
+assert type(first.payload) is not type(second.payload)
+assert json.loads(first.serialize()) == json.loads(second.serialize()) == value
+for model in (A, B, type(first.payload), type(second.payload)):
+    assert not hasattr(model, '__jsoncompat_schema__')
+try: A.from_value({'payload': {'f000': -1, 'f001': 1, 'f002': 2}})
+except ValueError: pass
+else: raise AssertionError('validation was lost')
 "#,
             )
             .arg(&work.0)
             .output()
             .unwrap(),
     );
-    fs::remove_file(package.join(shared[0])).unwrap();
-    assert!(success(work.generate_with_group_size("1", &[])).contains("(2 rebuilt)"));
+    assert!(success(work.generate_with_group_size("1", &[])).contains("(0 rebuilt)"));
+    fs::remove_file(package.join("models/a.py")).unwrap();
+    assert!(success(work.generate_with_group_size("1", &[])).contains("(1 rebuilt)"));
     assert_eq!(contents(&package), before);
-    fs::write(package.join(shared[0]), "# corrupted chunk\n").unwrap();
-    assert!(success(work.generate_with_group_size("1", &[])).contains("(2 rebuilt)"));
+    fs::write(package.join("models/a.py"), "# corrupt prepared model").unwrap();
+    assert!(success(work.generate_with_group_size("1", &[])).contains("(1 rebuilt)"));
     assert_eq!(contents(&package), before);
-    fs::write(package.join("_data/notes.txt"), "caller owned").unwrap();
-    assert!(
-        success(work.generate_with_group_size("1", &["--component", "A"])).contains("(0 rebuilt)")
-    );
-    for file in &shared {
-        let retained = fs::read_to_string(package.join(file)).unwrap();
-        let old = String::from_utf8_lossy(&before[*file]);
-        assert!(
-            retained
-                .lines()
-                .all(|line| old.lines().any(|old| old == line)),
-            "only unowned data may be pruned"
-        );
-    }
+    success(work.generate_with_group_size("1", &["--component", "A"]));
     assert!(!package.join("models/b.py").exists());
-    success(work.generate_with_group_size("1", &["--component", "C"]));
-    for file in &shared {
-        assert!(!package.join(file).exists(), "last owner removed: {file}");
-    }
-    assert_eq!(
-        fs::read_to_string(package.join("_data/notes.txt")).unwrap(),
-        "caller owned"
-    );
 }
 
 #[cfg(unix)]
@@ -397,20 +360,8 @@ for value in (None, False, -1, 0.5, '3', [], {}):
         try: convert(instance)
         except ValueError: pass
         else: raise AssertionError(('integer constraint omitted', value))
-allow_schema = {'anyOf': [
-    {'enum': [None]}, {'enum': [False, True]},
-    {'type': 'object', 'properties': {}, 'minProperties': 0},
-    {'type': 'array', 'items': True, 'minItems': 0},
-    {'type': 'string', 'minLength': 0}, {'type': 'number'}
-]}
-for model, expected in ((Allow, allow_schema), (Reject, {'not': True}), (Count, {'minimum': 0, 'multipleOf': 1, 'type': 'integer'})):
-    source = json.loads(model.__jsoncompat_schema__)
-    metadata = source.pop('x-jsoncompat')
-    assert source == expected, (model, source)
-    assert metadata == {
-        'kind': 'declaration', 'stable_id': f'#/$defs/{model.__name__}',
-        'name': model.__name__, 'version': 1, 'schema_ref': f'#/$defs/{model.__name__}'
-    }, metadata
+for model in (Allow, Reject, Count):
+    assert not hasattr(model, '__jsoncompat_schema__')
 "#,
             )
             .arg(&work.0)
@@ -462,23 +413,8 @@ with patch.object(builtins, 'compile', forbidden), patch.object(dataclasses, 'da
     try: Wide.deserialize(json.dumps(dict(payload, f199=-1)))
     except ValueError: pass
     else: raise AssertionError('wide constraint was omitted')
-# The recursive models retain shared streams, and explicit introspection alone
-# expands them into the original complete schema, once per class.
-order_source = vars(Order)['__jsoncompat_schema__']._compressed
-customer_source = vars(Customer)['__jsoncompat_schema__']._compressed
-assert isinstance(order_source, dc.SchemaSource)
-assert isinstance(customer_source, dc.SchemaSource)
-assert len(order_source.parts[1]) == len(customer_source.parts[1])
-assert all(a is b for a, b in zip(order_source.parts[1], customer_source.parts[1]))
-with patch.object(zlib, 'decompress', wraps=zlib.decompress) as decompress:
-    source = Order.__jsoncompat_schema__
-    assert Order.__jsoncompat_schema__ is source
-    assert decompress.call_count == len(order_source.parts)
-    source_schema = json.loads(source)
-    assert source_schema['properties']['customer']['$ref'] == '#/$defs/Customer'
-    assert source_schema['$defs']['Customer']['properties']['id']['minimum'] == 0
-    assert source_schema['$defs']['Customer']['properties']['orders']['items']['$ref'] == '#/$defs/Order'
-    assert source_schema['$defs']['Order']['properties']['total']['minimum'] == 0
+assert not hasattr(Order, '__jsoncompat_schema__')
+assert not hasattr(Customer, '__jsoncompat_schema__')
 assert len(models.__all__) == 5
 assert set(models.__all__) <= set(dir(models))
 try: models.NoSuchModel
@@ -558,7 +494,7 @@ fn component_names_resources_and_failed_regeneration_are_explicit() {
 }
 
 #[test]
-fn split_model_artifacts_recover_missing_and_modified_chunks_and_remove_stale_ones() {
+fn large_model_artifacts_recover_missing_and_modified_files() {
     let work = Work::new();
     let mut spec = api();
     spec["components"]["schemas"]["Wide"] = record(1200);
@@ -590,11 +526,7 @@ fn split_model_artifacts_recover_missing_and_modified_chunks_and_remove_stale_on
     success(work.generate(&[]));
     let package = work.0.join("models");
     let before = contents(&package);
-    let chunks = before
-        .keys()
-        .filter(|name| name.starts_with("_data/s_"))
-        .collect::<Vec<_>>();
-    assert!(!chunks.is_empty());
+    assert!(!package.join("_data").exists());
     assert!(
         before["models/wide.py"].len() > 160_000,
         "large model stays in its named component module"
@@ -619,11 +551,7 @@ assert get_type_hints(Order)['customer'] is Customer
 payload = json.loads(Path(sys.argv[1], 'payload.json').read_text())
 assert Wide.from_value(payload).to_value() == payload
 assert Wide.deserialize(Wide.from_value(payload).serialize()).to_value() == payload
-chunks = vars(Wide)['__jsoncompat_schema__']._compressed
-assert isinstance(chunks, tuple) and chunks
-source = Wide.__jsoncompat_schema__
-assert Wide.__jsoncompat_schema__ is source
-assert payload['marker'] in json.dumps(json.loads(source)['properties']['marker'])
+assert not hasattr(Wide, '__jsoncompat_schema__')
 "#,
             )
             .arg(&work.0)

@@ -23,7 +23,9 @@ The package groups operations into `operations/pets.py`, `operations/groups.py`,
 `operations/search.py`, and `operations/health.py`. Each component owns a module
 such as `models/pet.py`, including its nested types. Direct resource/component
 imports load their dependencies; importing `api.py` prepares the full API for
-binding. Publish the whole generated directory.
+binding. Publish the whole generated directory. It contains prepared validation
+programs, without copies of the source schema JSON; keep `openapi.json` as your
+build input and reference document.
 
 Start with [the Pet model](petstore/models/pet.py),
 [pet requests and responses](petstore/operations/pets.py), and

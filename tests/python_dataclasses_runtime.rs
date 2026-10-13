@@ -3404,8 +3404,7 @@ assert model_hints["items"] == collections.abc.Sequence[module.GeneratedSchemaIt
 assert customer_hints["id"] is str
 assert item_hints["quantity"] is int
 
-assert module.GeneratedSchema.__jsoncompat_schema__.startswith('{\n')
-assert '"minProperties"' not in module.GeneratedSchema.__jsoncompat_schema__
+assert not hasattr(module.GeneratedSchema, '__jsoncompat_schema__')
 
 customer = module.GeneratedSchemaCustomer(
     id="cus_123",

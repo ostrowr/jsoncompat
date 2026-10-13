@@ -16,6 +16,7 @@ import cProfile
 import json
 import platform
 import pstats
+from pathlib import Path
 from typing import Annotated, Any, Callable, Literal
 
 import pydantic
@@ -166,7 +167,7 @@ def main() -> None:
     instance = ScaleTree.from_value(payload)
     pydantic_instance = PydanticTree.model_validate(payload)
     wire = instance.serialize(skip_validation=True)
-    validator = validator_for(ScaleTree.__jsoncompat_schema__)
+    validator = validator_for((Path(__file__).parent / "benchmark_schemas/scaling.json").read_text())
 
     assert instance.to_value() == payload
     assert pydantic_instance.model_dump(mode="json", exclude_unset=True) == payload

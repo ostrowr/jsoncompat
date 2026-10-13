@@ -51,7 +51,6 @@ __all__ = [
 
 
 JSONCOMPAT_EXTRA_FIELD = "__jsoncompat_extra__"
-JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
 JSONCOMPAT_RUNTIME_FIELD = "__jsoncompat_runtime__"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
@@ -359,7 +358,6 @@ class DataclassModel(metaclass=_DataclassModelMeta):
     __slots__ = ()
 
     skip_validation: dataclasses.InitVar[bool] = False
-    __jsoncompat_schema__: ClassVar[str]
     __jsoncompat_runtime__: ClassVar[ModelRuntime]
 
     def __post_init__(self, skip_validation: bool) -> NoReturn:
@@ -622,55 +620,12 @@ for _name, _value in (("slots", True), ("weakref_slot", False)):
         setattr(_params, _name, _value)
 
 
-class SchemaSource:
-    """Generated independent compressed streams for explicit schema introspection.
-
-    Each stream may be split into shared storage chunks. Model construction and
-    validation never expand this source; they use the prepared native program.
-    """
-
-    __slots__ = ("parts",)
-
-    def __init__(self, parts: tuple[tuple[bytes, ...], ...]) -> None:
-        self.parts = parts
-
-
-class _SchemaSource:
-    """Expand the original schema only when a caller explicitly requests it."""
-
-    __slots__ = ("_compressed",)
-
-    def __init__(self, compressed: bytes | tuple[bytes, ...] | SchemaSource) -> None:
-        self._compressed = compressed
-
-    def __get__(self, instance: object, owner: type[DataclassModel]) -> str:
-        import zlib
-
-        compressed = self._compressed
-        if isinstance(compressed, SchemaSource):
-            schema = "".join(
-                zlib.decompress(b"".join(part)).decode("utf-8")
-                for part in compressed.parts
-            )
-        else:
-            if isinstance(compressed, tuple):
-                compressed = b"".join(compressed)
-            schema = zlib.decompress(compressed).decode("utf-8")
-        setattr(owner, JSONCOMPAT_SCHEMA_FIELD, schema)
-        return schema
-
-
 def install_model(
     model: type[DataclassModel],
     initializer: Callable[..., None],
-    schema_source: bytes | tuple[bytes, ...] | SchemaSource,
     namespace: dict[str, Any],
 ) -> None:
-    """Bind the constructor and retain shared or legacy compressed source data.
-
-    Chunks and streams expand only on explicit schema introspection. Legacy
-    artifacts containing one bytes value or one tuple of chunks remain valid.
-    """
+    """Bind the precomputed constructor to its public model namespace."""
     if not isinstance(initializer, types.FunctionType):
         raise TypeError("Generated initializer must be a Python function")
     # A companion can bind several separately imported copies of the models.
@@ -686,7 +641,6 @@ def install_model(
     initializer.__qualname__ = model.__qualname__ + ".__init__"
     initializer.__module__ = model.__module__
     setattr(model, "__init__", initializer)
-    setattr(model, JSONCOMPAT_SCHEMA_FIELD, _SchemaSource(schema_source))
 
 
 def bind_module(

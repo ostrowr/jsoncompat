@@ -138,6 +138,7 @@ fn prepared_dataclasses_preserve_runtime_and_fixture_contracts() {
         json!({"type": "array", "items": record_schema(12)}),
     ));
     for (name, schema) in schemas {
+        fs::write(directory.join(format!("{name}.json")), schema.to_string()).unwrap();
         if name == "constrained" {
             let document = SchemaDocument::from_json(&schema).expect("schema");
             let module =

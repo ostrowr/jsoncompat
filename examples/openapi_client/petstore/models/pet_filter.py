@@ -18,13 +18,11 @@ class PetFilter(dc.DataclassModel):
 
 # Prepared constructors and programs; no schema compilation on import.
 _jsoncompat_missing = dc.MissingType.MISSING
-from .._data.s_6 import S_6fcce4476d1727278eb2b6a83cceb0fdcca4fbf6de6c962a190ddaa9b5fc54ae as _jsoncompat_S_6fcce4476d1727278eb2b6a83cceb0fdcca4fbf6de6c962a190ddaa9b5fc54ae
-_jsoncompat_schema_PetFilter = (_jsoncompat_S_6fcce4476d1727278eb2b6a83cceb0fdcca4fbf6de6c962a190ddaa9b5fc54ae,)
 _jsoncompat_program_PetFilter = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["adopted",1],["species",2]],"patterns":[],"required":[],"additional":3}}]},{"types":null,"choices":[false,true],"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_PetFilter(self: dc.DataclassModel, *, skip_validation: bool = False, adopted: typing.Any = _jsoncompat_missing, species: typing.Any = _jsoncompat_missing) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(PetFilter, _jsoncompat_init_PetFilter, _jsoncompat_schema_PetFilter, globals())
+dc.install_model(PetFilter, _jsoncompat_init_PetFilter, globals())
 
 dc.bind_module(1, [(PetFilter, 2)], [
     ("str",),

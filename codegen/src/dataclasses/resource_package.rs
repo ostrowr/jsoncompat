@@ -1,12 +1,6 @@
 //! Stable component/resource modules, with dependency-directed prepared binding.
-use super::{
-    DataclassModule, DataclassPackage,
-    package::{SchemaFragment, SchemaSource},
-    plan::ConversionNode,
-    render,
-};
+use super::{DataclassModule, DataclassPackage, plan::ConversionNode, render};
 use crate::model_plan::PreparedPlan;
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
@@ -53,7 +47,6 @@ impl DataclassModule {
             })
             .collect();
         let mut files = BTreeMap::new();
-        let mut data = Data::default();
         let programs: Vec<_> = self
             .models
             .iter()
@@ -130,10 +123,6 @@ impl DataclassModule {
             });
             source.push_str("\n# Prepared constructors and programs; no schema compilation on import.\n_jsoncompat_missing = dc.MissingType.MISSING\n");
             for &i in &indices {
-                source.push_str(&data.schema(
-                    &self.parts.sources[i],
-                    &format!("_jsoncompat_schema_{}", self.models[i]),
-                ));
                 writeln!(
                     source,
                     "{} = {}",
@@ -147,7 +136,7 @@ impl DataclassModule {
                 ));
                 writeln!(
                     source,
-                    "dc.install_model({0}, _jsoncompat_init_{0}, _jsoncompat_schema_{0}, globals())",
+                    "dc.install_model({0}, _jsoncompat_init_{0}, globals())",
                     self.models[i]
                 )
                 .unwrap();
@@ -209,7 +198,6 @@ impl DataclassModule {
                 }
             }
         }
-        files.extend(data.sources);
         DataclassPackage {
             models: self.models.clone(),
             files,
@@ -316,73 +304,6 @@ impl<'a> PlanIndex<'a> {
 
 // Sixteen fixed hash buckets keep identical fragments shared without one file
 // per fragment. This storage boundary never controls public module ownership.
-#[derive(Default)]
-struct Data {
-    sources: BTreeMap<String, String>,
-    names: BTreeMap<[u8; 32], String>,
-    shared: BTreeMap<usize, String>,
-}
-impl Data {
-    fn store(&mut self, bytes: &[u8]) -> String {
-        let digest: [u8; 32] = Sha256::digest(bytes).into();
-        self.names
-            .entry(digest)
-            .or_insert_with(|| {
-                let name = format!("S_{:x}", Sha256::digest(bytes));
-                writeln!(
-                    self.sources
-                        .entry(format!("_data/s_{:x}.py", digest[0] >> 4))
-                        .or_default(),
-                    "{name}: bytes = {}",
-                    render::bytes(bytes)
-                )
-                .unwrap();
-                name
-            })
-            .clone()
-    }
-    fn schema(&mut self, source: &SchemaSource, target: &str) -> String {
-        let mut imports = String::new();
-        let names = match source {
-            SchemaSource::Whole(bytes) => vec![self.store(bytes)],
-            SchemaSource::Fragments(fragments) => fragments
-                .iter()
-                .map(|fragment| match fragment {
-                    SchemaFragment::Local(bytes) => self.store(bytes),
-                    SchemaFragment::Shared(bytes) => {
-                        let identity = std::sync::Arc::as_ptr(bytes) as usize;
-                        if let Some(name) = self.shared.get(&identity) {
-                            name.clone()
-                        } else {
-                            let name = self.store(bytes);
-                            self.shared.insert(identity, name.clone());
-                            name
-                        }
-                    }
-                })
-                .collect(),
-        };
-        let parts: Vec<_> = names
-            .into_iter()
-            .map(|name| {
-                writeln!(
-                    imports,
-                    "from .._data.s_{} import {name} as _jsoncompat_{name}",
-                    &name[2..3]
-                )
-                .unwrap();
-                format!("(_jsoncompat_{name},)")
-            })
-            .collect();
-        let expression = match source {
-            SchemaSource::Whole(_) => parts[0].clone(),
-            SchemaSource::Fragments(_) => format!("dc.SchemaSource(({},))", parts.join(", ")),
-        };
-        writeln!(imports, "{target} = {expression}").unwrap();
-        imports
-    }
-}
-
 // Iterative Kosaraju avoids a call-stack limit for long schema dependency chains.
 fn components(edges: &BTreeMap<String, BTreeSet<String>>) -> Vec<Vec<String>> {
     let mut visited = BTreeSet::new();

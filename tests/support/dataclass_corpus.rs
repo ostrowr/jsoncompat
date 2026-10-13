@@ -20,6 +20,13 @@ pub fn generate(destination: &Path) -> BTreeSet<PathBuf> {
         let path = destination.join(relative.with_extension(extension));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, source).unwrap();
+        // Keep the exact generator input outside the generated Python artifact
+        // for differential validation, without a Python float round trip.
+        fs::write(
+            path.with_extension("schema.json"),
+            serde_json::to_vec(&schema).unwrap(),
+        )
+        .unwrap();
         output.insert(path);
     };
     let backcompat = repo.join("tests/fixtures/backcompat");

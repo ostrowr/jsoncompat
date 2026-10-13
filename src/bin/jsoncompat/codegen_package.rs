@@ -20,19 +20,14 @@ use std::{
 
 const MANIFEST: &str = ".jsoncompat-manifest.json";
 #[derive(Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct Manifest {
     version: u32,
     compiler: String,
     modules: BTreeMap<String, String>,
-    // Shared schema chunks can belong to several groups. Their union in
-    // `files` keeps each chunk until its final owner stops referencing it.
     #[serde(default)]
     module_files: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     module_exports: BTreeMap<String, BTreeMap<String, String>>,
-    #[serde(default)]
-    module_data: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     files: BTreeMap<String, String>,
     #[serde(default)]
     exports: BTreeMap<String, String>,
@@ -138,7 +133,7 @@ pub(super) fn generate(
         Manifest::default()
     };
     ensure!(
-        previous.version <= 6,
+        previous.version <= 7,
         "unsupported package manifest; use a new output directory"
     );
     ensure!(
@@ -157,7 +152,7 @@ pub(super) fn generate(
     }
     let compiler = digest(&fs::read(std::env::current_exe()?)?);
     let mut manifest = Manifest {
-        version: 6,
+        version: 7,
         compiler,
         ..Default::default()
     };
@@ -171,9 +166,8 @@ pub(super) fn generate(
     let mut exports = BTreeMap::new();
     let mut stub = String::from("# Generated public model exports.\n");
     let mut rebuilt = 0;
-    let mut schema_data: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let mut resource_sources = BTreeMap::new();
-    for directory in ["models", "operations", "_cycles", "_data"] {
+    for directory in ["models", "operations", "_cycles"] {
         stage(
             &staging,
             &mut manifest,
@@ -264,7 +258,7 @@ pub(super) fn generate(
                 .collect::<BTreeMap<_, _>>(),
         ))?);
         let cached_files = previous.module_files.get(&module_name);
-        let cached = previous.version == 6
+        let cached = previous.version == 7
             && previous.compiler == manifest.compiler
             && previous.modules.get(&module_name) == Some(&input_digest)
             && cached_files.is_some_and(|files| {
@@ -287,21 +281,6 @@ pub(super) fn generate(
                     .files
                     .insert(file.clone(), previous.files[file].clone());
             }
-            for (file, symbols) in &previous.module_data[&module_name] {
-                for line in fs::read_to_string(destination.join(file))?.lines() {
-                    let symbol = line.split(':').next().unwrap();
-                    if symbols.contains(symbol) {
-                        schema_data
-                            .entry(file.clone())
-                            .or_default()
-                            .insert(symbol.into(), line.into());
-                    }
-                }
-            }
-            manifest.module_data.insert(
-                module_name.clone(),
-                previous.module_data[&module_name].clone(),
-            );
             previous.module_exports[&module_name].clone()
         } else {
             let schema = SchemaDocument::from_json_with_options_and_cache(
@@ -324,29 +303,13 @@ pub(super) fn generate(
             manifest
                 .module_files
                 .insert(module_name.clone(), files.keys().cloned().collect());
-            let mut module_data: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
             for (file, source) in files {
-                if file.starts_with("_data/s_") {
-                    for line in source.lines() {
-                        let symbol = line.split(':').next().unwrap().to_owned();
-                        module_data
-                            .entry(file.clone())
-                            .or_default()
-                            .insert(symbol.clone());
-                        schema_data
-                            .entry(file.clone())
-                            .or_default()
-                            .insert(symbol, line.into());
-                    }
-                } else if api.is_some() && file.starts_with("operations/") {
+                if api.is_some() && file.starts_with("operations/") {
                     resource_sources.insert(file, source);
                 } else {
                     stage(&staging, &mut manifest, &file, &source)?;
                 }
             }
-            manifest
-                .module_data
-                .insert(module_name.clone(), module_data);
             timings.mark(&format!("{module_name}: stage package files"));
             rebuilt += 1;
             module.exports
@@ -360,14 +323,6 @@ pub(super) fn generate(
             .module_exports
             .insert(module_name.clone(), nested_exports);
         manifest.modules.insert(module_name, input_digest);
-    }
-    for (file, entries) in schema_data {
-        stage(
-            &staging,
-            &mut manifest,
-            &file,
-            &format!("{}\n", entries.into_values().collect::<Vec<_>>().join("\n")),
-        )?;
     }
     let model_count = exports.len();
     if let Some(api) = &api {

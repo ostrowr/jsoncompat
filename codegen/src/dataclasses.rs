@@ -74,8 +74,8 @@ struct ClassSpec {
     kind: ClassKind,
 }
 
-/// A model's schema stays separate from the shared definition resource until
-/// standalone output or explicit schema introspection actually needs the merge.
+/// Keep model schemas separate from shared definitions until validator preparation
+/// needs their combined resource. Neither is emitted as source JSON.
 #[derive(Debug, Clone)]
 struct ClassSchema {
     value: Value,
@@ -111,9 +111,6 @@ impl ClassSchema {
             merge_root_definition_map(object, "definitions", definitions.legacy_defs());
         }
         value
-    }
-    fn pretty_json(&self) -> Result<String, DataclassError> {
-        pretty_schema_literal(&self.materialize())
     }
 }
 
@@ -2047,11 +2044,6 @@ fn omittable_annotation(annotation: &str) -> String {
         "{}[{annotation}]",
         runtime_dataclass_symbol(OMITTABLE_TYPE_NAME),
     )
-}
-
-fn pretty_schema_literal(schema: &Value) -> Result<String, DataclassError> {
-    serde_json::to_string_pretty(schema)
-        .map_err(|error| invalid_schema("#".to_owned(), format!("schema is not JSON: {error}")))
 }
 
 fn render_class_base(class_spec: &ClassSpec) -> String {

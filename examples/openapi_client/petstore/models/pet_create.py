@@ -20,13 +20,11 @@ class PetCreate(dc.DataclassModel):
 
 # Prepared constructors and programs; no schema compilation on import.
 _jsoncompat_missing = dc.MissingType.MISSING
-from .._data.s_d import S_dccd705baf526db20d7a5cfc56ae67de5fa07e2898a965ae084956a60ef27575 as _jsoncompat_S_dccd705baf526db20d7a5cfc56ae67de5fa07e2898a965ae084956a60ef27575
-_jsoncompat_schema_PetCreate = (_jsoncompat_S_dccd705baf526db20d7a5cfc56ae67de5fa07e2898a965ae084956a60ef27575,)
 _jsoncompat_program_PetCreate = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["name",1],["species",2],["tags",3]],"patterns":[],"required":["name","species"],"additional":5}},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":["cat","dog"],"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_PetCreate(self: dc.DataclassModel, *, skip_validation: bool = False, name: typing.Any, species: typing.Any, tags: typing.Any = _jsoncompat_missing) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(PetCreate, _jsoncompat_init_PetCreate, _jsoncompat_schema_PetCreate, globals())
+dc.install_model(PetCreate, _jsoncompat_init_PetCreate, globals())
 
 dc.bind_module(1, [(PetCreate, 3)], [
     ("str",),

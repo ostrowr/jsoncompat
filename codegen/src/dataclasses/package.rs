@@ -5,15 +5,13 @@ use super::{
     types::{Annotation, Kind},
 };
 use crate::python_names::module_names;
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
-    sync::Arc,
 };
 
 /// Generated source files for one logical package model group.
-/// File paths are relative to the public package, including shared schema data.
+/// File paths are relative to the public package, including prepared program data.
 pub struct DataclassPackage {
     pub models: Vec<String>,
     pub files: BTreeMap<String, String>,
@@ -30,21 +28,10 @@ pub(super) struct Parts {
     pub declarations: Vec<String>,
     pub initializers: Vec<String>,
     pub footer: String,
-    pub sources: Vec<SchemaSource>,
     pub programs: Vec<Vec<u8>>,
     pub roots: Vec<usize>,
     pub descriptors: Vec<String>,
     pub plan: Vec<u8>,
-}
-
-pub(super) enum SchemaSource {
-    Whole(Vec<u8>),
-    Fragments(Vec<SchemaFragment>),
-}
-
-pub(super) enum SchemaFragment {
-    Local(Vec<u8>),
-    Shared(Arc<Vec<u8>>),
 }
 
 const PRIVATE_IMPORTS: &str = "# Generated implementation. Import the public model module instead.\nfrom __future__ import annotations\nimport typing\nfrom jsoncompat.codegen import dataclasses as dc\n\n";
@@ -109,7 +96,6 @@ impl DataclassModule {
             )
             .unwrap();
 
-            let schema = files.schema(&self.parts.sources[i]);
             let program = files.blob(
                 &format!("_program_{stem}"),
                 &self.parts.programs[i],
@@ -117,7 +103,7 @@ impl DataclassModule {
             );
             let initializer = self.parts.initializers[i]
                 .replace(&format!("_jsoncompat_init_{i}("), "_jsoncompat_init(");
-            files.add(declaration_module, format!("{declaration}\n# Prepared implementation; regenerated with the declaration above.\n{schema}{program}\n_jsoncompat_missing = dc.MissingType.MISSING\n\n{initializer}\ndef _jsoncompat_install(model: type[dc.DataclassModel], namespace: dict[str, typing.Any]) -> _jsoncompat_bytes:\n    dc.install_model(model, _jsoncompat_init, _jsoncompat_schema, namespace)\n    return _jsoncompat_program\n"));
+            files.add(declaration_module, format!("{declaration}\n# Prepared implementation; regenerated with the declaration above.\n{program}\n_jsoncompat_missing = dc.MissingType.MISSING\n\n{initializer}\ndef _jsoncompat_install(model: type[dc.DataclassModel], namespace: dict[str, typing.Any]) -> _jsoncompat_bytes:\n    dc.install_model(model, _jsoncompat_init, namespace)\n    return _jsoncompat_program\n"));
             writeln!(
                 imports,
                 "from .{declaration_module} import _jsoncompat_install as _install_{name}"
@@ -164,7 +150,6 @@ impl DataclassModule {
 struct Files {
     prefix: String,
     sources: BTreeMap<String, String>,
-    schema_chunks: BTreeMap<usize, Vec<String>>,
 }
 impl Files {
     fn add(&mut self, module: &str, source: String) {
@@ -198,102 +183,6 @@ impl Files {
         }
         writeln!(imports, "{alias} = b''.join([{}])", parts.join(", ")).unwrap();
         imports
-    }
-
-    fn schema(&mut self, source: &SchemaSource) -> String {
-        enum Chunk<'a> {
-            Local(&'a [u8]),
-            Shared(String),
-        }
-        let imported =
-            |chunks: Vec<String>| chunks.into_iter().map(Chunk::Shared).collect::<Vec<_>>();
-        let mut inline_budget = DATA_CHUNK_BYTES;
-        let streams = match source {
-            // Identical complete schemas can be shared by independent model
-            // groups, whose lazy imports must retain the same bytes objects.
-            SchemaSource::Whole(bytes) => vec![imported(self.schema_stream(bytes))],
-            SchemaSource::Fragments(fragments) => fragments
-                .iter()
-                .map(|fragment| match fragment {
-                    SchemaFragment::Local(bytes) if bytes.len() <= inline_budget => {
-                        inline_budget -= bytes.len();
-                        vec![Chunk::Local(bytes)]
-                    }
-                    SchemaFragment::Local(bytes) => imported(self.schema_stream(bytes)),
-                    SchemaFragment::Shared(bytes) => {
-                        let identity = Arc::as_ptr(bytes) as usize;
-                        let chunks = if let Some(chunks) = self.schema_chunks.get(&identity) {
-                            chunks.clone()
-                        } else {
-                            let chunks = self.schema_stream(bytes);
-                            self.schema_chunks.insert(identity, chunks.clone());
-                            chunks
-                        };
-                        imported(chunks)
-                    }
-                })
-                .collect(),
-        };
-        let mut imports = String::new();
-        let mut streams_literals = Vec::new();
-        let mut next_alias = 0;
-        for chunks in streams {
-            let mut parts = Vec::new();
-            for chunk in chunks {
-                let alias = next_alias;
-                next_alias += 1;
-                match chunk {
-                    Chunk::Shared(name) => writeln!(
-                        imports,
-                        "from ..._schemas.{name} import DATA as _jsoncompat_schema_{alias}"
-                    ),
-                    Chunk::Local(bytes) => {
-                        writeln!(
-                            imports,
-                            "_jsoncompat_schema_{alias} = {}",
-                            super::render::bytes(bytes)
-                        )
-                    }
-                }
-                .unwrap();
-                parts.push(format!("_jsoncompat_schema_{alias},"));
-            }
-            streams_literals.push(format!("({})", parts.join(" ")));
-        }
-        match source {
-            SchemaSource::Whole(_) => writeln!(
-                imports,
-                "_jsoncompat_schema: tuple[_jsoncompat_bytes, ...] = {}",
-                streams_literals[0]
-            ),
-            SchemaSource::Fragments(_) => writeln!(
-                imports,
-                "_jsoncompat_schema = dc.SchemaSource(({},))",
-                streams_literals.join(", ")
-            ),
-        }
-        .unwrap();
-        imports
-    }
-
-    fn schema_stream(&mut self, bytes: &[u8]) -> Vec<String> {
-        bytes
-            .chunks(DATA_CHUNK_BYTES)
-            .map(|chunk| {
-                // Shared fragments and identical complete schemas are content
-                // addressed across independent binding groups as well as models.
-                let name = format!("_schema_{:x}", Sha256::digest(chunk));
-                self.sources
-                    .entry(format!("_schemas/{name}.py"))
-                    .or_insert_with(|| {
-                        format!(
-                            "# Generated shared schema data.\nDATA: bytes = {}\n",
-                            super::render::bytes(chunk)
-                        )
-                    });
-                name
-            })
-            .collect()
     }
 }
 

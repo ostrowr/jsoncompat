@@ -37,22 +37,16 @@ from ..models.pet import Pet as Pet
 
 # Prepared constructors and programs; no schema compilation on import.
 _jsoncompat_missing = dc.MissingType.MISSING
-from .._data.s_6 import S_69c22ec010ca7e0c3c90576546d0ee9ff38545e5932f071932e59c0a18b88bf0 as _jsoncompat_S_69c22ec010ca7e0c3c90576546d0ee9ff38545e5932f071932e59c0a18b88bf0
-from .._data.s_0 import S_08b7dbbdc59980b3f0bdb6ebc2cda82a5592f827b29f4b7d11a248a301093bdd as _jsoncompat_S_08b7dbbdc59980b3f0bdb6ebc2cda82a5592f827b29f4b7d11a248a301093bdd
-from .._data.s_5 import S_5557d6a5b5ddf01734a42ce226c5f1cb9e0ef4ec4e9149275444d610fc2960ec as _jsoncompat_S_5557d6a5b5ddf01734a42ce226c5f1cb9e0ef4ec4e9149275444d610fc2960ec
-_jsoncompat_schema_GetGroupPets200 = dc.SchemaSource(((_jsoncompat_S_69c22ec010ca7e0c3c90576546d0ee9ff38545e5932f071932e59c0a18b88bf0,), (_jsoncompat_S_08b7dbbdc59980b3f0bdb6ebc2cda82a5592f827b29f4b7d11a248a301093bdd,), (_jsoncompat_S_5557d6a5b5ddf01734a42ce226c5f1cb9e0ef4ec4e9149275444d610fc2960ec,),))
 _jsoncompat_program_GetGroupPets200 = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["body",1],["content_type",11],["headers",12],["raw_headers",14],["status",16]],"patterns":[],"required":["body","content_type","headers","raw_headers","status"],"additional":10}},{"object_length":{"min":5,"max":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/Pet"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",4],["name",5],["nickname",6],["species",8],["tags",9]],"patterns":[],"required":["id","name","species","tags"],"additional":10}},{"object_length":{"min":4,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"any":[7,4]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":["cat","dog"],"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":["application/json"],"rules":[]},{"types":null,"choices":null,"rules":[{"ref":{"node":13,"pointer":"/$defs/JsoncompatEmptyHeaders"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":10}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":15}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[4,4],"items":10}},{"array_length":{"min":2,"max":null}}]},{"types":null,"choices":[200],"rules":[]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_GetGroupPets200(self: dc.DataclassModel, *, skip_validation: bool = False, body: typing.Any, content_type: typing.Any, headers: typing.Any, raw_headers: typing.Any, status: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(GetGroupPets200, _jsoncompat_init_GetGroupPets200, _jsoncompat_schema_GetGroupPets200, globals())
-from .._data.s_6 import S_6d51c3fc9124bf72dea83bf4870eb9d9478c8f0a20047984793852cce8769c5e as _jsoncompat_S_6d51c3fc9124bf72dea83bf4870eb9d9478c8f0a20047984793852cce8769c5e
-_jsoncompat_schema_GetGroupPetsRequest = (_jsoncompat_S_6d51c3fc9124bf72dea83bf4870eb9d9478c8f0a20047984793852cce8769c5e,)
+dc.install_model(GetGroupPets200, _jsoncompat_init_GetGroupPets200, globals())
 _jsoncompat_program_GetGroupPetsRequest = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["group_id",1],["pet_ids",2]],"patterns":[],"required":["group_id","pet_ids"],"additional":4}},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_GetGroupPetsRequest(self: dc.DataclassModel, *, skip_validation: bool = False, group_id: typing.Any, pet_ids: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(GetGroupPetsRequest, _jsoncompat_init_GetGroupPetsRequest, _jsoncompat_schema_GetGroupPetsRequest, globals())
+dc.install_model(GetGroupPetsRequest, _jsoncompat_init_GetGroupPetsRequest, globals())
 
 dc.bind_module(1, [(GetGroupPets200, 7), (GetGroupPetsRequest, 10)], [
     ('external', Pet),

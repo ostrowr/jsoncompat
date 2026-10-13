@@ -2,12 +2,11 @@
 
 use super::plan::{ConversionNode, PreparedModule, ScalarKind};
 use super::{
-    ClassKind, ClassSchema, ClassSpec, DataclassError, EXTRA_FIELD_NAME, omittable_annotation,
+    ClassKind, ClassSpec, DataclassError, EXTRA_FIELD_NAME, omittable_annotation,
     python_json_literal, python_string_literal, render_class_base,
 };
 use std::collections::BTreeMap;
 use std::fmt::Write;
-use std::sync::Arc;
 
 /// Trusted Python metadata for generated declarations. Keys are public class
 /// and Python field names. Annotation and base overrides do not change validation plans.
@@ -353,27 +352,16 @@ fn render_module(
         })
         .collect::<Result<Vec<_>, _>>()?;
     finish_stage("program serialization");
-    let mut source_renderer = SourceRenderer::default();
-    for (index, class) in classes.iter().enumerate() {
-        // Source introspection is independent of the native validation program.
-        // Package sources share independently compressed definition blocks, so
-        // a large resource graph is serialized and compressed only once.
-        let source = if standalone {
-            let source = compress(class.schema.pretty_json()?.as_bytes());
+    if standalone {
+        for (index, class) in classes.iter().enumerate() {
             writeln!(
                 implementation,
-                "    dc.install_model({}, _jsoncompat_init_{index}, {}, _namespace)",
-                class.name,
-                bytes(&source)
+                "    dc.install_model({}, _jsoncompat_init_{index}, _namespace)",
+                class.name
             )
             .expect("string write");
-            super::package::SchemaSource::Whole(source)
-        } else {
-            source_renderer.render(&class.schema)?
-        };
-        parts.sources.push(source);
+        }
     }
-    finish_stage("schema sources");
     let roots = classes
         .iter()
         .zip(&prepared.roots)
@@ -434,116 +422,6 @@ fn render_module(
         implementation,
         models: classes.iter().map(|c| c.name.clone()).collect(),
     })
-}
-
-fn compress(source: &[u8]) -> Vec<u8> {
-    miniz_oxide::deflate::compress_to_vec_zlib(source, 9)
-}
-
-/// Retain byte-for-byte schema introspection while sharing the expensive root
-/// definition blocks. Each fragment is an independent compressed stream; only
-/// explicit introspection expands and concatenates them.
-#[derive(Default)]
-struct SourceRenderer {
-    definitions: BTreeMap<(usize, &'static str), Arc<Vec<u8>>>,
-    locals: std::collections::HashMap<String, Vec<u8>>,
-}
-impl SourceRenderer {
-    fn local(&mut self, source: String) -> super::package::SchemaFragment {
-        let bytes = self
-            .locals
-            .entry(source)
-            .or_insert_with_key(|source| package_compress(source.as_bytes()));
-        super::package::SchemaFragment::Local(bytes.clone())
-    }
-    fn render(
-        &mut self,
-        schema: &ClassSchema,
-    ) -> Result<super::package::SchemaSource, DataclassError> {
-        let (Some(definitions), Some(object)) = (&schema.definitions, schema.value.as_object())
-        else {
-            return Ok(super::package::SchemaSource::Whole(package_compress(
-                schema.pretty_json()?.as_bytes(),
-            )));
-        };
-        let shared = [
-            ("$defs", definitions.defs()),
-            ("definitions", definitions.legacy_defs()),
-        ];
-        let mut keys = object
-            .keys()
-            .map(String::as_str)
-            .collect::<std::collections::BTreeSet<_>>();
-        for (keyword, definitions) in shared {
-            if definitions.is_some_and(|definitions| !definitions.is_empty()) {
-                keys.insert(keyword);
-            }
-        }
-        let mut fragments = Vec::new();
-        let mut local = String::from("{\n");
-        for (index, key) in keys.into_iter().enumerate() {
-            if index > 0 {
-                local.push_str(",\n");
-            }
-            let root = shared
-                .iter()
-                .find_map(|(keyword, root)| (*keyword == key).then_some((*keyword, *root)))
-                .and_then(|(keyword, root)| {
-                    root.filter(|root| !root.is_empty())
-                        .map(|root| (keyword, root))
-                });
-            if let Some((keyword, root)) = root {
-                // Root definitions have always overridden local definitions.
-                // Extra local definitions are unusual, but retain them exactly.
-                let extra_local = object
-                    .get(key)
-                    .and_then(serde_json::Value::as_object)
-                    .is_some_and(|local| local.keys().any(|key| !root.contains_key(key)));
-                if extra_local {
-                    let mut merged = object
-                        .get(key)
-                        .and_then(serde_json::Value::as_object)
-                        .cloned()
-                        .unwrap_or_default();
-                    merged.extend(root.iter().map(|(key, value)| (key.clone(), value.clone())));
-                    local.push_str(&source_member(key, &merged)?);
-                } else {
-                    if !local.is_empty() {
-                        fragments.push(self.local(std::mem::take(&mut local)));
-                    }
-                    let identity = (Arc::as_ptr(definitions) as usize, keyword);
-                    let block = if let Some(block) = self.definitions.get(&identity) {
-                        Arc::clone(block)
-                    } else {
-                        let block =
-                            Arc::new(package_compress(source_member(key, root)?.as_bytes()));
-                        self.definitions.insert(identity, Arc::clone(&block));
-                        block
-                    };
-                    fragments.push(super::package::SchemaFragment::Shared(block));
-                }
-            } else {
-                local.push_str(&source_member(key, &object[key])?);
-            }
-        }
-        local.push_str("\n}");
-        fragments.push(self.local(local));
-        Ok(super::package::SchemaSource::Fragments(fragments))
-    }
-}
-
-fn package_compress(source: &[u8]) -> Vec<u8> {
-    // Schema introspection is cold data. Fast compression keeps its exact text
-    // while avoiding maximum-compression work on every generated package.
-    miniz_oxide::deflate::compress_to_vec_zlib(source, 1)
-}
-
-fn source_member(value_key: &str, value: &impl serde::Serialize) -> Result<String, DataclassError> {
-    let key = serde_json::to_string(value_key).expect("serializable JSON key");
-    let value = serde_json::to_string_pretty(value).map_err(|error| {
-        super::invalid_schema("#".into(), format!("schema is not JSON: {error}"))
-    })?;
-    Ok(format!("  {key}: {}", value.replace('\n', "\n  ")))
 }
 
 pub(super) fn descriptor(
@@ -619,114 +497,6 @@ pub(super) fn descriptor(
                 "('union', {}, {name}, {entries})",
                 tuple(union.branches.iter().map(|id| index(*id).to_string()))
             )
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dataclasses::{
-        RootDefinitions,
-        package::{SchemaFragment, SchemaSource},
-    };
-    use serde_json::json;
-
-    fn expand(source: &SchemaSource) -> String {
-        let streams: Vec<&[u8]> = match source {
-            SchemaSource::Whole(bytes) => vec![bytes],
-            SchemaSource::Fragments(parts) => parts
-                .iter()
-                .map(|part| match part {
-                    SchemaFragment::Local(bytes) => bytes.as_slice(),
-                    SchemaFragment::Shared(bytes) => bytes.as_slice(),
-                })
-                .collect(),
-        };
-        streams
-            .into_iter()
-            .map(|stream| {
-                String::from_utf8(miniz_oxide::inflate::decompress_to_vec_zlib(stream).unwrap())
-                    .unwrap()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn shared_schema_fragments_preserve_exact_pretty_source_and_root_precedence() {
-        let root = Arc::new(RootDefinitions {
-            root: json!({
-                "$defs": {"Shared": {"type": "string", "enum": ["雪", "quoted\"\\value", "line\nbreak"]}},
-                "definitions": {"Legacy": {"type": "integer", "minimum": -2}}
-            }),
-        });
-        let mut renderer = SourceRenderer::default();
-        for value in [
-            json!({"$ref": "#/$defs/Shared", "description": "simple"}),
-            json!({"$defs": {"Shared": false}, "$ref": "#/$defs/Shared"}),
-            json!({"$defs": {"Local": {"type":"boolean"}, "Shared": false}, "$ref": "#/$defs/Local"}),
-            json!({"definitions": {"Legacy": false, "Extra": {"const": null}}, "$ref": "#/definitions/Extra"}),
-            json!({"type": "object", "properties": {"a": {"$ref": "#/$defs/Shared"}}, "required": ["a"]}),
-        ] {
-            let schema = ClassSchema {
-                value,
-                definitions: Some(Arc::clone(&root)),
-                context: None,
-                pointer: "#".into(),
-            };
-            assert_eq!(
-                expand(&renderer.render(&schema).unwrap()),
-                schema.pretty_json().unwrap()
-            );
-        }
-        assert_eq!(renderer.definitions.len(), 2);
-    }
-
-    #[test]
-    fn shared_schema_fragments_reuse_compressed_definition_objects() {
-        let root = Arc::new(RootDefinitions {
-            root: json!({"$defs": {"Shared": {"type": "string"}}}),
-        });
-        let mut renderer = SourceRenderer::default();
-        let sources = ["first", "second"].map(|description| {
-            renderer
-                .render(&ClassSchema {
-                    value: json!({"$ref": "#/$defs/Shared", "description": description}),
-                    definitions: Some(Arc::clone(&root)),
-                    context: None,
-                    pointer: "#".into(),
-                })
-                .unwrap()
-        });
-        let [SchemaSource::Fragments(a), SchemaSource::Fragments(b)] = sources else {
-            panic!("expected shared schema fragments");
-        };
-        let (SchemaFragment::Shared(a_shared), SchemaFragment::Shared(b_shared)) = (&a[1], &b[1])
-        else {
-            panic!("expected shared definition streams");
-        };
-        assert!(Arc::ptr_eq(a_shared, b_shared));
-        let (SchemaFragment::Local(a_local), SchemaFragment::Local(b_local)) =
-            (a.last().unwrap(), b.last().unwrap())
-        else {
-            panic!("expected local schema suffixes");
-        };
-        assert_ne!(a_local, b_local);
-    }
-
-    #[test]
-    fn unshared_schema_sources_keep_legacy_stream_layout() {
-        let mut renderer = SourceRenderer::default();
-        for value in [
-            json!(true),
-            json!(false),
-            json!({}),
-            json!({"type": "array", "items": {"type": "string"}}),
-        ] {
-            let schema = ClassSchema::standalone(value);
-            let source = renderer.render(&schema).unwrap();
-            assert!(matches!(source, SchemaSource::Whole(_)));
-            assert_eq!(expand(&source), schema.pretty_json().unwrap());
         }
     }
 }

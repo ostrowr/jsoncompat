@@ -327,6 +327,7 @@ const STAMPED_DATACLASS_VALIDATOR_DRIVER: &str = r###"
 import importlib.util
 import json
 import sys
+from typing import get_args, get_type_hints
 
 
 def load_module(module_name, module_path):
@@ -336,18 +337,6 @@ def load_module(module_name, module_path):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
-
-
-def resolve_local_ref(schema, ref):
-    if ref == "#":
-        return schema
-    if not ref.startswith("#/"):
-        raise AssertionError(f"unsupported stamped payload ref {ref!r}")
-    current = schema
-    for raw_segment in ref[2:].split("/"):
-        segment = raw_segment.replace("~1", "/").replace("~0", "~")
-        current = current[segment]
-    return current
 
 
 def json_equivalent(left, right):
@@ -371,12 +360,9 @@ writer_module = load_module("generated_writer_models", sys.argv[1])
 reader_module = load_module("generated_reader_models", sys.argv[2])
 writer_model = writer_module.JSONCOMPAT_MODEL
 reader_model = reader_module.JSONCOMPAT_MODEL
-writer_schema = json.loads(writer_model.__jsoncompat_schema__)
-writer_metadata = writer_schema["x-jsoncompat"]
-writer_version = writer_metadata["version"]
-writer_payload_schema = resolve_local_ref(writer_schema, writer_metadata["payload_ref"])
-writer_payload_name = writer_payload_schema["x-jsoncompat"]["name"]
-writer_payload_model = getattr(writer_module, writer_payload_name)
+writer_fields = get_type_hints(writer_model)
+writer_version = get_args(writer_fields["version"])[0]
+writer_payload_model = writer_fields["data"]
 
 
 def writer_from_payload(payload):

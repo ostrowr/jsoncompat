@@ -16,13 +16,11 @@ class JsoncompatEmptyHeaders(dc.DataclassModel):
 
 # Prepared constructors and programs; no schema compilation on import.
 _jsoncompat_missing = dc.MissingType.MISSING
-from .._data.s_5 import S_53284c9ba1615991e810ba816406e9ec9b7b7c52a71b41095167d83e22c06443 as _jsoncompat_S_53284c9ba1615991e810ba816406e9ec9b7b7c52a71b41095167d83e22c06443
-_jsoncompat_schema_JsoncompatEmptyHeaders = (_jsoncompat_S_53284c9ba1615991e810ba816406e9ec9b7b7c52a71b41095167d83e22c06443,)
 _jsoncompat_program_JsoncompatEmptyHeaders = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_JsoncompatEmptyHeaders(self: dc.DataclassModel, *, skip_validation: bool = False) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(JsoncompatEmptyHeaders, _jsoncompat_init_JsoncompatEmptyHeaders, _jsoncompat_schema_JsoncompatEmptyHeaders, globals())
+dc.install_model(JsoncompatEmptyHeaders, _jsoncompat_init_JsoncompatEmptyHeaders, globals())
 
 dc.bind_module(1, [(JsoncompatEmptyHeaders, 0)], [
     ('model', JsoncompatEmptyHeaders, (), None, _jsoncompat_program_JsoncompatEmptyHeaders),

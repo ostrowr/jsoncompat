@@ -18,13 +18,11 @@ class Problem(dc.DataclassModel):
 
 # Prepared constructors and programs; no schema compilation on import.
 _jsoncompat_missing = dc.MissingType.MISSING
-from .._data.s_5 import S_59db79435220be1c1879c30bbe17be9d456490b8733c84ccf0825aedd94221ad as _jsoncompat_S_59db79435220be1c1879c30bbe17be9d456490b8733c84ccf0825aedd94221ad
-_jsoncompat_schema_Problem = (_jsoncompat_S_59db79435220be1c1879c30bbe17be9d456490b8733c84ccf0825aedd94221ad,)
 _jsoncompat_program_Problem = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["code",1],["message",1]],"patterns":[],"required":["code","message"],"additional":2}},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_Problem(self: dc.DataclassModel, *, skip_validation: bool = False, code: typing.Any, message: typing.Any) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(Problem, _jsoncompat_init_Problem, _jsoncompat_schema_Problem, globals())
+dc.install_model(Problem, _jsoncompat_init_Problem, globals())
 
 dc.bind_module(1, [(Problem, 1)], [
     ("str",),

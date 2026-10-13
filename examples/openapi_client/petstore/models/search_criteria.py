@@ -19,13 +19,11 @@ class SearchCriteria(dc.DataclassModel):
 
 # Prepared constructors and programs; no schema compilation on import.
 _jsoncompat_missing = dc.MissingType.MISSING
-from .._data.s_4 import S_44802768e8e43b502bdc8075e0f93511bb2428aafed9c85450d0277d87507f28 as _jsoncompat_S_44802768e8e43b502bdc8075e0f93511bb2428aafed9c85450d0277d87507f28
-_jsoncompat_schema_SearchCriteria = (_jsoncompat_S_44802768e8e43b502bdc8075e0f93511bb2428aafed9c85450d0277d87507f28,)
 _jsoncompat_program_SearchCriteria = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["name",1],["tags",2]],"patterns":[],"required":[],"additional":3}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 def _jsoncompat_init_SearchCriteria(self: dc.DataclassModel, *, skip_validation: bool = False, name: typing.Any = _jsoncompat_missing, tags: typing.Any = _jsoncompat_missing) -> None:
     self.__post_init__(skip_validation)
 
-dc.install_model(SearchCriteria, _jsoncompat_init_SearchCriteria, _jsoncompat_schema_SearchCriteria, globals())
+dc.install_model(SearchCriteria, _jsoncompat_init_SearchCriteria, globals())
 
 dc.bind_module(1, [(SearchCriteria, 2)], [
     ("str",),

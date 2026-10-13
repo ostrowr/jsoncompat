@@ -4,14 +4,15 @@
   "empty_header_aliases": 0,
   "prepared_programs_byte_identical": 3133,
   "prepared_node_pairs": 60993,
-  "full_schema_text_equal": true,
+  "full_schema_text_equal": null,
+  "source_schemas_removed": true,
   "prepared_programs_bisimilar": true,
   "module_code_equal": true,
   "modules_compared": 980,
-  "schema_fragments_compared": 1551,
-  "before": "/tmp/jsoncompat-github-resource-final/github_models",
-  "after": "/tmp/jsoncompat-github-profile-final/github_models",
-  "seconds": 10.54872558300849,
-  "before_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648",
-  "after_compiler": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f"
+  "schema_fragments_compared": 0,
+  "before": "/tmp/jsoncompat-schema-storage/before/github_models",
+  "after": "/tmp/jsoncompat-schema-storage/after/github_models",
+  "seconds": 11.040465124999173,
+  "before_compiler": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f",
+  "after_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa"
 }

@@ -135,8 +135,8 @@ jsoncompat codegen --target dataclasses schema.json --output models.py
 
 The public `models.py` imports a private `_models_generated.py` companion at the
 top, followed by the root model and readable field declarations. A binding call
-after the classes connects them to the companion's constructor signatures,
-schemas, and precomputed runtime programs. Imports support both package and
+after the classes connects them to the companion's constructor signatures
+and precomputed runtime programs. Imports support both package and
 top-level modules.
 
 Regeneration replaces the same two filenames. Generate them during your build
@@ -200,7 +200,7 @@ subclass with `kind`, `instance_path`, `schema_path`, and `keyword`. Paths are
 RFC 6901 pointers; the schema pointer refers to the linked schema used by the
 prepared program. `kind="resource_limit"` distinguishes evaluation budgets from
 ordinary constraint failures. Diagnostics traverse the prebuilt program only
-on failure; they do not expand the stored schema or compile a validator.
+on failure; they do not need source schema JSON or compile a validator.
 
 ```python
 try:
@@ -305,11 +305,13 @@ Earlier cached-shard measurements are not evidence of unique-package startup and
 have been removed from this guide. All steady-state benchmarks share
 `benchmark_harness.py` for warmup, rotating order, GC policy, and timing samples.
 
-`Model.__jsoncompat_schema__` decompresses and caches the original source only
-on explicit access; imports, first round trips, and validation errors do not
-expand it. Dataclass reflection similarly materializes full field metadata only
-when requested. Generation removes compilation from startup; creating and
-connecting runtime objects still costs time and memory.
+Generated artifacts contain prepared validation programs and conversion plans;
+they do not retain source schema JSON or expose `Model.__jsoncompat_schema__`.
+Keep the input JSON Schema or OpenAPI document separately for inspection.
+Regenerate older artifacts with the matching generator before using this runtime.
+Dataclass reflection materializes full field metadata only when requested.
+Generation removes compilation from startup; creating and connecting runtime
+objects still costs time and memory.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 
@@ -372,14 +374,10 @@ wrappers separately. Changed definitions, resource scopes, dynamic references,
 and unsupported reference shapes use the full validation path. This changes no
 model constraints, instance validation, or error reporting.
 
-Compressed schema fragments are interned by SHA-256 and packed into sixteen
-fixed `_data/s_<hex>.py` modules, selected by the first digest digit. Identical
-fragments share one constant and one in-memory byte string across the package.
-These ordinary Python files need no package-data configuration. Data placement
-has no file-size threshold; growing a spec does not split or merge model modules.
-Joining and decompressing fragments happens only on explicit
-`Model.__jsoncompat_schema__` introspection. Validation uses prepared programs;
-imports and first use do not compile schemas.
+Each model module contains its prepared validation program and constructor.
+Source schema JSON is not emitted, so there are no schema-data modules to load
+or compressed schema payloads to expand. Imports and first use do not compile
+schemas. Keep the source OpenAPI document alongside your build inputs.
 
 See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
 file sizes, generation/import costs, strict type checking, and current limits.
