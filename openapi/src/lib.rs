@@ -2520,15 +2520,35 @@ fn lower_response_body(
     content: Option<&Value>,
     pointer: &JsonPointer,
 ) -> Result<Value, OpenApiError> {
-    let Some(content) = content else {
+    let media = parse_response_content_variants(resolver, content, pointer)?;
+    if media.is_empty() {
         return Ok(json!({ "type": "null" }));
-    };
-    Ok(any_of(lower_content_variants(
-        resolver,
-        content,
-        pointer,
-        MediaTypeKeyKind::ConcreteOrRange,
-    )?))
+    }
+    Ok(any_of(
+        media
+            .iter()
+            .map(|entry| entry.envelope(media.iter()))
+            .collect(),
+    ))
+}
+
+fn parse_response_content_variants(
+    resolver: &Resolver<'_>,
+    content: Option<&Value>,
+    pointer: &JsonPointer,
+) -> Result<Vec<ApiMedia>, OpenApiError> {
+    // Response content is optional and has no minimum cardinality in OpenAPI.
+    // An empty map, like an omitted map, declares no response representation.
+    match content {
+        None => Ok(Vec::new()),
+        Some(content) if content.as_object().is_some_and(Map::is_empty) => Ok(Vec::new()),
+        Some(content) => parse_content_variants(
+            resolver,
+            content,
+            pointer,
+            MediaTypeKeyKind::ConcreteOrRange,
+        ),
+    }
 }
 
 fn lower_content_variants(

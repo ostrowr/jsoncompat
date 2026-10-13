@@ -26,6 +26,7 @@ pub(super) struct ApiPackage {
     operations: Vec<Operation>,
     security_schemes: Value,
     runtime_names: RuntimeNames,
+    generated_names: BTreeSet<String>,
 }
 
 /// Ordinary schema/operation names are converted to UpperCamelCase. Explicit
@@ -36,6 +37,29 @@ struct RuntimeNames {
     http: &'static str,
     codegen: &'static str,
     type_form: &'static str,
+}
+
+fn collect_declaration_names(value: &Value, names: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            if let Some(name) = object
+                .get("x-jsoncompat")
+                .and_then(|metadata| metadata.get("name"))
+                .and_then(Value::as_str)
+            {
+                names.insert(name.to_owned());
+            }
+            for child in object.values() {
+                collect_declaration_names(child, names);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                collect_declaration_names(child, names);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl RuntimeNames {
@@ -209,6 +233,27 @@ impl ApiPackage {
         let lowerer = OpenApiOperationLowerer::new(document)?;
         let runtime_names = RuntimeNames::for_document(raw, renames);
         let RuntimeNames { http, .. } = runtime_names;
+        // Component names retain their public spelling. Generated HTTP wrappers
+        // and aliases choose unused names, including when a component already
+        // has the natural name of an operation's request or response.
+        let mut generated_names = BTreeSet::new();
+        for (component, _) in lowerer.component_schemas() {
+            generated_names.insert(component.to_owned());
+            generated_names.insert(super::codegen_package::class_name(component));
+        }
+        for rename in renames {
+            if let Some((_, model)) = rename.split_once('=') {
+                generated_names.insert(model.to_owned());
+            }
+        }
+        collect_declaration_names(raw, &mut generated_names);
+        generated_names.extend([
+            format!("{name}API"),
+            format!("{name}Client"),
+            format!("{name}AsyncClient"),
+            "SECURITY_SCHEMES".into(),
+            "OPERATIONS".into(),
+        ]);
         let mut package = Self {
             schemas: Map::new(),
             owners: BTreeMap::new(),
@@ -226,6 +271,7 @@ impl ApiPackage {
                 .cloned()
                 .unwrap_or_else(|| json!({})),
             runtime_names,
+            generated_names,
         };
         let definitions = lowerer
             .component_schemas()
@@ -246,18 +292,7 @@ impl ApiPackage {
             .collect::<Result<Vec<_>, _>>()?;
         let resources: BTreeSet<_> = contracts.iter().map(resource_name).collect();
         let resource_modules = module_names(resources.iter().map(String::as_str));
-        let component_names: BTreeSet<_> = definitions["$defs"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(|name| super::codegen_package::class_name(name))
-            .collect();
-        let mut empty_headers = "JsoncompatEmptyHeaders".to_owned();
-        let mut suffix = 2;
-        while component_names.contains(&empty_headers) {
-            empty_headers = format!("JsoncompatEmptyHeaders{suffix}");
-            suffix += 1;
-        }
+        let empty_headers = package.allocate_name("JsoncompatEmptyHeaders".into());
         let mut ids = BTreeSet::new();
         for contract in contracts {
             let key = &contract.key;
@@ -294,11 +329,11 @@ impl ApiPackage {
                 "conflicting Cookie header and cookie parameter"
             );
             let prefix = super::codegen_package::class_name(operation_name);
-            let input = format!("{prefix}Request");
-            let response_alias = format!("{prefix}Response");
-            let success_alias = format!("{prefix}Success");
-            let error_alias = format!("{prefix}Error");
-            let result_alias = format!("{prefix}Result");
+            let input = package.allocate_name(format!("{prefix}Request"));
+            let response_alias = package.allocate_name(format!("{prefix}Response"));
+            let success_alias = package.allocate_name(format!("{prefix}Success"));
+            let error_alias = package.allocate_name(format!("{prefix}Error"));
+            let result_alias = package.allocate_name(format!("{prefix}Result"));
             let mut declarations = Vec::new();
             let mut properties = Map::new();
             let mut required = Vec::new();
@@ -351,10 +386,10 @@ impl ApiPackage {
                     let mut variants = Vec::new();
                     for media in &body.content {
                         validate_media(media, &definitions)?;
-                        let name = format!(
+                        let name = package.allocate_name(format!(
                             "{prefix}Body{}",
                             super::codegen_package::class_name(&media.media_type)
-                        );
+                        ));
                         package.insert(&name, record(json!({"content_type":{"enum":[media.media_type]}, "value":media.schema}), &["content_type", "value"]))?;
                         declarations.push(name.clone());
                         variants.push(reference(&name));
@@ -412,7 +447,7 @@ impl ApiPackage {
                 } else {
                     &response.selector
                 };
-                let headers_name = format!("{prefix}{status_name}Headers");
+                let headers_name = package.allocate_name(format!("{prefix}{status_name}Headers"));
                 let mut properties = Map::new();
                 let mut required = Vec::new();
                 let mut metadata = BTreeMap::new();
@@ -495,7 +530,7 @@ impl ApiPackage {
                     } else {
                         String::new()
                     };
-                    let model = format!("{prefix}{status_name}{suffix}");
+                    let model = package.allocate_name(format!("{prefix}{status_name}{suffix}"));
                     let mut properties = json!({"status":status_schema,"body":media.map(|m| m.schema.clone()).unwrap_or_else(|| json!({"type":"null"})),"headers":reference(&headers_name),"raw_headers":{"type":"array","items":{"type":"array","prefixItems":[{"type":"string"},{"type":"string"}],"items":false,"minItems":2}}});
                     let mut required = vec!["status", "body", "headers", "raw_headers"];
                     if let Some(media) = media {
@@ -554,7 +589,21 @@ impl ApiPackage {
                 operation.alias_names().map(str::to_owned).collect(),
             );
         }
+        package.metadata.reserved_names = package.generated_names.clone();
         Ok(package)
+    }
+    fn allocate_name(&mut self, preferred: String) -> String {
+        if self.generated_names.insert(preferred.clone()) {
+            return preferred;
+        }
+        let mut suffix = 2;
+        loop {
+            let candidate = format!("{preferred}{suffix}");
+            if self.generated_names.insert(candidate.clone()) {
+                return candidate;
+            }
+            suffix += 1;
+        }
     }
     fn insert(&mut self, name: &str, schema: Value) -> Result<()> {
         ensure!(
@@ -1068,7 +1117,7 @@ fn snake_name(name: &str) -> String {
 }
 fn field_name(name: &str) -> String {
     let value = snake_name(name);
-    if [
+    let value = if [
         "skip_validation",
         "serialize",
         "deserialize",
@@ -1082,7 +1131,8 @@ fn field_name(name: &str) -> String {
         format!("param_{value}")
     } else {
         value
-    }
+    };
+    jsoncompat_codegen::python_names::field_name(&value)
 }
 fn validate_media(media: &ApiMedia, definitions: &Value) -> Result<()> {
     validate_media_parameters(&media.parameters)?;

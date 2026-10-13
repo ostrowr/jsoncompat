@@ -1,0 +1,3093 @@
+{
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+    "ty": "0.0.86",
+    "generator_sha256": "7776ef6d834414ae7a32a4a883fe342c966544c11a8bcf0a704de04adfcd9c53",
+    "manifest_sha256": "ef4a559148f27df6f6edd224a4bac41cb113895f976c458b7942fca4547df7a7",
+    "revision": "854d414750942c7952a1b3dedc67af60008f2e25",
+    "working_tree_dirty": true,
+    "harness_sha256": "7e0fc7bb1772ebd9bc83b7c8887fa26722016c26571a094a69c6fc2ef661ea61"
+  },
+  "manifest_sha256": "706ee0e677041ecf735c9b45f95d242206f4bb480b0ca5d1f9dca9d8417cc5ba",
+  "note": "Single observations from release codegen, not controlled comparative benchmarks. Original documents are unchanged apart from YAML-to-JSON syntax normalization. API calls are mocked, not sent to services.",
+  "raw_counts": {
+    "generation_rejected_needs_review": 15,
+    "passed": 16,
+    "unsupported_media_or_contract": 10,
+    "unsupported_version": 14,
+    "unsupported_feature": 1
+  },
+  "raw_native_31_specs": 42,
+  "older_version_controls": 14,
+  "raw_specs": [
+    {
+      "id": "polar",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/polarsource/polar/2a1cb969fb21e2c9811c094069351089736fb172/docs/openapi/2026-10.openapi.json",
+      "source_sha256": "b40033e015d562b5dafdfde9ea417eab83ae9b6700cba233fd73c24b8dcd57b7",
+      "openapi": "3.1.0",
+      "operations": 190,
+      "generation_seconds": 0.024051290994975716,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1v1~1benefits~1/get/parameters/8/explode' must be true when query parameter style is 'deepObject'\n"
+    },
+    {
+      "id": "unkey",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/unkeyed/unkey/b5a373236aa5a7627a59104d4d2b9ffeb494c829/svc/api/openapi/openapi-generated.yaml",
+      "source_sha256": "c16a030718afce144f187ee6ffec11371f072c280f34ba01827294cb9dbb7c54",
+      "openapi": "3.1.0",
+      "operations": 100,
+      "generation_seconds": 0.25569908402394503,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 378,
+        "bytes": 5843753,
+        "python_files": 376,
+        "classes": 1182,
+        "request_classes": 100,
+        "documented_requests": 100,
+        "root_wrapper_candidates": 5,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 898,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          2555113,
+          "operations/v2.py"
+        ]
+      },
+      "verification": {
+        "operations": 100,
+        "import_seconds": 0.21280616702279076,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 374,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 36,
+          "Err": 96,
+          "example_rejected_needs_review": 36
+        },
+        "responses_without_inline_examples": 552,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "openresponses",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/openresponses/openresponses/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/public/openapi/openapi.json",
+      "source_sha256": "1f469fc044bc3c0ee9bb8210b76435ce2386ed792c16863f8dc9bd6070b87f6a",
+      "openapi": "3.1.0",
+      "operations": 2,
+      "generation_seconds": 0.014760083984583616,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/components/schemas/Annotation/discriminator' must be a discriminator adjacent to `oneOf`, `anyOf`, or `allOf`\n"
+    },
+    {
+      "id": "agent_protocol",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/langchain-ai/agent-protocol/440a86ba097b4bc41e8da007b24e419ec07a3e35/openapi.json",
+      "source_sha256": "7d069e43ca105e8127ce07ba7bd8bd7a78a2fadd6420009f2634a24cfb153f32",
+      "openapi": "3.1.0",
+      "operations": 27,
+      "generation_seconds": 0.02503383398288861,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported text/event-stream\n"
+    },
+    {
+      "id": "landing_ai_ade",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/landing-ai/ade-cli/d1995ffef4e63a2a1c2774d9add93368889353c5/openapi.json",
+      "source_sha256": "d11fa644f12445e8707b6eb8600cb2214fb30a5cfdf8346e1d43aab1f3b20164",
+      "openapi": "3.1.0",
+      "operations": 17,
+      "generation_seconds": 0.025464082951657474,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported multipart/form-data\n"
+    },
+    {
+      "id": "airflow_edge",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/providers/edge3/src/airflow/providers/edge3/worker_api/v2-edge-generated.yaml",
+      "source_sha256": "0ac9a331438b50de5227c63ba1463b9e6a3164680b8ee28b5a1d1fc3e151114f",
+      "openapi": "3.1.0",
+      "operations": 18,
+      "generation_seconds": 0.048957291000988334,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 39,
+        "bytes": 369929,
+        "python_files": 37,
+        "classes": 121,
+        "request_classes": 18,
+        "documented_requests": 18,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 25,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          176619,
+          "operations/edge_worker.py"
+        ]
+      },
+      "verification": {
+        "operations": 18,
+        "import_seconds": 0.021200125047471374,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 35,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 54,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "airflow_fab_auth",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/providers/fab/src/airflow/providers/fab/auth_manager/api_fastapi/openapi/v2-fab-auth-manager-generated.yaml",
+      "source_sha256": "8c8a89d290cea7afc15116ed68e19c5b0d4e747318f16c8ffccb1371a69be5cf",
+      "openapi": "3.1.0",
+      "operations": 14,
+      "generation_seconds": 0.05026137502864003,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 29,
+        "bytes": 308877,
+        "python_files": 27,
+        "classes": 113,
+        "request_classes": 14,
+        "documented_requests": 14,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 7,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          180525,
+          "operations/auth.py"
+        ]
+      },
+      "verification": {
+        "operations": 14,
+        "import_seconds": 0.018493417010176927,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 25,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 1
+        },
+        "responses_without_inline_examples": 72,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "airflow_keycloak_auth",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/providers/keycloak/src/airflow/providers/keycloak/auth_manager/openapi/v2-keycloak-auth-manager-generated.yaml",
+      "source_sha256": "776b1b149cf01a733237423e36deb5d4fc72a02dd14718cf366e29329f28b184",
+      "openapi": "3.1.0",
+      "operations": 6,
+      "generation_seconds": 0.044024459028150886,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 21,
+        "bytes": 93077,
+        "python_files": 19,
+        "classes": 36,
+        "request_classes": 6,
+        "documented_requests": 6,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 3,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          40772,
+          "operations/auth.py"
+        ]
+      },
+      "verification": {
+        "operations": 6,
+        "import_seconds": 0.006586249975953251,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 17,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 12,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "airflow_simple_auth",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/airflow-core/src/airflow/api_fastapi/auth/managers/simple/openapi/v2-simple-auth-manager-generated.yaml",
+      "source_sha256": "9c816daec7bd649923ab53c7ddbde1f9b309ff97f45031749f0b26f68d61b65d",
+      "openapi": "3.1.0",
+      "operations": 4,
+      "generation_seconds": 0.013976957998238504,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported application/x-www-form-urlencoded\n"
+    },
+    {
+      "id": "aivisspeech",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/Aivis-Project/AivisSpeech/77a3675f7b76865cfa0253ac30f41ef1dd822e27/openapi.json",
+      "source_sha256": "1d935a3e31b82b6136a48a80241ba9ba666214b3899e7efaf7616dc064318aa1",
+      "openapi": "3.1.0",
+      "operations": 46,
+      "generation_seconds": 0.021986874984577298,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported text/html\n"
+    },
+    {
+      "id": "chroma_core",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/chroma-core/chroma/5f30478c11ffdcf8cba1f872993c29d8f84ce0d9/docs/mintlify/sync.openapi.json",
+      "source_sha256": "eb103c851427be6da476177e7680249fe7361d7d17cc6f83581364674e58ec30",
+      "openapi": "3.1.0",
+      "operations": 11,
+      "generation_seconds": 0.012177917000371963,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI schema at '#/paths/~1api~1v1~1invocations/get/parameters/2/schema' is invalid: local $ref '#/$defs/SourceTypeFilter' does not resolve to a schema node in the current document\n\nCaused by:\n    local $ref '#/$defs/SourceTypeFilter' does not resolve to a schema node in the current document\n"
+    },
+    {
+      "id": "cohere_ai",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/cohere-ai/cohere-developer-experience/57596d8d2a8df5e3cdeb072cdc602c17805c72d4/cohere-openapi.yaml",
+      "source_sha256": "814093aac6748d91ca9e6886970b11b34bf2edcf03c4eafac622f17c18e5c851",
+      "openapi": "3.1.0",
+      "operations": 42,
+      "generation_seconds": 0.0841156670358032,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI schema at '#/components/schemas/TruncationStrategy' is invalid: failed to compile raw schema validator: schema failed Draft 2020-12 validator compilation: [] has less than 1 item\n\nCaused by:\n    0: failed to compile raw schema validator: schema failed Draft 2020-12 validator compilation: [] has less than 1 item\n    1: schema failed Draft 2020-12 validator compilation: [] has less than 1 item\n    2: [] has less than 1 item\n"
+    },
+    {
+      "id": "digitalocean",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/digitalocean/openapi/09ff7b32c6974901f2c89e1059828702a2fa5028/specification/DigitalOcean-public.v2.yaml",
+      "source_sha256": "02fb0d0195588cb212cb32a38f8ad8021c4e1c75ceb5d3e5736a9f032ec9191c",
+      "openapi": "3.0.0",
+      "operations": 791,
+      "generation_seconds": 0.013126834004651755,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.0': expected a 3.1.x document\n"
+    },
+    {
+      "id": "gematik_fachdienst",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/gematik/gem-push-notifications-concept/e24377cb87111f294e0562e58fd6b55bba66d2e5/docs_sources/fd_openapi.yaml",
+      "source_sha256": "1c7f36a9f387d86b2bf65d7e52498bdb84ae27a1bb237f87c405a1334289acd3",
+      "openapi": "3.0.3",
+      "operations": 7,
+      "generation_seconds": 0.006784333032555878,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document\n"
+    },
+    {
+      "id": "gematik_push_gateway",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/gematik/gem-push-notifications-concept/e24377cb87111f294e0562e58fd6b55bba66d2e5/docs_sources/push_gateway_openapi.yaml",
+      "source_sha256": "e0ae620f1e3d9e91fe877f81bc8c7a5f5e45f2a032d1f7c5482b64d3f3513159",
+      "openapi": "3.1.0",
+      "operations": 3,
+      "generation_seconds": 0.049207957985345274,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 24,
+        "bytes": 205742,
+        "python_files": 22,
+        "classes": 64,
+        "request_classes": 3,
+        "documented_requests": 3,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 32,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          66227,
+          "operations/notify.py"
+        ]
+      },
+      "verification": {
+        "operations": 3,
+        "import_seconds": 0.010602833004668355,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 20,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 5
+        },
+        "responses_without_inline_examples": 15,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "langchain_ai",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/langchain-ai/langsmith-sdk/a155e95489c536c84ebdb02cc1490111b13221c4/openapi/openapi.yaml",
+      "source_sha256": "51bef3793d7f4b6d6ec8d34684a5b6989b7dd3399776889cd6326b51a83a8817",
+      "openapi": "3.0.2",
+      "operations": 2,
+      "generation_seconds": 0.008249000005889684,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.2': expected a 3.1.x document\n"
+    },
+    {
+      "id": "langfuse",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/langfuse/langfuse/d6ddf14117c7f0a3c97dbbc1d14271d59f1de77f/web/public/generated/api/openapi.yml",
+      "source_sha256": "f6b0ec509c47c18c5b89e95fa1c0f47a2798fc28c4e764e90fffd542fbc1baab",
+      "openapi": "3.0.1",
+      "operations": 124,
+      "generation_seconds": 0.014329792000353336,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document\n"
+    },
+    {
+      "id": "langfuse_organizations",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/langfuse/langfuse/d6ddf14117c7f0a3c97dbbc1d14271d59f1de77f/web/public/generated/organizations-api/openapi.yml",
+      "source_sha256": "c2f98109a1565f72b938b3667f59fdc1b8ec2e872a4bf561c14e84093b2d863c",
+      "openapi": "3.0.1",
+      "operations": 8,
+      "generation_seconds": 0.0073469579801894724,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document\n"
+    },
+    {
+      "id": "linode",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/linode/linode-api-docs/ffe9841fd4578f66ffef52e656ac5c83852175a4/openapi.json",
+      "source_sha256": "c057aa23ec74f53c70ceebc95e06dd8951c078e5b2139cd6b85597e44e0608d6",
+      "openapi": "3.0.1",
+      "operations": 449,
+      "generation_seconds": 0.02618537499802187,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document\n"
+    },
+    {
+      "id": "lsproxy",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/agentic-labs/lsproxy/0b7d96cacd8f5f782bf71fcef4b3bc4a347e8af2/openapi.json",
+      "source_sha256": "7740a50d6d4e67d33b22904362421c9bec6476e8bc822315dbbc952936af6a47",
+      "openapi": "3.1.0",
+      "operations": 8,
+      "generation_seconds": 0.04399804095737636,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 38,
+        "bytes": 220545,
+        "python_files": 36,
+        "classes": 60,
+        "request_classes": 8,
+        "documented_requests": 8,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 13,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          61365,
+          "operations/symbol.py"
+        ]
+      },
+      "verification": {
+        "operations": 8,
+        "import_seconds": 0.010741083999164402,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 34,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Err": 15
+        },
+        "responses_without_inline_examples": 8,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "mantrae",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/MizuchiLabs/mantrae/10e1ee319e7e2ac5fbab1db8bf14ba275c72c024/internal/api/server/openapi/openapi.json",
+      "source_sha256": "1620fcd957a23ae7e82823439c8b25973ba9b0821453fa57c962cf0b6a25ad17",
+      "openapi": "3.1.0",
+      "operations": 84,
+      "generation_seconds": 0.14461991703137755,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 181,
+        "bytes": 1980139,
+        "python_files": 179,
+        "classes": 415,
+        "request_classes": 84,
+        "documented_requests": 84,
+        "root_wrapper_candidates": 7,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 1502,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          108344,
+          "operations/mantrae_v1_middleware_service.py"
+        ]
+      },
+      "verification": {
+        "operations": 84,
+        "import_seconds": 0.08326254098210484,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 177,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 168,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "marimo",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/marimo-team/marimo/feaf0b2464be52fb43005d8622708d0af89cf645/packages/openapi/api.yaml",
+      "source_sha256": "52ce783acf863d6094990404da24feebea82066a0c7ae3224f626d43b449a431",
+      "openapi": "3.1.0",
+      "operations": 92,
+      "generation_seconds": 0.014424749999307096,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/info/version' must be a string\n"
+    },
+    {
+      "id": "papr_memory",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/Papr-ai/memory-opensource/a0a816eb00f73b0819ef3fd7115bb6835cd18c39/openapi.json",
+      "source_sha256": "95a3f6f2c71613c2bba62f71d65d9e08a62248e5e1be21a4a0e382dc61d04155",
+      "openapi": "3.1.0",
+      "operations": 36,
+      "generation_seconds": 0.040829458041116595,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported multipart/form-data\n"
+    },
+    {
+      "id": "netlify",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/netlify/open-api/065567609ce5b47bd210876b86460c659d077d3c/swagger.yml",
+      "source_sha256": "989a86aa134bd90803eda0aff189ca487d0d38c7611257090061d52882dd7c3d",
+      "openapi": "2.0",
+      "operations": 181,
+      "generation_seconds": 0.008238249982241541,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI document must declare an `openapi` version string\n"
+    },
+    {
+      "id": "openai",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/openai/openai-openapi/77618e641a840768f1e58197ca53ddedffea6df9/openapi.json",
+      "source_sha256": "cf31ebfa19c49cf081757985deec50b28d10f9b7900e5f391eb1a899c1ce22f5",
+      "openapi": "3.1.0",
+      "operations": 360,
+      "generation_seconds": 0.04715662496164441,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/components/schemas/BetaCodeInterpreterToolCall/properties/outputs/anyOf/0/discriminator' must be a discriminator adjacent to `oneOf`, `anyOf`, or `allOf`\n"
+    },
+    {
+      "id": "openfga",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/openfga/api/c0650ce2169bcb39a72d73841fb531c200e32248/docs/openapiv3/apidocs.openapi.json",
+      "source_sha256": "b2cdbdf0878ea278d198ab8bf21a8c3dc0bd6381f412e1f0a9d543791693fc3e",
+      "openapi": "3.0.3",
+      "operations": 24,
+      "generation_seconds": 0.007625958998687565,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document\n"
+    },
+    {
+      "id": "opensearch",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://github.com/opensearch-project/opensearch-api-specification/releases/download/v0.2.0/opensearch-openapi.yaml",
+      "source_sha256": "22c5eb078b7ad796930f0a05e178b681dad5cd10a5610e5287d7aa9f8e7a374c",
+      "openapi": "3.1.0",
+      "operations": 733,
+      "generation_seconds": 1.4694431670359336,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: DELETE response 204 must not declare content for API generation\n"
+    },
+    {
+      "id": "prefect",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/PrefectHQ/prefect/302beb37eb79cd6ba37fcaa9fa002c4429b45702/docs/v3/api-ref/rest-api/server/schema.json",
+      "source_sha256": "d8fd6f1494c68c9c6a62b3e0e0fdbe18d6e0f70ca6d8f4e0b995b911b1930947",
+      "openapi": "3.1.0",
+      "operations": 179,
+      "generation_seconds": 1.2962899999693036,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 443,
+        "bytes": 67984668,
+        "python_files": 441,
+        "classes": 1051,
+        "request_classes": 179,
+        "documented_requests": 179,
+        "root_wrapper_candidates": 7,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 2605,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          33004838,
+          "operations/deployments.py"
+        ]
+      },
+      "verification": {
+        "operations": 179,
+        "import_seconds": 0.7447215829743072,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 439,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 43
+        },
+        "responses_without_inline_examples": 313,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "renegade",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/renegade-fi/renegade/744b3abd8e8814acd20e4520740d6f124a9c8c71/openapi.yaml",
+      "source_sha256": "ff2b9f21f6b6f170b719d753cd879fc8c5e0eb3710427865ad9e557889ce65c1",
+      "openapi": "3.1.0",
+      "operations": 23,
+      "generation_seconds": 0.07857137499377131,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 87,
+        "bytes": 622333,
+        "python_files": 85,
+        "classes": 142,
+        "request_classes": 23,
+        "documented_requests": 23,
+        "root_wrapper_candidates": 1,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 32,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          190415,
+          "operations/v2.py"
+        ]
+      },
+      "verification": {
+        "operations": 23,
+        "import_seconds": 0.026780333020724356,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 83,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 1
+        },
+        "responses_without_inline_examples": 22,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "intelligencex",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/IntelligenceX/SDK/867124360296531330b6fc8fabafaa78bfea4303/openapi.yaml",
+      "source_sha256": "09fb9b26ddff9fa3c8c3810953072cc2b007c5f3e185955da891a33444477078",
+      "openapi": "3.1.0",
+      "operations": 22,
+      "generation_seconds": 0.008473791007418185,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1api~1item~1get/get/responses' must be an object containing at least one response\n"
+    },
+    {
+      "id": "stripe",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/stripe/openapi/e73367dba9e88388c9244de65874fd3a07cb1b4d/latest/openapi.spec3.json",
+      "source_sha256": "9119e72c7ff8ad142e94f7efa9cf49d8e6eec69df3592e17e8fba15099726ed7",
+      "openapi": "3.0.0",
+      "operations": 644,
+      "generation_seconds": 0.04464308300521225,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.0': expected a 3.1.x document\n"
+    },
+    {
+      "id": "userlist_push",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/userlist/userlist-openapi/bad400a7b54737ce7398b04dfd2d2b21b89ad350/reference/push.v1.yaml",
+      "source_sha256": "ac17aef460f92ac64584db314d6c6bcfbfea7c3961a18b0340b92b817ccb3871",
+      "openapi": "3.1.0",
+      "operations": 7,
+      "generation_seconds": 0.04991275002248585,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 27,
+        "bytes": 230466,
+        "python_files": 25,
+        "classes": 44,
+        "request_classes": 7,
+        "documented_requests": 7,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 6,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          35774,
+          "operations/relationships.py"
+        ]
+      },
+      "verification": {
+        "operations": 7,
+        "import_seconds": 0.008847916964441538,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 23,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 7
+        },
+        "responses_without_inline_examples": 14,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "airflow",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/airflow-core/src/airflow/api_fastapi/core_api/openapi/v2-rest-api-generated.yaml",
+      "source_sha256": "4ac04303fa3e5f089418b4a7eec96fcecf5c3e56f36b476136f45924373641a4",
+      "openapi": "3.1.0",
+      "operations": 134,
+      "generation_seconds": 0.08524658298119903,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported application/x-ndjson\n"
+    },
+    {
+      "id": "immich",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/immich-app/immich/cc7fd671973085baf2a0dfba4e2b0a86cab17e6c/open-api/immich-openapi-specs.json",
+      "source_sha256": "2cce36a0afe3207316135ff6d8fd3f931d22247332175793c8c5ca4179f1b485",
+      "openapi": "3.0.0",
+      "operations": 279,
+      "generation_seconds": 0.014234750007744879,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.0': expected a 3.1.x document\n"
+    },
+    {
+      "id": "langflow",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/langflow-ai/langflow/504c02fc47e76087b82b0e7cbe4186e9cdd916d4/docs/openapi/openapi.json",
+      "source_sha256": "088c1fc24528a85fe18a433fc1698e3da548e790159a2ed95f98884bc445d0e9",
+      "openapi": "3.1.0",
+      "operations": 118,
+      "generation_seconds": 0.014383083034772426,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1api~1v1~1monitor~1messages~1session~1{session_id}' must be a path template shape that is not already declared with different parameter names\n"
+    },
+    {
+      "id": "meilisearch",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/meilisearch/documentation/0d96f60225eabdfed0721ab95e39b3605a764bed/assets/release-assets/meilisearch-openapi.json",
+      "source_sha256": "4a69fc9f58ac70cc1bd88df0786a25fa8ec8453686b9ea2fd1b80e8819e2f0d3",
+      "openapi": "3.1.0",
+      "operations": 143,
+      "generation_seconds": 0.04694537498289719,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported application/x-ndjson\n"
+    },
+    {
+      "id": "qdrant",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/qdrant/qdrant/016542aa5deb6c66380bb137badf73d54f742bde/docs/redoc/master/openapi.json",
+      "source_sha256": "22a890a799743906f5337588bb8e5ee3fccc518825e7bb5012add1ce579aa174",
+      "openapi": "3.0.1",
+      "operations": 69,
+      "generation_seconds": 0.014002875017467886,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document\n"
+    },
+    {
+      "id": "grafana_slo",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/grafana/slo-openapi-client/75fe08b09d871ab45cb4a5eeca91dbbe43c66672/openapi.yaml",
+      "source_sha256": "81c2ef10878c5a871bfde5ef7eb95a399049461d5a414ca69316b1eb10cb2707",
+      "openapi": "3.1.0",
+      "operations": 10,
+      "generation_seconds": 0.04764704202534631,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 44,
+        "bytes": 277494,
+        "python_files": 42,
+        "classes": 74,
+        "request_classes": 10,
+        "documented_requests": 10,
+        "root_wrapper_candidates": 4,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 9,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          121789,
+          "operations/v1.py"
+        ]
+      },
+      "verification": {
+        "operations": 10,
+        "import_seconds": 0.014370458025950938,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 40,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 4
+        },
+        "responses_without_inline_examples": 26,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "mcp_registry",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/modelcontextprotocol/registry/11b7b0e274d518b6f449c5ee3518a6151d9848b9/docs/reference/api/openapi.yaml",
+      "source_sha256": "3ed9ca429754087f2c7de81aa845c1cab3286c33941ac48482f923bbd6f1442d",
+      "openapi": "3.1.0",
+      "operations": 8,
+      "generation_seconds": 0.008068291004747152,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/$id' must be a supported OpenAPI document field or specification extension beginning with 'x-'\n"
+    },
+    {
+      "id": "gravit_launcher",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/GravitLauncher/Launcher/eda714f1ebc9f8cd04a3ed7bf31940c8c1c9b23f/openapi.yaml",
+      "source_sha256": "e883f6981ac00d25446ad4742052a00849cc9d008d38f1986d0ab2442d30ac19",
+      "openapi": "3.1.0",
+      "operations": 21,
+      "generation_seconds": 0.014024166972376406,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI compatibility checks do not support media-type encoding at '#/paths/~1updates~1upload~1{variant}/post/requestBody/content/multipart~1form-data/encoding' yet\n"
+    },
+    {
+      "id": "nomad",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://nomad-lab.eu/prod/v1/api/v1/openapi.json",
+      "source_sha256": "3cd8bda452e5b2ebdc491c25829c841d00aaff564c6358b78292978c70e67478",
+      "openapi": "3.1.0",
+      "operations": 100,
+      "generation_seconds": 0.08490720804547891,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported application/zip\n"
+    },
+    {
+      "id": "materials_project",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://api.materialsproject.org/openapi.json",
+      "source_sha256": "66ff8da722c58fd1bcdd31aa96b582a6f9f1c538d28719d6028235eb7d236e27",
+      "openapi": "3.1.0",
+      "operations": 37,
+      "generation_seconds": 0.026679665956180543,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/components/securitySchemes/ApiKeyAuth/descriptions' must be a supported OpenAPI security-scheme field or specification extension beginning with 'x-'\n"
+    },
+    {
+      "id": "authentik",
+      "status": "unsupported_version",
+      "source_url": "https://raw.githubusercontent.com/goauthentik/authentik/main/schema.yml",
+      "source_sha256": "5c269f74a26f3718b07043ad8d3fd2cba823877214531214b3b82dacd646591a",
+      "openapi": "3.0.3",
+      "operations": 1176,
+      "generation_seconds": 0.027661875006742775,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document\n"
+    },
+    {
+      "id": "netbox",
+      "status": "unsupported_version",
+      "source_url": "https://demo.netbox.dev/api/schema/?format=json",
+      "source_sha256": "48281500f3e87d35a37aecbc6f210696efa0469d34e5ba71acbd940d9f3e6118",
+      "openapi": "3.0.3",
+      "operations": 1256,
+      "generation_seconds": 0.08894041698658839,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document\n"
+    },
+    {
+      "id": "finmind",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/FinMind/FinMind.github.io/master/openapi.yaml",
+      "source_sha256": "c338279626aa7f3d950c816c1e62afd664c57f0b90d09eadf437e45fa9e68bc5",
+      "openapi": "3.1.0",
+      "operations": 4,
+      "generation_seconds": 0.03962104202946648,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 16,
+        "bytes": 59392,
+        "python_files": 14,
+        "classes": 20,
+        "request_classes": 4,
+        "documented_requests": 4,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 7,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          14009,
+          "operations/data.py"
+        ]
+      },
+      "verification": {
+        "operations": 4,
+        "import_seconds": 0.004429082968272269,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 12,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 5,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "typesafe",
+      "status": "passed",
+      "source_url": "https://api.typesafe.ai/openapi.json",
+      "source_sha256": "a191f8a7df6bd6fedced8120dd0fd106f88575d1d1c8360d08900a6c7c0360d5",
+      "openapi": "3.1.0",
+      "operations": 2,
+      "generation_seconds": 0.04649012500885874,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 29,
+        "bytes": 142595,
+        "python_files": 27,
+        "classes": 51,
+        "request_classes": 2,
+        "documented_requests": 2,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 19,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          25050,
+          "operations/v1.py"
+        ]
+      },
+      "verification": {
+        "operations": 2,
+        "import_seconds": 0.008384375018067658,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 25,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 4,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "fossology",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://raw.githubusercontent.com/fossology/fossology/d94e7fa191c8a1f1d46abdf4b207896212c9ca3f/src/www/ui/api/documentation/openapi.yaml",
+      "source_sha256": "1b65d32686d450d8e23a5166d8d9e5c53f4eadb92cec35c99bfb913f28276940",
+      "openapi": "3.1.0",
+      "operations": 167,
+      "generation_seconds": 0.0466302499989979,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported text/csv\n"
+    },
+    {
+      "id": "optimade",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/Materials-Consortia/optimade-python-tools/main/openapi/openapi.json",
+      "source_sha256": "843c6d7e5ffff9b1ca77e104f2618cf2331b2d474fab189061b9fa710b213be6",
+      "openapi": "3.1.0",
+      "operations": 10,
+      "generation_seconds": 0.044103584019467235,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports only an optional UTF-8 charset media parameter\n"
+    },
+    {
+      "id": "asterwise",
+      "status": "passed",
+      "source_url": "https://api.asterwise.com/openapi.json",
+      "source_sha256": "9da79d842151180c1b1012b78affed9c00df85e6d8d79865919d3cb317c0b4b7",
+      "openapi": "3.1.0",
+      "operations": 143,
+      "generation_seconds": 0.5407168749952689,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 496,
+        "bytes": 8179581,
+        "python_files": 494,
+        "classes": 2198,
+        "request_classes": 143,
+        "documented_requests": 143,
+        "root_wrapper_candidates": 2,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 5040,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          3597900,
+          "operations/v1.py"
+        ]
+      },
+      "verification": {
+        "operations": 143,
+        "import_seconds": 0.41720070800511166,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 492,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 1430,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "coolify",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/coollabsio/coolify/v4.x/openapi.yaml",
+      "source_sha256": "6d9cbbcb0d0690167e84f7a5c599b2224f866579b3ceea64e729654c88a942cf",
+      "openapi": "3.1.0",
+      "operations": 291,
+      "generation_seconds": 0.05181958299363032,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI reference '#/components/responses/403' at '#/paths/~1applications~1{uuid}~1previews~1{pull_request_id}/patch/responses/403' did not resolve\n"
+    },
+    {
+      "id": "jupyterhub",
+      "status": "unsupported_feature",
+      "source_url": "https://raw.githubusercontent.com/jupyterhub/jupyterhub/main/docs/source/_static/rest-api.yml",
+      "source_sha256": "04a2ecd60098da8812a98b626f36774ade555b9e73bd2e9a06bfc49e42d65e7f",
+      "openapi": "3.1.0",
+      "operations": 54,
+      "generation_seconds": 0.02793616702547297,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: get_users parameter include_stopped_servers\n\nCaused by:\n    allowReserved and allowEmptyValue are not supported by API generation\n"
+    },
+    {
+      "id": "planetary_computer",
+      "status": "passed",
+      "source_url": "https://planetarycomputer.microsoft.com/api/stac/v1/openapi.json",
+      "source_sha256": "1ee256e9583916e3da9bd1368dc5d4c60599b754b29d28d165e47cb1ee1cbb31",
+      "openapi": "3.1.0",
+      "operations": 10,
+      "generation_seconds": 0.08971483301138505,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 48,
+        "bytes": 1357532,
+        "python_files": 46,
+        "classes": 74,
+        "request_classes": 10,
+        "documented_requests": 10,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 84,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          483891,
+          "operations/api.py"
+        ]
+      },
+      "verification": {
+        "operations": 10,
+        "import_seconds": 0.02708620799239725,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 44,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {},
+        "responses_without_inline_examples": 10,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "noc_titiler",
+      "status": "unsupported_version",
+      "source_url": "https://imfe-pilot-tileserver.noc.ac.uk/openapi.json",
+      "source_sha256": "43a7b7c72863299fd26c512425df45cb1f6d87b536c89bf3082842b4cf3c9d96",
+      "openapi": "3.0.2",
+      "operations": 88,
+      "generation_seconds": 0.014628292003180832,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.2': expected a 3.1.x document\n"
+    },
+    {
+      "id": "typesense_cloud",
+      "status": "unsupported_media_or_contract",
+      "source_url": "https://cloud.typesense.org/api/v1/openapi.json",
+      "source_sha256": "e5c69f14964ad52d1b612455173c1322814fc7e0b04d0893b00e601ff9aa1f37",
+      "openapi": "3.1.2",
+      "operations": 40,
+      "generation_seconds": 0.0881483749835752,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: API generation supports JSON and text/plain media types; unsupported application/pdf\n"
+    },
+    {
+      "id": "luma",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/lumalabs/lumaai-api/main/openapi.yaml",
+      "source_sha256": "d1f79351570e22aabbc239b2ae4a855aef2695fdeae5c07275219399d28e446f",
+      "openapi": "3.1.0",
+      "operations": 13,
+      "generation_seconds": 0.0513862079824321,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 48,
+        "bytes": 295934,
+        "python_files": 46,
+        "classes": 75,
+        "request_classes": 13,
+        "documented_requests": 13,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 17,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          108605,
+          "operations/generations.py"
+        ]
+      },
+      "verification": {
+        "operations": 13,
+        "import_seconds": 0.01527079101651907,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 44,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Err": 12,
+          "Ok": 2,
+          "example_rejected_needs_review": 9
+        },
+        "responses_without_inline_examples": 2,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "openrailwaymap",
+      "status": "generation_rejected_needs_review",
+      "source_url": "https://raw.githubusercontent.com/hiddewie/OpenRailwayMap-vector/master/proxy/api/openapi.yaml",
+      "source_sha256": "9643d86b9482c4f9b9253f7bee02092484b7f7c767de7e7fc4e4cd624f4da170",
+      "openapi": "3.1.0",
+      "operations": 6,
+      "generation_seconds": 0.015183083014562726,
+      "generation_exit_code": 1,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1api~1status/get/responses' must be an object containing at least one response\n"
+    }
+  ],
+  "explicit_raw_samples": {
+    "counts": {
+      "passed": 30
+    },
+    "cases": [
+      {
+        "id": "prefect_boolean_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "bool",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_string_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "str",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_integer_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "int",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_array_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "list",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_number_union_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "float",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_null_union_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "NoneType",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_string_request",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "str",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_array_request",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "list",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_events_array_request",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "list",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_validation_error",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 422,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_declared_400",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 400,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_declared_403",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 403,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_declared_404",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 404,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_declared_409",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 409,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_error_union_object",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 404,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_nullable_job_response",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "NoneType",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "gematik_declared_400",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 400,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "gematik_declared_401",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 401,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "gematik_declared_500",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 500,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "gematik_declared_503",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 503,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "grafana_declared_400",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 400,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "grafana_declared_500",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 500,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_union_request_password",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "dict",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_union_request_client_credentials",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "dict",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_union_request_jwt",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "dict",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_undeclared_503",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 503,
+        "body_shape": "dict",
+        "outcome": "unexpected",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_invalid_declared_404",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 404,
+        "body_shape": "dict",
+        "outcome": "unexpected",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "airflow_invalid_json_404",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 404,
+        "body_shape": "NoneType",
+        "outcome": "unexpected",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_invalid_json_success_is_lazy",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "prefect_invalid_schema_success_is_lazy",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      }
+    ],
+    "typing_consumers": [
+      {
+        "exit_code": 0,
+        "seconds": 0.08777012501377612
+      }
+    ]
+  },
+  "slices": [
+    {
+      "id": "meilisearch_json_projection",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/meilisearch/documentation/0d96f60225eabdfed0721ab95e39b3605a764bed/assets/release-assets/meilisearch-openapi.json",
+      "source_sha256": "adf8f83c644bf45746d0f53099bfb868c1e75d7beed12c5643b616a456a4db61",
+      "openapi": "3.1.0",
+      "operations": 138,
+      "generation_seconds": 0.6097557080211118,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 258,
+        "bytes": 3723316,
+        "python_files": 256,
+        "classes": 878,
+        "request_classes": 138,
+        "documented_requests": 138,
+        "root_wrapper_candidates": 1,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 577,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          851148,
+          "operations/indexes.py"
+        ]
+      },
+      "verification": {
+        "operations": 138,
+        "import_seconds": 0.22235829196870327,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 254,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 138,
+          "Err": 249
+        },
+        "responses_without_inline_examples": 0,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    },
+    {
+      "id": "aivisspeech_json_projection",
+      "status": "passed",
+      "source_url": "https://raw.githubusercontent.com/Aivis-Project/AivisSpeech/77a3675f7b76865cfa0253ac30f41ef1dd822e27/openapi.json",
+      "source_sha256": "774aa51352b4a23b5d326925048ab69c9cd96882ed056b6cc49cd6f7895ab627",
+      "openapi": "3.1.0",
+      "operations": 37,
+      "generation_seconds": 0.13464858301449567,
+      "generation_exit_code": 0,
+      "generated": {
+        "files": 80,
+        "bytes": 908505,
+        "python_files": 78,
+        "classes": 155,
+        "request_classes": 37,
+        "documented_requests": 37,
+        "root_wrapper_candidates": 0,
+        "manifest_hashes_valid": true,
+        "public_lines_over_120": 78,
+        "wildcard_imports": [],
+        "redundant_missing_aliases": [],
+        "largest_python_file": [
+          147171,
+          "operations/aivm_models.py"
+        ]
+      },
+      "verification": {
+        "operations": 37,
+        "import_seconds": 0.055958167009521276,
+        "import_reflection_calls": 0,
+        "all_generated_modules_imported": 76,
+        "dispatch_plans_equivalent": true,
+        "auto_samples": {
+          "Ok": 10
+        },
+        "responses_without_inline_examples": 60,
+        "native_value_disagreements": 0,
+        "ty_exit_code": 0,
+        "deterministic": true,
+        "repeat_generation_exit_code": 0,
+        "negative_ty_exit_code": 1
+      }
+    }
+  ],
+  "explicit_slice_samples": {
+    "counts": {
+      "passed": 31
+    },
+    "cases": [
+      {
+        "id": "meili_dictionary",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "list",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_boolean",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "bool",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_integer",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "int",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_string",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "str",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_enum",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "str",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_reject_array_duplicates",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_reject_array_wrong_item",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_reject_integer_minimum",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_reject_enum_unknown",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_reject_string_null",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_declared_404",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 404,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_unexpected_503",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 503,
+        "body_shape": "dict",
+        "outcome": "unexpected",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_array_request",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "list",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_enum_request",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "str",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "meili_reject_array_request_duplicate",
+        "status": "passed",
+        "direction": "request",
+        "outcome": "request_error",
+        "body_shape": "list"
+      },
+      {
+        "id": "meili_reject_array_request_null",
+        "status": "passed",
+        "direction": "request",
+        "outcome": "request_error",
+        "body_shape": "NoneType"
+      },
+      {
+        "id": "meili_reject_array_request_wrong_item",
+        "status": "passed",
+        "direction": "request",
+        "outcome": "request_error",
+        "body_shape": "list"
+      },
+      {
+        "id": "aivis_string",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "str",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_string_array",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "list",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_boolean",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "bool",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_integer",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "int",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_number_array",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "list",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_object_array",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 200,
+        "body_shape": "list",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_array_request",
+        "status": "passed",
+        "direction": "request",
+        "body_shape": "list",
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_reject_array_request",
+        "status": "passed",
+        "direction": "request",
+        "outcome": "request_error",
+        "body_shape": "dict"
+      },
+      {
+        "id": "aivis_declared_400",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 400,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_declared_422",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 422,
+        "body_shape": "dict",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_bodyless_204",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 204,
+        "body_shape": "NoneType",
+        "outcome": "declared",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_reject_boolean_string",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_reject_array_wrong_item",
+        "status": "passed",
+        "direction": "response",
+        "outcome": "parse_error",
+        "lazy_metadata": true,
+        "cached_parse_failure": true,
+        "native_value_equivalent": true
+      },
+      {
+        "id": "aivis_unexpected_503",
+        "status": "passed",
+        "direction": "response",
+        "http_status": 503,
+        "body_shape": "dict",
+        "outcome": "unexpected",
+        "lazy_metadata": true,
+        "cached_result": true,
+        "native_value_equivalent": true
+      }
+    ],
+    "typing_consumers": [
+      {
+        "exit_code": 0,
+        "seconds": 0.14379320800071582
+      }
+    ]
+  },
+  "upstream_invalid_example_review": {
+    "validator": "python-jsonschema Draft202012Validator",
+    "validator_version": "4.26.0",
+    "counts": {
+      "unkey": 36,
+      "luma": 9
+    },
+    "examples": [
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/apps.createApp",
+        "status": 400,
+        "origin": "#/paths/~1v2~1apps.createApp/post/responses/400/content/application~1json/examples/invalidSlug/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/apps.getApp",
+        "status": 200,
+        "origin": "#/paths/~1v2~1apps.getApp/post/responses/200/content/application~1json/examples/app/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('defaultBranch' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/apps.listApps",
+        "status": 200,
+        "origin": "#/paths/~1v2~1apps.listApps/post/responses/200/content/application~1json/examples/appList/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "items",
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('defaultBranch' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/apps.listApps",
+        "status": 400,
+        "origin": "#/paths/~1v2~1apps.listApps/post/responses/400/content/application~1json/examples/invalidLimit/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/apps.updateApp",
+        "status": 200,
+        "origin": "#/paths/~1v2~1apps.updateApp/post/responses/200/content/application~1json/examples/app/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('defaultBranch' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/deployments.getDeployment",
+        "status": 200,
+        "origin": "#/paths/~1v2~1deployments.getDeployment/post/responses/200/content/application~1json/examples/deployment/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "required"
+          ],
+          "message": "'isCurrent' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/deployments.listBuildLogs",
+        "status": 400,
+        "origin": "#/paths/~1v2~1deployments.listBuildLogs/post/responses/400/content/application~1json/examples/invalidCursor/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/deployments.listDeployments",
+        "status": 200,
+        "origin": "#/paths/~1v2~1deployments.listDeployments/post/responses/200/content/application~1json/examples/deploymentList/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "items",
+            "required"
+          ],
+          "message": "'isCurrent' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/deployments.listDeployments",
+        "status": 400,
+        "origin": "#/paths/~1v2~1deployments.listDeployments/post/responses/400/content/application~1json/examples/missingParent/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            1,
+            "required"
+          ],
+          "message": "'errors' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.createDomain",
+        "status": 200,
+        "origin": "#/paths/~1v2~1domains.createDomain/post/responses/200/content/application~1json/examples/apex/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "dnsRecords",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "dnsRecords",
+            "items",
+            "required"
+          ],
+          "message": "'ttl' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.createDomain",
+        "status": 200,
+        "origin": "#/paths/~1v2~1domains.createDomain/post/responses/200/content/application~1json/examples/domainConnect/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "dnsRecords",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "dnsRecords",
+            "items",
+            "required"
+          ],
+          "message": "'ttl' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.createDomain",
+        "status": 200,
+        "origin": "#/paths/~1v2~1domains.createDomain/post/responses/200/content/application~1json/examples/subdomain/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "dnsRecords",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "dnsRecords",
+            "items",
+            "required"
+          ],
+          "message": "'ttl' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.createDomain",
+        "status": 400,
+        "origin": "#/paths/~1v2~1domains.createDomain/post/responses/400/content/application~1json/examples/invalidDomain/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            1,
+            "required"
+          ],
+          "message": "'errors' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.createDomain",
+        "status": 400,
+        "origin": "#/paths/~1v2~1domains.createDomain/post/responses/400/content/application~1json/examples/publicSuffix/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            1,
+            "required"
+          ],
+          "message": "'errors' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.deleteDomain",
+        "status": 400,
+        "origin": "#/paths/~1v2~1domains.deleteDomain/post/responses/400/content/application~1json/examples/invalidIdentifier/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.getDomain",
+        "status": 400,
+        "origin": "#/paths/~1v2~1domains.getDomain/post/responses/400/content/application~1json/examples/invalidIdentifier/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.listDomains",
+        "status": 200,
+        "origin": "#/paths/~1v2~1domains.listDomains/post/responses/200/content/application~1json/examples/empty/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "pagination",
+            "cursor"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "pagination",
+            "properties",
+            "cursor",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.listDomains",
+        "status": 400,
+        "origin": "#/paths/~1v2~1domains.listDomains/post/responses/400/content/application~1json/examples/searchTooLong/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/domains.verifyDomain",
+        "status": 400,
+        "origin": "#/paths/~1v2~1domains.verifyDomain/post/responses/400/content/application~1json/examples/invalidIdentifier/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/environments.getEnvironment",
+        "status": 200,
+        "origin": "#/paths/~1v2~1environments.getEnvironment/post/responses/200/content/application~1json/examples/environment/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "required"
+          ],
+          "message": "'kind' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/environments.listEnvironments",
+        "status": 200,
+        "origin": "#/paths/~1v2~1environments.listEnvironments/post/responses/200/content/application~1json/examples/environmentList/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "items",
+            "required"
+          ],
+          "message": "'kind' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/environments.listEnvironments",
+        "status": 400,
+        "origin": "#/paths/~1v2~1environments.listEnvironments/post/responses/400/content/application~1json/examples/missingApp/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/identities.createIdentity",
+        "status": 200,
+        "origin": "#/paths/~1v2~1identities.createIdentity/post/responses/200/content/application~1json/examples/success/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [],
+          "schema_path": [
+            "allOf",
+            0,
+            "required"
+          ],
+          "message": "'data' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/identities.getIdentity",
+        "status": 200,
+        "origin": "#/paths/~1v2~1identities.getIdentity/post/responses/200/content/application~1json/examples/success/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "ratelimits",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "ratelimits",
+            "items",
+            "required"
+          ],
+          "message": "'id' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/identities.listIdentities",
+        "status": 200,
+        "origin": "#/paths/~1v2~1identities.listIdentities/post/responses/200/content/application~1json/examples/success/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [],
+          "schema_path": [
+            "allOf",
+            0,
+            "required"
+          ],
+          "message": "'pagination' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/keys.verifyKey",
+        "status": 400,
+        "origin": "#/paths/~1v2~1keys.verifyKey/post/responses/400/content/application~1json/examples/permissionsQuerySyntaxError/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/permissions.updatePermission",
+        "status": 400,
+        "origin": "#/paths/~1v2~1permissions.updatePermission/post/responses/400/content/application~1json/examples/invalidSlug/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/permissions.updateRole",
+        "status": 400,
+        "origin": "#/paths/~1v2~1permissions.updateRole/post/responses/400/content/application~1json/examples/emptyName/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/projects.createProject",
+        "status": 400,
+        "origin": "#/paths/~1v2~1projects.createProject/post/responses/400/content/application~1json/examples/invalidSlug/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/projects.listProjects",
+        "status": 400,
+        "origin": "#/paths/~1v2~1projects.listProjects/post/responses/400/content/application~1json/examples/invalidLimit/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/ratelimit.multiLimit",
+        "status": 200,
+        "origin": "#/paths/~1v2~1ratelimit.multiLimit/post/responses/200/content/application~1json/examples/allAllowed/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "limits",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "limits",
+            "items",
+            "required"
+          ],
+          "message": "'passed' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/ratelimit.multiLimit",
+        "status": 200,
+        "origin": "#/paths/~1v2~1ratelimit.multiLimit/post/responses/200/content/application~1json/examples/mixedResults/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "limits",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "limits",
+            "items",
+            "required"
+          ],
+          "message": "'passed' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/ratelimit.multiLimit",
+        "status": 200,
+        "origin": "#/paths/~1v2~1ratelimit.multiLimit/post/responses/200/content/application~1json/examples/withOverride/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "data",
+            "limits",
+            0
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "data",
+            "properties",
+            "limits",
+            "items",
+            "required"
+          ],
+          "message": "'passed' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/workspace.getUsage",
+        "status": 400,
+        "origin": "#/paths/~1v2~1workspace.getUsage/post/responses/400/content/application~1json/examples/futureMonth/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            1,
+            "required"
+          ],
+          "message": "'errors' is a required property"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/workspace.getUsage",
+        "status": 400,
+        "origin": "#/paths/~1v2~1workspace.getUsage/post/responses/400/content/application~1json/examples/invalidMonth/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            0,
+            "additionalProperties"
+          ],
+          "message": "Additional properties are not allowed ('errors' was unexpected)"
+        }
+      },
+      {
+        "spec": "unkey",
+        "method": "POST",
+        "path": "/v2/workspace.getUsage",
+        "status": 400,
+        "origin": "#/paths/~1v2~1workspace.getUsage/post/responses/400/content/application~1json/examples/monthTooOld/value",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "error"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "error",
+            "allOf",
+            1,
+            "required"
+          ],
+          "message": "'errors' is a required property"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "GET",
+        "path": "/generations",
+        "status": 200,
+        "origin": "#/components/schemas/ListGenerationResponse/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "generations",
+            0,
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "generations",
+            "items",
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "GET",
+        "path": "/generations/{id}",
+        "status": 200,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/image",
+        "status": 201,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/image/reframe",
+        "status": 201,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/video",
+        "status": 201,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/video/modify",
+        "status": 201,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/video/reframe",
+        "status": 201,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/{id}/audio",
+        "status": 200,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      },
+      {
+        "spec": "luma",
+        "method": "POST",
+        "path": "/generations/{id}/upscale",
+        "status": 200,
+        "origin": "#/components/schemas/Generation/example",
+        "independently_invalid": true,
+        "first_error": {
+          "instance_path": [
+            "failure_reason"
+          ],
+          "schema_path": [
+            "allOf",
+            0,
+            "properties",
+            "failure_reason",
+            "type"
+          ],
+          "message": "None is not of type 'string'"
+        }
+      }
+    ]
+  },
+  "slice_projection": [
+    {
+      "id": "meilisearch_json_projection",
+      "sha256": "adf8f83c644bf45746d0f53099bfb868c1e75d7beed12c5643b616a456a4db61",
+      "projection_of": "meilisearch",
+      "source_url": "https://raw.githubusercontent.com/meilisearch/documentation/0d96f60225eabdfed0721ab95e39b3605a764bed/assets/release-assets/meilisearch-openapi.json",
+      "source_sha256": "4a69fc9f58ac70cc1bd88df0786a25fa8ec8453686b9ea2fd1b80e8819e2f0d3",
+      "revision": "0d96f60225eabdfed0721ab95e39b3605a764bed",
+      "notes": "Secondary operation slice. source_url/source_sha256 identify the full original; path/sha256 identify the local slice. Reproduce with check_public_openapi_slices.py; downloading source_url alone does not recreate this slice.",
+      "transformation": "Remove complete operations with unsupported request or response media; preserve all retained operations, their path-level fields, every component/schema, and every other document field unchanged as JSON values.",
+      "original_operations": 143,
+      "operations": 138,
+      "excluded_operations": [
+        {
+          "method": "GET",
+          "path": "/batches/stream",
+          "operation_id": "get_batches_stream",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "application/x-ndjson",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "PUT",
+          "path": "/indexes/{index_uid}/settings/facet-search",
+          "operation_id": "putfacetSearch",
+          "reasons": [
+            {
+              "location": "request",
+              "media_type": "text/plain",
+              "reason": "text/plain schema does not declare a string"
+            }
+          ]
+        },
+        {
+          "method": "PUT",
+          "path": "/indexes/{index_uid}/settings/search-cutoff-ms",
+          "operation_id": "putsearchCutoffMs",
+          "reasons": [
+            {
+              "location": "request",
+              "media_type": "text/plain",
+              "reason": "text/plain schema does not declare a string"
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/tasks/stream",
+          "operation_id": "get_tasks_stream",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "application/x-ndjson",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/tasks/{task_id}/documents",
+          "operation_id": "get_task_documents_file",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "application/x-ndjson",
+              "reason": "unsupported media type"
+            }
+          ]
+        }
+      ],
+      "included_operation_count": 138
+    },
+    {
+      "id": "aivisspeech_json_projection",
+      "sha256": "774aa51352b4a23b5d326925048ab69c9cd96882ed056b6cc49cd6f7895ab627",
+      "projection_of": "aivisspeech",
+      "source_url": "https://raw.githubusercontent.com/Aivis-Project/AivisSpeech/77a3675f7b76865cfa0253ac30f41ef1dd822e27/openapi.json",
+      "source_sha256": "1d935a3e31b82b6136a48a80241ba9ba666214b3899e7efaf7616dc064318aa1",
+      "revision": "77a3675f7b76865cfa0253ac30f41ef1dd822e27",
+      "notes": "Secondary operation slice. source_url/source_sha256 identify the full original; path/sha256 identify the local slice. Reproduce with check_public_openapi_slices.py; downloading source_url alone does not recreate this slice.",
+      "transformation": "Remove complete operations with unsupported request or response media; preserve all retained operations, their path-level fields, every component/schema, and every other document field unchanged as JSON values.",
+      "original_operations": 46,
+      "operations": 37,
+      "excluded_operations": [
+        {
+          "method": "POST",
+          "path": "/synthesis",
+          "operation_id": "synthesis",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "audio/wav",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/cancellable_synthesis",
+          "operation_id": "cancellable_synthesis",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "audio/wav",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/multi_synthesis",
+          "operation_id": "multi_synthesis",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "application/zip",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/frame_synthesis",
+          "operation_id": "frame_synthesis",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "audio/wav",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/connect_waves",
+          "operation_id": "connect_waves",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "audio/wav",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/synthesis_morphing",
+          "operation_id": "_synthesis_morphing",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "audio/wav",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/aivm_models/install",
+          "operation_id": "install_model",
+          "reasons": [
+            {
+              "location": "request",
+              "media_type": "multipart/form-data",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "POST",
+          "path": "/setting",
+          "operation_id": "setting_post",
+          "reasons": [
+            {
+              "location": "request",
+              "media_type": "application/x-www-form-urlencoded",
+              "reason": "unsupported media type"
+            }
+          ]
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "operation_id": "get_portal_page",
+          "reasons": [
+            {
+              "location": "response 200",
+              "media_type": "text/html",
+              "reason": "unsupported media type"
+            }
+          ]
+        }
+      ],
+      "included_operation_count": 37
+    }
+  ]
+}

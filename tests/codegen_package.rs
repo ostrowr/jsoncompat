@@ -165,6 +165,102 @@ assert _install.deserialize(_install(**{f'f{i:03}': i for i in range(200)}).seri
 }
 
 #[test]
+fn annotated_single_reference_all_of_preserves_typed_model_identity() {
+    let work = Work::new();
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Annotated references","version":"1"},"components":{"schemas":{
+        "App":{"type":"object","properties":{
+            "git":{"description":"Connected repository","allOf":[{"$ref":"#/components/schemas/AppGit","description":"Repository settings"}]},
+            "count":{"description":"Nonnegative count","allOf":[{"$ref":"#/components/schemas/Count"}]},
+            "restricted":{"description":"Repository with an additional assertion","allOf":[{"$ref":"#/components/schemas/AppGit"}],"not":{"properties":{"repository":{"const":"blocked"}},"required":["repository"]}}
+        },"required":["git","count","restricted"],"additionalProperties":false},
+        "AppGit":{"type":"object","properties":{"repository":{"type":"string","minLength":1}},"required":["repository"],"additionalProperties":false},
+        "Count":{"type":"integer","minimum":0}
+    }}}));
+    success(work.generate_with_group_size("128", &[]));
+    success(python_env::python_command().arg("-c").arg(r#"
+import sys
+from typing import get_type_hints
+sys.path.insert(0, sys.argv[1])
+from models import App, AppGit
+assert get_type_hints(App)["git"] is AppGit
+assert get_type_hints(App)["count"] is int
+assert get_type_hints(App)["restricted"] is not AppGit
+value = {"git": {"repository": "owner/repo"}, "count": 2, "restricted": {"repository": "allowed"}}
+app = App.from_value(value)
+assert type(app.git) is AppGit
+assert app.git.repository == "owner/repo"
+assert app.to_value() == value
+assert type(App.deserialize(app.serialize()).git) is AppGit
+assert App(git=AppGit(repository="owner/repo"), count=2, restricted=app.restricted).to_value() == value
+for invalid in (
+    {**value, "git": {"repository": ""}},
+    {**value, "count": -1},
+    {**value, "restricted": {"repository": "blocked"}},
+):
+    for convert in (App.from_value, lambda obj: App.deserialize(__import__('json').dumps(obj))):
+        try:
+            convert(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"reference or sibling assertion was lost: {invalid}")
+"#).arg(&work.0).output().unwrap());
+    fs::write(work.0.join("typed.py"), "from typing import assert_type\nfrom models import App, AppGit\ndef read(app: App) -> str:\n    assert_type(app.git, AppGit)\n    assert_type(app.count, int)\n    return app.git.repository\n").unwrap();
+    success(
+        python_env::ty_command()
+            .arg("--project")
+            .arg(&work.0)
+            .arg(work.0.join("models"))
+            .arg(work.0.join("typed.py"))
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
+fn inline_models_avoid_component_names_and_preexisting_suffixes() {
+    // An inline object's natural name can also be a separately named component.
+    let work = Work::new();
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Names","version":"1"},"components":{"schemas":{
+        "App":{"type":"object","properties":{
+            "git":{"type":"object","properties":{"repository":{"type":"string","minLength":1}},"required":["repository"],"additionalProperties":false},
+            "Git":{"type":"object","properties":{"enabled":{"type":"boolean"}},"required":["enabled"],"additionalProperties":false}
+        },"required":["git","Git"],"additionalProperties":false},
+        "AppGit":{"type":"object","properties":{"repository":{"type":"string","minLength":1}},"required":["repository"],"additionalProperties":false},
+        "AppGit2":{"type":"integer"}
+    }}}));
+    success(work.generate_with_group_size("128", &[]));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import sys
+sys.path.insert(0, sys.argv[1])
+from models import App, AppGit, AppGit2
+value = {"git": {"repository": "owner/repo"}, "Git": {"enabled": True}}
+app = App.from_value(value)
+assert app.to_value() == value
+assert App.deserialize(app.serialize()).to_value() == value
+assert type(app.git).__name__ == "AppGit4"
+assert type(app.Git).__name__ == "AppGit3"
+assert AppGit(repository="owner/repo").to_value() == value["git"]
+assert AppGit2(root=7).to_value() == 7
+try:
+    App.from_value({"git": {"repository": ""}, "Git": {"enabled": True}})
+except ValueError:
+    pass
+else:
+    raise AssertionError("inline model lost the component constraint")
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
 fn older_packages_migrate_without_removing_unmanaged_files() {
     for (previous_version, previous_file) in [
         (3, "models_0000.py"),

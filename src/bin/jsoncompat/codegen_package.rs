@@ -257,6 +257,7 @@ pub(super) fn generate(
             &metadata.before,
             &metadata.after,
             &metadata.extra_exports,
+            &metadata.reserved_names,
             declarations
                 .values()
                 .map(|name| (name, &owners[name]))

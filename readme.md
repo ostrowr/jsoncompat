@@ -165,6 +165,10 @@ Browse the [checked-in Petstore client](examples/openapi_client/petstore/) and
 [run its examples](examples/openapi_client/README.md) with aiohttp, HTTPX, or
 requests. Tests compare the generated package against these goldens.
 
+The [public-spec corpus](pybindings/benchmarks/public-openapi.md) checks larger
+real-world APIs, declared errors, scalar and array bodies, and current support
+limits with reproducible generation and typing tests.
+
 Install the integration for your HTTP library, then bind your own session:
 
 ```sh

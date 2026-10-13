@@ -775,6 +775,115 @@ fn dispatch_contract_errors_are_rejected_before_publication() {
 }
 
 #[test]
+fn generated_aliases_do_not_shadow_implicit_nested_definitions() {
+    let work = Work::new();
+    let spec = json!({"openapi":"3.1.0","info":{"title":"Nested names","version":"1"},"components":{"schemas":{
+        "Get":{"type":"object","$defs":{"Response":{"type":"object","properties":{"value":{"type":"string","minLength":1}},"required":["value"],"additionalProperties":false}},
+            "properties":{"nested":{"$ref":"#/components/schemas/Get/$defs/Response"}},"required":["nested"],"additionalProperties":false}
+    }},"paths":{"/x":{"get":{"operationId":"get","responses":{"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Get"}}}}}}}}});
+    success(work.generate(&spec, &[]));
+    success(
+        python_env::python_command()
+            .current_dir(&work.0)
+            .arg("-c")
+            .arg(
+                r#"
+from petstore import Get, GetRequest, GetResponse, GetResponse2, PetstoreAPI
+from jsoncompat.http import RawResponse, prepare
+assert not isinstance(GetResponse, type)
+value = Get(nested=GetResponse2(value="found"))
+assert Get.deserialize(value.serialize()).to_value() == {"nested": {"value": "found"}}
+response = prepare(PetstoreAPI, GetRequest()).decode(RawResponse(
+    200, (("Content-Type", "application/json"),), b'{"nested":{"value":"found"}}'
+)).unwrap()
+assert type(response.body.nested) is GetResponse2
+try:
+    GetResponse2(value="")
+except ValueError:
+    pass
+else:
+    raise AssertionError("nested definition lost its constraint")
+"#,
+            )
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
+fn generated_operation_names_avoid_existing_models_and_aliases() {
+    let work = Work::new();
+    let mut schemas = serde_json::Map::new();
+    for name in [
+        "FindIdentifierRequest",
+        "FindIdentifierRequest2",
+        "FindIdentifierResponse",
+        "FindIdentifierResponse2",
+        "FindIdentifierSuccess",
+        "FindIdentifierError",
+        "FindIdentifierResult",
+        "FindIdentifier200",
+        "FindIdentifier200Headers",
+        "JsoncompatEmptyHeaders",
+        "FindIdentifierBodyApplicationJson",
+    ] {
+        schemas.insert(name.into(), json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}));
+    }
+    schemas.insert("Find".into(), json!({"type":"object","properties":{
+        "identifierResult":{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}
+    },"required":["identifierResult"],"additionalProperties":false}));
+    let spec = json!({"openapi":"3.1.0","info":{"title":"Names","version":"1"},"components":{"schemas":schemas},"paths":{
+        "/identifiers":{"post":{"operationId":"findIdentifier","requestBody":{"required":true,"content":{
+            "application/json":{"schema":{"$ref":"#/components/schemas/FindIdentifierRequest"}},
+            "application/problem+json":{"schema":{"type":"string"}}
+        }},"responses":{
+            "200":{"description":"Found","content":{"application/json":{"schema":{"$ref":"#/components/schemas/FindIdentifierResponse"}}}},
+            "404":{"description":"Missing","content":{"application/json":{"schema":{"type":"string"}}}}
+        }}},
+        "/other":{"get":{"operationId":"find_identifier","responses":{"204":{"description":"Empty"}}}}
+    }});
+    success(work.generate(&spec, &[]));
+    let before = package_sources(&work.0.join("petstore"));
+    success(work.generate(&spec, &[]));
+    assert_eq!(before, package_sources(&work.0.join("petstore")));
+    success(python_env::python_command().current_dir(&work.0).arg("-c").arg(r#"
+import json
+import petstore
+from jsoncompat.http import RawResponse, prepare
+from petstore.api import OPERATIONS
+request = petstore.FindIdentifierRequest4(
+    body=petstore.FindIdentifierBodyApplicationJson2(
+        content_type="application/json",
+        value=petstore.FindIdentifierRequest(name="target"),
+    ),
+)
+prepared = prepare(petstore.PetstoreAPI, request)
+assert json.loads(prepared.request.body) == {"name": "target"}
+response = prepared.decode(RawResponse(200, (("Content-Type", "application/json"),), b'{"name":"found"}')).unwrap()
+assert type(response) is petstore.FindIdentifier2002
+assert type(response.body) is petstore.FindIdentifierResponse
+assert response.body.name == "found"
+assert petstore.FindIdentifier200Headers2 is not petstore.FindIdentifier200Headers
+assert petstore.FindIdentifierResponse3.__value__
+assert petstore.FindIdentifierSuccess2.__value__
+assert petstore.FindIdentifierError2.__value__
+assert petstore.FindIdentifierResult2.__value__
+assert type(petstore.Find.from_value({"identifierResult": {"ok": True}}).identifierResult).__name__ == "FindIdentifierResult4"
+assert len(OPERATIONS) == 2
+other = petstore.FindIdentifierRequest3()
+assert prepare(petstore.PetstoreAPI, other).request.target == "/other"
+"#).output().unwrap());
+    success(
+        python_env::ty_command()
+            .arg("--project")
+            .arg(&work.0)
+            .arg(work.0.join("petstore"))
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
 fn generated_client_aliases_cannot_shadow_models() {
     for name in ["PetstoreClient", "PetstoreAsyncClient"] {
         let work = Work::new();
@@ -1182,4 +1291,105 @@ assert type(response.headers) is PetsList204Headers
 assert tuple(tuple(pair) for pair in response.raw_headers) == (('X-Request-ID', 'abc'), ('X-Request-ID', 'def'))
 assert response.headers.to_value() == {}
 "#).arg(&work.0).output().unwrap());
+}
+
+#[test]
+fn empty_response_content_generates_bodyless_successes_and_errors() {
+    let work = Work::new();
+    let spec = json!({
+        "openapi":"3.1.0", "info":{"title":"Empty response content","version":"1"},
+        "paths": {"/items": {"delete": {
+            "operationId":"deleteItems",
+            "responses": {
+                "204": {"$ref":"#/components/responses/Deleted"},
+                "404": {"description":"Absent", "content":{}}
+            }
+        }}},
+        "components": {"responses": {"Deleted": {
+            "description":"Deleted", "content":{},
+            "headers":{"X-Count":{"required":true,"schema":{"type":"integer"}}}
+        }}}
+    });
+    success(work.generate(&spec, &[]));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import sys
+sys.path.insert(0, sys.argv[1])
+from jsoncompat.http import Err, RawResponse, bind
+from petstore import PetstoreAPI, DeleteItemsRequest, DeleteItems204, DeleteItems404
+
+status = 204
+def fetch(request, /, *, transport=None):
+    assert request.method == 'DELETE'
+    return RawResponse(status, (('X-Count', '3'),), b'')
+
+client = bind(PetstoreAPI, fetch=fetch)
+success = client.request(DeleteItemsRequest()).unwrap()
+assert type(success) is DeleteItems204
+assert success.body is None
+assert success.headers.x_count == 3
+assert success.to_value()['body'] is None
+status = 404
+failure = client.request(DeleteItemsRequest()).result()
+assert isinstance(failure, Err)
+assert type(failure.error) is DeleteItems404
+assert failure.error.body is None
+assert failure.error.status == 404
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
+fn http_fields_share_model_reserved_name_allocation() {
+    // Planetary Computer's STAC /search exposes a `collections` query parameter.
+    // HTTP plans and constructors must agree when it shadows an annotation import.
+    let work = Work::new();
+    let reserved = ["collections", "typing", "dc", "int", "self", "serialize"];
+    let parameters: Vec<_> = reserved
+        .iter()
+        .map(|name| {
+            json!({
+                "name":name, "in":"query", "required":true, "schema":{"type":"string"}
+            })
+        })
+        .collect();
+    let headers: serde_json::Map<_, _> = reserved
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_owned(),
+                json!({"required":true,"schema":{"type":"string"}}),
+            )
+        })
+        .collect();
+    let spec = json!({"openapi":"3.1.0","info":{"title":"Reserved HTTP fields","version":"1"},"paths":{
+        "/search":{"get":{"operationId":"search","parameters":parameters,"responses":{
+            "200":{"description":"Results","headers":headers,"content":{"application/json":{"schema":{"type":"array","items":{"type":"string"}}}}}
+        }}}
+    }});
+    success(work.generate(&spec, &[]));
+    success(python_env::python_command().current_dir(&work.0).arg("-c").arg(r#"
+from urllib.parse import parse_qs, urlsplit
+from petstore import PetstoreAPI, SearchRequest
+from jsoncompat.http import bind, RawResponse
+from jsoncompat.http._binding import _prepare
+spec, = PetstoreAPI.operations()
+assert PetstoreAPI.__jsoncompat_http_plans__[SearchRequest] == _prepare(spec, PetstoreAPI)
+values = dict(collections_='one', typing_='two', dc_='three', int_='four', self_='five', param_serialize='six')
+wire_names = ('collections', 'typing', 'dc', 'int', 'self', 'serialize')
+headers = tuple(zip(wire_names, values.values()))
+def fetch(request, /, *, transport=None):
+    assert parse_qs(urlsplit(request.target).query) == {name: [value] for name, value in headers}
+    return RawResponse(200, headers + (('Content-Type', 'application/json'),), b'["ok"]')
+response = bind(PetstoreAPI, fetch=fetch).request(SearchRequest(**values)).unwrap()
+assert response.body == ['ok']
+assert {name: getattr(response.headers, name) for name in values} == values
+"#).output().unwrap());
 }

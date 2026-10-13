@@ -121,6 +121,7 @@ struct DataclassModuleBuilder<'a> {
     classes: Vec<ClassSpec>,
     class_names: BTreeMap<String, String>,
     named_refs: BTreeMap<String, String>,
+    named_class_names: BTreeSet<String>,
     codegen_root: &'a Value,
     validation_root: &'a Value,
     source_root: &'a Value,
@@ -157,6 +158,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             source_root,
             classes: Vec::new(),
             class_names,
+            named_class_names: named_refs.values().cloned().collect(),
             named_refs,
             codegen_root,
             definitions: Arc::new(RootDefinitions {
@@ -351,11 +353,18 @@ impl<'a> DataclassModuleBuilder<'a> {
             .inline_name_counters
             .entry(base_name.to_owned())
             .or_insert(0);
-        *count += 1;
-        if *count == 1 {
-            base_name.to_owned()
-        } else {
-            format!("{base_name}{count}")
+        loop {
+            *count += 1;
+            let candidate = if *count == 1 {
+                base_name.to_owned()
+            } else {
+                format!("{base_name}{count}")
+            };
+            if !self.named_class_names.contains(&candidate)
+                && !self.class_names.contains_key(&candidate)
+            {
+                return candidate;
+            }
         }
     }
 
@@ -408,6 +417,9 @@ impl<'a> DataclassModuleBuilder<'a> {
             let ref_value = ref_value.as_str().ok_or_else(|| {
                 invalid_schema(join_pointer(pointer, "$ref"), "$ref must be a string")
             })?;
+            return self.ref_annotation(ref_value, pointer);
+        }
+        if let Some(ref_value) = annotated_all_of_ref(obj) {
             return self.ref_annotation(ref_value, pointer);
         }
 
@@ -677,6 +689,9 @@ impl<'a> DataclassModuleBuilder<'a> {
                 if obj.get("$ref").is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
+                if annotated_all_of_ref(obj).is_some() {
+                    return self.schema_annotation(obj, pointer, scope_name);
+                }
                 if parse_literal_annotation(obj).is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
@@ -904,6 +919,26 @@ fn generate_declarations(
         }
         refs.insert(pointer.clone(), name.clone());
     }
+    if !metadata.reserved_names.is_empty() {
+        // Implicit names for nested $defs are chosen before trusted additions
+        // such as HTTP aliases are emitted. Keep explicitly named declarations
+        // stable, but move these helpers out of the additions' namespace too.
+        let mut used_names = metadata.reserved_names.clone();
+        used_names.extend(refs.values().cloned());
+        for (pointer, name) in &mut refs {
+            if metadata.reserved_names.contains(name)
+                && !declarations.contains_key(pointer)
+                && resolve_json_pointer(canonical, pointer)
+                    .map(|schema| metadata_name_if_any(schema, pointer))
+                    .transpose()?
+                    .flatten()
+                    .is_none()
+            {
+                *name = unique_name(name, &used_names);
+                used_names.insert(name.clone());
+            }
+        }
+    }
     let mut names = BTreeSet::new();
     for (pointer, name) in &refs {
         if pointer != "#" && !names.insert(name) {
@@ -911,6 +946,9 @@ fn generate_declarations(
         }
     }
     let mut builder = DataclassModuleBuilder::new(refs, canonical, document.source_schema_json());
+    builder
+        .named_class_names
+        .extend(metadata.reserved_names.iter().cloned());
     for pointer in declarations.keys() {
         let schema = pointer
             .strip_prefix('#')
@@ -1584,6 +1622,35 @@ fn single_type_annotation(type_name: &str, pointer: &str) -> Result<Annotation, 
     }
 }
 
+/// OpenAPI descriptions often wrap one reference in allOf to attach a field
+/// description. With annotation-only siblings, its model identity is exactly
+/// the referenced model's. The validator still uses the unmodified schema.
+fn annotated_all_of_ref(obj: &Map<String, Value>) -> Option<&str> {
+    fn annotation(keyword: &str) -> bool {
+        matches!(
+            keyword,
+            "title"
+                | "description"
+                | "$comment"
+                | "default"
+                | "examples"
+                | "deprecated"
+                | "readOnly"
+                | "writeOnly"
+        )
+    }
+    if !obj.keys().all(|key| key == "allOf" || annotation(key)) {
+        return None;
+    }
+    let [Value::Object(branch)] = obj.get("allOf")?.as_array()?.as_slice() else {
+        return None;
+    };
+    if !branch.keys().all(|key| key == "$ref" || annotation(key)) {
+        return None;
+    }
+    branch.get("$ref")?.as_str()
+}
+
 fn collect_named_refs(schema: &Value) -> Result<BTreeMap<String, String>, DataclassError> {
     let mut refs = BTreeMap::new();
     let mut used_names = BTreeSet::from([
@@ -2120,7 +2187,7 @@ fn python_literal_annotation(value: &Value) -> Option<Annotation> {
     }
 }
 
-fn python_field_name(json_name: &str) -> String {
+pub(crate) fn python_field_name(json_name: &str) -> String {
     let mut output = String::new();
     for (index, ch) in json_name.chars().enumerate() {
         if ch.is_ascii_alphanumeric() || ch == '_' {
@@ -2290,6 +2357,32 @@ fn invalid_schema(pointer: String, message: impl Into<String>) -> DataclassError
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn annotated_all_of_reference_requires_annotation_only_siblings() {
+        let reference =
+            json!({"description":"Details","allOf":[{"$ref":"#/$defs/Item","title":"Item"}]});
+        assert_eq!(
+            annotated_all_of_ref(reference.as_object().unwrap()),
+            Some("#/$defs/Item")
+        );
+        for (keyword, value) in [
+            ("not", json!({})),
+            ("type", json!("object")),
+            ("format", json!("date")),
+            ("$id", json!("https://example.com/resource")),
+            ("$dynamicAnchor", json!("node")),
+        ] {
+            let mut outer = reference.clone();
+            outer[keyword] = value.clone();
+            assert_eq!(annotated_all_of_ref(outer.as_object().unwrap()), None);
+            let mut inner = reference.clone();
+            inner["allOf"][0][keyword] = value;
+            assert_eq!(annotated_all_of_ref(inner.as_object().unwrap()), None);
+        }
+        let multiple = json!({"allOf":[{"$ref":"#/$defs/Item"},{"description":"Another branch"}]});
+        assert_eq!(annotated_all_of_ref(multiple.as_object().unwrap()), None);
+    }
 
     #[test]
     fn generate_dataclass_models_emits_plain_dataclass_root_alias() {

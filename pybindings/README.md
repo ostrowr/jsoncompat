@@ -381,10 +381,17 @@ schemas. Keep the source OpenAPI document alongside your build inputs.
 
 See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
 file sizes, generation/import costs, strict type checking, and current limits.
+The [public-spec corpus](benchmarks/public-openapi.md) also checks declared
+errors, non-object bodies, schema examples, and generated-source readability.
 
 `--component Order` selects a component and its dependencies; repeat the flag
 for several roots. `--rename Order=Purchase` changes a public class name.
-Name collisions fail with a diagnostic. `--models-per-module` retains its
+Conflicting explicit names fail with a diagnostic. Generated HTTP wrappers,
+aliases, and anonymous helpers use a numeric suffix when their natural name is
+already occupied, preserving the named component. A single-reference `allOf`
+with annotation-only siblings retains the referenced model's Python type and
+identity; its original validation constraints remain active.
+`--models-per-module` retains its
 legacy spelling but controls internal compilation batches for model-only output,
 not public modules or runtime imports. API generation uses one shared build
 namespace so resource-owned declarations and header aliases are consistent.

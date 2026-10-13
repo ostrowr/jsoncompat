@@ -173,18 +173,11 @@ impl OpenApiOperationLowerer<'_> {
                 .and_then(Value::as_str)
                 .ok_or_else(|| invalid_value(&pointer.child("description"), "a string"))?
                 .to_owned();
-            let content = response
-                .get("content")
-                .map(|content| {
-                    parse_content_variants(
-                        &self.resolver,
-                        content,
-                        &pointer.child("content"),
-                        MediaTypeKeyKind::ConcreteOrRange,
-                    )
-                })
-                .transpose()?
-                .unwrap_or_default();
+            let content = parse_response_content_variants(
+                &self.resolver,
+                response.get("content"),
+                &pointer.child("content"),
+            )?;
             let mut headers = Vec::new();
             if let Some(raw) = response.get("headers") {
                 let pointer = pointer.child("headers");

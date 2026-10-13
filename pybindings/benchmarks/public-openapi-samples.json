@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "description": "Explicit local sample bodies for unchanged upstream generated clients. Synthetic bodies are labeled and are not captured live server responses. Invalid cases deliberately exercise documented lazy error behavior.",
+  "cases": [
+    {
+      "id": "prefect_boolean_response",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "GET",
+      "path": "/health",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": true,
+      "status": 200,
+      "schema_pointer": "#/paths/~1health/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_string_response",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "GET",
+      "path": "/version",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": "3.0.0",
+      "status": 200,
+      "schema_pointer": "#/paths/~1version/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_integer_response",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "POST",
+      "path": "/flows/count",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": 42,
+      "status": 200,
+      "schema_pointer": "#/paths/~1flows~1count/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_array_response",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "POST",
+      "path": "/flows/filter",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": [],
+      "status": 200,
+      "schema_pointer": "#/paths/~1flows~1filter/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_number_union_response",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "POST",
+      "path": "/flow_runs/lateness",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": 1.5,
+      "status": 200,
+      "schema_pointer": "#/paths/~1flow_runs~1lateness/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_null_union_response",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "POST",
+      "path": "/flow_runs/lateness",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": null,
+      "status": 200,
+      "schema_pointer": "#/paths/~1flow_runs~1lateness/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_string_request",
+      "spec": "prefect",
+      "direction": "request",
+      "method": "POST",
+      "path": "/templates/validate",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": "{{ name }}",
+      "schema_pointer": "#/paths/~1templates~1validate/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_array_request",
+      "spec": "prefect",
+      "direction": "request",
+      "method": "POST",
+      "path": "/logs/",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": [],
+      "schema_pointer": "#/paths/~1logs~1/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_events_array_request",
+      "spec": "prefect",
+      "direction": "request",
+      "method": "POST",
+      "path": "/events",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": [],
+      "schema_pointer": "#/paths/~1events/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_validation_error",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "POST",
+      "path": "/flows/",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": [
+          {
+            "loc": [
+              "body",
+              "name"
+            ],
+            "msg": "Field required",
+            "type": "missing"
+          }
+        ]
+      },
+      "status": 422,
+      "schema_pointer": "#/paths/~1flows~1/post/responses/422/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_declared_400",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": "No job available"
+      },
+      "status": 400,
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/400/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_declared_403",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": "No job available"
+      },
+      "status": 403,
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/403/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_declared_404",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": "No job available"
+      },
+      "status": 404,
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/404/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_declared_409",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": "No job available"
+      },
+      "status": 409,
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/409/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_error_union_object",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": {
+          "reason": "missing",
+          "retry": false
+        }
+      },
+      "status": 404,
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/404/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_nullable_job_response",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": null,
+      "status": 200,
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "gematik_declared_400",
+      "spec": "gematik_push_gateway",
+      "direction": "response",
+      "method": "POST",
+      "path": "/notify",
+      "provenance": "assembled from property examples in the upstream response schema; full envelope validated",
+      "body": {
+        "error": "Invalid data format"
+      },
+      "status": 400,
+      "schema_pointer": "#/paths/~1notify/post/responses/400/content/application~1json/schema"
+    },
+    {
+      "id": "gematik_declared_401",
+      "spec": "gematik_push_gateway",
+      "direction": "response",
+      "method": "POST",
+      "path": "/notify",
+      "provenance": "assembled from property examples in the upstream response schema; full envelope validated",
+      "body": {
+        "error": "Missing or invalid mutual TLS (mTLS) certificate."
+      },
+      "status": 401,
+      "schema_pointer": "#/paths/~1notify/post/responses/401/content/application~1json/schema"
+    },
+    {
+      "id": "gematik_declared_500",
+      "spec": "gematik_push_gateway",
+      "direction": "response",
+      "method": "POST",
+      "path": "/notify",
+      "provenance": "assembled from property examples in the upstream response schema; full envelope validated",
+      "body": {
+        "error": "Unexpected failure during processing."
+      },
+      "status": 500,
+      "schema_pointer": "#/paths/~1notify/post/responses/500/content/application~1json/schema"
+    },
+    {
+      "id": "gematik_declared_503",
+      "spec": "gematik_push_gateway",
+      "direction": "response",
+      "method": "POST",
+      "path": "/notify",
+      "provenance": "assembled from property examples in the upstream response schema; full envelope validated",
+      "body": {
+        "error": "Push Gateway under maintenance or overloaded."
+      },
+      "status": 503,
+      "schema_pointer": "#/paths/~1notify/post/responses/503/content/application~1json/schema"
+    },
+    {
+      "id": "grafana_declared_400",
+      "spec": "grafana_slo",
+      "direction": "response",
+      "method": "GET",
+      "path": "/v1/report",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "code": 400,
+        "error": "Audit fixture"
+      },
+      "status": 400,
+      "schema_pointer": "#/paths/~1v1~1report/get/responses/400/content/application~1json/schema"
+    },
+    {
+      "id": "grafana_declared_500",
+      "spec": "grafana_slo",
+      "direction": "response",
+      "method": "GET",
+      "path": "/v1/report",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "code": 500,
+        "error": "Audit fixture"
+      },
+      "status": 500,
+      "schema_pointer": "#/paths/~1v1~1report/get/responses/500/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_union_request_password",
+      "spec": "airflow_keycloak_auth",
+      "direction": "request",
+      "method": "POST",
+      "path": "/auth/token",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "grant_type": "password",
+        "username": "audit-user",
+        "password": "fixture-only"
+      },
+      "schema_pointer": "#/paths/~1auth~1token/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_union_request_client_credentials",
+      "spec": "airflow_keycloak_auth",
+      "direction": "request",
+      "method": "POST",
+      "path": "/auth/token",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "grant_type": "client_credentials",
+        "client_id": "audit-client",
+        "client_secret": "fixture-only"
+      },
+      "schema_pointer": "#/paths/~1auth~1token/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_union_request_jwt",
+      "spec": "airflow_keycloak_auth",
+      "direction": "request",
+      "method": "POST",
+      "path": "/auth/token",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": "fixture-only"
+      },
+      "schema_pointer": "#/paths/~1auth~1token/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_undeclared_503",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "GET",
+      "path": "/health",
+      "provenance": "synthetic undeclared status; the unchanged operation does not declare HTTP 503",
+      "body": {
+        "message": "Service unavailable"
+      },
+      "status": 503,
+      "expect": "unexpected",
+      "schema_pointer": null
+    },
+    {
+      "id": "airflow_invalid_declared_404",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "detail": 17
+      },
+      "status": 404,
+      "expect": "unexpected",
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/404/content/application~1json/schema"
+    },
+    {
+      "id": "airflow_invalid_json_404",
+      "spec": "airflow_edge",
+      "direction": "response",
+      "method": "POST",
+      "path": "/edge_worker/v1/jobs/fetch/{worker_name}",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "status": 404,
+      "expect": "unexpected",
+      "raw_body": "{broken-json",
+      "schema_pointer": "#/paths/~1edge_worker~1v1~1jobs~1fetch~1{worker_name}/post/responses/404/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_invalid_json_success_is_lazy",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "GET",
+      "path": "/health",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "status": 200,
+      "expect": "parse_error",
+      "raw_body": "{broken-json",
+      "schema_pointer": "#/paths/~1health/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "prefect_invalid_schema_success_is_lazy",
+      "spec": "prefect",
+      "direction": "response",
+      "method": "GET",
+      "path": "/health",
+      "provenance": "synthetic payload; checked against the unchanged upstream generated schema",
+      "body": {
+        "wrong": "shape"
+      },
+      "status": 200,
+      "expect": "parse_error",
+      "schema_pointer": "#/paths/~1health/get/responses/200/content/application~1json/schema"
+    }
+  ],
+  "typing_consumers": [
+    {
+      "path": "public-openapi-consumer.py",
+      "specs": [
+        "prefect",
+        "airflow_edge"
+      ]
+    }
+  ]
+}

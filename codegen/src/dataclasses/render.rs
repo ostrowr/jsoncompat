@@ -5,7 +5,7 @@ use super::{
     ClassKind, ClassSpec, DataclassError, EXTRA_FIELD_NAME, omittable_annotation,
     python_json_literal, python_string_literal, render_class_base,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 /// Trusted Python metadata for generated declarations. Keys are public class
@@ -27,6 +27,8 @@ pub struct DataclassMetadata {
     pub docstrings: BTreeMap<String, String>,
     /// Public names emitted with a class (for resource facade re-exports).
     pub extra_exports: BTreeMap<String, Vec<String>>,
+    /// Names emitted beside models which generated inline helpers must avoid.
+    pub reserved_names: BTreeSet<String>,
 }
 
 /// Declarations and prepared implementation for one logical model group.

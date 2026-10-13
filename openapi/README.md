@@ -24,6 +24,10 @@ For supported OpenAPI documents, jsoncompat checks:
 - removed operations;
 - supported local `#/components/...` references.
 
+A response with `content: {}` declares no body, just like a response that omits
+`content`. Its status and declared headers still participate in validation and
+compatibility checks.
+
 OpenAPI compatibility is directional by surface:
 
 - requests are checked in the deserializer direction, because a server should keep accepting requests it previously accepted;

@@ -2,6 +2,12 @@
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Name a generated field without shadowing Python keywords, runtime methods,
+/// or annotation imports. Callers must also disambiguate names within a class.
+pub fn field_name(json_name: &str) -> String {
+    super::dataclasses::python_field_name(json_name)
+}
+
 /// Assign snake_case filenames. Only collisions and long names receive a digest;
 /// adding an unrelated name never changes an existing assignment.
 pub fn module_names<'a>(names: impl IntoIterator<Item = &'a str>) -> BTreeMap<String, String> {
