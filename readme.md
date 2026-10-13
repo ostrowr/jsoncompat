@@ -188,7 +188,8 @@ with requests.Session() as session:
     print(pet.body.name)
 ```
 
-Importing `PetstoreAPI` prepares the API before your application starts serving.
+Code generation prepares HTTP dispatch alongside the models. Importing
+`PetstoreAPI` binds those plans without inspecting type annotations.
 Binding just attaches the fetcher. You own the session and its lifetime.
 Use `bind_async` with the aiohttp or async HTTPX integration for async code.
 

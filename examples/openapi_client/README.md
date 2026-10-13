@@ -22,8 +22,8 @@ so these examples need no generation step.
 The package groups operations into `operations/pets.py`, `operations/groups.py`,
 `operations/search.py`, and `operations/health.py`. Each component owns a module
 such as `models/pet.py`, including its nested types. Direct resource/component
-imports load their dependencies; importing `api.py` prepares the full API for
-binding. Publish the whole generated directory. It contains prepared validation
+imports load their dependencies; importing `api.py` binds the full API's
+precomputed dispatch plans. Publish the whole generated directory. It contains prepared validation
 programs, without copies of the source schema JSON; keep `openapi.json` as your
 build input and reference document.
 
@@ -52,8 +52,9 @@ it is not needed to import or publish the generated client.
 
 ## An aiohttp client
 
-Importing `PetstoreAPI` prepares the API once, before creating a session or
-serving traffic. Binding later just attaches the fetcher. Your application owns
+Code generation prepares HTTP dispatch. Importing `PetstoreAPI` binds the plans
+without inspecting annotations, before creating a session or serving traffic.
+Binding later just attaches the fetcher. Your application owns
 the session, credentials, connection pool, and cleanup.
 
 ```python

@@ -33,6 +33,7 @@ from jsoncompat.http import (
     prepare,
 )
 from jsoncompat.http._parameters import decode_header, encode_parameter
+from jsoncompat.http import _binding
 
 PET = b'{"id":"p_123","name":"Mochi","species":"cat","tags":[]}'
 PROBLEM = b'{"code":"missing","message":"No such pet"}'
@@ -69,6 +70,41 @@ class BindingTests(unittest.TestCase):
     def setUp(self):
         self.fetch = Recorder()
         self.client = bind(api.PetstoreAPI, fetch=self.fetch)
+
+    def test_generated_dispatch_equals_reflective_contract_preparation(self):
+        # Compare every field, header, selector, media type, and escaped path.
+        # The existing wire/response tests exercise these same immutable plans.
+        for spec in api.PetstoreAPI.operations():
+            with self.subTest(operation=spec.endpoint.operation_id):
+                emitted = api.PetstoreAPI.__jsoncompat_http_plans__[spec.request]
+                reflected = _binding._prepare(spec, api.PetstoreAPI)
+                self.assertEqual(emitted, reflected)
+                self.assertIs(emitted.endpoint, spec.endpoint)
+
+    def test_generated_registry_rejects_wrong_version_duplicates_and_foreign_api(self):
+        plans = tuple(api.PetstoreAPI.__jsoncompat_http_plans__.values())
+        foreign = tuple(other_api.PetstoreAPI.__jsoncompat_http_plans__.values())
+        for version, entries in (
+            (2, plans),
+            (1, ()),
+            (1, (plans[0], plans[0])),
+            (1, (plans[0], foreign[0])),
+        ):
+            with (
+                self.subTest(version=version, entries=entries),
+                patch.object(api.PetstoreAPI, "__jsoncompat_http_plans__", None),
+            ):
+                with self.assertRaises(ContractError):
+                    _binding.install_generated_api(api.PetstoreAPI, version, entries)
+                self.assertIsNone(api.PetstoreAPI.__jsoncompat_http_plans__)
+
+        # A subclass must never inherit the parent API's nominal registration.
+        class OtherAPI(api.PetstoreAPI):
+            pass
+
+        with self.assertRaises(ContractError):
+            _binding.install_generated_api(OtherAPI, 1, plans)
+        self.assertNotIn("__jsoncompat_http_plans__", OtherAPI.__dict__)
 
     def test_result_identity_immutability_and_unwrap(self):
         result = self.client.request(api.GetPetRequest(pet_id="x")).result()

@@ -105,6 +105,7 @@ __all__: tuple[str, ...] = ("SearchPets200Headers", "SearchPets200", "SearchPets
 import typing as _typing
 from typing_extensions import TypeForm as _TypeForm
 from jsoncompat import http as _http
+from jsoncompat.http import _binding as _jsoncompat_binding
 
 type SearchPetsResponse = SearchPets200 | SearchPets400
 type SearchPetsSuccess = SearchPets200
@@ -113,6 +114,11 @@ type SearchPetsResult = _http.Result[SearchPetsSuccess, SearchPetsError]
 
 OPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = (
     _http.operation(SearchPetsRequest, _TypeForm(SearchPetsSuccess), _TypeForm(SearchPetsError), method="GET", path="/search", responses=(_http.Response(200, SearchPets200, "application/json"), _http.Response(400, SearchPets400, "application/json"),), operation_id="searchPets", security=((_http.SecurityRequirement("bearerAuth", ()),),), servers=(_http.Server("http://127.0.0.1:{port}", (("port", "8000"),)),)),
+)
+
+# Prevalidated dispatch; importing this module does not inspect annotations.
+_JSONCOMPAT_OPERATIONS: _typing.Final[tuple[_jsoncompat_binding._Operation, ...]] = (
+    _jsoncompat_binding._Operation(OPERATIONS[0].endpoint, SearchPetsRequest, (_jsoncompat_binding._Field("criteria", _http.Query("criteria", content_type="application/json")), _jsoncompat_binding._Field("fields", _http.Query("fields", style="pipeDelimited", explode=False)), _jsoncompat_binding._Field("x_flags", _http.Header("X-Flags", explode=False)),), (_jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[0], (_jsoncompat_binding._Field("x_selected_fields", _http.Header("x-selected-fields", explode=False, kind="string", array=True)),)), _jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[1], ()),), "application/json", ((False, "/search"),)),
 )
 
 __all__ += ("SearchPets200", "SearchPets400", "SearchPetsRequest", "SearchPetsResponse", "SearchPetsSuccess", "SearchPetsError", "SearchPetsResult",)

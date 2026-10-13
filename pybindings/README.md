@@ -436,10 +436,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Importing `PetstoreAPI` prepares and validates all operation dispatch plans.
+Code generation validates and prepares all operation dispatch plans. Importing
+`PetstoreAPI` binds them to the generated classes without resolving annotations.
 No session or network access is needed. The plans live with the API class;
 `bind` and `bind_async` reuse them when attaching a fetcher. Import your API
-during application startup to keep that preparation out of request handling.
+during application startup to keep module loading out of request handling.
 Importing the package alone or an individual model remains lazy.
 
 ### Passing clients to your code
@@ -746,14 +747,17 @@ collects the operation registry, and exports the client types. Small and large
 APIs use this same layout; adding an operation updates its resource module.
 Component and resource boundaries stay independent of spec size. `_api.py` holds the
 API identity separately so request/response model imports remain acyclic.
-The public `api.py` validates all registered operations and prepares immutable
-dispatch plans when imported, including through the package's API or client-alias
-exports. It retains those plans on the exact API class for its lifetime, shared
-by sync and async clients. Binding and requests reuse them without inspecting
-annotations again. Individual model imports use the lightweight `_api.py`
-identity and do not prepare the whole API. Older generated packages still work,
-preparing on first bind; regenerate them to get import-time preparation.
-Model validation programs remain prepared during code generation; importing an
+Code generation also validates HTTP contracts and emits immutable dispatch plans:
+parameter/body mappings, response header conversions, the Accept value, and
+escaped path segments. Success/error partitions are checked during generation.
+The public `api.py` binds those plans to their model classes when imported,
+including through the package's API or client-alias exports. It checks the plan
+format and nominal request identities, then publishes the complete registry
+atomically on the exact API class. Sync and async clients share that registry.
+Imports, binding, and requests do not resolve annotations or rebuild HTTP plans.
+Individual model imports use the lightweight `_api.py` identity and do not load
+the whole API. Manually declared APIs retain runtime contract validation on bind.
+Model validation programs are also prepared during code generation; importing an
 API does not compile schemas. Treat published metadata as immutable after import.
 API identities are final, and unregistered request types and inherited API
 identities are rejected by the shared binder.

@@ -3,7 +3,6 @@
 import asyncio
 import importlib
 import sys
-from pathlib import Path
 from typing import get_type_hints
 from unittest.mock import patch
 
@@ -19,11 +18,6 @@ from jsoncompat.http import (
 mode = sys.argv[1]
 petstore = importlib.import_module("petstore")
 assert "petstore.api" not in sys.modules
-
-if mode == "legacy":
-    # Previously generated packages had no import-time initialization hook.
-    source = Path(petstore.__file__).with_name("api.py")
-    source.write_text(source.read_text().replace("_initialize_api(PetstoreAPI)\n", ""))
 
 calls = []
 
@@ -43,16 +37,16 @@ async def async_fetch(request, /, *, transport=None):
 
 if mode == "failed":
     identity = importlib.import_module("petstore._api").PetstoreAPI
-    prepare_operation = _binding._prepare
+    request_model = _binding._request_model
     attempted = []
 
-    def fail_later(spec, api):
-        attempted.append(spec)
+    def fail_later(model, api):
+        attempted.append(model)
         if len(attempted) == 2:
             raise ContractError("invalid operation during import")
-        return prepare_operation(spec, api)
+        return request_model(model, api)
 
-    with patch.object(_binding, "_prepare", side_effect=fail_later):
+    with patch.object(_binding, "_request_model", side_effect=fail_later):
         try:
             importlib.import_module("petstore.api")
         except ContractError:
@@ -63,24 +57,23 @@ if mode == "failed":
     assert identity.__jsoncompat_http_plans__ is None
     assert "petstore.api" not in sys.modules
 
-with patch.object(_binding, "_prepare", wraps=_binding._prepare) as build:
+with (
+    patch.object(_binding, "_prepare", side_effect=AssertionError("runtime preparation")),
+    patch.object(_binding, "get_type_hints", side_effect=AssertionError("reflection")),
+    patch.object(_binding.dataclasses, "fields", side_effect=AssertionError("field reflection")),
+):
     if mode == "model":
         request_type = petstore.GetPetRequest
         assert "petstore.api" not in sys.modules
-        assert build.call_count == 0
     elif mode == "identity":
         identity = importlib.import_module("petstore._api").PetstoreAPI
         assert "petstore.api" not in sys.modules
-        # Internal/older identities still prepare safely when first bound.
+        # Binding the private identity loads the public precomputed registry.
         bind(identity, fetch=fetch)
     elif mode in ("PetstoreClient", "PetstoreAsyncClient"):
         getattr(petstore, mode)
     api = petstore.PetstoreAPI
-    if mode == "legacy":
-        assert build.call_count == 0
-        bind(api, fetch=fetch)
-    assert build.call_count == len(api.operations())
-    assert len(api.__jsoncompat_http_plans__) == build.call_count
+    assert len(api.__jsoncompat_http_plans__) == len(api.operations())
 
 assert not calls
 assert "__jsoncompat_http_plans__" in get_type_hints(api)

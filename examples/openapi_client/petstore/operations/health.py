@@ -121,6 +121,7 @@ __all__: tuple[str, ...] = ("Health200", "Health2XX", "Health5XX", "HealthDefaul
 import typing as _typing
 from typing_extensions import TypeForm as _TypeForm
 from jsoncompat import http as _http
+from jsoncompat.http import _binding as _jsoncompat_binding
 
 type HealthResponse = Health200 | Health2XX | Health5XX | HealthDefault
 type HealthSuccess = Health200 | Health2XX
@@ -129,6 +130,11 @@ type HealthResult = _http.Result[HealthSuccess, HealthError]
 
 OPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = (
     _http.operation(HealthRequest, _TypeForm(HealthSuccess), _TypeForm(HealthError), method="GET", path="/health", responses=(_http.Response(200, Health200, "application/json"), _http.Response("2XX", Health2XX, "application/json"), _http.Response("5XX", Health5XX, "application/json"), _http.Response("default", HealthDefault, None),), operation_id="health", security=(), servers=(_http.Server("http://127.0.0.1:{port}", (("port", "8000"),)),)),
+)
+
+# Prevalidated dispatch; importing this module does not inspect annotations.
+_JSONCOMPAT_OPERATIONS: _typing.Final[tuple[_jsoncompat_binding._Operation, ...]] = (
+    _jsoncompat_binding._Operation(OPERATIONS[0].endpoint, HealthRequest, (), (_jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[0], ()), _jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[1], ()), _jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[2], ()), _jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[3], ()),), "application/json", ((False, "/health"),)),
 )
 
 __all__ += ("Health200", "Health2XX", "Health5XX", "HealthDefault", "HealthRequest", "HealthResponse", "HealthSuccess", "HealthError", "HealthResult",)

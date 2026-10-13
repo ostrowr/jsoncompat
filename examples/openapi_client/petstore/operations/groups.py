@@ -69,6 +69,7 @@ __all__: tuple[str, ...] = ("GetGroupPets200", "GetGroupPetsRequest",)
 import typing as _typing
 from typing_extensions import TypeForm as _TypeForm
 from jsoncompat import http as _http
+from jsoncompat.http import _binding as _jsoncompat_binding
 
 type GetGroupPetsResponse = GetGroupPets200
 type GetGroupPetsSuccess = GetGroupPets200
@@ -77,6 +78,11 @@ type GetGroupPetsResult = _http.Result[GetGroupPetsSuccess, GetGroupPetsError]
 
 OPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = (
     _http.operation(GetGroupPetsRequest, _TypeForm(GetGroupPetsSuccess), _TypeForm(GetGroupPetsError), method="GET", path="/groups/{groupId}/pets/{petIds}", responses=(_http.Response(200, GetGroupPets200, "application/json"),), operation_id="getGroupPets", security=((_http.SecurityRequirement("bearerAuth", ()),),), servers=(_http.Server("http://127.0.0.1:{port}", (("port", "8000"),)),)),
+)
+
+# Prevalidated dispatch; importing this module does not inspect annotations.
+_JSONCOMPAT_OPERATIONS: _typing.Final[tuple[_jsoncompat_binding._Operation, ...]] = (
+    _jsoncompat_binding._Operation(OPERATIONS[0].endpoint, GetGroupPetsRequest, (_jsoncompat_binding._Field("group_id", _http.Path("groupId", style="matrix", explode=False)), _jsoncompat_binding._Field("pet_ids", _http.Path("petIds", style="label", explode=True)),), (_jsoncompat_binding._ResponsePlan(OPERATIONS[0].endpoint.responses[0], ()),), "application/json", ((False, "/groups/"), (True, "groupId"), (False, "/pets/"), (True, "petIds"), (False, ""),)),
 )
 
 __all__ += ("GetGroupPets200", "GetGroupPetsRequest", "GetGroupPetsResponse", "GetGroupPetsSuccess", "GetGroupPetsError", "GetGroupPetsResult",)

@@ -1,5 +1,9 @@
 # GitHub OpenAPI generation benchmark
 
+The subsequent [HTTP dispatch benchmark](github-http-dispatch.md) measures the
+current generated import path: full-client bytecode loading is **0.823 → 0.298 s**.
+The measurements below record the earlier generation optimization.
+
 Full GitHub client generation is **3.400 → 2.485 seconds (27% faster)**
 after profiling and removing repeated allocation/traversal work. Every generated
 source, stub, and marker is byte-identical to the baseline. Schema validation,

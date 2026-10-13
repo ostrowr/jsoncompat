@@ -261,7 +261,6 @@ fn generated_api_prepares_on_import_without_a_transport() {
         "PetstoreClient",
         "PetstoreAsyncClient",
         "failed",
-        "legacy",
     ] {
         success(
             python_env::python_command()
@@ -563,6 +562,81 @@ fn generation_rejects_unsupported_or_ambiguous_contracts_before_writing() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(!work.0.join("petstore/__init__.py").exists());
+    }
+}
+
+#[test]
+fn generated_dispatch_preserves_path_escaping_and_parameter_names() {
+    let work = Work::new();
+    let path = "/préfix%2fx/[猫]/:@!$&'()*+,;=/{petId}";
+    let spec = json!({"openapi":"3.1.0","info":{"title":"Escaping","version":"1"},"paths":{
+        path:{"get":{"operationId":"getPet","parameters":[
+            {"in":"path","name":"petId","required":true,"schema":{"type":"string"}},
+            {"in":"query","name":"_jsoncompat_http.q","schema":{"type":"string"}},
+            {"in":"header","name":"X-Value","schema":{"type":"string"}}
+        ],"responses":{"204":{"description":"empty"}}}}
+    }});
+    success(work.generate(&spec, &[]));
+    success(python_env::python_command().current_dir(&work.0).arg("-c").arg(r#"
+from urllib.parse import quote
+from petstore import PetstoreAPI, GetPetRequest
+from jsoncompat.http import prepare
+from jsoncompat.http._binding import _prepare
+spec, = PetstoreAPI.operations()
+plan = PetstoreAPI.__jsoncompat_http_plans__[GetPetRequest]
+assert plan == _prepare(spec, PetstoreAPI)
+request = GetPetRequest(pet_id='a /猫', jsoncompat_http_q='hello', x_value='value')
+wire = prepare(PetstoreAPI, request).request
+assert wire.target == quote(spec.endpoint.path.split('{')[0], safe="/:@!$&'()*+,;=%") + 'a%20%2F%E7%8C%AB?_jsoncompat_http.q=hello'
+assert wire.headers == (('X-Value', 'value'),)
+"#).output().unwrap());
+}
+
+#[test]
+fn dispatch_contract_errors_are_rejected_before_publication() {
+    let invalid = [
+        ("/bad%", json!([]), json!({"204":{"description":"empty"}})),
+        ("/bad%GG", json!([]), json!({"204":{"description":"empty"}})),
+        (
+            "/x",
+            json!([{"in":"query","name":"","schema":{"type":"string"}}]),
+            json!({"204":{"description":"empty"}}),
+        ),
+        (
+            "/x",
+            json!([{"in":"query","name":"bad\nname","schema":{"type":"string"}}]),
+            json!({"204":{"description":"empty"}}),
+        ),
+        (
+            "/x",
+            json!([{"in":"header","name":"Bad Header","schema":{"type":"string"}}]),
+            json!({"204":{"description":"empty"}}),
+        ),
+        (
+            "/x",
+            json!([{"in":"header","name":"Cookie","schema":{"type":"string"}}, {"in":"cookie","name":"session","schema":{"type":"string"}}]),
+            json!({"204":{"description":"empty"}}),
+        ),
+        (
+            "/x",
+            json!([]),
+            json!({"204":{"description":"empty","headers":{"Bad Header":{"schema":{"type":"string"}}}}}),
+        ),
+    ];
+    for (path, parameters, responses) in invalid {
+        let work = Work::new();
+        // Failed regeneration must leave the previously published package intact.
+        success(work.generate(&example(), &[]));
+        let before = package_sources(&work.0.join("petstore"));
+        let spec = json!({"openapi":"3.1.0","info":{"title":"Invalid","version":"1"},"paths":{
+            path:{"get":{"operationId":"get","parameters":parameters,"responses":responses}}
+        }});
+        let output = work.generate(&spec, &[]);
+        assert!(
+            !output.status.success(),
+            "invalid HTTP contract accepted: {spec}"
+        );
+        assert_eq!(before, package_sources(&work.0.join("petstore")));
     }
 }
 

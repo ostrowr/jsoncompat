@@ -347,8 +347,8 @@ def _return_models(value: object) -> set[type[DataclassModel]]:
     return {_model(value)}
 
 
-def _prepare(spec: Operation, api: type[API]) -> _Operation:
-    model = _model(spec.request)
+def _request_model(value: object, api: type[API]) -> type[DataclassModel]:
+    model = _model(value)
     bases = [
         base for base in types.get_original_bases(model) if get_origin(base) is Request
     ]
@@ -360,6 +360,11 @@ def _prepare(spec: Operation, api: type[API]) -> _Operation:
         raise ContractError(
             f"{model.__name__} must be a Request scoped to {api.__name__}"
         )
+    return model
+
+
+def _prepare(spec: Operation, api: type[API]) -> _Operation:
+    model = _request_model(spec.request, api)
     endpoint = cast(object, spec.endpoint)
     if not isinstance(endpoint, Endpoint):
         raise ContractError("operation needs Endpoint metadata")
@@ -492,8 +497,36 @@ def _prepare(spec: Operation, api: type[API]) -> _Operation:
     )
 
 
+def install_generated_api(
+    api: type[API], version: int, operations: tuple[_Operation, ...]
+) -> None:
+    """Bind codegen-validated dispatch plans to this process's model classes.
+
+    The generator checks HTTP contracts and emits field mappings, header plans,
+    Accept values and escaped path segments. Import only checks the format and
+    class identities; it never resolves annotations or repartitions statuses.
+    Publish atomically so an invalid registry cannot leave a partly bound API.
+    """
+    if version != 1:
+        raise ContractError("Unsupported generated HTTP plan format; regenerate client")
+    if (
+        "__jsoncompat_http_plans__" in api.__dict__
+        and api.__jsoncompat_http_plans__ is not None
+    ):
+        return
+    if not operations:
+        raise ContractError("API must register a nonempty tuple of operations")
+    plans: dict[type[DataclassModel], OperationPlan] = {}
+    for plan in operations:
+        model = _request_model(plan.input_model, api)
+        if model in plans:
+            raise ContractError(f"duplicate operation for {model.__name__}")
+        plans[model] = plan
+    api.__jsoncompat_http_plans__ = types.MappingProxyType(plans)
+
+
 def initialize_api(api: type[API]) -> Mapping[type[DataclassModel], OperationPlan]:
-    """Generated-module hook: validate and retain dispatch plans once, without I/O."""
+    """Reuse generated plans, or validate metadata for a manually declared API."""
     # Do not inherit another API's plans: request registration is nominal.
     if (
         "__jsoncompat_http_plans__" in api.__dict__
@@ -501,8 +534,8 @@ def initialize_api(api: type[API]) -> Mapping[type[DataclassModel], OperationPla
     ):
         return api.__jsoncompat_http_plans__
     operations = cast(object, api.operations())
-    # Loading an older/private identity can import the public API module,
-    # whose final statement prepares the same API. Reuse that completed plan.
+    # Loading the private identity can import the public API module, whose
+    # final statement installs its generated plans. Reuse that completed plan.
     if (
         "__jsoncompat_http_plans__" in api.__dict__
         and api.__jsoncompat_http_plans__ is not None

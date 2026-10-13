@@ -233,6 +233,28 @@ def inspect(directory: Path, case: str, package: Path, timeout: float, repeats: 
             measure(directory, f"{case}-selective-import-{phase}-{repeat}", timeout,
                     [sys.executable, "-c", selective])
     typecheck(directory, case, package, timeout)
+    if case != "models":
+        # An independent check outside timed imports: every emitted plan must
+        # equal the reflective contract implementation used by manual APIs.
+        # Record calls while importing so a baseline runtime remains measurable.
+        source = f"""
+import importlib, json
+from unittest.mock import patch
+from jsoncompat.http import _binding
+with patch.object(_binding, 'get_type_hints', wraps=_binding.get_type_hints) as reflect:
+    api = importlib.import_module({(name + '.api')!r}).GitHubAPI
+    calls = reflect.call_count
+operations = api.operations()
+for operation in operations:
+    plan = api.__jsoncompat_http_plans__[operation.request]
+    assert plan.endpoint is operation.endpoint
+    assert plan == _binding._prepare(operation, api), operation.endpoint
+print(json.dumps(dict(operations=len(operations), import_reflection_calls=calls, equivalent=True)))
+"""
+        result = measure(directory, f"{case}-dispatch-check", timeout,
+                         [sys.executable, "-c", source])
+        if result["exit_code"] != 0:
+            raise RuntimeError("generated HTTP plans differ from reflective preparation")
 
 
 def typecheck(directory: Path, case: str, package: Path, timeout: float) -> None:

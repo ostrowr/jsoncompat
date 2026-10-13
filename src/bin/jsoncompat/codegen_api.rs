@@ -27,8 +27,15 @@ struct Operation {
     success_alias: String,
     error_alias: String,
     result_alias: String,
-    responses: Vec<(String, String, Option<String>)>,
+    responses: Vec<ResponseModel>,
+    path_template: Vec<(bool, String)>,
     contract: ApiOperation,
+}
+struct ResponseModel {
+    status: String,
+    model: String,
+    media: Option<String>,
+    headers: String,
 }
 
 impl Operation {
@@ -38,7 +45,8 @@ impl Operation {
         let mut exact = [None; 500];
         let mut ranges = [None; 5];
         let mut fallback = None;
-        for (selector, _, _) in &self.responses {
+        for response in &self.responses {
+            let selector = &response.status;
             match selector.as_bytes() {
                 b"default" => fallback = Some(selector.as_str()),
                 [class @ b'1'..=b'5', b'X', b'X'] => {
@@ -62,8 +70,8 @@ impl Operation {
         models.extend(
             self.responses
                 .iter()
-                .filter(|(selector, _, _)| selectors.contains(selector.as_str()))
-                .map(|(_, name, _)| name.as_str()),
+                .filter(|response| selectors.contains(response.status.as_str()))
+                .map(|response| response.model.as_str()),
         );
         if models.is_empty() {
             "_typing.Never".into()
@@ -151,6 +159,19 @@ impl ApiPackage {
                     && !key.path.chars().any(char::is_control),
                 "unsupported path template {}",
                 key.path
+            );
+            let path_template = prepare_path_template(&key.path)?;
+            ensure!(
+                !contract
+                    .parameters
+                    .iter()
+                    .any(|p| p.location == ParameterLocation::Header
+                        && p.name.eq_ignore_ascii_case("cookie"))
+                    || !contract
+                        .parameters
+                        .iter()
+                        .any(|p| p.location == ParameterLocation::Cookie),
+                "conflicting Cookie header and cookie parameter"
             );
             let prefix = super::codegen_package::class_name(operation_name);
             let input = format!("{prefix}Request");
@@ -336,11 +357,12 @@ impl ApiPackage {
                     let mut schema = record(properties, &required);
                     schema["description"] = json!(response.description);
                     package.insert(&model, schema)?;
-                    responses.push((
-                        response.selector.clone(),
+                    responses.push(ResponseModel {
+                        status: response.selector.clone(),
                         model,
-                        media.map(|m| m.media_type.clone()),
-                    ));
+                        media: media.map(|m| m.media_type.clone()),
+                        headers: headers_name.clone(),
+                    });
                 }
             }
             package.metadata.bases.insert(
@@ -359,6 +381,7 @@ impl ApiPackage {
                 error_alias,
                 result_alias,
                 responses,
+                path_template,
                 contract,
             });
         }
@@ -421,7 +444,7 @@ impl ApiPackage {
             public.push(name);
         }
         let mut source = String::from(
-            "# Generated operation registry. Dispatch is prepared once on import.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.http._binding import initialize_api as _initialize_api\n",
+            "# Generated operation registry. Dispatch is prepared by codegen and bound on import.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.http._binding import install_generated_api as _install_generated_api\n",
         );
         writeln!(source, "from ._api import {0}API as {0}API", self.name)?;
         writeln!(
@@ -438,7 +461,7 @@ impl ApiPackage {
                 .push(operation);
         }
         for (module, operations) in &resources {
-            let mut declarations = Self::operation_source(operations, exports, module)?;
+            let mut declarations = self.operation_source(operations, exports, module)?;
             for (alias, (target, owner)) in &self.aliases {
                 if owner == module {
                     writeln!(
@@ -451,7 +474,7 @@ impl ApiPackage {
             files.insert(format!("{}.py", module.replace('.', "/")), declarations);
             writeln!(
                 source,
-                "from .{module} import *\nfrom .{module} import OPERATIONS as _operations_{}",
+                "from .{module} import *\nfrom .{module} import OPERATIONS as _operations_{0}\nfrom .{module} import _JSONCOMPAT_OPERATIONS as _plans_{0}",
                 module.replace('.', "_")
             )?;
         }
@@ -469,7 +492,16 @@ impl ApiPackage {
                 .collect::<Vec<_>>()
                 .join(", ")
         )?;
-        writeln!(source, "_initialize_api({}API)\n", self.name)?;
+        writeln!(
+            source,
+            "_install_generated_api({}API, 1, tuple(_plan for _group in ({},) for _plan in _group))\n",
+            self.name,
+            resources
+                .keys()
+                .map(|module| format!("_plans_{}", module.replace('.', "_")))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
         writeln!(
             source,
             "__all__: tuple[str, ...] = {}",
@@ -481,18 +513,17 @@ impl ApiPackage {
     }
 
     fn operation_source(
+        &self,
         operations: &[&Operation],
         exports: &BTreeMap<String, String>,
         module: &str,
     ) -> Result<String> {
         let mut source = String::from(
-            "# --- Operation metadata ---\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import http as _http\n",
+            "# --- Operation metadata ---\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import http as _http\nfrom jsoncompat.http import _binding as _jsoncompat_binding\n",
         );
         let imported: BTreeSet<_> = operations
             .iter()
-            .flat_map(|o| {
-                std::iter::once(&o.input).chain(o.responses.iter().map(|(_, name, _)| name))
-            })
+            .flat_map(|o| std::iter::once(&o.input).chain(o.responses.iter().map(|r| &r.model)))
             .collect();
         for name in &imported {
             if exports.get(*name).is_some_and(|owner| owner == module) {
@@ -514,7 +545,7 @@ impl ApiPackage {
                 operation
                     .responses
                     .iter()
-                    .map(|(_, name, _)| name.as_str())
+                    .map(|r| r.model.as_str())
                     .collect::<Vec<_>>()
                     .join(" | ")
             )?;
@@ -547,19 +578,26 @@ impl ApiPackage {
             let responses = operation
                 .responses
                 .iter()
-                .map(|(status, model, media)| {
-                    format!(
-                        "_http.Response({}, {model}, {})",
-                        status
-                            .parse::<u16>()
-                            .map(|n| n.to_string())
-                            .unwrap_or_else(|_| py(status)),
-                        media
-                            .as_ref()
-                            .map(|m| py(m))
-                            .unwrap_or_else(|| "None".into())
-                    )
-                })
+                .map(
+                    |ResponseModel {
+                         status,
+                         model,
+                         media,
+                         ..
+                     }| {
+                        format!(
+                            "_http.Response({}, {model}, {})",
+                            status
+                                .parse::<u16>()
+                                .map(|n| n.to_string())
+                                .unwrap_or_else(|_| py(status)),
+                            media
+                                .as_ref()
+                                .map(|m| py(m))
+                                .unwrap_or_else(|| "None".into())
+                        )
+                    },
+                )
                 .collect::<Vec<_>>();
             let security = contract
                 .security
@@ -635,6 +673,51 @@ impl ApiPackage {
             )?;
         }
         writeln!(source, ")\n")?;
+        writeln!(
+            source,
+            "# Prevalidated dispatch; importing this module does not inspect annotations.\n_JSONCOMPAT_OPERATIONS: _typing.Final[tuple[_jsoncompat_binding._Operation, ...]] = ("
+        )?;
+        for (index, operation) in operations.iter().enumerate() {
+            let fields = self.prepared_fields(&operation.input);
+            let responses = operation.responses.iter().enumerate().map(|(response_index, response)| {
+                format!("_jsoncompat_binding._ResponsePlan(OPERATIONS[{index}].endpoint.responses[{response_index}], {})", self.prepared_fields(&response.headers))
+            }).collect::<Vec<_>>();
+            // Preserve response order while deduplicating media, as dict.fromkeys
+            // does in the reflective runtime used for manually declared APIs.
+            let mut accepted = Vec::new();
+            for response in &operation.responses {
+                if let Some(media) = &response.media
+                    && !accepted.contains(&media.as_str())
+                {
+                    accepted.push(media.as_str());
+                }
+            }
+            let accept = if accepted.is_empty() {
+                "None".into()
+            } else {
+                py(&accepted.join(", "))
+            };
+            let path = tuple(
+                &operation
+                    .path_template
+                    .iter()
+                    .map(|(parameter, value)| {
+                        format!(
+                            "({}, {})",
+                            if *parameter { "True" } else { "False" },
+                            py(value)
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            writeln!(
+                source,
+                "    _jsoncompat_binding._Operation(OPERATIONS[{index}].endpoint, {}, {fields}, {}, {accept}, {path}),",
+                operation.input,
+                tuple(&responses)
+            )?;
+        }
+        writeln!(source, ")\n")?;
         let public = imported
             .into_iter()
             .map(String::as_str)
@@ -652,6 +735,65 @@ impl ApiPackage {
         writeln!(source, "__all__ += {}", tuple(&public))?;
         Ok(source)
     }
+
+    fn prepared_fields(&self, model: &str) -> String {
+        tuple(
+            &self.metadata.fields[model]
+                .iter()
+                .map(|(field, metadata)| {
+                    let metadata = metadata
+                        .strip_prefix("_jsoncompat_http.")
+                        .expect("generated HTTP annotation");
+                    format!(
+                        "_jsoncompat_binding._Field({}, _http.{metadata})",
+                        py(field)
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+}
+
+/// Match urllib.parse.quote(..., safe="/:@!$&'()*+,;=%") on literal segments;
+/// parameter names are kept verbatim for lookup after parameter serialization.
+fn prepare_path_template(path: &str) -> Result<Vec<(bool, String)>> {
+    let mut parts = Vec::new();
+    let mut remaining = path;
+    loop {
+        let (literal, parameter) = remaining
+            .split_once('{')
+            .map_or((remaining, None), |(a, b)| (a, Some(b)));
+        ensure!(!literal.contains('}'), "unbalanced path template");
+        let mut escaped = String::new();
+        for (index, byte) in literal.bytes().enumerate() {
+            if byte == b'%' {
+                ensure!(
+                    literal
+                        .as_bytes()
+                        .get(index + 1..index + 3)
+                        .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit)),
+                    "invalid percent escape in endpoint path"
+                );
+            }
+            if byte.is_ascii_alphanumeric() || b"-._~/:@!$&'()*+,;=%".contains(&byte) {
+                escaped.push(char::from(byte));
+            } else {
+                write!(escaped, "%{byte:02X}")?;
+            }
+        }
+        parts.push((false, escaped));
+        let Some(parameter) = parameter else { break };
+        let (name, rest) = parameter
+            .split_once('}')
+            .context("unbalanced path template")?;
+        ensure!(
+            !name.is_empty() && !name.contains('{'),
+            "unbalanced path template"
+        );
+        parts.push((true, name.into()));
+        remaining = rest;
+    }
+    Ok(parts)
 }
 
 fn resource_name(operation: &ApiOperation) -> String {
@@ -775,6 +917,20 @@ fn parameter_metadata(
     response: bool,
     definitions: &Value,
 ) -> Result<String> {
+    ensure!(
+        !parameter.name.is_empty() && !parameter.name.contains(['\r', '\n']),
+        "invalid parameter name"
+    );
+    if parameter.location == ParameterLocation::Header {
+        ensure!(
+            parameter
+                .name
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+.^_`|~-".contains(&c)),
+            "invalid HTTP header name {}",
+            parameter.name
+        );
+    }
     let class = match parameter.location {
         ParameterLocation::Path => "Path",
         ParameterLocation::Query => "Query",
@@ -817,6 +973,10 @@ fn parameter_metadata(
                     ensure!(
                         !matches!(style.as_str(), "spaceDelimited" | "pipeDelimited") || !explode,
                         "delimited query arrays require explode=false"
+                    );
+                    ensure!(
+                        style.as_str() != "deepObject" || *explode,
+                        "deepObject requires explode=true"
                     );
                     args.push(format!("style={}", py(style.as_str())));
                     *explode
