@@ -10,6 +10,12 @@ use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
+pub(super) struct ApiSource {
+    pub imports: String,
+    pub public: String,
+    pub private: String,
+}
+
 pub(super) struct ApiPackage {
     pub schemas: Map<String, Value>,
     pub metadata: DataclassMetadata,
@@ -19,6 +25,64 @@ pub(super) struct ApiPackage {
     name: String,
     operations: Vec<Operation>,
     security_schemes: Value,
+    runtime_names: RuntimeNames,
+}
+
+/// Ordinary schema/operation names are converted to UpperCamelCase. Explicit
+/// component renames and schema declaration metadata can use private-looking
+/// identifiers, so keep short aliases only when they do not collide. The
+/// fallback prefix is reserved by the model generator.
+struct RuntimeNames {
+    http: &'static str,
+    codegen: &'static str,
+    type_form: &'static str,
+}
+
+impl RuntimeNames {
+    fn for_document(raw: &Value, renames: &[String]) -> Self {
+        fn declared_names<'a>(value: &'a Value, names: &mut BTreeSet<&'a str>) {
+            match value {
+                Value::Object(object) => {
+                    if let Some(name) = object
+                        .get("x-jsoncompat")
+                        .and_then(|metadata| metadata.get("name"))
+                        .and_then(Value::as_str)
+                    {
+                        names.insert(name);
+                    }
+                    for child in object.values() {
+                        declared_names(child, names);
+                    }
+                }
+                Value::Array(values) => {
+                    for child in values {
+                        declared_names(child, names);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut names = BTreeSet::new();
+        declared_names(raw, &mut names);
+        let alias = |short, fallback| {
+            if names.contains(short)
+                || renames.iter().any(|rename| {
+                    rename
+                        .split_once('=')
+                        .is_some_and(|(_, model)| model == short)
+                })
+            {
+                fallback
+            } else {
+                short
+            }
+        };
+        Self {
+            http: alias("_http", "_jsoncompat_http"),
+            codegen: alias("_http_codegen", "_jsoncompat_http_codegen"),
+            type_form: alias("_TypeForm", "_jsoncompat_TypeForm"),
+        }
+    }
 }
 struct Operation {
     resource: String,
@@ -28,6 +92,7 @@ struct Operation {
     error_alias: String,
     result_alias: String,
     responses: Vec<ResponseModel>,
+    declarations: Vec<String>,
     path_template: Vec<(bool, String)>,
     contract: ApiOperation,
 }
@@ -39,6 +104,53 @@ struct ResponseModel {
 }
 
 impl Operation {
+    fn alias_names(&self) -> impl Iterator<Item = &str> {
+        [
+            &self.response_alias,
+            &self.success_alias,
+            &self.error_alias,
+            &self.result_alias,
+        ]
+        .into_iter()
+        .map(String::as_str)
+    }
+
+    fn alias_source(&self, http: &str) -> String {
+        let mut source = String::new();
+        for (name, annotation) in [
+            (
+                &self.response_alias,
+                self.responses
+                    .iter()
+                    .map(|r| r.model.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+            ),
+            (&self.success_alias, self.partition(true)),
+            (&self.error_alias, self.partition(false)),
+            (
+                &self.result_alias,
+                format!(
+                    "{http}.Result[{}, {}]",
+                    self.success_alias, self.error_alias
+                ),
+            ),
+        ] {
+            // Parenthesize unions so large response sets remain easy to scan.
+            if name.len() + annotation.len() > 96 && annotation.contains(" | ") {
+                writeln!(source, "type {name} = (").unwrap();
+                for (i, part) in annotation.split(" | ").enumerate() {
+                    writeln!(source, "    {}{part}", if i == 0 { "" } else { "| " }).unwrap();
+                }
+                writeln!(source, ")").unwrap();
+            } else {
+                writeln!(source, "type {name} = {annotation}").unwrap();
+            }
+        }
+        source.push('\n');
+        source
+    }
+
     fn partition(&self, success: bool) -> String {
         // Resolve selectors once. Formatting and searching the same response
         // list for all 500 status codes made large registries expensive.
@@ -74,7 +186,7 @@ impl Operation {
                 .map(|response| response.model.as_str()),
         );
         if models.is_empty() {
-            "_typing.Never".into()
+            "typing.Never".into()
         } else {
             models.into_iter().collect::<Vec<_>>().join(" | ")
         }
@@ -82,7 +194,12 @@ impl Operation {
 }
 
 impl ApiPackage {
-    pub fn prepare(document: &OpenApiDocument, raw: &Value, name: &str) -> Result<Self> {
+    pub fn prepare(
+        document: &OpenApiDocument,
+        raw: &Value,
+        name: &str,
+        renames: &[String],
+    ) -> Result<Self> {
         ensure!(
             identifier(name)
                 && !name.starts_with('_')
@@ -90,14 +207,16 @@ impl ApiPackage {
             "--api must be a public Python class name, such as Petstore"
         );
         let lowerer = OpenApiOperationLowerer::new(document)?;
+        let runtime_names = RuntimeNames::for_document(raw, renames);
+        let RuntimeNames { http, .. } = runtime_names;
         let mut package = Self {
             schemas: Map::new(),
             owners: BTreeMap::new(),
             aliases: BTreeMap::new(),
             current_owner: String::new(),
             metadata: DataclassMetadata {
-                imports: "from jsoncompat import http as _jsoncompat_http\n".into(),
-                base_imports: "from . import _api as _jsoncompat_api\nif typing.TYPE_CHECKING:\n    from . import api as _jsoncompat_api_types\n".into(),
+                imports: format!("from jsoncompat import http as {http}\n"),
+                base_imports: format!("from ._api import {name}API\n"),
                 ..Default::default()
             },
             name: name.into(),
@@ -106,6 +225,7 @@ impl ApiPackage {
                 .pointer("/components/securitySchemes")
                 .cloned()
                 .unwrap_or_else(|| json!({})),
+            runtime_names,
         };
         let definitions = lowerer
             .component_schemas()
@@ -179,6 +299,7 @@ impl ApiPackage {
             let success_alias = format!("{prefix}Success");
             let error_alias = format!("{prefix}Error");
             let result_alias = format!("{prefix}Result");
+            let mut declarations = Vec::new();
             let mut properties = Map::new();
             let mut required = Vec::new();
             let mut metadata = BTreeMap::new();
@@ -210,7 +331,7 @@ impl ApiPackage {
                 }
                 metadata.insert(
                     field,
-                    parameter_metadata(parameter, false, &definitions)
+                    parameter_metadata(parameter, false, &definitions, http)
                         .with_context(|| format!("{method_name} parameter {}", parameter.name))?,
                 );
             }
@@ -219,7 +340,11 @@ impl ApiPackage {
                     validate_media(&body.content[0], &definitions)?;
                     metadata.insert(
                         "body".into(),
-                        format!("_jsoncompat_http.Body({})", py(&body.content[0].media_type)),
+                        if body.content[0].media_type == "application/json" {
+                            format!("{http}.Body()")
+                        } else {
+                            format!("{http}.Body({})", py(&body.content[0].media_type))
+                        },
                     );
                     body.content[0].schema.clone()
                 } else {
@@ -231,9 +356,10 @@ impl ApiPackage {
                             super::codegen_package::class_name(&media.media_type)
                         );
                         package.insert(&name, record(json!({"content_type":{"enum":[media.media_type]}, "value":media.schema}), &["content_type", "value"]))?;
+                        declarations.push(name.clone());
                         variants.push(reference(&name));
                     }
-                    metadata.insert("body".into(), "_jsoncompat_http.Body(None)".into());
+                    metadata.insert("body".into(), format!("{http}.Body(None)"));
                     json!({"anyOf":variants})
                 };
                 ensure!(
@@ -247,6 +373,27 @@ impl ApiPackage {
             }
             package.insert(&input, json!({"type":"object", "properties":properties, "required":required, "additionalProperties":false}))?;
             package.metadata.fields.insert(input.clone(), metadata);
+            let mut description = format!("{} {}", key.method, key.path);
+            let summary = raw
+                .get("paths")
+                .and_then(|paths| paths.get(&key.path))
+                .and_then(|path| path.get(key.method.to_ascii_lowercase()))
+                .and_then(|operation| operation.get("summary"))
+                .and_then(Value::as_str);
+            if let Some(summary) = summary {
+                description.push_str("\n\n");
+                description.push_str(summary);
+            }
+            if let Some(text) = &contract.description
+                && Some(text.as_str()) != summary
+            {
+                description.push_str("\n\n");
+                description.push_str(text);
+            }
+            package
+                .metadata
+                .docstrings
+                .insert(input.clone(), description);
             let explicit: Vec<_> = contract
                 .responses
                 .iter()
@@ -281,9 +428,9 @@ impl ApiPackage {
                     }
                     metadata.insert(
                         field,
-                        parameter_metadata(header, true, &definitions).with_context(|| {
-                            format!("{method_name} response header {}", header.name)
-                        })?,
+                        parameter_metadata(header, true, &definitions, http).with_context(
+                            || format!("{method_name} response header {}", header.name),
+                        )?,
                     );
                 }
                 let headers_schema = json!({"type":"object", "properties":properties, "required":required, "additionalProperties":false});
@@ -300,6 +447,7 @@ impl ApiPackage {
                     empty_headers.clone()
                 } else {
                     package.insert(&headers_name, headers_schema)?;
+                    declarations.push(headers_name.clone());
                     headers_name
                 };
                 package
@@ -357,6 +505,7 @@ impl ApiPackage {
                     let mut schema = record(properties, &required);
                     schema["description"] = json!(response.description);
                     package.insert(&model, schema)?;
+                    declarations.push(model.clone());
                     responses.push(ResponseModel {
                         status: response.selector.clone(),
                         model,
@@ -368,11 +517,12 @@ impl ApiPackage {
             package.metadata.bases.insert(
                 input.clone(),
                 format!(
-                    "_jsoncompat_http.Request[_jsoncompat_api.{name}API, {}, {}]",
-                    py(&format!("_jsoncompat_api_types.{success_alias}")),
-                    py(&format!("_jsoncompat_api_types.{error_alias}"))
+                    "{http}.Request[{name}API, {}, {}]",
+                    py(&success_alias),
+                    py(&error_alias)
                 ),
             );
+            declarations.push(input.clone());
             package.operations.push(Operation {
                 resource,
                 input,
@@ -381,6 +531,7 @@ impl ApiPackage {
                 error_alias,
                 result_alias,
                 responses,
+                declarations,
                 path_template,
                 contract,
             });
@@ -389,6 +540,20 @@ impl ApiPackage {
             !package.operations.is_empty(),
             "--api requires at least one path operation"
         );
+        for operation in &package.operations {
+            package
+                .metadata
+                .declaration_order
+                .extend(operation.declarations.clone());
+            package
+                .metadata
+                .before
+                .insert(operation.input.clone(), operation.alias_source(http));
+            package.metadata.extra_exports.insert(
+                operation.input.clone(),
+                operation.alias_names().map(str::to_owned).collect(),
+            );
+        }
         Ok(package)
     }
     fn insert(&mut self, name: &str, schema: Value) -> Result<()> {
@@ -422,7 +587,7 @@ impl ApiPackage {
     pub fn sources(
         &self,
         exports: &BTreeMap<String, String>,
-    ) -> Result<(BTreeMap<String, String>, Vec<String>)> {
+    ) -> Result<(BTreeMap<String, ApiSource>, Vec<String>)> {
         let mut names: BTreeSet<String> = exports.keys().cloned().collect();
         let mut public = Vec::new();
         for name in std::iter::once(format!("{}API", self.name))
@@ -444,14 +609,9 @@ impl ApiPackage {
             public.push(name);
         }
         let mut source = String::from(
-            "# Generated operation registry. Dispatch is prepared by codegen and bound on import.\nfrom __future__ import annotations\n\nimport json as _json\nimport typing as _typing\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.http._binding import install_generated_api as _install_generated_api\n",
+            "# Generated operation registry. Dispatch is prepared by codegen and bound on import.\nfrom __future__ import annotations\n\nimport typing as _typing\n\nfrom typing_extensions import TypeAliasType as _TypeAliasType, TypeVar as _TypeVar\nfrom jsoncompat import JsonValue as _JsonValue\nfrom jsoncompat import http as _http\nfrom jsoncompat.codegen import http as _http_codegen\n\n",
         );
         writeln!(source, "from ._api import {0}API as {0}API", self.name)?;
-        writeln!(
-            source,
-            "\n_TransportOptions = _TypeVar(\"_TransportOptions\", default=_typing.Never)\n{0}Client = _TypeAliasType(\"{0}Client\", _http.Client[{0}API, _TransportOptions], type_params=(_TransportOptions,))\n{0}AsyncClient = _TypeAliasType(\"{0}AsyncClient\", _http.AsyncClient[{0}API, _TransportOptions], type_params=(_TransportOptions,))",
-            self.name
-        )?;
         let mut files = BTreeMap::new();
         let mut resources: BTreeMap<&str, Vec<&Operation>> = BTreeMap::new();
         for operation in &self.operations {
@@ -465,50 +625,88 @@ impl ApiPackage {
             for (alias, (target, owner)) in &self.aliases {
                 if owner == module {
                     writeln!(
-                        declarations,
+                        declarations.imports,
                         "from ..{} import {target} as {alias}",
                         exports[target]
                     )?;
                 }
             }
             files.insert(format!("{}.py", module.replace('.', "/")), declarations);
+            writeln!(source, "from .{module} import (")?;
+            for operation in operations {
+                for alias in operation.alias_names() {
+                    writeln!(source, "    {alias} as {alias},")?;
+                }
+            }
             writeln!(
                 source,
-                "from .{module} import *\nfrom .{module} import OPERATIONS as _operations_{0}\nfrom .{module} import _JSONCOMPAT_OPERATIONS as _plans_{0}",
-                module.replace('.', "_")
+                "    OPERATIONS as _operations_{0},\n    _JSONCOMPAT_OPERATIONS as _plans_{0},\n)",
+                module
+                    .strip_prefix("operations.")
+                    .expect("operation resource module")
             )?;
         }
         writeln!(
             source,
-            "\nSECURITY_SCHEMES: _typing.Final[dict[str, _JsonValue]] = _typing.cast(dict[str, _JsonValue], _json.loads({}))",
-            py(&self.security_schemes.to_string())
+            "\n_TransportOptions = _TypeVar(\"_TransportOptions\", default=_typing.Never)\n{0}Client = _TypeAliasType(\n    \"{0}Client\",\n    _http.Client[{0}API, _TransportOptions],\n    type_params=(_TransportOptions,),\n)\n{0}AsyncClient = _TypeAliasType(\n    \"{0}AsyncClient\",\n    _http.AsyncClient[{0}API, _TransportOptions],\n    type_params=(_TransportOptions,),\n)",
+            self.name
         )?;
         writeln!(
             source,
-            "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = tuple(_operation for _group in ({},) for _operation in _group)\n",
+            "\nSECURITY_SCHEMES: _typing.Final[dict[str, _JsonValue]] = {}",
+            python_value(&self.security_schemes)
+        )?;
+        writeln!(
+            source,
+            "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = tuple(\n    _operation\n    for _group in (\n{}    )\n    for _operation in _group\n)\n",
             resources
                 .keys()
-                .map(|module| format!("_operations_{}", module.replace('.', "_")))
-                .collect::<Vec<_>>()
-                .join(", ")
+                .map(|module| format!(
+                    "        _operations_{},\n",
+                    module
+                        .strip_prefix("operations.")
+                        .expect("operation resource module")
+                ))
+                .collect::<String>()
         )?;
         writeln!(
             source,
-            "_install_generated_api({}API, 1, tuple(_plan for _group in ({},) for _plan in _group))\n",
+            "_http_codegen.install_api(\n    {}API,\n    1,\n    tuple(\n        _plan\n        for _group in (\n{}        )\n        for _plan in _group\n    ),\n)\n",
             self.name,
             resources
                 .keys()
-                .map(|module| format!("_plans_{}", module.replace('.', "_")))
-                .collect::<Vec<_>>()
-                .join(", ")
+                .map(|module| format!(
+                    "            _plans_{},\n",
+                    module
+                        .strip_prefix("operations.")
+                        .expect("operation resource module")
+                ))
+                .collect::<String>()
         )?;
         writeln!(
             source,
-            "__all__: tuple[str, ...] = {}",
-            tuple(&public.iter().map(|s| py(s)).collect::<Vec<_>>())
+            "__all__: tuple[str, ...] = (\n{})",
+            public
+                .iter()
+                .map(|s| format!("    {},\n", py(s)))
+                .collect::<String>()
         )?;
-        files.insert("api.py".into(), source);
-        files.insert("_api.py".into(), self.identity_source());
+        files.insert(
+            "api.py".into(),
+            ApiSource {
+                imports: String::new(),
+                public: source,
+                private: String::new(),
+            },
+        );
+        files.insert(
+            "_api.py".into(),
+            ApiSource {
+                imports: String::new(),
+                public: self.identity_source(),
+                private: String::new(),
+            },
+        );
         Ok((files, public))
     }
 
@@ -517,10 +715,17 @@ impl ApiPackage {
         operations: &[&Operation],
         exports: &BTreeMap<String, String>,
         module: &str,
-    ) -> Result<String> {
-        let mut source = String::from(
-            "# --- Operation metadata ---\nimport typing as _typing\nfrom typing_extensions import TypeForm as _TypeForm\nfrom jsoncompat import http as _http\nfrom jsoncompat.http import _binding as _jsoncompat_binding\n",
+    ) -> Result<ApiSource> {
+        let RuntimeNames {
+            http,
+            codegen,
+            type_form,
+            ..
+        } = self.runtime_names;
+        let imports = format!(
+            "import typing\nfrom typing_extensions import TypeForm as {type_form}\nfrom jsoncompat import http as {http}\nfrom jsoncompat.codegen import http as {codegen}\n",
         );
+        let mut source = String::from("# --- Public operation metadata ---\n");
         let imported: BTreeSet<_> = operations
             .iter()
             .flat_map(|o| std::iter::once(&o.input).chain(o.responses.iter().map(|r| &r.model)))
@@ -537,41 +742,9 @@ impl ApiPackage {
                     .with_context(|| format!("missing generated export {name}"))?
             )?;
         }
-        for operation in operations {
-            writeln!(
-                source,
-                "\ntype {} = {}",
-                operation.response_alias,
-                operation
-                    .responses
-                    .iter()
-                    .map(|r| r.model.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" | ")
-            )?;
-        }
-        for operation in operations {
-            writeln!(
-                source,
-                "type {} = {}",
-                operation.success_alias,
-                operation.partition(true)
-            )?;
-            writeln!(
-                source,
-                "type {} = {}",
-                operation.error_alias,
-                operation.partition(false)
-            )?;
-            writeln!(
-                source,
-                "type {} = _http.Result[{}, {}]",
-                operation.result_alias, operation.success_alias, operation.error_alias
-            )?;
-        }
         writeln!(
             source,
-            "\nOPERATIONS: _typing.Final[tuple[_http.Operation, ...]] = ("
+            "\nOPERATIONS: typing.Final[tuple[{http}.Operation, ...]] = ("
         )?;
         for operation in operations {
             let contract = &operation.contract;
@@ -586,15 +759,15 @@ impl ApiPackage {
                          ..
                      }| {
                         format!(
-                            "_http.Response({}, {model}, {})",
+                            "{http}.Response({}, {model}{})",
                             status
                                 .parse::<u16>()
                                 .map(|n| n.to_string())
                                 .unwrap_or_else(|_| py(status)),
                             media
                                 .as_ref()
-                                .map(|m| py(m))
-                                .unwrap_or_else(|| "None".into())
+                                .map(|m| format!(", {}", py(m)))
+                                .unwrap_or_default()
                         )
                     },
                 )
@@ -617,9 +790,13 @@ impl ApiPackage {
                                 .map(|s| s.as_str().map(py).context("security scope string"))
                                 .collect::<Result<Vec<_>>>()?;
                             Ok(format!(
-                                "_http.SecurityRequirement({}, {})",
+                                "{http}.SecurityRequirement({}{})",
                                 py(name),
-                                tuple(&scopes)
+                                if scopes.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(", {}", tuple(&scopes))
+                                }
                             ))
                         })
                         .collect::<Result<Vec<_>>>()?;
@@ -648,39 +825,51 @@ impl ApiPackage {
                         })
                         .collect::<Result<Vec<_>>>()?;
                     Ok(format!(
-                        "_http.Server({}, {})",
+                        "{http}.Server({}{})",
                         py(server["url"].as_str().context("server URL")?),
-                        tuple(&variables)
+                        if variables.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", {}", tuple(&variables))
+                        }
                     ))
                 })
                 .collect::<Result<Vec<_>>>()?;
             writeln!(
                 source,
-                "    _http.operation({}, _TypeForm({}), _TypeForm({}), method={}, path={}, responses={}, operation_id={}, security={}, servers={}),",
+                "    {http}.operation(\n        {},\n        {type_form}({}),\n        {type_form}({}),\n        method={},\n        path={},\n        responses=(\n{}        ),",
                 operation.input,
                 operation.success_alias,
                 operation.error_alias,
                 py(&contract.key.method),
                 py(&contract.key.path),
-                tuple(&responses),
-                contract
-                    .operation_id
-                    .as_ref()
-                    .map(|s| py(s))
-                    .unwrap_or_else(|| "None".into()),
-                tuple(&security),
-                tuple(&servers)
+                responses
+                    .iter()
+                    .map(|response| format!("            {response},\n"))
+                    .collect::<String>(),
             )?;
+            if let Some(id) = &contract.operation_id {
+                writeln!(source, "        operation_id={},", py(id))?;
+            }
+            if !security.is_empty() {
+                writeln!(source, "        security={},", tuple(&security))?;
+            }
+            if !servers.is_empty() {
+                writeln!(source, "        servers={},", tuple(&servers))?;
+            }
+            writeln!(source, "    ),")?;
         }
         writeln!(source, ")\n")?;
+        let public = source;
+        let mut source = String::new();
         writeln!(
             source,
-            "# Prevalidated dispatch; importing this module does not inspect annotations.\n_JSONCOMPAT_OPERATIONS: _typing.Final[tuple[_jsoncompat_binding._Operation, ...]] = ("
+            "# --- Prepared HTTP dispatch ---\n# Prevalidated dispatch; importing this module does not inspect annotations.\n_JSONCOMPAT_OPERATIONS: typing.Final[tuple[{codegen}.OperationPlan, ...]] = ("
         )?;
         for (index, operation) in operations.iter().enumerate() {
             let fields = self.prepared_fields(&operation.input);
             let responses = operation.responses.iter().enumerate().map(|(response_index, response)| {
-                format!("_jsoncompat_binding._ResponsePlan(OPERATIONS[{index}].endpoint.responses[{response_index}], {})", self.prepared_fields(&response.headers))
+                format!("{codegen}.ResponsePlan(OPERATIONS[{index}].endpoint.responses[{response_index}], {})", self.prepared_fields(&response.headers))
             }).collect::<Vec<_>>();
             // Preserve response order while deduplicating media, as dict.fromkeys
             // does in the reflective runtime used for manually declared APIs.
@@ -712,43 +901,25 @@ impl ApiPackage {
             );
             writeln!(
                 source,
-                "    _jsoncompat_binding._Operation(OPERATIONS[{index}].endpoint, {}, {fields}, {}, {accept}, {path}),",
+                "    {codegen}.OperationPlan(OPERATIONS[{index}].endpoint, {}, {fields}, {}, {accept}, {path}),",
                 operation.input,
                 tuple(&responses)
             )?;
         }
         writeln!(source, ")\n")?;
-        let public = imported
-            .into_iter()
-            .map(String::as_str)
-            .chain(operations.iter().flat_map(|o| {
-                [
-                    o.response_alias.as_str(),
-                    o.success_alias.as_str(),
-                    o.error_alias.as_str(),
-                    o.result_alias.as_str(),
-                ]
-                .into_iter()
-            }))
-            .map(py)
-            .collect::<Vec<_>>();
-        writeln!(source, "__all__ += {}", tuple(&public))?;
-        Ok(source)
+        Ok(ApiSource {
+            imports,
+            public,
+            private: source,
+        })
     }
 
     fn prepared_fields(&self, model: &str) -> String {
+        let codegen = self.runtime_names.codegen;
         tuple(
             &self.metadata.fields[model]
                 .iter()
-                .map(|(field, metadata)| {
-                    let metadata = metadata
-                        .strip_prefix("_jsoncompat_http.")
-                        .expect("generated HTTP annotation");
-                    format!(
-                        "_jsoncompat_binding._Field({}, _http.{metadata})",
-                        py(field)
-                    )
-                })
+                .map(|(field, metadata)| format!("{codegen}.Field({}, {metadata})", py(field)))
                 .collect::<Vec<_>>(),
         )
     }
@@ -822,6 +993,30 @@ fn tuple(items: &[String]) -> String {
 }
 fn py(value: &str) -> String {
     serde_json::to_string(value).expect("string serialization")
+}
+fn python_value(value: &Value) -> String {
+    match value {
+        Value::Null => "None".into(),
+        Value::Bool(value) => if *value { "True" } else { "False" }.into(),
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => py(value),
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(python_value)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Value::Object(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!("{}: {}", py(key), python_value(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 fn reference(name: &str) -> Value {
     json!({"$ref":format!("#/$defs/{name}")})
@@ -916,6 +1111,7 @@ fn parameter_metadata(
     parameter: &ApiParameter,
     response: bool,
     definitions: &Value,
+    http: &str,
 ) -> Result<String> {
     ensure!(
         !parameter.name.is_empty() && !parameter.name.contains(['\r', '\n']),
@@ -955,7 +1151,7 @@ fn parameter_metadata(
             let explode = match serialization {
                 SchemaSerialization::PathParameter { style, explode }
                 | SchemaSerialization::CookieParameter { style, explode } => {
-                    if class != "Cookie" {
+                    if class != "Cookie" && style.as_str() != "simple" {
                         args.push(format!("style={}", py(style.as_str())));
                     }
                     *explode
@@ -978,15 +1174,23 @@ fn parameter_metadata(
                         style.as_str() != "deepObject" || *explode,
                         "deepObject requires explode=true"
                     );
-                    args.push(format!("style={}", py(style.as_str())));
+                    if style.as_str() != "form" {
+                        args.push(format!("style={}", py(style.as_str())));
+                    }
                     *explode
                 }
                 SchemaSerialization::Header { explode } => *explode,
             };
-            args.push(format!(
-                "explode={}",
-                if explode { "True" } else { "False" }
-            ));
+            let default_explode = matches!(
+                parameter.location,
+                ParameterLocation::Query | ParameterLocation::Cookie
+            );
+            if explode != default_explode {
+                args.push(format!(
+                    "explode={}",
+                    if explode { "True" } else { "False" }
+                ));
+            }
             if response {
                 let schema = resolve_schema(&parameter.schema, definitions)?;
                 let array = schema.get("type").and_then(Value::as_str) == Some("array");
@@ -1005,12 +1209,16 @@ fn parameter_metadata(
                     ["string", "integer", "number", "boolean"].contains(&kind),
                     "unsupported response header schema type {kind}; use JSON content for structured headers"
                 );
-                args.push(format!("kind={}", py(kind)));
-                args.push(format!("array={}", if array { "True" } else { "False" }));
+                if kind != "string" {
+                    args.push(format!("kind={}", py(kind)));
+                }
+                if array {
+                    args.push("array=True".into());
+                }
             }
         }
     }
-    Ok(format!("_jsoncompat_http.{class}({})", args.join(", ")))
+    Ok(format!("{http}.{class}({})", args.join(", ")))
 }
 fn resolve_schema<'a>(mut schema: &'a Value, definitions: &'a Value) -> Result<&'a Value> {
     let mut seen = BTreeSet::new();
@@ -1036,4 +1244,20 @@ fn validate_media_parameters(parameters: &BTreeMap<String, String>) -> Result<()
         "API generation supports only an optional UTF-8 charset media parameter"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_aliases_avoid_nested_schema_declaration_names() {
+        let raw = json!({"components":{"schemas":{"Payload":{"$defs":{
+            "Helper":{"x-jsoncompat":{"kind":"declaration", "name":"_http_codegen"}}
+        }, "description":"_http and _api remain literal description text"}}}});
+        let aliases = RuntimeNames::for_document(&raw, &[]);
+        assert_eq!(aliases.codegen, "_jsoncompat_http_codegen");
+        assert_eq!(aliases.http, "_http");
+        assert_eq!(aliases.type_form, "_TypeForm");
+    }
 }

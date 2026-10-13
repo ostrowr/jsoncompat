@@ -9,6 +9,79 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod python_env;
 
 #[test]
+fn generated_constructors_preserve_typed_reflection_and_escape_documentation() {
+    let description = "A readable café model.\n\"\"\"; raise RuntimeError('schema text ran') #\nPath C:\\new\\thing and a final quote\"";
+    let source = generate_dataclass_models(&json!({
+        "title": "DocumentedNode", "description": description,
+        "type": "object", "additionalProperties": false,
+        "properties": {
+            "label": {"type": "string", "description": "One line\nAnother line with a null \u{0000}"},
+            "kind": {"enum": ["cat", "dog"]},
+            "children": {"type": "array", "items": {"$ref": "#"}}
+        },
+        "required": ["children", "kind"]
+    })).expect("generate documented model");
+    assert!(!source.contains("install_model"));
+    assert!(!source.contains("_jsoncompat_init"));
+    assert!(!source.contains("_jsoncompat_missing"));
+    assert!(source.contains("typing.Literal[\"cat\", \"dog\"]"));
+    assert!(source.contains("    def __init__(\n"));
+    assert!(source.contains("# Another line with a null \\u{0}"));
+    let module_path = write_temp_module("documented_constructor", &source);
+    let output = python_env::python_command().arg("-B").arg("-c").arg(r###"
+import dataclasses, importlib.util, inspect, sys, typing
+from jsoncompat.codegen import dataclasses as dc
+spec = importlib.util.spec_from_file_location('documented_models', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+Node = module.DocumentedNode
+assert inspect.getdoc(Node) == sys.argv[2]
+assert Node.__init__.__module__ == Node.__module__
+assert Node.__init__.__qualname__ == 'DocumentedNode.__init__'
+assert Node.__init__.__globals__ is vars(module)
+hints = typing.get_type_hints(Node.__init__)
+assert typing.get_args(hints['children']) == (Node,)
+assert hints['kind'] == typing.Literal['cat', 'dog']
+assert hints['label'] == dc.Omittable[str]
+assert hints['skip_validation'] is bool
+assert hints['return'] is type(None)
+signature = inspect.signature(Node)
+assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in signature.parameters.values())
+assert signature.parameters['label'].default is dc.MISSING
+assert signature.parameters['children'].default is inspect.Parameter.empty
+assert not {'MISSING', 'MissingType', 'is_missing'} & vars(module).keys()
+node = Node(children=[], kind='cat')
+assert node.label is dc.MISSING
+assert dataclasses.replace(node, label='next').label == 'next'
+for kwargs in ({'children': [], 'kind': 'bird'}, {'children': []}, {'children': [], 'kind': 'cat', 'unknown': 1}):
+    try:
+        Node(**kwargs)
+    except (TypeError, ValueError):
+        pass
+    else:
+        raise AssertionError(f'invalid constructor arguments accepted: {kwargs}')
+try:
+    Node([], 'cat')
+except TypeError:
+    pass
+else:
+    raise AssertionError('constructor accepted positional arguments')
+try:
+    Node.__init__(node, children=[], kind='cat')
+except RuntimeError:
+    pass
+else:
+    raise AssertionError('direct initializer bypassed native construction')
+"###).arg(&module_path).arg(description).output().expect("run constructor/docstring test");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_expose_one_native_runtime_contract() {
     let source = generate_dataclass_models(&json!({
         "title": "Profile",

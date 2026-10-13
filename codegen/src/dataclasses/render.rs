@@ -18,6 +18,15 @@ pub struct DataclassMetadata {
     pub fields: BTreeMap<String, BTreeMap<String, String>>,
     /// Trusted replacement base expressions for generated object declarations.
     pub bases: BTreeMap<String, String>,
+    /// Public declarations listed first, in the requested reading order.
+    pub declaration_order: Vec<String>,
+    /// Trusted source emitted immediately before/after a public declaration.
+    pub before: BTreeMap<String, String>,
+    pub after: BTreeMap<String, String>,
+    /// Human-facing descriptions; encoded as Python string literals.
+    pub docstrings: BTreeMap<String, String>,
+    /// Public names emitted with a class (for resource facade re-exports).
+    pub extra_exports: BTreeMap<String, Vec<String>>,
 }
 
 /// Declarations and prepared implementation for one logical model group.
@@ -33,7 +42,7 @@ pub struct DataclassModule {
 impl DataclassModule {
     pub fn single_file(&self) -> String {
         format!(
-            "{}{}\n# --- Generated implementation: regenerate this file to change it. ---\n\n{}\n_jsoncompat_bind({}, globals())\n",
+            "{}{}\n# --- Generated implementation: regenerate this file to change it. ---\n\n{}\n_jsoncompat_bind({})\n",
             self.imports,
             self.declarations,
             self.implementation,
@@ -42,7 +51,7 @@ impl DataclassModule {
     }
     pub fn public_file(&self, companion: &str) -> String {
         format!(
-            "{}if not typing.TYPE_CHECKING:\n    if __package__ not in (None, \"\"):\n        from .{companion} import bind_models as _jsoncompat_bind\n    else:\n        from {companion} import bind_models as _jsoncompat_bind\n\n{}\nif not typing.TYPE_CHECKING:\n    _jsoncompat_bind({}, globals())\n    del _jsoncompat_bind\n",
+            "{}if not typing.TYPE_CHECKING:\n    if __package__ not in (None, \"\"):\n        from .{companion} import bind_models as _jsoncompat_bind\n    else:\n        from {companion} import bind_models as _jsoncompat_bind\n\n{}\nif not typing.TYPE_CHECKING:\n    _jsoncompat_bind({})\n    del _jsoncompat_bind\n",
             self.imports,
             self.declarations,
             self.model_tuple()
@@ -50,7 +59,7 @@ impl DataclassModule {
     }
     pub fn private_file(&self) -> String {
         format!(
-            "# Generated implementation. Import the public model module instead.\nfrom __future__ import annotations\n\nimport typing\nfrom jsoncompat.codegen import dataclasses as dc\n\n__all__ = (\"bind_models\",)\n\n{}\nbind_models = _jsoncompat_bind\n",
+            "# Generated implementation. Import the public model module instead.\nfrom __future__ import annotations\n\nfrom jsoncompat.codegen import dataclasses as dc\n\n__all__ = (\"bind_models\",)\n\n{}\nbind_models = _jsoncompat_bind\n",
             self.implementation
         )
     }
@@ -64,6 +73,7 @@ struct Field {
     annotation: String,
     expression: String,
     default: Option<&'static str>,
+    description: Option<String>,
 }
 fn fields(class: &ClassSpec) -> Vec<Field> {
     match &class.kind {
@@ -72,6 +82,7 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
             annotation: annotation.to_string(),
             expression: "dc.root_field()".into(),
             default: None,
+            description: None,
         }],
         ClassKind::Object {
             fields,
@@ -95,10 +106,11 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
                             ", default=dc.MISSING"
                         }
                     ),
+                    description: field.description.clone(),
                     default: if field.required {
                         None
                     } else {
-                        Some("_jsoncompat_missing")
+                        Some("dc.MissingType.MISSING")
                     },
                 })
                 .collect::<Vec<_>>();
@@ -108,6 +120,7 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
                     annotation: format!("collections.abc.Mapping[str, {annotation}]"),
                     expression: "dc.extra_field(default_factory=dict)".into(),
                     default: Some("dc.EXTRA_DEFAULT"),
+                    description: None,
                 });
             }
             result
@@ -140,6 +153,112 @@ pub(super) fn bytes(bytes: &[u8]) -> String {
     }
     out.push('\'');
     out
+}
+
+/// Format annotations structurally without importing a Python formatter at
+/// generation time. String literals are opaque, including commas and pipes.
+fn annotation_parts(source: &str, separator: char) -> Vec<&str> {
+    let mut depth = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut start = 0;
+    let mut parts = Vec::new();
+    for (index, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if let Some(end) = quote {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == end {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '[' | '(' | '{' => depth += 1,
+            ']' | ')' | '}' => depth -= 1,
+            _ if depth == 0 && ch == separator => {
+                parts.push(source[start..index].trim());
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(source[start..].trim());
+    parts
+}
+
+fn wrap_annotation(source: &str, column: usize, indent: usize) -> String {
+    if column + source.len() <= 92 {
+        return source.to_owned();
+    }
+    let padding = " ".repeat(indent);
+    let inner_padding = " ".repeat(indent + 4);
+    if let Some(inner) = source.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        let parts = annotation_parts(inner, '|');
+        if parts.len() > 1 {
+            let lines = parts
+                .iter()
+                .enumerate()
+                .map(|(index, part)| {
+                    let prefix = if index == 0 { "" } else { "| " };
+                    format!(
+                        "{inner_padding}{prefix}{}",
+                        wrap_annotation(part, indent + 4 + prefix.len(), indent + 4)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            return format!("(\n{lines}\n{padding})");
+        }
+    }
+    if source.ends_with(']')
+        && let Some(open) = source.find('[')
+    {
+        let head = &source[..open];
+        // Only generic type expressions; never split literal string data.
+        if head
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+        {
+            let lines = annotation_parts(&source[open + 1..source.len() - 1], ',')
+                .iter()
+                .map(|part| {
+                    format!(
+                        "{inner_padding}{},",
+                        wrap_annotation(part, indent + 4, indent + 4)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            return format!("{head}[\n{lines}\n{padding}]");
+        }
+    }
+    source.to_owned()
+}
+
+fn write_docstring(output: &mut String, description: &str) {
+    let escaped = description
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\0', "\\x00");
+    let lines: Vec<_> = escaped.lines().collect();
+    if lines.len() == 1 {
+        writeln!(output, "    \"\"\"{}\"\"\"\n", lines[0]).expect("string write");
+    } else {
+        output.push_str("    \"\"\"");
+        for (index, line) in lines.iter().enumerate() {
+            if index > 0 && !line.is_empty() {
+                output.push_str("    ");
+            }
+            writeln!(output, "{line}").expect("string write");
+        }
+        output.push_str("    \"\"\"\n\n");
+    }
 }
 
 pub(super) fn module(classes: &[ClassSpec], root: &str) -> Result<DataclassModule, DataclassError> {
@@ -189,7 +308,7 @@ fn render_module(
     finish_stage("prepare");
     let mut parts = super::package::Parts::default();
     let mut imports = String::from(
-        "# Generated by jsoncompat. Edit the schema and regenerate this module.\nfrom __future__ import annotations\n\nimport collections.abc\nimport typing\n\nfrom jsoncompat.codegen import dataclasses as dc\n\n",
+        "# Generated by jsoncompat. Edit the schema and regenerate this module.\n# Constructors declare typed signatures; the native runtime constructs and validates slots.\nfrom __future__ import annotations\n\nimport collections.abc\nimport typing\n\nfrom jsoncompat.codegen import dataclasses as dc\n\n",
     );
     let mut declarations = String::new();
     let has_bases = classes
@@ -208,16 +327,8 @@ fn render_module(
     if has_bases {
         imports.push_str(&metadata.base_imports);
     }
-    let mut implementation = if classes
-        .iter()
-        .flat_map(fields)
-        .any(|field| field.default == Some("_jsoncompat_missing"))
-    {
-        String::from("_jsoncompat_missing = dc.MissingType.MISSING\n\n")
-    } else {
-        String::new()
-    };
-    for (index, class) in classes.iter().enumerate() {
+    let mut implementation = String::new();
+    for class in classes {
         let fields = fields(class);
         if let Some(metadata) = metadata.fields.get(&class.name) {
             for name in metadata.keys() {
@@ -230,31 +341,65 @@ fn render_module(
             }
         }
         let declaration_start = declarations.len();
-        let initializer_start = implementation.len();
-        writeln!(
-            declarations,
-            "\n@typing.final\nclass {}({}):",
-            class.name,
-            metadata
-                .bases
-                .get(&class.name)
-                .cloned()
-                .unwrap_or_else(|| render_class_base(class))
-        )
-        .expect("string write");
+        if let Some(prefix) = metadata.before.get(&class.name) {
+            declarations.push_str(prefix);
+        }
+        let base = metadata
+            .bases
+            .get(&class.name)
+            .cloned()
+            .unwrap_or_else(|| render_class_base(class));
+        if class.name.len() + base.len() + 9 > 92 {
+            writeln!(
+                declarations,
+                "\n@typing.final\nclass {}(\n    {},\n):",
+                class.name,
+                wrap_annotation(&base, 4, 4)
+            )
+            .expect("string write");
+        } else {
+            writeln!(
+                declarations,
+                "\n@typing.final\nclass {}({base}):",
+                class.name
+            )
+            .expect("string write");
+        }
+        if let Some(description) = metadata
+            .docstrings
+            .get(&class.name)
+            .map(String::as_str)
+            .or(class.description.as_deref())
+            .filter(|description| !description.is_empty())
+        {
+            write_docstring(&mut declarations, description);
+        }
         for field in &fields {
+            if let Some(description) = &field.description {
+                for line in description.lines() {
+                    let safe: String = line
+                        .chars()
+                        .flat_map(|ch| {
+                            if ch.is_control() {
+                                ch.escape_default().collect::<Vec<_>>()
+                            } else {
+                                vec![ch]
+                            }
+                        })
+                        .collect();
+                    writeln!(declarations, "    # {safe}").expect("string write");
+                }
+            }
             let annotation = metadata
                 .fields
                 .get(&class.name)
                 .and_then(|fields| fields.get(&field.name))
                 .map(|extra| format!("typing.Annotated[{}, {extra}]", field.annotation))
                 .unwrap_or_else(|| field.annotation.clone());
-            writeln!(
-                declarations,
-                "    {}: {} = {}",
-                field.name, annotation, field.expression
-            )
-            .expect("string write");
+            let prefix = format!("    {}: ", field.name);
+            let annotation = wrap_annotation(&annotation, prefix.len(), 4);
+            writeln!(declarations, "{prefix}{annotation} = {}", field.expression)
+                .expect("string write");
         }
         writeln!(
             declarations,
@@ -262,25 +407,30 @@ fn render_module(
             tuple(fields.iter().map(|f| python_string_literal(&f.name)))
         )
         .expect("string write");
-        let mut parameters = vec![
-            "self: dc.DataclassModel".into(),
-            "*".into(),
-            "skip_validation: bool = False".into(),
-        ];
-        parameters.extend(fields.iter().map(|field| {
-            format!(
-                "{}: {}{}",
-                field.name,
-                "typing.Any",
-                field.default.map(|d| format!(" = {d}")).unwrap_or_default()
+        declarations.push_str("    def __init__(\n        self,\n        *,\n        skip_validation: bool = False,\n");
+        for field in &fields {
+            let annotation = metadata
+                .fields
+                .get(&class.name)
+                .and_then(|fields| fields.get(&field.name))
+                .map(|extra| format!("typing.Annotated[{}, {extra}]", field.annotation))
+                .unwrap_or_else(|| field.annotation.clone());
+            let prefix = format!("        {}: ", field.name);
+            let annotation = wrap_annotation(&annotation, prefix.len(), 8);
+            writeln!(
+                declarations,
+                "{prefix}{annotation}{},",
+                field
+                    .default
+                    .map(|default| format!(" = {default}"))
+                    .unwrap_or_default()
             )
-        }));
-        writeln!(
-            implementation,
-            "def _jsoncompat_init_{index}({}) -> None:\n    self.__post_init__(skip_validation)\n",
-            parameters.join(", ")
-        )
-        .expect("string write");
+            .expect("string write");
+        }
+        declarations.push_str("    ) -> None:\n        self.__post_init__(skip_validation)\n\n");
+        if let Some(suffix) = metadata.after.get(&class.name) {
+            declarations.push_str(suffix);
+        }
         let declaration = &declarations[declaration_start..];
         let mut class_imports = imports.clone();
         if !declaration.contains("collections.abc.") {
@@ -300,13 +450,35 @@ fn render_module(
                 class_imports = class_imports.replace(&metadata.imports, "");
             }
         }
+        parts.extra_exports.push(
+            metadata
+                .extra_exports
+                .get(&class.name)
+                .cloned()
+                .unwrap_or_default(),
+        );
         parts.imports.push(class_imports);
         parts.references.push(super::package::references(class));
         parts.declarations.push(declaration.to_owned());
-        parts
-            .initializers
-            .push(implementation[initializer_start..].to_owned());
     }
+    let mut order: Vec<usize> = (0..classes.len()).collect();
+    let positions: BTreeMap<_, _> = metadata
+        .declaration_order
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.as_str(), index))
+        .collect();
+    order.sort_by_key(|index| {
+        positions
+            .get(classes[*index].name.as_str())
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
+    declarations = order
+        .iter()
+        .map(|index| parts.declarations[*index].as_str())
+        .collect();
+    parts.declaration_order = order;
     if has_bases && !declarations.contains("dc.") {
         imports = imports.replace("from jsoncompat.codegen import dataclasses as dc\n", "");
     }
@@ -325,7 +497,7 @@ fn render_module(
     .expect("string write");
     parts.footer = declarations[footer_start..].to_owned();
     implementation
-        .push_str("def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:\n");
+        .push_str("def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...]) -> None:\n");
     writeln!(
         implementation,
         "    {} = _models",
@@ -352,16 +524,6 @@ fn render_module(
         })
         .collect::<Result<Vec<_>, _>>()?;
     finish_stage("program serialization");
-    if standalone {
-        for (index, class) in classes.iter().enumerate() {
-            writeln!(
-                implementation,
-                "    dc.install_model({}, _jsoncompat_init_{index}, _namespace)",
-                class.name
-            )
-            .expect("string write");
-        }
-    }
     let roots = classes
         .iter()
         .zip(&prepared.roots)

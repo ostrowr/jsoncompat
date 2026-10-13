@@ -47,13 +47,17 @@ impl DataclassModule {
             })
             .collect();
         let mut files = BTreeMap::new();
-        let programs: Vec<_> = self
+        let mut programs: Vec<_> = self
             .models
             .iter()
             .map(|m| format!("_jsoncompat_program_{m}"))
             .collect();
         let prepared = self.parts.prepared.as_ref().unwrap();
         let plan_index = PlanIndex::new(&prepared.decisions);
+        let mut declaration_rank = vec![0; self.models.len()];
+        for (rank, index) in self.parts.declaration_order.iter().enumerate() {
+            declaration_rank[*index] = rank;
+        }
         for group in components(&edges) {
             let cyclic = group.len() > 1;
             let module = if cyclic {
@@ -61,10 +65,11 @@ impl DataclassModule {
             } else {
                 group[0].clone()
             };
-            let indices: Vec<_> = group
+            let mut indices: Vec<_> = group
                 .iter()
                 .flat_map(|m| members[m].iter().copied())
                 .collect();
+            indices.sort_by_key(|index| declaration_rank[*index]);
             let local: BTreeSet<_> = indices.iter().copied().collect();
             let mut source = self
                 .imports
@@ -79,18 +84,8 @@ impl DataclassModule {
                 .map(|line| format!("{line}\n"))
                 .collect::<String>()
                 .replace("from .", "from ..");
-            if let Some(resource) = module.strip_prefix("operations.") {
-                source = source.replace(
-                    "from .. import api as _jsoncompat_api_types",
-                    &format!("from ..operations import {resource} as _jsoncompat_api_types"),
-                );
-            }
-            source.push_str("from builtins import bytes as _jsoncompat_bytes\n");
             if !source.contains("from jsoncompat.codegen import dataclasses as dc\n") {
                 source.push_str("from jsoncompat.codegen import dataclasses as dc\n");
-            }
-            for &i in &indices {
-                source.push_str(&self.parts.declarations[i]);
             }
             let references: BTreeSet<_> = indices
                 .iter()
@@ -100,6 +95,9 @@ impl DataclassModule {
                 if !group.contains(&exports[name]) {
                     writeln!(source, "from ..{} import {name} as {name}", exports[name]).unwrap();
                 }
+            }
+            for &i in &indices {
+                source.push_str(&self.parts.declarations[i]);
             }
             let mut selected = BTreeSet::new();
             let mut pending: Vec<_> = indices.iter().map(|i| prepared.roots[*i].0).collect();
@@ -121,23 +119,32 @@ impl DataclassModule {
             let plan = plan_index.project(&remap, |id| {
                 model(&prepared.graph.nodes[id]).is_some_and(|m| !local.contains(&m))
             });
-            source.push_str("\n# Prepared constructors and programs; no schema compilation on import.\n_jsoncompat_missing = dc.MissingType.MISSING\n");
+            writeln!(
+                source,
+                "\n__all__: tuple[str, ...] = ({},)",
+                indices
+                    .iter()
+                    .flat_map(
+                        |i| std::iter::once(&self.models[*i]).chain(&self.parts.extra_exports[*i])
+                    )
+                    .map(|name| format!("{name:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+            .unwrap();
+            source.push_str("\n# --- Private generated implementation ---\n# Prepared validation and conversion programs; no schema compilation on import.\n");
+            let mut unique_programs: BTreeMap<&[u8], String> = BTreeMap::new();
             for &i in &indices {
+                if let Some(existing) = unique_programs.get(self.parts.programs[i].as_slice()) {
+                    programs[i] = existing.clone();
+                    continue;
+                }
+                unique_programs.insert(&self.parts.programs[i], programs[i].clone());
                 writeln!(
                     source,
                     "{} = {}",
                     programs[i],
                     render::bytes(&self.parts.programs[i])
-                )
-                .unwrap();
-                source.push_str(&self.parts.initializers[i].replace(
-                    &format!("_jsoncompat_init_{i}("),
-                    &format!("_jsoncompat_init_{}(", self.models[i]),
-                ));
-                writeln!(
-                    source,
-                    "dc.install_model({0}, _jsoncompat_init_{0}, globals())",
-                    self.models[i]
                 )
                 .unwrap();
             }
@@ -165,16 +172,6 @@ impl DataclassModule {
                 render::bytes(&serde_json::to_vec(&plan).unwrap())
             )
             .unwrap();
-            writeln!(
-                source,
-                "\n__all__: tuple[str, ...] = ({},)",
-                indices
-                    .iter()
-                    .map(|i| format!("{:?}", self.models[*i]))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-            .unwrap();
             files.insert(format!("{}.py", module.replace('.', "/")), source);
             if cyclic {
                 for owner in group {
@@ -183,13 +180,18 @@ impl DataclassModule {
                     for i in &members[&owner] {
                         let name = &self.models[*i];
                         writeln!(facade, "from ..{module} import {name} as {name}").unwrap();
+                        for name in &self.parts.extra_exports[*i] {
+                            writeln!(facade, "from ..{module} import {name} as {name}").unwrap();
+                        }
                     }
                     writeln!(
                         facade,
                         "__all__: tuple[str, ...] = ({},)",
                         members[&owner]
                             .iter()
-                            .map(|i| format!("{:?}", self.models[*i]))
+                            .flat_map(|i| std::iter::once(&self.models[*i])
+                                .chain(&self.parts.extra_exports[*i]))
+                            .map(|name| format!("{name:?}"))
                             .collect::<Vec<_>>()
                             .join(", ")
                     )

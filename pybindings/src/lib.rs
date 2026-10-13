@@ -582,6 +582,78 @@ impl ModelRuntimePy {
         Ok(unicode::from_utf8(py, &payload)?.unbind())
     }
 
+    /// Encode an HTTP envelope, retaining one JSON body as bytes. All fields
+    /// are written and validated together before any wire data is returned.
+    fn _serialize_json_field(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+        name: &str,
+    ) -> PyResult<(Py<PyDict>, Option<Py<PyBytes>>)> {
+        let converter = self.converter(py)?;
+        Self::ensure_model_instance(&converter, py, instance)?;
+        let encoded = converter.serialize_fields_checked(py, instance, name)?;
+        if !converter.validate_complete_json(&encoded.json)? {
+            return Self::require_valid(&converter, py, Ok(None), || {
+                let parsed = parse_json(&encoded.json)?;
+                Ok(converter.schema()?.explain(&parsed))
+            });
+        }
+        let body = encoded
+            .body
+            .map(|range| PyBytes::new(py, &encoded.json.as_bytes()[range]).unbind());
+        Ok((encoded.fields, body))
+    }
+
+    /// Parse a JSON body directly into a generated response envelope. A None
+    /// result asks HTTP to use its value decoder for precise diagnostics or
+    /// established Python-number semantics; unexpected runtime errors escape.
+    fn _deserialize_json_field(
+        &self,
+        py: Python<'_>,
+        fields: &Bound<'_, PyDict>,
+        name: &str,
+        payload: &[u8],
+    ) -> PyResult<Option<Py<PyAny>>> {
+        let converter = self.converter(py)?;
+        if converter.schema()?.requires_exact_json_numbers() {
+            return Ok(None);
+        }
+        if fields.contains(name)? {
+            return Err(PyValueError::new_err("JSON body field is already present"));
+        }
+        // Check the body's boundary separately: concatenating unchecked JSON
+        // could otherwise turn trailing data into envelope fields.
+        let mut parser = jiter::Jiter::new(payload);
+        parser
+            .next_skip()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        parser
+            .finish()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        let mut envelope = Vec::with_capacity(payload.len() + 256);
+        model_converter::write_ordered_json_value(&mut envelope, fields.as_any())?;
+        envelope.pop();
+        if !fields.is_empty() {
+            envelope.push(b',');
+        }
+        serde_json::to_writer(&mut envelope, name)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        envelope.push(b':');
+        envelope.extend_from_slice(payload);
+        envelope.push(b'}');
+        if converter.can_validate_while_parsing() {
+            converter.construct_http_stream(py, &envelope)
+        } else {
+            let parsed = JiterJsonValue::parse(&envelope, false)
+                .map_err(|error| map_json_error(&envelope, &error))?;
+            if model_converter::http_number_fallback(&parsed) {
+                return Ok(None);
+            }
+            converter.construct_jiter_checked(py, &parsed)
+        }
+    }
+
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
         match &self.state {
             ModelRuntimeState::Live { plan_owner, .. } => visit.call(plan_owner),

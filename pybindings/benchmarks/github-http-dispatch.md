@@ -1,5 +1,8 @@
 # GitHub HTTP dispatch import benchmark
 
+The subsequent [readable-client and native HTTP conversion report](github-readable-clients.md)
+records the latest measurements; this report retains the isolated dispatch change.
+
 Moving HTTP dispatch preparation into codegen reduces full-client bytecode
 loading from **0.823 to 0.298 seconds
 (64% faster)**. Loading generated source improves from

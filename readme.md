@@ -121,19 +121,15 @@ the input schema separately if you need to inspect it.
 jsoncompat codegen --target dataclasses schema.json > models.py
 ```
 
-Code generation also prepares dataclass methods, conversion plans, validation
-programs, and regexes. There is no separate model build command and no deferred
-schema compilation at import or first use.
-
 To keep the public API easy to read, write a model module and its private companion:
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-`models.py` imports `_models_generated.py` at the top, then declares the root
-model, its fields, and the other public classes. It binds the classes at the
-bottom. Regeneration replaces these same two files; deploy them together. Output to stdout remains self-contained, with the generated
+`models.py` declares the root model, its fields and constructor, and the other
+public classes. It binds the classes to `_models_generated.py` at the bottom.
+Regeneration replaces these same two files; deploy them together. Output to stdout remains self-contained, with the generated
 implementation below the public declarations. Both layouts use the same prepared
 runtime. Import creates classes, loads precomputed programs, and binds slots;
 full dataclass reflection metadata is created only when explicitly requested.
@@ -144,7 +140,7 @@ build contract and benchmarks.
 Generate an explicitly selected OpenAPI component package in the same build step:
 
 ```bash
-jsoncompat codegen --openapi openapi.json --output my_models --models-per-module 128
+jsoncompat codegen --openapi openapi.json --output my_models
 ```
 
 Import a component directly: `from my_models.models.order import Order`.
@@ -161,8 +157,9 @@ jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
 ```
 
 Operations share resource modules such as `operations/pets.py`; component models
-live in modules such as `models/pet.py`. Each module includes its prepared
-implementation. Publish the complete generated directory.
+live in modules such as `models/pet.py`. Public declarations and documentation
+come first; prepared programs and binding tables live in a private footer.
+Publish the complete generated directory.
 
 Browse the [checked-in Petstore client](examples/openapi_client/petstore/) and
 [run its examples](examples/openapi_client/README.md) with aiohttp, HTTPX, or

@@ -56,6 +56,9 @@ from ._metadata import (
 from ._options import apply_options
 from ._parameters import check_header, decode_header, encode_parameter
 
+_DEFAULT_TO_VALUE = DataclassModel.to_value
+_DEFAULT_FROM_VALUE = DataclassModel.from_value.__func__
+
 
 @dataclass(frozen=True, slots=True)
 class _Field:
@@ -83,7 +86,32 @@ class _Operation:
             raise TypeError(
                 f"expected {self.input_model.__name__}, got {type(request).__name__}"
             )
-        value = request.to_value()
+        json_body = next(
+            (
+                field.name
+                for field in self.fields
+                if isinstance(field.metadata, Body)
+                and field.metadata.content_type is not None
+                and field.metadata.content_type != "text/plain"
+            ),
+            None,
+        )
+        encoded_body = None
+        if (
+            json_body is None
+            or cast(object, self.input_model.to_value) is not _DEFAULT_TO_VALUE
+        ):
+            value = request.to_value()
+        else:
+            try:
+                value, encoded_body = (
+                    self.input_model.__jsoncompat_runtime__._serialize_json_field(
+                        request, json_body
+                    )
+                )
+            except (ValueError, TypeError):
+                # Keep the value path's established validation diagnostics.
+                value = request.to_value()
         if not isinstance(value, dict):
             raise TypeError("operation inputs must be object models")
         path_values: dict[str, str] = {}
@@ -109,7 +137,11 @@ class _Operation:
                         )
                     content_type = cast(str, item["content_type"])
                     item = item["value"]
-                body = _encode_body(content_type, item)
+                body = (
+                    encoded_body
+                    if field.name == json_body and encoded_body is not None
+                    else _encode_body(content_type, item)
+                )
                 headers.append(("Content-Type", content_type))
                 continue
             encoded = encode_parameter(metadata, item)
@@ -184,7 +216,6 @@ class _Operation:
                 plan = candidates[0]
                 if raw.body:
                     raise ValueError("response declares no body")
-                body: JsonValue = None
             else:
                 matching = [
                     plan
@@ -194,22 +225,26 @@ class _Operation:
                 if not matching:
                     raise ValueError(f"undeclared response media type {content_type!r}")
                 plan = matching[0]
-                body = _decode_body(cast(str, content_type), raw.body)
             typed_headers: dict[str, JsonValue] = {}
-            for field in plan.headers:
-                metadata = cast(Header, field.metadata)
-                values = headers.get(metadata.name.lower())
-                if values is not None:
-                    typed_headers[field.name] = decode_header(metadata, values)
+            try:
+                for field in plan.headers:
+                    metadata = cast(Header, field.metadata)
+                    values = headers.get(metadata.name.lower())
+                    if values is not None:
+                        typed_headers[field.name] = decode_header(metadata, values)
+            except (ValueError, TypeError, UnicodeError):
+                if plan.response.content_type is not None:
+                    # The original decoder checks body syntax before headers.
+                    _decode_body(cast(str, content_type), raw.body)
+                raise
             value: dict[str, JsonValue] = {
                 "status": raw.status,
-                "body": body,
                 "headers": typed_headers,
                 "raw_headers": [[key, value] for key, value in raw.headers],
             }
             if plan.response.content_type is not None:
                 value["content_type"] = content_type
-            decoded = plan.response.model.from_value(value)
+            decoded = _decode_model(plan.response, value, raw.body)
             return Ok(decoded) if 200 <= raw.status < 300 else Err(decoded, raw)
         except (ValueError, TypeError, UnicodeError) as error:
             failure = ResponseError(
@@ -219,6 +254,31 @@ class _Operation:
                 failure.__cause__ = error
                 return Err(UnexpectedResponse(failure), raw)
             raise failure from error
+
+
+def _decode_model(
+    response: Response, fields: dict[str, JsonValue], body: bytes
+) -> DataclassModel:
+    content_type = response.content_type
+    if (
+        content_type is not None
+        and content_type != "text/plain"
+        and getattr(response.model.from_value, "__func__", None) is _DEFAULT_FROM_VALUE
+    ):
+        try:
+            decoded = response.model.__jsoncompat_runtime__._deserialize_json_field(
+                fields, "body", body
+            )
+            if decoded is not None:
+                return cast(DataclassModel, decoded)
+        except (ValueError, TypeError):
+            # Failed optimized decoding must have the same diagnostics and
+            # UnexpectedResponse behavior as the ordinary value path.
+            pass
+    fields["body"] = (
+        None if content_type is None else _decode_body(content_type, body)
+    )
+    return response.model.from_value(fields)
 
 
 def _media_type(value: str) -> str:

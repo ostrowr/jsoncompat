@@ -133,11 +133,11 @@ conversion optimizations in the same command that emits Python:
 jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-The public `models.py` imports a private `_models_generated.py` companion at the
-top, followed by the root model and readable field declarations. A binding call
-after the classes connects them to the companion's constructor signatures
-and precomputed runtime programs. Imports support both package and
-top-level modules.
+The public `models.py` contains readable field declarations and typed constructors.
+A binding call after the classes connects them to the private
+`_models_generated.py` companion's precomputed runtime programs. Constructors
+are declared in their classes rather than installed and patched during import.
+Imports support both package and top-level modules.
 
 Regeneration replaces the same two filenames. Generate them during your build
 and deploy both files together; the pair is a single build artifact. Each file
@@ -319,7 +319,7 @@ Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and
 ## OpenAPI model packages
 
 ```bash
-jsoncompat codegen --openapi openapi.json --output my_models --models-per-module 128
+jsoncompat codegen --openapi openapi.json --output my_models
 python -m compileall -q my_models
 ```
 
@@ -364,9 +364,9 @@ remain available on the response envelope's `raw_headers` and buffered response'
 `headers`.
 
 Generation prepares each shared definition graph once, while preserving every
-model's own validation root. It also serializes and compresses shared definition
-blocks once, instead of copying the entire graph into each model. Scope-sensitive
-schemas retain the standalone compiler's reference handling.
+model's own validation root. Scope-sensitive schemas retain the standalone
+compiler's reference handling. Generated files contain prepared validation
+programs, without stored or compressed copies of the source schema.
 
 OpenAPI validation also retains proof that the component definitions were checked.
 Generation reuses that proof for unchanged definitions and validates new operation
@@ -742,7 +742,26 @@ parameters: the API is invariant and transport options are contravariant.
 
 The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
 `Cookie`, `Body`) in public resource modules alongside request/response classes,
-response aliases, and HTTP endpoint metadata. `api.py` re-exports these aliases,
+response aliases, and HTTP endpoint metadata. Related declarations are grouped
+by operation, with method/path, summaries, and descriptions included as docstrings.
+Constructors have explicit typed signatures, and equivalent literal alternatives
+share one `Literal[...]` annotation. Public declarations and metadata precede a
+marked private footer containing compact prepared programs and binding tables.
+Identical programs within a module share one emitted value. Modules reference
+the shared missing sentinel directly instead of defining a local alias.
+
+Fixed JSON request bodies serialize directly from native model slots to bytes.
+JSON responses parse into the generated envelope without first constructing an
+intermediate Python body tree. Both paths validate the complete envelope. Cases
+that require the existing value conversion, including precision-sensitive
+numbers, use that path to preserve acceptance and diagnostics. Parameter order,
+typed headers, omitted fields, and explicit conversion overrides retain their
+existing behavior. This changes the work inside encoding and explicit decoding;
+`request()` still buffers bytes, and `.result()` or `.unwrap()` triggers parsing.
+See the [readability and HTTP conversion measurements](benchmarks/github-readable-clients.md)
+for GitHub output, import costs, checked body conversion, and correctness checks.
+
+`api.py` re-exports the operation aliases,
 collects the operation registry, and exports the client types. Small and large
 APIs use this same layout; adding an operation updates its resource module.
 Component and resource boundaries stay independent of spec size. `_api.py` holds the
@@ -761,6 +780,11 @@ Model validation programs are also prepared during code generation; importing an
 API does not compile schemas. Treat published metadata as immutable after import.
 API identities are final, and unregistered request types and inherited API
 identities are rejected by the shared binder.
+
+Generated dispatch uses the versioned `jsoncompat.codegen.http` interface.
+Applications use `jsoncompat.http`; the generated-code interface keeps private
+runtime class names out of emitted files. It does not perform reflection or
+defer preparation until the first request.
 
 Request and response names derive from `operationId`, or a deterministic
 method/path fallback. Collisions fail generation. Requests flatten parameters

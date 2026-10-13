@@ -26,7 +26,8 @@ pub(super) struct Parts {
     pub prepared: Option<super::plan::PreparedModule>,
     pub references: Vec<BTreeSet<String>>,
     pub declarations: Vec<String>,
-    pub initializers: Vec<String>,
+    pub declaration_order: Vec<usize>,
+    pub extra_exports: Vec<Vec<String>>,
     pub footer: String,
     pub programs: Vec<Vec<u8>>,
     pub roots: Vec<usize>,
@@ -64,20 +65,14 @@ impl DataclassModule {
         for (i, name) in self.models.iter().enumerate() {
             let stem = &filenames[name];
             let declaration_module = stem;
-            // Forward annotations resolve against the public facade. The same
-            // static imports make those names visible to type checkers.
+            // Import dependencies after declaring this class: recursive groups
+            // can resolve each other's forward annotations before native binding.
             let references = &self.parts.references[i];
-            let type_imports = if references.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "if typing.TYPE_CHECKING:\n{}",
-                    references
-                        .iter()
-                        .map(|name| format!("    from .{} import {name}\n", filenames[name]))
-                        .collect::<String>()
-                )
-            };
+            let reference_imports = references
+                .iter()
+                .filter(|name| *name != &self.models[i])
+                .map(|name| format!("from .{} import {name} as {name}\n", filenames[name]))
+                .collect::<String>();
             let mut model_imports = package_imports(&self.parts.imports[i]);
             let runtime_import = "from jsoncompat.codegen import dataclasses as dc\n";
             // Empty requests can inherit only the HTTP base and therefore need
@@ -85,9 +80,8 @@ impl DataclassModule {
             if !model_imports.contains(runtime_import) {
                 model_imports.push_str(runtime_import);
             }
-            model_imports.push_str("from builtins import bytes as _jsoncompat_bytes\n");
             let declaration = format!(
-                "{}{type_imports}{}\n__all__ = ({name:?},)\n",
+                "{}{}\n{reference_imports}\n__all__ = ({name:?},)\n",
                 model_imports, self.parts.declarations[i]
             );
             writeln!(
@@ -101,15 +95,16 @@ impl DataclassModule {
                 &self.parts.programs[i],
                 "_jsoncompat_program",
             );
-            let initializer = self.parts.initializers[i]
-                .replace(&format!("_jsoncompat_init_{i}("), "_jsoncompat_init(");
-            files.add(declaration_module, format!("{declaration}\n# Prepared implementation; regenerated with the declaration above.\n{program}\n_jsoncompat_missing = dc.MissingType.MISSING\n\n{initializer}\ndef _jsoncompat_install(model: type[dc.DataclassModel], namespace: dict[str, typing.Any]) -> _jsoncompat_bytes:\n    dc.install_model(model, _jsoncompat_init, namespace)\n    return _jsoncompat_program\n"));
+            files.add(
+                declaration_module,
+                format!("{declaration}\n# --- Private generated implementation ---\n{program}\n"),
+            );
             writeln!(
                 imports,
-                "from .{declaration_module} import _jsoncompat_install as _install_{name}"
+                "from .{declaration_module} import _jsoncompat_program as _program_{name}"
             )
             .unwrap();
-            programs.push(format!("_install_{name}(_models[{i}], _namespace)"));
+            programs.push(format!("_program_{name}"));
         }
         // Large literal tuples exceed type-checker inference limits.
         public.push_str(
@@ -118,7 +113,7 @@ impl DataclassModule {
                 .footer
                 .replace("__all__ =", "__all__: tuple[str, ...] ="),
         );
-        writeln!(public, "from ._binding import bind_models as _jsoncompat_bind\n_jsoncompat_bind(({},), globals())\ndel _jsoncompat_bind", self.models.join(", ")).unwrap();
+        writeln!(public, "from ._binding import bind_models as _jsoncompat_bind\n_jsoncompat_bind(({},))\ndel _jsoncompat_bind", self.models.join(", ")).unwrap();
         files.add("__init__", public);
 
         let mut calls = String::new();
@@ -141,7 +136,7 @@ impl DataclassModule {
             .map(|(i, node)| format!("(_models[{i}], {node})"))
             .collect::<Vec<_>>()
             .join(", ");
-        files.add("_binding", format!("{PRIVATE_IMPORTS}{imports}\n__all__ = (\"bind_models\",)\n\ndef bind_models(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:\n    _programs = [{}]\n    _descriptors: list[tuple[typing.Any, ...]] = []\n{calls}    dc.bind_module(1, [{roots}], _descriptors, _plan)\n", programs.join(", ")));
+        files.add("_binding", format!("{PRIVATE_IMPORTS}{imports}\n__all__ = (\"bind_models\",)\n\ndef bind_models(_models: tuple[type[dc.DataclassModel], ...]) -> None:\n    _programs = [{}]\n    _descriptors: list[tuple[typing.Any, ...]] = []\n{calls}    dc.bind_module(1, [{roots}], _descriptors, _plan)\n", programs.join(", ")));
         files.sources
     }
 }

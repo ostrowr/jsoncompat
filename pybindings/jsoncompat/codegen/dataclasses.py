@@ -620,29 +620,6 @@ for _name, _value in (("slots", True), ("weakref_slot", False)):
         setattr(_params, _name, _value)
 
 
-def install_model(
-    model: type[DataclassModel],
-    initializer: Callable[..., None],
-    namespace: dict[str, Any],
-) -> None:
-    """Bind the precomputed constructor to its public model namespace."""
-    if not isinstance(initializer, types.FunctionType):
-        raise TypeError("Generated initializer must be a Python function")
-    # A companion can bind several separately imported copies of the models.
-    # Give each constructor the public namespace for recursive type hints.
-    if initializer.__globals__ is not namespace:
-        original = initializer
-        initializer = types.FunctionType(original.__code__, namespace, original.__name__)
-        initializer.__kwdefaults__ = original.__kwdefaults__
-    initializer.__annotations__ = model.__annotations__.copy()
-    initializer.__annotations__["skip_validation"] = bool
-    initializer.__kwdefaults__ = (initializer.__kwdefaults__ or {}).copy()
-    initializer.__annotations__["return"] = None
-    initializer.__qualname__ = model.__qualname__ + ".__init__"
-    initializer.__module__ = model.__module__
-    setattr(model, "__init__", initializer)
-
-
 def bind_module(
     version: int,
     roots: list[tuple[type[DataclassModel], int]],

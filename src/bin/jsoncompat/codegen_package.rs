@@ -74,7 +74,7 @@ pub(super) fn generate(
     let document = OpenApiDocument::from_json(raw)?;
     timings.mark("validate OpenAPI document");
     let api = api
-        .map(|name| super::codegen_api::ApiPackage::prepare(&document, raw, name))
+        .map(|name| super::codegen_api::ApiPackage::prepare(&document, raw, name, renames))
         .transpose()?;
     timings.mark("prepare operation contracts");
     let empty_schemas = serde_json::Map::new();
@@ -252,6 +252,11 @@ pub(super) fn generate(
             &metadata.base_imports,
             &metadata.fields,
             &metadata.bases,
+            &metadata.docstrings,
+            &metadata.declaration_order,
+            &metadata.before,
+            &metadata.after,
+            &metadata.extra_exports,
             declarations
                 .values()
                 .map(|name| (name, &owners[name]))
@@ -337,9 +342,8 @@ pub(super) fn generate(
         .collect::<String>();
     let model_names = model_exports
         .keys()
-        .map(|s| format!("{s:?}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .map(|s| format!("    {s:?},\n"))
+        .collect::<String>();
     let model_initializer = INITIALIZER
         .replace("from ._exports", "from .._exports")
         .replace("EXPORTS as _MODELS", "MODELS as _MODELS");
@@ -348,7 +352,7 @@ pub(super) fn generate(
         &staging,
         &mut manifest,
         "models/__init__.py",
-        &format!("{model_initializer}\n__all__: tuple[str, ...] = ({model_names},)\n"),
+        &format!("{model_initializer}\n__all__: tuple[str, ...] = (\n{model_names})\n"),
     )?;
     stage(
         &staging,
@@ -364,16 +368,9 @@ pub(super) fn generate(
                     Some(source) => source,
                     None => fs::read_to_string(destination.join(&file))?,
                 };
-                format!(
-                    "{}\n\n{source}",
-                    declarations
-                        .split("# --- Operation metadata ---")
-                        .next()
-                        .unwrap()
-                        .trim_end()
-                )
+                combine_operation_source(&declarations, source)
             } else {
-                source
+                source.public
             };
             stage(&staging, &mut manifest, &file, &source)?;
         }
@@ -401,14 +398,13 @@ pub(super) fn generate(
     manifest.exports = exports.clone();
     let public_names = exports
         .keys()
-        .map(|name| format!("{name:?}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .map(|name| format!("    {name:?},\n"))
+        .collect::<String>();
     stage(
         &staging,
         &mut manifest,
         "__init__.py",
-        &format!("{INITIALIZER}\n__all__: tuple[str, ...] = ({public_names},)\n"),
+        &format!("{INITIALIZER}\n__all__: tuple[str, ...] = (\n{public_names})\n"),
     )?;
     let manifest_source = serde_json::to_string_pretty(&manifest)?;
     timings.mark("render and stage package exports");
@@ -471,6 +467,132 @@ pub(super) fn generate(
     );
     Ok(())
 }
+
+/// Keep readable operation metadata before the opaque model programs. Cached
+/// resource files already contain both sections; replace those sections rather
+/// than accumulating imports or dispatch tables on incremental generation.
+fn combine_operation_source(declarations: &str, source: super::codegen_api::ApiSource) -> String {
+    // Anchor markers at column zero so quoted schema descriptions cannot be
+    // mistaken for emitted sections, including multiline class docstrings.
+    const PUBLIC: &str = "\n# --- Public operation metadata ---";
+    const PRIVATE: &str = "\n# --- Private generated implementation ---";
+    const DISPATCH: &str = "\n# --- Prepared HTTP dispatch ---";
+    let declarations = declarations.split(DISPATCH).next().unwrap().trim_end();
+    let (readable, implementation) = declarations
+        .split_once(PRIVATE)
+        .map_or((declarations, ""), |(a, b)| (a, b));
+    let readable = readable.split(PUBLIC).next().unwrap().trim_end();
+    let mut combined = combine_imports(readable, &source.imports);
+    combined.push_str("\n\n");
+    combined.push_str(&source.public);
+    if !implementation.is_empty() {
+        combined.push_str(PRIVATE);
+        combined.push_str(implementation);
+    }
+    combined.push_str("\n\n");
+    combined.push_str(&source.private);
+    combined.truncate(combined.trim_end().len());
+    combined.push('\n');
+    combined
+}
+/// Normalize only the generated import preamble. Public declarations and schema
+/// prose remain opaque; import grouping also stays stable on cached rebuilds.
+fn combine_imports(declarations: &str, extra: &str) -> String {
+    #[derive(Default)]
+    struct Imports {
+        preamble: Vec<String>,
+        plain: BTreeSet<String>,
+        from: BTreeMap<String, BTreeSet<String>>,
+    }
+    impl Imports {
+        fn read(&mut self, source: &str) -> usize {
+            let mut lines = source.lines();
+            let mut offset = 0;
+            while let Some(line) = lines.next() {
+                if line.is_empty() {
+                    offset += line.len() + 1;
+                } else if line.starts_with('#') {
+                    self.preamble.push(line.to_owned());
+                    offset += line.len() + 1;
+                } else if line.starts_with("import ") {
+                    self.plain.insert(line.to_owned());
+                    offset += line.len() + 1;
+                } else if let Some((module, names)) = line
+                    .strip_prefix("from ")
+                    .and_then(|s| s.split_once(" import "))
+                {
+                    offset += line.len() + 1;
+                    let members = self.from.entry(module.to_owned()).or_default();
+                    if names == "(" {
+                        for line in lines.by_ref() {
+                            offset += line.len() + 1;
+                            if line == ")" {
+                                break;
+                            }
+                            members.insert(line.trim().trim_end_matches(',').to_owned());
+                        }
+                    } else {
+                        members.insert(names.to_owned());
+                    }
+                } else {
+                    break;
+                }
+            }
+            offset.min(source.len())
+        }
+    }
+    fn group(module: &str) -> usize {
+        if module == "__future__" {
+            0
+        } else if module.starts_with('.') {
+            3
+        } else if matches!(
+            module.split('.').next().unwrap(),
+            "collections" | "typing" | "builtins" | "dataclasses"
+        ) {
+            1
+        } else {
+            2
+        }
+    }
+    let mut imports = Imports::default();
+    let offset = imports.read(declarations);
+    imports.read(extra);
+    let mut groups: [Vec<String>; 4] = Default::default();
+    for line in imports.plain {
+        groups[group(line.strip_prefix("import ").unwrap())].push(line);
+    }
+    for (module, members) in imports.from {
+        let statement = if members.len() == 1 {
+            format!(
+                "from {module} import {}",
+                members.into_iter().next().unwrap()
+            )
+        } else {
+            format!(
+                "from {module} import (\n{}\n)",
+                members
+                    .into_iter()
+                    .map(|name| format!("    {name},"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        };
+        groups[group(&module)].push(statement);
+    }
+    let mut output = imports.preamble.join("\n");
+    output.push('\n');
+    let groups = groups
+        .into_iter()
+        .filter(|group| !group.is_empty())
+        .map(|group| group.join("\n"))
+        .collect::<Vec<_>>();
+    output.push_str(&groups.join("\n\n"));
+    output.push_str("\n\n");
+    output.push_str(&declarations[offset..]);
+    output
+}
+
 fn add_export(exports: &mut BTreeMap<String, String>, name: &str, module: &str) -> Result<()> {
     if let Some(previous) = exports.insert(name.into(), module.into()) {
         ensure!(

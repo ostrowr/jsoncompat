@@ -72,6 +72,14 @@ class Validator(Protocol):
 
 
 class ModelRuntime(Protocol):
+    def _serialize_json_field(
+        self, instance: Any, name: str
+    ) -> tuple[dict[str, JsonValue], bytes | None]: ...
+
+    def _deserialize_json_field(
+        self, fields: dict[str, JsonValue], name: str, payload: bytes
+    ) -> Any | None: ...
+
     def construct_kwargs(
         self,
         kwargs: dict[str, Any],

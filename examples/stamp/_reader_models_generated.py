@@ -1,33 +1,12 @@
 # Generated implementation. Import the public model module instead.
 from __future__ import annotations
 
-import typing
 from jsoncompat.codegen import dataclasses as dc
 
 __all__ = ("bind_models",)
 
-def _jsoncompat_init_0(self: dc.DataclassModel, *, skip_validation: bool = False, root: typing.Any) -> None:
-    self.__post_init__(skip_validation)
-
-def _jsoncompat_init_1(self: dc.DataclassModel, *, skip_validation: bool = False, age: typing.Any, name: typing.Any, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
-    self.__post_init__(skip_validation)
-
-def _jsoncompat_init_2(self: dc.DataclassModel, *, skip_validation: bool = False, age: typing.Any, interests: typing.Any, name: typing.Any, __jsoncompat_extra__: typing.Any = dc.EXTRA_DEFAULT) -> None:
-    self.__post_init__(skip_validation)
-
-def _jsoncompat_init_3(self: dc.DataclassModel, *, skip_validation: bool = False, version: typing.Any, data: typing.Any) -> None:
-    self.__post_init__(skip_validation)
-
-def _jsoncompat_init_4(self: dc.DataclassModel, *, skip_validation: bool = False, version: typing.Any, data: typing.Any) -> None:
-    self.__post_init__(skip_validation)
-
-def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...], _namespace: dict[str, typing.Any]) -> None:
+def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...]) -> None:
     (UserProfileReader, UserProfileV1, UserProfileV2, UserProfileV2Reader, UserProfileV1Reader,) = _models
-    dc.install_model(UserProfileReader, _jsoncompat_init_0, _namespace)
-    dc.install_model(UserProfileV1, _jsoncompat_init_1, _namespace)
-    dc.install_model(UserProfileV2, _jsoncompat_init_2, _namespace)
-    dc.install_model(UserProfileV2Reader, _jsoncompat_init_3, _namespace)
-    dc.install_model(UserProfileV1Reader, _jsoncompat_init_4, _namespace)
     dc.bind_module(1, [(UserProfileReader, 0), (UserProfileV1, 4), (UserProfileV2, 10), (UserProfileV2Reader, 8), (UserProfileV1Reader, 2)], [
         ('root', UserProfileReader, 1, b'{"version":4,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,9]}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["data",2],["version",7]],"patterns":[],"required":["version","data"],"additional":8}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/v2"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["age",4],["interests",5],["name",6]],"patterns":[],"required":["name","age","interests"],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["integer"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":[2],"constant":true,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["data",10],["version",12]],"patterns":[],"required":["version","data"],"additional":8}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":11,"pointer":"/$defs/v1"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["age",4],["name",6]],"patterns":[],"required":["name","age"],"additional":null}}]},{"types":null,"choices":[1],"constant":true,"rules":[]}],"patterns":[],"pattern_sources":[]}'),
         ('union', (2, 8,), "version", ((1, 0), (2, 1),)),

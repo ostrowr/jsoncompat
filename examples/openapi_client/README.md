@@ -23,9 +23,14 @@ The package groups operations into `operations/pets.py`, `operations/groups.py`,
 `operations/search.py`, and `operations/health.py`. Each component owns a module
 such as `models/pet.py`, including its nested types. Direct resource/component
 imports load their dependencies; importing `api.py` binds the full API's
-precomputed dispatch plans. Publish the whole generated directory. It contains prepared validation
-programs, without copies of the source schema JSON; keep `openapi.json` as your
-build input and reference document.
+precomputed dispatch plans. Each operation's response variants, aliases, and
+request are grouped together, with method/path and spec documentation. Public
+metadata comes before the private program and dispatch tables. Constructors are
+typed directly in the classes; omitted fields use the shared jsoncompat sentinel.
+
+Publish the whole generated directory. It contains prepared validation programs,
+without copies of the source schema JSON; keep `openapi.json` as your build input
+and reference document.
 
 Start with [the Pet model](petstore/models/pet.py),
 [pet requests and responses](petstore/operations/pets.py), and

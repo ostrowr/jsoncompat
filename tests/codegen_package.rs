@@ -209,7 +209,7 @@ fn older_packages_migrate_without_removing_unmanaged_files() {
 #[test]
 fn packages_omit_source_schema_and_cache_independent_models() {
     let work = Work::new();
-    let object = json!({"type":"object","properties":{"payload":record(3)},"required":["payload"],"description":"SOURCE_ONLY_MARKER"});
+    let object = json!({"type":"object","properties":{"payload":record(3)},"required":["payload"],"description":"Readable model documentation", "examples":["SOURCE_ONLY_MARKER"]});
     work.write(&json!({"openapi":"3.1.0","info":{"title":"Independent models","version":"1"},"components":{"schemas":{
         "A":object, "B":object, "C":{"type":"string"}
     }}}));
@@ -217,6 +217,9 @@ fn packages_omit_source_schema_and_cache_independent_models() {
     let package = work.0.join("models");
     let before = contents(&package);
     assert!(!package.join("_data").exists());
+    assert!(
+        String::from_utf8_lossy(&before["models/a.py"]).contains("Readable model documentation")
+    );
     for source in before.values() {
         let source = String::from_utf8_lossy(source);
         assert!(!source.contains("SOURCE_ONLY_MARKER"));
@@ -621,6 +624,13 @@ fn directed_imports_link_shared_dependencies_without_loading_reverse_users() {
         "Unused":{"type":"object","properties":{"leaf":{"$ref":"#/components/schemas/Leaf"}},"required":["leaf"]}
     }}}));
     success(work.generate(&[]));
+    let source = fs::read_to_string(work.0.join("models/models/parent.py")).unwrap();
+    assert!(
+        source
+            .find("from ..models.left import Left as Left")
+            .unwrap()
+            < source.find("class Parent(").unwrap()
+    );
     success(python_env::python_command().arg("-c").arg(r#"
 import builtins, compileall, dataclasses, gc, inspect, json, sys, zlib
 from pathlib import Path
@@ -653,6 +663,8 @@ with patch.object(builtins, 'compile', forbidden), patch.object(dataclasses, 'da
 from models.models.left import Left
 assert get_type_hints(Parent)['left'] is Left
 assert get_type_hints(Left)['leaf'] is Leaf
+assert get_type_hints(Parent.__init__)['left'] is Left
+assert get_type_hints(Left.__init__)['leaf'] is Leaf
 "#).arg(&work.0).output().unwrap());
 }
 

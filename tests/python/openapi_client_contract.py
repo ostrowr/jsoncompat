@@ -57,6 +57,43 @@ class Recorder:
         return self.reply
 
 
+class ValuePathRuntime:
+    """Force the reference HTTP conversions while retaining the same models."""
+
+    def __init__(self, native):
+        self.native = native
+
+    def __getattr__(self, name):
+        return getattr(self.native, name)
+
+    def _deserialize_json_field(self, fields, name, payload):
+        return None
+
+    def _serialize_json_field(self, instance, name):
+        raise TypeError("use the reference value path")
+
+
+class NativeOnlyRuntime:
+    def __init__(self, native):
+        self.native = native
+
+    def __getattr__(self, name):
+        if name in ("from_value", "to_value"):
+            raise AssertionError("HTTP should not materialize a Python body tree")
+        return getattr(self.native, name)
+
+
+def failure_details(error):
+    return (
+        type(error),
+        str(error),
+        getattr(error, "instance_path", None),
+        getattr(error, "schema_path", None),
+        getattr(error, "keyword", None),
+        failure_details(error.__cause__) if error.__cause__ is not None else None,
+    )
+
+
 @contextmanager
 def operations(*specs):
     with (
@@ -141,11 +178,123 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(result.headers.etag, '"r1"')
         self.assertEqual(self.fetch.requests[-1].target, "/pets/p_123")
 
+    def test_json_bodies_use_native_models_without_python_value_trees(self):
+        request = api.UpdatePetRequest(
+            pet_id="p_123", body=api.PetPatch(tags=["a", "héllo", "b"])
+        )
+        with (
+            patch.object(api.UpdatePetRequest, "__jsoncompat_runtime__", NativeOnlyRuntime(api.UpdatePetRequest.__jsoncompat_runtime__)),
+            patch.object(api.GetPet200, "__jsoncompat_runtime__", NativeOnlyRuntime(api.GetPet200.__jsoncompat_runtime__)),
+            patch.object(_binding, "deserialize_json_value", side_effect=AssertionError),
+        ):
+            self.client.request(request)
+            result = self.client.request(api.GetPetRequest(pet_id="p_123")).unwrap()
+        self.assertEqual(self.fetch.requests[0].body, b'{"tags":["a","h\xc3\xa9llo","b"]}')
+        self.assertEqual(result.body.name, "Mochi")
+
+    def test_http_honors_public_conversion_overrides(self):
+        request = api.UpdatePetRequest(pet_id="p_123", body=api.PetPatch(name="original"))
+        with patch.object(api.UpdatePetRequest, "to_value", return_value={"pet_id": "p_123", "body": {"name": "overridden"}}) as encode:
+            self.client.request(request)
+        encode.assert_called_once_with()
+        self.assertEqual(self.fetch.requests[-1].body, b'{"name":"overridden"}')
+        decoded = api.GetPet200.from_value({
+            "status": 200, "content_type": "application/json", "body": {
+                "id": "override", "name": "Custom", "species": "dog", "tags": [],
+            }, "headers": {"etag": '"r1"'}, "raw_headers": [],
+        })
+        with patch.object(api.GetPet200, "from_value", return_value=decoded) as decode:
+            self.assertIs(self.client.request(api.GetPetRequest(pet_id="p_123")).unwrap(), decoded)
+        decode.assert_called_once()
+
+    def test_direct_response_matches_value_path_numbers_and_diagnostics(self):
+        cases = [
+            (api.GetPetRequest(pet_id="x"), api.GetPet200, response(body=body))
+            for body in (
+                PET,
+                b"{}",
+                b"not json",
+                PET + b",\"status\":200",
+                PET + b" false",
+                b'{"id":"x","name":"Mochi","name":"duplicate","species":"cat","tags":[]}',
+                b'{"id":"x","name":"Mochi","species":"cat","tags":[],"extra":true}',
+                b'{"id":"x","name":"Mochi","species":"cat","tags":[1]}',
+                b'{"id":"x","name":"\xff","species":"cat","tags":[]}',
+            )
+        ]
+        cases.extend(
+            (
+                api.ListPetsRequest(),
+                api.ListPets200,
+                response(
+                    body=b'{"items":[],"nextOffset":' + number + b"}",
+                    headers=(("X-Total-Count", "0"),),
+                ),
+            )
+            for number in (
+                b"null", b"0", b"1.0", b"1.000000000000000000001",
+                b"1.5", b"9007199254740993.0", b"1e309", b"NaN",
+                b"123456789012345678901234567890",
+            )
+        )
+        cases.extend(
+            (api.GetPetRequest(pet_id="x"), api.GetPet404, response(404, body))
+            for body in (PROBLEM, b"{}", b"not json", PROBLEM + b" null")
+        )
+
+        def outcome(request):
+            try:
+                result = self.client.request(request).result()
+            except ResponseError as error:
+                return failure_details(error)
+            model = result.value if isinstance(result, Ok) else result.error
+            if isinstance(model, UnexpectedResponse):
+                return type(result), model.status, model.body, failure_details(model.decode_error)
+            return type(result), type(model), model.to_value()
+
+        for request, model, raw in cases:
+            with self.subTest(model=model.__name__, body=raw.body):
+                self.fetch.reply = raw
+                actual = outcome(request)
+                with patch.object(model, "__jsoncompat_runtime__", ValuePathRuntime(model.__jsoncompat_runtime__)):
+                    self.assertEqual(actual, outcome(request))
+
+    def test_native_request_matches_value_path_and_preserves_validation(self):
+        class Text(str):
+            def __str__(self):
+                return "override"
+
+        bodies = [
+            api.PetPatch(),
+            api.PetPatch(nickname=None),
+            api.PetPatch(name="x", tags=["a", "b"]),
+            api.PetPatch(name="", skip_validation=True),
+        ]
+        normalized = api.PetPatch(name="original")
+        object.__setattr__(normalized, "name", Text("underlying"))
+        bodies.append(normalized)
+        invalid_shape = api.PetPatch(tags=[])
+        object.__setattr__(invalid_shape, "tags", (1,))
+        bodies.append(invalid_shape)
+
+        def outcome(request):
+            try:
+                return prepare(api.PetstoreAPI, request).request
+            except (ValueError, TypeError) as error:
+                return failure_details(error)
+
+        for body in bodies:
+            with self.subTest(body=repr(body)):
+                request = api.UpdatePetRequest(pet_id="p_123", body=body, skip_validation=True)
+                actual = outcome(request)
+                with patch.object(api.UpdatePetRequest, "__jsoncompat_runtime__", ValuePathRuntime(api.UpdatePetRequest.__jsoncompat_runtime__)):
+                    self.assertEqual(actual, outcome(request))
+
     def test_lazy_response_headers_and_cached_success(self):
         raw = response(headers=(("Set-Cookie", "a=1"), ("set-cookie", "b=2")))
         self.fetch.reply = raw
         with patch.object(
-            api.GetPet200, "from_value", wraps=api.GetPet200.from_value
+            _binding, "_decode_model", wraps=_binding._decode_model
         ) as decode:
             pending = self.client.request(api.GetPetRequest(pet_id="x"))
             self.assertIs(type(pending), ClientResponse)

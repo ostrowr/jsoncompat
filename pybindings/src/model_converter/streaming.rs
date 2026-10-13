@@ -13,6 +13,7 @@ use super::*;
 struct StreamValidation {
     selection: UnionSelection,
     exact: bool,
+    http_numbers: bool,
 }
 
 impl ModelConverterPy {
@@ -26,6 +27,27 @@ impl ModelConverterPy {
         payload: &[u8],
         checked: bool,
     ) -> PyResult<Option<Py<PyAny>>> {
+        self.construct_stream_with_number_fallback(py, payload, checked, false)
+    }
+
+    /// The HTTP value decoder historically validates Python-rounded numbers.
+    /// Leave precision-sensitive inputs to that decoder instead of changing
+    /// their accepted language when using the direct JSON path.
+    pub(crate) fn construct_http_stream(
+        &self,
+        py: Python<'_>,
+        payload: &[u8],
+    ) -> PyResult<Option<Py<PyAny>>> {
+        self.construct_stream_with_number_fallback(py, payload, true, true)
+    }
+
+    fn construct_stream_with_number_fallback(
+        &self,
+        py: Python<'_>,
+        payload: &[u8],
+        checked: bool,
+        fallback_on_exact: bool,
+    ) -> PyResult<Option<Py<PyAny>>> {
         let mut parser = Jiter::new(payload);
         let selection = if checked {
             UnionSelection::ValidateAmbiguousBranches
@@ -35,6 +57,7 @@ impl ModelConverterPy {
         let mut validation = StreamValidation {
             selection,
             exact: false,
+            http_numbers: fallback_on_exact,
         };
         match self.stream_node(
             py,
@@ -48,6 +71,9 @@ impl ModelConverterPy {
                     .finish()
                     .map_err(|error| stream_error(error, &parser).into_pyerr())?;
                 if checked && validation.exact {
+                    if fallback_on_exact {
+                        return Ok(None);
+                    }
                     return crate::construct_exact_model_json(py, payload, self);
                 }
                 Ok(Some(value))
@@ -57,8 +83,15 @@ impl ModelConverterPy {
                 // bounding the additional streaming converter's stack use.
                 let value = JiterJsonValue::parse(payload, false)
                     .map_err(|error| jiter::map_json_error(payload, &error))?;
-                if checked && rounded_integer_float(&value) {
-                    crate::construct_exact_model_json(py, payload, self)
+                if checked
+                    && (rounded_integer_float(&value)
+                        || (fallback_on_exact && http_number_fallback(&value)))
+                {
+                    if fallback_on_exact {
+                        Ok(None)
+                    } else {
+                        crate::construct_exact_model_json(py, payload, self)
+                    }
                 } else if checked {
                     self.construct_jiter_checked(py, &value)
                 } else {
@@ -215,7 +248,12 @@ impl ModelConverterPy {
                 let value = parser
                     .known_value(peek)
                     .map_err(|error| stream_error(error, parser))?;
-                if selection != UnionSelection::FirstRepresentable && rounded_integer_float(&value)
+                if selection != UnionSelection::FirstRepresentable
+                    && if validation.http_numbers {
+                        http_number_fallback(&value)
+                    } else {
+                        rounded_integer_float(&value)
+                    }
                 {
                     validation.exact = true;
                     // Check exact membership after parsing the entire payload.
@@ -245,6 +283,19 @@ pub(crate) fn rounded_integer_float(value: &JiterJsonValue<'_>) -> bool {
         JiterJsonValue::Array(values) => values.iter().any(rounded_integer_float),
         JiterJsonValue::Object(values) => {
             values.iter().any(|(_, value)| rounded_integer_float(value))
+        }
+        _ => false,
+    }
+}
+
+/// Overflowing float tokens can parse as infinity even when NaN/Infinity
+/// spellings are disabled in Jiter. The HTTP value parser rejects those too.
+pub(crate) fn http_number_fallback(value: &JiterJsonValue<'_>) -> bool {
+    match value {
+        JiterJsonValue::Float(value) => !value.is_finite() || value.fract() == 0.0,
+        JiterJsonValue::Array(values) => values.iter().any(http_number_fallback),
+        JiterJsonValue::Object(values) => {
+            values.iter().any(|(_, value)| http_number_fallback(value))
         }
         _ => false,
     }

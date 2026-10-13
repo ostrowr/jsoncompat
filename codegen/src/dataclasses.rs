@@ -53,6 +53,7 @@ struct FieldSpec {
     py_name: String,
     annotation: Annotation,
     required: bool,
+    description: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,7 @@ struct ClassSpec {
     schema: ClassSchema,
     base_class: &'static str,
     kind: ClassKind,
+    description: Option<String>,
 }
 
 /// Keep model schemas separate from shared definitions until validator preparation
@@ -233,6 +235,7 @@ impl<'a> DataclassModuleBuilder<'a> {
             Value::Bool(_) => self.register_class(
                 ClassSpec {
                     name: name.to_owned(),
+                    description: self.source_description(pointer),
                     schema: self.class_schema(|| schema.clone(), pointer),
                     base_class: DATACLASS_ROOT_MODEL_CLASS,
                     kind: ClassKind::Root {
@@ -275,6 +278,7 @@ impl<'a> DataclassModuleBuilder<'a> {
 
         self.classes.push(ClassSpec {
             name: name.to_owned(),
+            description: self.source_description(pointer),
             schema: self.class_schema(|| Value::Object(obj.clone()), pointer),
             base_class: if matches!(kind, ClassKind::Root { .. }) {
                 DATACLASS_ROOT_MODEL_CLASS
@@ -353,6 +357,13 @@ impl<'a> DataclassModuleBuilder<'a> {
         } else {
             format!("{base_name}{count}")
         }
+    }
+
+    fn source_description(&self, pointer: &str) -> Option<String> {
+        resolve_json_pointer(self.source_root, pointer)
+            .and_then(|schema| schema.get("description"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
     }
 
     fn class_schema(&self, fallback_schema: impl FnOnce() -> Value, pointer: &str) -> ClassSchema {
@@ -1062,6 +1073,10 @@ fn envelope_class(
 ) -> Result<ClassSpec, DataclassError> {
     Ok(ClassSpec {
         name,
+        description: schema
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         schema: ClassSchema::standalone(schema),
         base_class,
         kind: ClassKind::Object {
@@ -1071,12 +1086,14 @@ fn envelope_class(
                     py_name: "version".into(),
                     annotation: Annotation::literal(json!(version)),
                     required: true,
+                    description: None,
                 },
                 FieldSpec {
                     json_name: "data".into(),
                     py_name: "data".into(),
                     annotation: Annotation::model(payload_type),
                     required: true,
+                    description: None,
                 },
             ],
             extra_annotation: None,
@@ -1229,6 +1246,10 @@ fn reader_root_class(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ClassSpec {
         name,
+        description: validation
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         schema: ClassSchema::standalone(Value::Object(validation.clone())),
         base_class: READER_ROOT_MODEL_CLASS,
         kind: ClassKind::Root {
@@ -1321,6 +1342,7 @@ fn parse_object_fields(
                     property_name,
                 )?,
                 required: required.contains(property_name),
+                description: builder.source_description(&property_pointer),
             });
         }
     }
@@ -1338,6 +1360,7 @@ fn parse_object_fields(
             py_name,
             annotation: fallback_annotation.clone(),
             required: true,
+            description: None,
         });
     }
 
@@ -2289,7 +2312,7 @@ mod tests {
         assert!(!source.contains("bind_generated_models"));
         assert!(
             source.find("JSONCOMPAT_MODEL = UserProfile").unwrap()
-                < source.find("def _jsoncompat_init").unwrap()
+                < source.find("def _jsoncompat_bind").unwrap()
         );
     }
 
@@ -2468,11 +2491,11 @@ mod tests {
                 .contains("get_additional_property_: str = dc.field(\"get_additional_property\")")
         );
         assert!(source.contains(
-            "_jsoncompat_validated: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"_jsoncompat_validated\")"
+            "_jsoncompat_validated: typing.Literal[False, True] = dc.field(\"_jsoncompat_validated\")"
         ));
         assert!(source.contains("serialize_: str = dc.field(\"serialize\")"));
         assert!(source.contains(
-            "skip_validation_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"skip_validation\")"
+            "skip_validation_: typing.Literal[False, True] = dc.field(\"skip_validation\")"
         ));
         assert!(source.contains("to_value_: str = dc.field(\"to_value\")"));
     }
@@ -2660,9 +2683,7 @@ mod tests {
         // The Python runtime tests verify lossless explicit schema access.
         // Public declarations do not carry the expanded source schema.
         assert!(!source.contains(&encoded));
-        assert!(
-            source.find("JSONCOMPAT_MODEL").unwrap() < source.find("dc.install_model").unwrap()
-        );
+        assert!(source.find("JSONCOMPAT_MODEL").unwrap() < source.find("dc.bind_module").unwrap());
         assert!(!source.contains("\"anyOf\":"));
     }
 

@@ -1,0 +1,2696 @@
+{
+  "baseline_revision": "5191780af165557cf4adf0a5f20907efc2706fb2",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+  "source_sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+  "method": "Release builds; sequential measurements after builds/tests. Each variant uses its own Python runtime and matching native extension. Three fresh generation directories and five fresh-process imports per mode. Source caches removed; bytecode precompiled; warm filesystem. Strict ty and reflective-plan checks outside timing.",
+  "variants": {
+    "before": {
+      "compiler_sha256": "0d80d46a1f49ffb1c08ac78119f368648ffd283a06aa633b1ea733918e2f4b3c",
+      "native_sha256": "5323ba6645bad9cb64f59da7d7629b43a7d2751365152bb3550e98f24741aea2",
+      "cases": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/models.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/github_models"
+              ],
+              "seconds": 1.9297846659901552,
+              "exit_code": 0,
+              "max_rss_bytes": 642252800
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/models.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/repeat_models_1"
+              ],
+              "seconds": 1.5751578329945914,
+              "exit_code": 0,
+              "max_rss_bytes": 611729408
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/models.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/repeat_models_2"
+              ],
+              "seconds": 1.4355217079864815,
+              "exit_code": 0,
+              "max_rss_bytes": 641368064
+            }
+          ],
+          "generation_median_seconds": 1.5751578329945914,
+          "inventory": {
+            "files": 982,
+            "bytes": 21030811,
+            "python_files": 980,
+            "python_bytes": 20534150,
+            "largest_files": [
+              [
+                620749,
+                "models/webhook_pull_request_review_request_removed.py"
+              ],
+              [
+                617877,
+                "models/webhook_pull_request_review_requested.py"
+              ],
+              [
+                496661,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                286882,
+                "models/webhook_pull_request_review_comment_created.py"
+              ],
+              [
+                286407,
+                "models/webhook_pull_request_review_thread_resolved.py"
+              ],
+              [
+                286251,
+                "models/webhook_pull_request_review_thread_unresolved.py"
+              ],
+              [
+                274741,
+                "models/webhook_pull_request_review_dismissed.py"
+              ],
+              [
+                268681,
+                "models/webhook_pull_request_labeled.py"
+              ],
+              [
+                268027,
+                "models/webhook_pull_request_auto_merge_disabled.py"
+              ],
+              [
+                267737,
+                "models/webhook_pull_request_auto_merge_enabled.py"
+              ]
+            ],
+            "largest_python_file": [
+              620749,
+              "models/webhook_pull_request_review_request_removed.py"
+            ],
+            "p95_python_bytes": 70329,
+            "binding_groups": 4,
+            "declarations": 3133,
+            "component_modules": 973,
+            "resource_modules": 0,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 0
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.004375207994598895,
+                "load_seconds": 1.0907476670108736
+              },
+              {
+                "package_seconds": 0.0052766670123673975,
+                "load_seconds": 1.1364693749928847
+              },
+              {
+                "package_seconds": 0.004103625018615276,
+                "load_seconds": 1.034131707972847
+              },
+              {
+                "package_seconds": 0.004449458967428654,
+                "load_seconds": 1.094412416976411
+              },
+              {
+                "package_seconds": 0.004241875023581088,
+                "load_seconds": 1.0730787919601426
+              }
+            ],
+            "median_seconds": 1.0907476670108736
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0006356249796226621,
+                "load_seconds": 0.2841097920318134
+              },
+              {
+                "package_seconds": 0.0006298749940469861,
+                "load_seconds": 0.2785767909954302
+              },
+              {
+                "package_seconds": 0.0009156250162050128,
+                "load_seconds": 0.32549787499010563
+              },
+              {
+                "package_seconds": 0.0005879590171389282,
+                "load_seconds": 0.31062995799584314
+              },
+              {
+                "package_seconds": 0.0007435829611495137,
+                "load_seconds": 1.1808259580284357
+              }
+            ],
+            "median_seconds": 0.31062995799584314
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.02813400002196431,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.021626834000926465,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.03295787499519065,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.02147858397802338,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.020671833015512675,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.021626834000926465
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.022672749997582287,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.026117334025911987,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01824633398791775,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.024398542009294033,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.017465499986428767,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.022672749997582287
+          },
+          "repeated_generation_identical": true
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/issues.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/github_issues",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.9777229999890551,
+              "exit_code": 0,
+              "max_rss_bytes": 376946688
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/issues.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/repeat_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8879203330143355,
+              "exit_code": 0,
+              "max_rss_bytes": 405340160
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/issues.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/repeat_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.928437834023498,
+              "exit_code": 0,
+              "max_rss_bytes": 399900672
+            }
+          ],
+          "generation_median_seconds": 0.928437834023498,
+          "inventory": {
+            "files": 88,
+            "bytes": 2697096,
+            "python_files": 86,
+            "python_bytes": 2604790,
+            "largest_files": [
+              [
+                1637071,
+                "operations/issues.py"
+              ],
+              [
+                92306,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                82542,
+                "__init__.pyi"
+              ],
+              [
+                65972,
+                "models/timeline_issue_events.py"
+              ],
+              [
+                61101,
+                "models/__init__.pyi"
+              ],
+              [
+                51985,
+                "_exports.py"
+              ],
+              [
+                43017,
+                "models/issue_event_for_issue.py"
+              ],
+              [
+                39784,
+                "models/timeline_cross_referenced_event.py"
+              ],
+              [
+                36410,
+                "models/issue_event.py"
+              ],
+              [
+                34239,
+                "models/issue.py"
+              ]
+            ],
+            "largest_python_file": [
+              1637071,
+              "operations/issues.py"
+            ],
+            "p95_python_bytes": 43017,
+            "binding_groups": 1,
+            "declarations": 473,
+            "component_modules": 76,
+            "resource_modules": 1,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0038957500364631414,
+                "load_seconds": 0.13921629200922325
+              },
+              {
+                "package_seconds": 0.004661625018343329,
+                "load_seconds": 0.13345049996860325
+              },
+              {
+                "package_seconds": 0.0038354589487425983,
+                "load_seconds": 0.1300570000312291
+              },
+              {
+                "package_seconds": 0.004224666976369917,
+                "load_seconds": 0.12402966601075605
+              },
+              {
+                "package_seconds": 0.003941499977372587,
+                "load_seconds": 0.12523700000019744
+              }
+            ],
+            "median_seconds": 0.1300570000312291
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0007219589897431433,
+                "load_seconds": 0.04566270805662498
+              },
+              {
+                "package_seconds": 0.0005156249972060323,
+                "load_seconds": 0.04488008300540969
+              },
+              {
+                "package_seconds": 0.0007471669814549387,
+                "load_seconds": 0.04746824997710064
+              },
+              {
+                "package_seconds": 0.0005757919861935079,
+                "load_seconds": 0.051050999958533794
+              },
+              {
+                "package_seconds": 0.0005905840080231428,
+                "load_seconds": 0.05403341696364805
+              }
+            ],
+            "median_seconds": 0.04746824997710064
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.19882187497569248,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.13543108297744766,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.13495562499156222,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.133798916998785,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.13730770797701553,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.13543108297744766
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.05086791701614857,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05070558295119554,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04999404097907245,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04599629098083824,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.044387875008396804,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04999404097907245
+          },
+          "dispatch_check": {
+            "operations": 61,
+            "import_reflection_calls": 0,
+            "equivalent": true
+          },
+          "repeated_generation_identical": true
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/client.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/github_client",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.6468033749843016,
+              "exit_code": 0,
+              "max_rss_bytes": 1129168896
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/client.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/repeat_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 3.4623718329821713,
+              "exit_code": 0,
+              "max_rss_bytes": 1115144192
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/before/client.json",
+                "--output",
+                "/tmp/jsoncompat-readable/before/repeat_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 3.814976374967955,
+              "exit_code": 0,
+              "max_rss_bytes": 1117716480
+            }
+          ],
+          "generation_median_seconds": 3.4623718329821713,
+          "inventory": {
+            "files": 1030,
+            "bytes": 50625200,
+            "python_files": 1028,
+            "python_bytes": 48554765,
+            "largest_files": [
+              [
+                3294960,
+                "operations/repos.py"
+              ],
+              [
+                2534094,
+                "operations/actions.py"
+              ],
+              [
+                2070435,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                1989996,
+                "__init__.pyi"
+              ],
+              [
+                1709937,
+                "operations/orgs.py"
+              ],
+              [
+                1636248,
+                "operations/issues.py"
+              ],
+              [
+                1464014,
+                "models/__init__.pyi"
+              ],
+              [
+                1224173,
+                "_exports.py"
+              ],
+              [
+                1175095,
+                "operations/codespaces.py"
+              ],
+              [
+                838436,
+                "operations/users.py"
+              ]
+            ],
+            "largest_python_file": [
+              3294960,
+              "operations/repos.py"
+            ],
+            "p95_python_bytes": 235376,
+            "binding_groups": 1,
+            "declarations": 9124,
+            "component_modules": 974,
+            "resource_modules": 45,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.06266950001008809,
+                "load_seconds": 1.4089735409943387
+              },
+              {
+                "package_seconds": 0.06187708297511563,
+                "load_seconds": 1.420184375019744
+              },
+              {
+                "package_seconds": 0.06117333302972838,
+                "load_seconds": 1.489211333973799
+              },
+              {
+                "package_seconds": 0.061837000015657395,
+                "load_seconds": 1.4764119579922408
+              },
+              {
+                "package_seconds": 0.0731474999920465,
+                "load_seconds": 1.433474457997363
+              }
+            ],
+            "median_seconds": 1.433474457997363
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.00769100000616163,
+                "load_seconds": 0.3110151669825427
+              },
+              {
+                "package_seconds": 0.006072792049963027,
+                "load_seconds": 0.2787784170359373
+              },
+              {
+                "package_seconds": 0.006077833008021116,
+                "load_seconds": 0.2900154169765301
+              },
+              {
+                "package_seconds": 0.006526791024953127,
+                "load_seconds": 0.30469458404695615
+              },
+              {
+                "package_seconds": 0.0067483329912647605,
+                "load_seconds": 0.4139369589975104
+              }
+            ],
+            "median_seconds": 0.30469458404695615
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.20064316695788875,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.4045291669899598,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.2800570420222357,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.45565958303632215,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.3457641659770161,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.3457641659770161
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.05907983396900818,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05724820803152397,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05524691700702533,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.055622832966037095,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.054832375026308,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.055622832966037095
+          },
+          "dispatch_check": {
+            "operations": 1223,
+            "import_reflection_calls": 0,
+            "equivalent": true
+          },
+          "repeated_generation_identical": true
+        }
+      }
+    },
+    "after": {
+      "compiler_sha256": "3dbd6603f77bf976f1bdc81be958c205758399530ea032022f24f789a03aab6f",
+      "native_sha256": "4e5bf847af12c8a13594df2f32f1bc9d659c1c11d2b2446ecb6648e2240bc475",
+      "cases": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/after/models.json",
+                "--output",
+                "/tmp/jsoncompat-readable/after/github_models"
+              ],
+              "seconds": 2.34576737502357,
+              "exit_code": 0,
+              "max_rss_bytes": 614416384
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/after/models.json",
+                "--output",
+                "/tmp/jsoncompat-readable/after/repeat_models_1"
+              ],
+              "seconds": 1.5317904169787653,
+              "exit_code": 0,
+              "max_rss_bytes": 621559808
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/tmp/jsoncompat-readable/after/models.json",
+                "--output",
+                "/tmp/jsoncompat-readable/after/repeat_models_2"
+              ],
+              "seconds": 1.5322207079734653,
+              "exit_code": 0,
+              "max_rss_bytes": 643301376
+            }
+          ],
+          "generation_median_seconds": 1.5322207079734653,
+          "inventory": {
+            "files": 982,
+            "bytes": 20922145,
+            "python_files": 980,
+            "python_bytes": 20425484,
+            "largest_files": [
+              [
+                556065,
+                "models/webhook_pull_request_review_requested.py"
+              ],
+              [
+                528946,
+                "models/webhook_pull_request_review_request_removed.py"
+              ],
+              [
+                496661,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                280712,
+                "models/webhook_pull_request_review_comment_created.py"
+              ],
+              [
+                273246,
+                "models/webhook_pull_request_review_thread_resolved.py"
+              ],
+              [
+                265636,
+                "models/webhook_pull_request_review_thread_unresolved.py"
+              ],
+              [
+                262475,
+                "models/webhook_pull_request_review_dismissed.py"
+              ],
+              [
+                258338,
+                "models/webhook_pull_request_labeled.py"
+              ],
+              [
+                256302,
+                "models/webhook_pull_request_unassigned.py"
+              ],
+              [
+                255797,
+                "models/webhook_pull_request_unlabeled.py"
+              ]
+            ],
+            "largest_python_file": [
+              556065,
+              "models/webhook_pull_request_review_requested.py"
+            ],
+            "p95_python_bytes": 70236,
+            "binding_groups": 4,
+            "declarations": 3133,
+            "component_modules": 973,
+            "resource_modules": 0,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 0
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.00443241698667407,
+                "load_seconds": 1.5047034159651957
+              },
+              {
+                "package_seconds": 0.004355541022960097,
+                "load_seconds": 1.5000615409808233
+              },
+              {
+                "package_seconds": 0.004392417031340301,
+                "load_seconds": 1.6547755420324393
+              },
+              {
+                "package_seconds": 0.004624959023203701,
+                "load_seconds": 1.1626099159475416
+              },
+              {
+                "package_seconds": 0.004348166985437274,
+                "load_seconds": 1.2416165840113536
+              }
+            ],
+            "median_seconds": 1.5000615409808233
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0009258339996449649,
+                "load_seconds": 0.43297612498281524
+              },
+              {
+                "package_seconds": 0.000630917027592659,
+                "load_seconds": 0.35120254196226597
+              },
+              {
+                "package_seconds": 0.0008367910049855709,
+                "load_seconds": 0.3673668749979697
+              },
+              {
+                "package_seconds": 0.0006773750064894557,
+                "load_seconds": 0.2730670419987291
+              },
+              {
+                "package_seconds": 0.0006927089998498559,
+                "load_seconds": 0.2987729169544764
+              }
+            ],
+            "median_seconds": 0.35120254196226597
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.021404458035249263,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.021337042038794607,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.020922333002090454,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.02046995802083984,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.04139029199723154,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.021337042038794607
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.01613866596017033,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.016790500027127564,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.016272583976387978,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01648179197218269,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.017657792021054775,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.01648179197218269
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-readable/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-readable/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-readable/after/github_models",
+              "/private/tmp/jsoncompat-readable/after/models_consumer.py"
+            ],
+            "seconds": 0.44891879201168194,
+            "exit_code": 0,
+            "max_rss_bytes": 291143680
+          },
+          "repeated_generation_identical": true
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/github_issues",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8687250840011984,
+              "exit_code": 0,
+              "max_rss_bytes": 408387584
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/repeat_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8314054579823278,
+              "exit_code": 0,
+              "max_rss_bytes": 400883712
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/repeat_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8290310419979505,
+              "exit_code": 0,
+              "max_rss_bytes": 408502272
+            }
+          ],
+          "generation_median_seconds": 0.8314054579823278,
+          "inventory": {
+            "files": 88,
+            "bytes": 2405039,
+            "python_files": 86,
+            "python_bytes": 2312733,
+            "largest_files": [
+              [
+                1298164,
+                "operations/issues.py"
+              ],
+              [
+                92306,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                82542,
+                "__init__.pyi"
+              ],
+              [
+                65992,
+                "models/timeline_issue_events.py"
+              ],
+              [
+                61101,
+                "models/__init__.pyi"
+              ],
+              [
+                51985,
+                "_exports.py"
+              ],
+              [
+                44237,
+                "models/issue_event_for_issue.py"
+              ],
+              [
+                39790,
+                "models/timeline_cross_referenced_event.py"
+              ],
+              [
+                37609,
+                "models/issue_event.py"
+              ],
+              [
+                36189,
+                "models/issue.py"
+              ]
+            ],
+            "largest_python_file": [
+              1298164,
+              "operations/issues.py"
+            ],
+            "p95_python_bytes": 44237,
+            "binding_groups": 1,
+            "declarations": 473,
+            "component_modules": 76,
+            "resource_modules": 1,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0036638330202549696,
+                "load_seconds": 0.1170519589795731
+              },
+              {
+                "package_seconds": 0.003817250020802021,
+                "load_seconds": 0.11576508299913257
+              },
+              {
+                "package_seconds": 0.0038310830132104456,
+                "load_seconds": 0.2360186250298284
+              },
+              {
+                "package_seconds": 0.0077712080092169344,
+                "load_seconds": 0.18361854198155925
+              },
+              {
+                "package_seconds": 0.005618792027235031,
+                "load_seconds": 0.19772904098499566
+              }
+            ],
+            "median_seconds": 0.18361854198155925
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0005175420083105564,
+                "load_seconds": 0.044650582945905626
+              },
+              {
+                "package_seconds": 0.000511125021148473,
+                "load_seconds": 0.04238508397247642
+              },
+              {
+                "package_seconds": 0.0004884999943897128,
+                "load_seconds": 0.043915375019423664
+              },
+              {
+                "package_seconds": 0.0004912500153295696,
+                "load_seconds": 0.04303287499351427
+              },
+              {
+                "package_seconds": 0.0005043749697506428,
+                "load_seconds": 0.043271917034871876
+              }
+            ],
+            "median_seconds": 0.043271917034871876
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.19731520797358826,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17507208295864984,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.1340674590319395,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.12154900003224611,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.14898649998940527,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.14898649998940527
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04115358303533867,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04122025001561269,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04098941700067371,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04517937498167157,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04295545897912234,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04122025001561269
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-readable/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-readable/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-readable/after/github_issues",
+              "/private/tmp/jsoncompat-readable/after/issues_consumer.py"
+            ],
+            "seconds": 0.18883108301088214,
+            "exit_code": 0,
+            "max_rss_bytes": 82149376
+          },
+          "dispatch_check": {
+            "operations": 61,
+            "import_reflection_calls": 0,
+            "equivalent": true
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "issues-ty-negative.stderr"
+          },
+          "repeated_generation_identical": true
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/github_client",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.799209457996767,
+              "exit_code": 0,
+              "max_rss_bytes": 1138425856
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/repeat_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.603540750045795,
+              "exit_code": 0,
+              "max_rss_bytes": 1145929728
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/repeat_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.7136089999694377,
+              "exit_code": 0,
+              "max_rss_bytes": 1148452864
+            }
+          ],
+          "generation_median_seconds": 2.7136089999694377,
+          "inventory": {
+            "files": 1030,
+            "bytes": 46036765,
+            "python_files": 1028,
+            "python_bytes": 43966330,
+            "largest_files": [
+              [
+                2647378,
+                "operations/repos.py"
+              ],
+              [
+                2070435,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                1989996,
+                "__init__.pyi"
+              ],
+              [
+                1983139,
+                "operations/actions.py"
+              ],
+              [
+                1464014,
+                "models/__init__.pyi"
+              ],
+              [
+                1397515,
+                "operations/orgs.py"
+              ],
+              [
+                1297341,
+                "operations/issues.py"
+              ],
+              [
+                1224173,
+                "_exports.py"
+              ],
+              [
+                783690,
+                "__init__.py"
+              ],
+              [
+                771183,
+                "operations/codespaces.py"
+              ]
+            ],
+            "largest_python_file": [
+              2647378,
+              "operations/repos.py"
+            ],
+            "p95_python_bytes": 223730,
+            "binding_groups": 1,
+            "declarations": 9124,
+            "component_modules": 974,
+            "resource_modules": 45,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.06484470795840025,
+                "load_seconds": 1.3657256670412607
+              },
+              {
+                "package_seconds": 0.06105612497776747,
+                "load_seconds": 1.3779562920099124
+              },
+              {
+                "package_seconds": 0.06282720802119002,
+                "load_seconds": 1.30388108297484
+              },
+              {
+                "package_seconds": 0.06135183299193159,
+                "load_seconds": 1.3472998330253176
+              },
+              {
+                "package_seconds": 0.06034295802237466,
+                "load_seconds": 1.329612499976065
+              }
+            ],
+            "median_seconds": 1.3472998330253176
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.005969625024590641,
+                "load_seconds": 0.25776533398311585
+              },
+              {
+                "package_seconds": 0.006235750042833388,
+                "load_seconds": 0.25366695801494643
+              },
+              {
+                "package_seconds": 0.006097625009715557,
+                "load_seconds": 0.25046779098920524
+              },
+              {
+                "package_seconds": 0.007210000010672957,
+                "load_seconds": 0.27517845801776275
+              },
+              {
+                "package_seconds": 0.006018416024744511,
+                "load_seconds": 0.27516908303368837
+              }
+            ],
+            "median_seconds": 0.25776533398311585
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.19510570797137916,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.19776216702302918,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.19566495902836323,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.21186116698663682,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.19017737498506904,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.19566495902836323
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.053137874987442046,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.0699499580077827,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05456433299696073,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05423304095165804,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05377195798791945,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.05423304095165804
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-readable/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-readable/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-readable/after/github_client",
+              "/private/tmp/jsoncompat-readable/after/client_consumer.py"
+            ],
+            "seconds": 0.7746276250109076,
+            "exit_code": 0,
+            "max_rss_bytes": 636616704
+          },
+          "dispatch_check": {
+            "operations": 1223,
+            "import_reflection_calls": 0,
+            "equivalent": true
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "client-ty-negative.stderr"
+          },
+          "repeated_generation_identical": true
+        }
+      }
+    }
+  },
+  "interleaved_confirmation": {
+    "method": "Interleave baseline and candidate per sample, reverse their order on alternate samples; three fresh generations and five fresh-process imports per mode. Run after all builds and tests; warm filesystem. Original sequential samples retained separately.",
+    "variants": {
+      "before": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_models_0"
+              ],
+              "seconds": 1.3733662919839844,
+              "exit_code": 0,
+              "max_rss_bytes": 648527872
+            },
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_models_1"
+              ],
+              "seconds": 1.3157467090059072,
+              "exit_code": 0,
+              "max_rss_bytes": 613335040
+            },
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_models_2"
+              ],
+              "seconds": 1.2946520000114106,
+              "exit_code": 0,
+              "max_rss_bytes": 613269504
+            }
+          ],
+          "generation_median_seconds": 1.3157467090059072,
+          "import_source": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.1806600419804454,
+                  "exit_code": 0,
+                  "max_rss_bytes": 174866432
+                },
+                "package_seconds": 0.004803333024028689,
+                "load_seconds": 1.0825065419776365
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.092270750028547,
+                  "exit_code": 0,
+                  "max_rss_bytes": 173899776
+                },
+                "package_seconds": 0.003817250020802021,
+                "load_seconds": 0.9695854159654118
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.0706440000212751,
+                  "exit_code": 0,
+                  "max_rss_bytes": 175112192
+                },
+                "package_seconds": 0.0038762090262025595,
+                "load_seconds": 0.9764458329882473
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.1026745419949293,
+                  "exit_code": 0,
+                  "max_rss_bytes": 174440448
+                },
+                "package_seconds": 0.0037227089633233845,
+                "load_seconds": 0.9828136250143871
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.060423124989029,
+                  "exit_code": 0,
+                  "max_rss_bytes": 173850624
+                },
+                "package_seconds": 0.004053500015288591,
+                "load_seconds": 0.969486957998015
+              }
+            ],
+            "median_seconds": 0.9764458329882473
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.30914320796728134,
+                  "exit_code": 0,
+                  "max_rss_bytes": 149766144
+                },
+                "package_seconds": 0.0005627920036204159,
+                "load_seconds": 0.2434408330009319
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3166565840365365,
+                  "exit_code": 0,
+                  "max_rss_bytes": 149471232
+                },
+                "package_seconds": 0.0005623340257443488,
+                "load_seconds": 0.23597024998161942
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3118844999698922,
+                  "exit_code": 0,
+                  "max_rss_bytes": 149831680
+                },
+                "package_seconds": 0.0005903749843128026,
+                "load_seconds": 0.23886216600658372
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.32038200000533834,
+                  "exit_code": 0,
+                  "max_rss_bytes": 149848064
+                },
+                "package_seconds": 0.0005575420218519866,
+                "load_seconds": 0.2355507499887608
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.31936412502545863,
+                  "exit_code": 0,
+                  "max_rss_bytes": 149716992
+                },
+                "package_seconds": 0.0005242089973762631,
+                "load_seconds": 0.23576754098758101
+              }
+            ],
+            "median_seconds": 0.23597024998161942
+          }
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_issues_0",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8032965419697575,
+              "exit_code": 0,
+              "max_rss_bytes": 402259968
+            },
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7885095830424689,
+              "exit_code": 0,
+              "max_rss_bytes": 411877376
+            },
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7965012079803273,
+              "exit_code": 0,
+              "max_rss_bytes": 403963904
+            }
+          ],
+          "generation_median_seconds": 0.7965012079803273,
+          "import_source": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.19663366599706933,
+                  "exit_code": 0,
+                  "max_rss_bytes": 92291072
+                },
+                "package_seconds": 0.004064833978191018,
+                "load_seconds": 0.12329345801845193
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.14995912497397512,
+                  "exit_code": 0,
+                  "max_rss_bytes": 90816512
+                },
+                "package_seconds": 0.003547583008185029,
+                "load_seconds": 0.11202804197091609
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.1986518750200048,
+                  "exit_code": 0,
+                  "max_rss_bytes": 90587136
+                },
+                "package_seconds": 0.0035379999899305403,
+                "load_seconds": 0.11259604198858142
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.14315570902545005,
+                  "exit_code": 0,
+                  "max_rss_bytes": 90341376
+                },
+                "package_seconds": 0.0035561659606173635,
+                "load_seconds": 0.11228895903332159
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.14685266703600064,
+                  "exit_code": 0,
+                  "max_rss_bytes": 89964544
+                },
+                "package_seconds": 0.0035056250053457916,
+                "load_seconds": 0.11176487500779331
+              }
+            ],
+            "median_seconds": 0.11228895903332159
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.07465066702570766,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34439168
+                },
+                "package_seconds": 0.0005059170071035624,
+                "load_seconds": 0.03989945800276473
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.08749741700012237,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34570240
+                },
+                "package_seconds": 0.0004970419686287642,
+                "load_seconds": 0.03988170897355303
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.09026554197771475,
+                  "exit_code": 0,
+                  "max_rss_bytes": 35766272
+                },
+                "package_seconds": 0.00048649997916072607,
+                "load_seconds": 0.043695166998077184
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.08321579202311113,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34881536
+                },
+                "package_seconds": 0.0004983749822713435,
+                "load_seconds": 0.04062258295016363
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.07444212498376146,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34488320
+                },
+                "package_seconds": 0.0004939170321449637,
+                "load_seconds": 0.03998375002993271
+              }
+            ],
+            "median_seconds": 0.03998375002993271
+          }
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_client_0",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.5704520830186084,
+              "exit_code": 0,
+              "max_rss_bytes": 1143209984
+            },
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.3774247500114143,
+              "exit_code": 0,
+              "max_rss_bytes": 1096859648
+            },
+            {
+              "command": [
+                "/private/tmp/jsoncompat-readable/before/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/before/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/before/paired_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.3892307500354946,
+              "exit_code": 0,
+              "max_rss_bytes": 1140391936
+            }
+          ],
+          "generation_median_seconds": 2.3892307500354946,
+          "import_source": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.5371095000300556,
+                  "exit_code": 0,
+                  "max_rss_bytes": 271712256
+                },
+                "package_seconds": 0.058252291986718774,
+                "load_seconds": 1.3252086249995045
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.464016833982896,
+                  "exit_code": 0,
+                  "max_rss_bytes": 275021824
+                },
+                "package_seconds": 0.05626954202307388,
+                "load_seconds": 1.2627202500007115
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.477263375010807,
+                  "exit_code": 0,
+                  "max_rss_bytes": 271056896
+                },
+                "package_seconds": 0.056772249983623624,
+                "load_seconds": 1.257941165997181
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.4991320410044864,
+                  "exit_code": 0,
+                  "max_rss_bytes": 270761984
+                },
+                "package_seconds": 0.05685408302815631,
+                "load_seconds": 1.2701387910055928
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.4262622919632122,
+                  "exit_code": 0,
+                  "max_rss_bytes": 273580032
+                },
+                "package_seconds": 0.056814290990587324,
+                "load_seconds": 1.2550757080316544
+              }
+            ],
+            "median_seconds": 1.2627202500007115
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3884164580376819,
+                  "exit_code": 0,
+                  "max_rss_bytes": 133382144
+                },
+                "package_seconds": 0.00590912502957508,
+                "load_seconds": 0.252733499975875
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3770791250281036,
+                  "exit_code": 0,
+                  "max_rss_bytes": 134414336
+                },
+                "package_seconds": 0.00586666603339836,
+                "load_seconds": 0.25196124997455627
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3704015000257641,
+                  "exit_code": 0,
+                  "max_rss_bytes": 134250496
+                },
+                "package_seconds": 0.005824041028972715,
+                "load_seconds": 0.25109120801789686
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3804265839862637,
+                  "exit_code": 0,
+                  "max_rss_bytes": 132792320
+                },
+                "package_seconds": 0.005866167019121349,
+                "load_seconds": 0.2493843330303207
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3826087500201538,
+                  "exit_code": 0,
+                  "max_rss_bytes": 134348800
+                },
+                "package_seconds": 0.005895457987207919,
+                "load_seconds": 0.25196833396330476
+              }
+            ],
+            "median_seconds": 0.25196124997455627
+          }
+        }
+      },
+      "after": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_models_0"
+              ],
+              "seconds": 1.4083414579508826,
+              "exit_code": 0,
+              "max_rss_bytes": 625852416
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_models_1"
+              ],
+              "seconds": 1.359498290985357,
+              "exit_code": 0,
+              "max_rss_bytes": 649838592
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_models_2"
+              ],
+              "seconds": 1.3556077500106767,
+              "exit_code": 0,
+              "max_rss_bytes": 646692864
+            }
+          ],
+          "generation_median_seconds": 1.359498290985357,
+          "import_source": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.0796857920358889,
+                  "exit_code": 0,
+                  "max_rss_bytes": 173654016
+                },
+                "package_seconds": 0.004203625023365021,
+                "load_seconds": 0.9981895000091754
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.0676520409760997,
+                  "exit_code": 0,
+                  "max_rss_bytes": 173473792
+                },
+                "package_seconds": 0.004094709001947194,
+                "load_seconds": 0.9922611669753678
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.0889834580011666,
+                  "exit_code": 0,
+                  "max_rss_bytes": 171573248
+                },
+                "package_seconds": 0.003989291959442198,
+                "load_seconds": 0.9831349169835448
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.069015707995277,
+                  "exit_code": 0,
+                  "max_rss_bytes": 173506560
+                },
+                "package_seconds": 0.0039457500097341835,
+                "load_seconds": 0.9955659589613788
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.0959172080038115,
+                  "exit_code": 0,
+                  "max_rss_bytes": 174440448
+                },
+                "package_seconds": 0.003961291979067028,
+                "load_seconds": 0.9956645419588313
+              }
+            ],
+            "median_seconds": 0.9955659589613788
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.31284358398988843,
+                  "exit_code": 0,
+                  "max_rss_bytes": 148635648
+                },
+                "package_seconds": 0.0005924169672653079,
+                "load_seconds": 0.23339512501843274
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3237493339693174,
+                  "exit_code": 0,
+                  "max_rss_bytes": 148668416
+                },
+                "package_seconds": 0.0006069160299375653,
+                "load_seconds": 0.2342161670094356
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.326430041983258,
+                  "exit_code": 0,
+                  "max_rss_bytes": 148619264
+                },
+                "package_seconds": 0.0005287500098347664,
+                "load_seconds": 0.23099945799913257
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3287063750321977,
+                  "exit_code": 0,
+                  "max_rss_bytes": 148979712
+                },
+                "package_seconds": 0.0005439170054160058,
+                "load_seconds": 0.2326497919857502
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_models'); root=time.perf_counter()-t; t=time.perf_counter(); [getattr(module, n) for n in module.__all__]; print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.318919416051358,
+                  "exit_code": 0,
+                  "max_rss_bytes": 148733952
+                },
+                "package_seconds": 0.0005449170130304992,
+                "load_seconds": 0.2323153750039637
+              }
+            ],
+            "median_seconds": 0.2326497919857502
+          }
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_issues_0",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7864308329881169,
+              "exit_code": 0,
+              "max_rss_bytes": 409911296
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7828057090518996,
+              "exit_code": 0,
+              "max_rss_bytes": 405438464
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7859283750294708,
+              "exit_code": 0,
+              "max_rss_bytes": 406552576
+            }
+          ],
+          "generation_median_seconds": 0.7859283750294708,
+          "import_source": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.14067079196684062,
+                  "exit_code": 0,
+                  "max_rss_bytes": 82034688
+                },
+                "package_seconds": 0.0036156249698251486,
+                "load_seconds": 0.10966179199749604
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.1491517910035327,
+                  "exit_code": 0,
+                  "max_rss_bytes": 82018304
+                },
+                "package_seconds": 0.0035844160011038184,
+                "load_seconds": 0.11035745800472796
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.14804433297831565,
+                  "exit_code": 0,
+                  "max_rss_bytes": 81477632
+                },
+                "package_seconds": 0.0038468330167233944,
+                "load_seconds": 0.11203508399194106
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.2003665830125101,
+                  "exit_code": 0,
+                  "max_rss_bytes": 84852736
+                },
+                "package_seconds": 0.0036845419672317803,
+                "load_seconds": 0.11088912497507408
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.14556475001154467,
+                  "exit_code": 0,
+                  "max_rss_bytes": 84574208
+                },
+                "package_seconds": 0.0035935419728048146,
+                "load_seconds": 0.11020037502748892
+              }
+            ],
+            "median_seconds": 0.11035745800472796
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.08043541701044887,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34193408
+                },
+                "package_seconds": 0.0005004169652238488,
+                "load_seconds": 0.03963570803171024
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.0901294169598259,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34471936
+                },
+                "package_seconds": 0.00044999999227002263,
+                "load_seconds": 0.038782458985224366
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.08556291600689292,
+                  "exit_code": 0,
+                  "max_rss_bytes": 35160064
+                },
+                "package_seconds": 0.0004636659868992865,
+                "load_seconds": 0.04101724998326972
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.08096441702218726,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34537472
+                },
+                "package_seconds": 0.0004961669910699129,
+                "load_seconds": 0.039868999971076846
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_issues'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.08057708299020305,
+                  "exit_code": 0,
+                  "max_rss_bytes": 34177024
+                },
+                "package_seconds": 0.00048579199938103557,
+                "load_seconds": 0.039175583980977535
+              }
+            ],
+            "median_seconds": 0.03963570803171024
+          }
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_client_0",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.457708082976751,
+              "exit_code": 0,
+              "max_rss_bytes": 1104609280
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.4824299999745563,
+              "exit_code": 0,
+              "max_rss_bytes": 1105641472
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-readable/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-readable/after/paired_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.5847110000322573,
+              "exit_code": 0,
+              "max_rss_bytes": 1106051072
+            }
+          ],
+          "generation_median_seconds": 2.4824299999745563,
+          "import_source": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.427837333001662,
+                  "exit_code": 0,
+                  "max_rss_bytes": 255459328
+                },
+                "package_seconds": 0.058601750002708286,
+                "load_seconds": 1.2087420420139097
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.4270101669826545,
+                  "exit_code": 0,
+                  "max_rss_bytes": 251215872
+                },
+                "package_seconds": 0.05711029202211648,
+                "load_seconds": 1.2140551249613054
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.3858814170234837,
+                  "exit_code": 0,
+                  "max_rss_bytes": 256114688
+                },
+                "package_seconds": 0.05721050000283867,
+                "load_seconds": 1.199269375007134
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.3881157499854453,
+                  "exit_code": 0,
+                  "max_rss_bytes": 250527744
+                },
+                "package_seconds": 0.05723833304364234,
+                "load_seconds": 1.2024994170060381
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 1.4197639159974642,
+                  "exit_code": 0,
+                  "max_rss_bytes": 252116992
+                },
+                "package_seconds": 0.05657212500227615,
+                "load_seconds": 1.208038958022371
+              }
+            ],
+            "median_seconds": 1.208038958022371
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.38293012499343604,
+                  "exit_code": 0,
+                  "max_rss_bytes": 132972544
+                },
+                "package_seconds": 0.006101417005993426,
+                "load_seconds": 0.24709945899667218
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3822884580004029,
+                  "exit_code": 0,
+                  "max_rss_bytes": 132317184
+                },
+                "package_seconds": 0.005967125005554408,
+                "load_seconds": 0.24536812503356487
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3736305829952471,
+                  "exit_code": 0,
+                  "max_rss_bytes": 130940928
+                },
+                "package_seconds": 0.005855708033777773,
+                "load_seconds": 0.23829299997305498
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.38224808394443244,
+                  "exit_code": 0,
+                  "max_rss_bytes": 132743168
+                },
+                "package_seconds": 0.005993541970383376,
+                "load_seconds": 0.24615387502126396
+              },
+              {
+                "process": {
+                  "command": [
+                    "/Users/robbie/developer/jsoncompat/pybindings/.venv/bin/python",
+                    "-c",
+                    "import importlib,json,time; t=time.perf_counter(); module=importlib.import_module('github_client'); root=time.perf_counter()-t; t=time.perf_counter(); getattr(module, 'GitHubAPI'); print(json.dumps(dict(package_seconds=root,load_seconds=time.perf_counter()-t)))"
+                  ],
+                  "seconds": 0.3795353749883361,
+                  "exit_code": 0,
+                  "max_rss_bytes": 132349952
+                },
+                "package_seconds": 0.005786124966107309,
+                "load_seconds": 0.24300324998330325
+              }
+            ],
+            "median_seconds": 0.24536812503356487
+          }
+        }
+      }
+    }
+  },
+  "program_comparison": {
+    "models": {
+      "model_programs": 3133,
+      "identical": true
+    },
+    "issues": {
+      "model_programs": 473,
+      "identical": true
+    },
+    "client": {
+      "model_programs": 9124,
+      "identical": true
+    }
+  }
+}

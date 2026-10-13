@@ -273,6 +273,140 @@ fn generated_api_prepares_on_import_without_a_transport() {
 }
 
 #[test]
+fn generated_source_keeps_operation_contracts_before_private_programs() {
+    let work = Work::new();
+    let mut spec = example();
+    let description = "Look up a pet.\n\nPreserve \"quotes\", \\\u{006e}, and \"\"\" safely.\n# --- Private generated implementation ---\n# --- Prepared HTTP dispatch ---";
+    spec["paths"]["/pets/{petId}"]["get"]["summary"] = json!("Fetch one pet");
+    spec["paths"]["/pets/{petId}"]["get"]["description"] = json!(description);
+    success(work.generate(&spec, &[]));
+    let package = work.0.join("petstore");
+    let sources = package_sources(&package);
+    let pets = String::from_utf8(sources["operations/pets.py"].clone()).unwrap();
+    let registry = String::from_utf8(sources["api.py"].clone()).unwrap();
+    assert!(
+        registry.rfind("from .operations.").unwrap()
+            < registry.find("_TransportOptions =").unwrap()
+    );
+    assert!(registry.contains("OPERATIONS as _operations_pets,"));
+    assert!(registry.contains("_JSONCOMPAT_OPERATIONS as _plans_pets,"));
+    assert!(!registry.contains("_operations_operations_"));
+    assert!(!registry.contains("_plans_operations_"));
+    assert!(registry.contains(" = tuple(\n    _operation\n"));
+    assert!(registry.contains("_http_codegen.install_api(\n    PetstoreAPI,\n"));
+    let response = pets.find("class GetPet404(").unwrap();
+    let aliases = pets.find("type GetPetResponse =").unwrap();
+    let request = pets.find("class GetPetRequest(").unwrap();
+    let metadata = pets.find("\n# --- Public operation metadata ---").unwrap();
+    let private = pets
+        .find("\n# --- Private generated implementation ---")
+        .unwrap();
+    let dispatch = pets.find("\n# --- Prepared HTTP dispatch ---").unwrap();
+    assert!(response < aliases && aliases < request && request < metadata);
+    assert!(metadata < private && private < dispatch);
+    let stdlib = pets.find("import collections.abc").unwrap();
+    let third_party = pets.find("from jsoncompat import http").unwrap();
+    let local = pets
+        .find("from ..models._empty_headers import (\n")
+        .unwrap();
+    assert!(stdlib < third_party && third_party < local && local < response);
+    assert_eq!(
+        pets.matches("from ..models._empty_headers import ").count(),
+        1
+    );
+    assert!(!pets.ends_with("\n\n"));
+    assert!(pets.lines().all(|line| !line.ends_with(' ')));
+    assert!(pets.contains("_http.Path(\"petId\")"));
+    assert!(pets.contains("_http.Header(\"etag\")"));
+    assert!(pets.contains("_http.Body()"));
+    for source in sources.values() {
+        let source = String::from_utf8_lossy(source);
+        assert!(!source.contains("import *"));
+        assert!(!source.contains("jsoncompat.http._binding"));
+        assert!(!source.contains("MISSING ="));
+    }
+    success(python_env::python_command().current_dir(&work.0).arg("-c").arg(format!(r#"
+import inspect
+from petstore import PetstoreAPI, GetPetRequest
+from jsoncompat.http._binding import _prepare
+assert inspect.getdoc(GetPetRequest) == {expected}
+for operation in PetstoreAPI.operations():
+    assert PetstoreAPI.__jsoncompat_http_plans__[operation.request] == _prepare(operation, PetstoreAPI)
+"#, expected = json!(format!("GET /pets/{{petId}}\n\nFetch one pet\n\n{description}")))).output().unwrap());
+    success(work.generate(&spec, &[]));
+    assert_eq!(sources, package_sources(&package));
+}
+
+#[test]
+fn explicit_model_renames_cannot_shadow_generated_http_imports() {
+    let work = Work::new();
+    let mut paths = serde_json::Map::new();
+    let mut schemas = serde_json::Map::new();
+    let text = "Keep _http.Body(), _api.PetstoreAPI, _http_codegen.Field, and _TypeForm unchanged.";
+    for name in ["Http", "Api", "Codegen", "Form"] {
+        schemas.insert(name.into(), json!({"type":"object", "properties":{"value":{"type":"string"}}, "required":["value"], "additionalProperties":false, "description":text}));
+        paths.insert(format!("/aliases/{}", name.to_lowercase()), json!({"post": {
+            "operationId": format!("use{name}"), "description": text,
+            "parameters": [{"in":"query", "name":"_http.name", "schema":{"type":"string"}}],
+            "requestBody": {"required":true, "content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}},
+            "responses": {"200":{"description":text,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}}}
+        }}));
+    }
+    let spec = json!({"openapi":"3.1.0", "info":{"title":"Aliases", "version":"1"},
+        "paths": paths, "components":{"schemas":schemas}});
+    let renames = [
+        "--rename",
+        "Http=_http",
+        "--rename",
+        "Api=_api",
+        "--rename",
+        "Codegen=_http_codegen",
+        "--rename",
+        "Form=_TypeForm",
+    ];
+    success(work.generate(&spec, &renames));
+    let source = fs::read_to_string(work.0.join("petstore/operations/aliases.py")).unwrap();
+    assert!(source.contains("http as _jsoncompat_http"));
+    assert!(source.contains("from .._api import PetstoreAPI"));
+    assert!(source.contains("http as _jsoncompat_http_codegen"));
+    assert!(source.contains("TypeForm as _jsoncompat_TypeForm"));
+    success(python_env::python_command().current_dir(&work.0).arg("-c").arg(r#"
+import inspect
+import typing
+import petstore
+import petstore.models as models
+from jsoncompat import deserialize_json_value
+from jsoncompat.http import RawResponse, bind, prepare
+
+text = 'Keep _http.Body(), _api.PetstoreAPI, _http_codegen.Field, and _TypeForm unchanged.'
+for name, model_name in [('Http', '_http'), ('Api', '_api'), ('Codegen', '_http_codegen'), ('Form', '_TypeForm')]:
+    model = getattr(models, model_name)
+    request_type = getattr(petstore, f'Use{name}Request')
+    assert inspect.getdoc(model) == text
+    assert inspect.getdoc(request_type) == f'POST /aliases/{name.lower()}\n\n{text}'
+    assert typing.get_args(typing.get_type_hints(request_type, include_extras=True)['body'])[0] is model
+    request = request_type.from_value({'body': {'value': text}, 'http_name': 'query'})
+    wire = prepare(petstore.PetstoreAPI, request).request
+    assert deserialize_json_value(wire.body) == {'value': text}
+    assert wire.target == f'/aliases/{name.lower()}?_http.name=query'
+    client = bind(petstore.PetstoreAPI, fetch=lambda request, transport=None: RawResponse(200, (('Content-Type', 'application/json'),), request.body))
+    response = client.request(request).unwrap()
+    assert type(response.body) is model
+    assert response.body.value == text
+"#).output().unwrap());
+    let before = package_sources(&work.0.join("petstore"));
+    success(work.generate(&spec, &renames));
+    assert_eq!(before, package_sources(&work.0.join("petstore")));
+    write_ty_config(&work.0, &["petstore"]);
+    success(
+        python_env::ty_command()
+            .current_dir(&work.0)
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
 fn all_example_transports_work_against_the_local_server() {
     let work = Work::new();
     success(work.generate(&example(), &[]));
