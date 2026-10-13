@@ -115,7 +115,10 @@ validation programs and regexes, and computes conversion optimizations. Import
 creates classes and binds them to those prebuilt programs; first use performs
 no model compilation. Generated files contain prepared programs, not a copy of
 the source schema JSON. Validation and error reporting use those programs; keep
-the input schema separately if you need to inspect it.
+the input schema separately if you need to inspect it. Generated packages store
+each compiled regex once in a private module and share its native automata across
+models. Importing a resource loads only the patterns its models use; validation
+never compiles or reloads a regex.
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json > models.py

@@ -2365,6 +2365,31 @@ fn load_branch_schema(
     prepared: &Bound<'_, PyAny>,
     schemas: &mut HashMap<Vec<u8>, Arc<PreparedSchema>>,
 ) -> PyResult<BranchSchema> {
+    // Shared programs include content identities. Always check the supplied
+    // handles so swapped/corrupt generated files fail
+    // during import instead of silently validating against another pattern.
+    if let Ok(pair) = prepared.cast::<PyTuple>() {
+        require_arity(pair, 2, "shared prepared schema")?;
+        let bytes = pair.get_item(0)?.cast_into::<PyBytes>()?;
+        let handles = pair.get_item(1)?.cast_into::<PyTuple>()?;
+        let patterns = handles
+            .iter()
+            .map(|handle| {
+                handle
+                    .extract::<PyRef<'_, super::prepared_schema::PreparedPatternPy>>()
+                    .map_err(Into::into)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let references = patterns
+            .iter()
+            .map(|pattern| &pattern.0)
+            .collect::<Vec<_>>();
+        let program = Arc::new(
+            PreparedSchema::load_shared(bytes.as_bytes(), &references)
+                .map_err(PyValueError::new_err)?,
+        );
+        return Ok(BranchSchema { program });
+    }
     let bytes = prepared.cast::<PyBytes>()?;
     if let Some(program) = schemas.get(bytes.as_bytes()) {
         return Ok(BranchSchema {

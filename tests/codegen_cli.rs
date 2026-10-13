@@ -20,7 +20,7 @@ fn split_codegen_uses_stable_names_and_imports_before_models() {
         json!({
             "title":"Node", "type":"object", "properties": {
                 "value":{"type":"integer","minimum":0},
-                "label":{"type":"string"},
+                "label":{"type":"string","pattern":"^ok"},
                 "children":{"type":"array","items":{"$ref":"#"}}
             }, "required":["value","children"], "additionalProperties": false
         })
@@ -49,6 +49,14 @@ fn split_codegen_uses_stable_names_and_imports_before_models() {
     assert!(source.contains("from ._models_generated import bind_models"));
     let companion = package.join("_models_generated.py");
     let implementation = fs::read_to_string(&companion).unwrap();
+    assert_eq!(implementation.matches("dc.load_pattern(").count(), 1);
+    let standalone = Command::new(env!("CARGO_BIN_EXE_jsoncompat"))
+        .args(["codegen", "--target", "dataclasses"])
+        .arg(&schema)
+        .output()
+        .unwrap();
+    assert!(standalone.status.success());
+    fs::write(directory.join("standalone.py"), &standalone.stdout).unwrap();
     assert!(!source.contains("dc.install_model"));
     assert!(!source.contains("def _jsoncompat_init"));
     assert!(source.len() < 2000);
@@ -65,9 +73,10 @@ fn split_codegen_uses_stable_names_and_imports_before_models() {
 import dataclasses, inspect, json, pickle, sys, typing
 sys.path.insert(0, sys.argv[1])
 from models_package import models
+import standalone
 sys.path.insert(0, sys.argv[1] + '/models_package')
 import models as other
-for module in (models, other):
+for module in (models, other, standalone):
     Node = module.Node
     instance = Node(value=1, children=[Node(value=2, children=[])])
     assert dataclasses.is_dataclass(instance)
@@ -76,6 +85,10 @@ for module in (models, other):
     assert typing.get_args(typing.get_type_hints(Node.__init__)['children']) == (Node,)
     assert inspect.signature(Node).parameters['label'].default is module.dc.MISSING
     assert dataclasses.replace(instance, value=3).value == 3
+    assert Node(value=1, label='okay', children=[]).label == 'okay'
+    try: Node(value=1, label='bad', children=[])
+    except ValueError: pass
+    else: raise AssertionError('shared pattern constraint was lost')
 assert models.Node.__init__ is not other.Node.__init__
 "#,
         )

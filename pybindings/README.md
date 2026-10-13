@@ -187,7 +187,14 @@ guard. Embedded resource identifiers, anchors, and `$dynamicRef` scopes resolve
 to local graph references during generation. Unavailable resources, the legacy
 `$recursiveRef` keyword, asserted formats/custom vocabularies, and regex
 backreferences/atomic groups/subroutine calls fail during generation. Unicode word boundaries
-and lookarounds use prebuilt operations. Complex regex compositions have an
+and lookarounds use prebuilt operations. Generated packages place each distinct
+compiled regex in a private `_patterns/p_<content-hash>.py` module. Models import
+only the patterns they need and share the same native automata. Loading validates
+the portable tables and their content identifiers at import; first validation
+performs no compilation or additional loading. These tables contain executable
+validation data and the regex text needed for diagnostics, not source schema JSON.
+See the [Prefect and GitHub measurements](benchmarks/shared-prepared-patterns.md).
+Complex regex compositions have an
 execution budget; exhausting it rejects validation, including inside negation,
 conditionals, or property patterns. Unsupported features fail explicitly;
 constraints are never silently dropped or compiled later. Exact decimal bounds

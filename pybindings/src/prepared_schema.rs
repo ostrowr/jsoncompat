@@ -18,6 +18,12 @@ impl PreparedSchema {
     pub(crate) fn load(bytes: &[u8]) -> Result<Self, String> {
         portable::PreparedSchema::load(bytes).map(Self)
     }
+    pub(crate) fn load_shared(
+        bytes: &[u8],
+        patterns: &[&portable::SharedPattern],
+    ) -> Result<Self, String> {
+        portable::PreparedSchema::load_shared(bytes, patterns).map(Self)
+    }
     pub(crate) fn explain_instance(
         &self,
         value: jsonschema::InstanceRef<'_>,
@@ -216,4 +222,23 @@ impl<'a> ObjectView<'a> for ObjectAdapter<'a> {
     fn iter(self) -> impl Iterator<Item = (&'a str, Self::Item)> {
         self.0.iter().map(|(key, value)| (key, View(value)))
     }
+}
+
+/// An immutable package-owned handle, shared across independently bound modules.
+#[pyo3::pyclass(frozen, module = "jsoncompat._native", name = "PreparedPattern")]
+pub(crate) struct PreparedPatternPy(pub(crate) portable::SharedPattern);
+
+#[pyo3::pymethods]
+impl PreparedPatternPy {
+    #[getter]
+    fn identifier(&self) -> &str {
+        self.0.identifier()
+    }
+}
+
+#[pyo3::pyfunction(name = "load_prepared_pattern")]
+pub(crate) fn load_prepared_pattern_py(bytes: &[u8]) -> pyo3::PyResult<PreparedPatternPy> {
+    portable::SharedPattern::load(bytes)
+        .map(PreparedPatternPy)
+        .map_err(pyo3::exceptions::PyValueError::new_err)
 }

@@ -1206,6 +1206,11 @@ fn is_valid_py(schema_json: &str, instance_json: &str) -> PyResult<bool> {
 #[pymodule]
 #[pyo3(name = "_native")]
 fn jsoncompat_native(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<prepared_schema::PreparedPatternPy>()?;
+    m.add_function(wrap_pyfunction!(
+        prepared_schema::load_prepared_pattern_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(prepare_schema_py, m)?)?;
     m.add_function(wrap_pyfunction!(check_compat_py, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_compat_py, m)?)?;

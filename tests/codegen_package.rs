@@ -799,3 +799,121 @@ else: raise AssertionError('external component constraint lost')
             .unwrap(),
     );
 }
+
+#[test]
+fn prepared_patterns_are_shared_across_modules_and_preserve_validation() {
+    let work = Work::new();
+    let pattern = "^(?=.{2,})[a-z]+$";
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Shared regex","version":"1"},"components":{"schemas":{
+        "First":{"type":"object","properties":{"name":{"type":"string","pattern":pattern}},"required":["name"],"additionalProperties":false},
+        "Second":{"type":"object","properties":{"name":{"type":"string","pattern":pattern}},"required":["name"],"additionalProperties":false},
+        "Names":{"type":"object","patternProperties":{"^x":{"type":"string","pattern":pattern}},"additionalProperties":false}
+    }}}));
+    success(work.generate(&[]));
+    let files = contents(&work.0.join("models"));
+    let source = files
+        .values()
+        .map(|bytes| std::str::from_utf8(bytes).unwrap())
+        .collect::<String>();
+    assert_eq!(source.matches("dc.load_pattern(").count(), 2);
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import gc, sys
+sys.path.insert(0, sys.argv[1])
+from jsoncompat.codegen import dataclasses as dc
+loads = []
+original = dc.load_pattern
+def load(data):
+    result = original(data)
+    loads.append(result.identifier)
+    return result
+dc.load_pattern = load
+from models import First
+assert len(loads) == 1, loads
+from models import Second
+assert len(loads) == 1, loads
+from models import Names
+assert len(loads) == len(set(loads)) == 2, loads
+for cls in (First, Second):
+    assert cls.deserialize('{"name":"abc"}').name == 'abc'
+    assert cls.from_value({'name':'abc'}).to_value() == {'name':'abc'}
+    for value in ('a', 'ABC', 123):
+        try:
+            cls.from_value({'name':value})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(value)
+assert Names.from_value({'x':'abc'}).to_value() == {'x':'abc'}
+for value in ({'x':'a'}, {'z':'abc'}):
+    try:
+        Names.from_value(value)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(value)
+# Native graphs own the automata, independently of Python module lifetime.
+for name, module in list(sys.modules.items()):
+    if name.startswith('models.'):
+        for attr in list(vars(module)):
+            if attr.startswith('_jsoncompat_pattern') or attr.startswith('_jsoncompat_program'):
+                delattr(module, attr)
+gc.collect()
+assert First(name='abc').name == 'abc'
+assert len(loads) == 2
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+    success(
+        python_env::ty_command()
+            .arg(work.0.join("models"))
+            .output()
+            .unwrap(),
+    );
+    // A rebuilt group and a cached group may own the same pattern file.
+    // Keep the old table until its last consumer disappears.
+    let mut spec: Value =
+        serde_json::from_slice(&fs::read(work.0.join("api.json")).unwrap()).unwrap();
+    spec["components"]["schemas"]["First"]["properties"]["name"]["pattern"] = json!("^UPPER$");
+    work.write(&spec);
+    success(work.generate(&[]));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import sys
+sys.path.insert(0, sys.argv[1])
+from models import First, Second, Names
+assert First(name='UPPER').name == 'UPPER'
+assert Second(name='lower').name == 'lower'
+assert Names.from_value({'x':'lower'}).to_value() == {'x':'lower'}
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+    spec["components"]["schemas"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Names");
+    spec["components"]["schemas"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Second");
+    work.write(&spec);
+    success(work.generate(&[]));
+    let files = contents(&work.0.join("models"));
+    let pattern_files: Vec<_> = files
+        .keys()
+        .filter(|name| name.starts_with("_patterns/p_"))
+        .collect();
+    assert_eq!(pattern_files.len(), 1, "obsolete automata must be removed");
+}
