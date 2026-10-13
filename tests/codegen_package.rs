@@ -738,7 +738,11 @@ fn external_component_nested_types_have_stable_ownership() {
         "type":"object","properties":{"child":{"type":"object","properties":{"n":{"type":"integer","minimum":0}},"required":["n"],"additionalProperties":false}},"required":["child"],"additionalProperties":false
     }}}).to_string()).unwrap();
     success(work.generate(&["--schema-options", "options.json"]));
-    success(python_env::python_command().arg("-c").arg(r#"
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
 import sys
 from typing import get_type_hints
 sys.path.insert(0, sys.argv[1])
@@ -752,5 +756,10 @@ assert 'models.models.unrelated' not in sys.modules
 try: Remote.deserialize('{"child":{"n":-1}}')
 except ValueError: pass
 else: raise AssertionError('external component constraint lost')
-"#).arg(&work.0).output().unwrap());
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
 }

@@ -84,6 +84,71 @@ fn model_sources(package: &Path) -> String {
 fn example() -> Value {
     serde_json::from_str(include_str!("../examples/openapi_client/openapi.json")).unwrap()
 }
+
+#[test]
+fn checked_in_petstore_matches_generated_package() {
+    fn artifacts(directory: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        fn walk(
+            root: &Path,
+            directory: &Path,
+            files: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>,
+        ) {
+            if !directory.exists() {
+                return;
+            }
+            for entry in fs::read_dir(directory).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if entry.file_name() == "__pycache__"
+                    || entry.file_name() == ".jsoncompat-manifest.json"
+                {
+                    continue;
+                }
+                if path.is_dir() {
+                    walk(root, &path, files);
+                } else {
+                    files.insert(
+                        path.strip_prefix(root).unwrap().to_owned(),
+                        fs::read(path).unwrap(),
+                    );
+                }
+            }
+        }
+        let mut files = std::collections::BTreeMap::new();
+        walk(directory, directory, &mut files);
+        files
+    }
+    let work = Work::new();
+    success(work.generate(&example(), &[]));
+    let actual = artifacts(&work.0.join("petstore"));
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/openapi_client/petstore");
+    if std::env::var_os("JSONCOMPAT_UPDATE_OPENAPI_FIXTURES").is_some() {
+        for old in artifacts(&golden)
+            .keys()
+            .filter(|name| !actual.contains_key(*name))
+        {
+            fs::remove_file(golden.join(old)).unwrap();
+        }
+        for (name, bytes) in &actual {
+            let path = golden.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+    }
+    let expected = artifacts(&golden);
+    assert_eq!(
+        actual.keys().collect::<Vec<_>>(),
+        expected.keys().collect::<Vec<_>>(),
+        "run just regen-openapi-client"
+    );
+    for (name, bytes) in &actual {
+        assert!(
+            bytes == &expected[name],
+            "generated {} changed; run just regen-openapi-client",
+            name.display()
+        );
+    }
+}
 fn success(output: Output) {
     assert!(
         output.status.success(),

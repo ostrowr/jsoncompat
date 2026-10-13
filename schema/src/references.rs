@@ -278,7 +278,7 @@ pub(crate) fn children(value: &Value) -> Vec<(String, &Value)> {
             result.push((keyword.to_owned(), child));
         }
     }
-    for keyword in SCHEMA_MAP_CHILD_KEYWORDS.into_iter().chain(["definitions"]) {
+    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
         if let Some(children) = object.get(keyword).and_then(Value::as_object) {
             result.extend(children.iter().map(|(key, value)| {
                 (
@@ -312,4 +312,38 @@ pub(crate) fn children(value: &Value) -> Vec<(String, &Value)> {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_children_visit_legacy_definitions_once_and_leave_literals_alone() {
+        let raw = json!({
+            "definitions": {"a/b~c": {"type":"string"}},
+            "$defs": {"modern": true},
+            "dependencies": {"record": {"type":"object"}, "names": ["a"]},
+            "properties": {"value": false},
+            "allOf": [true],
+            "const": {"definitions": {"literal": false}}
+        });
+        let children = children(&raw);
+        let paths: std::collections::BTreeSet<_> =
+            children.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(children.len(), paths.len());
+        assert_eq!(
+            paths,
+            std::collections::BTreeSet::from([
+                "$defs/modern",
+                "definitions/a~1b~0c",
+                "dependencies/record",
+                "properties/value",
+                "allOf/0"
+            ])
+        );
+        for (path, value) in children {
+            assert_eq!(raw.pointer(&format!("/{path}")), Some(value));
+        }
+    }
 }

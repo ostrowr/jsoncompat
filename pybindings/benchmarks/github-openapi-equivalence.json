@@ -3,14 +3,15 @@
   "new_classes": 3133,
   "empty_header_aliases": 0,
   "prepared_programs_byte_identical": 3133,
-  "schema_root_text_equal": 3133,
   "prepared_node_pairs": 60993,
-  "model_schema_roots_equal": true,
+  "full_schema_text_equal": true,
   "prepared_programs_bisimilar": true,
-  "diagnostic_normalization": "only renamed empty-header definition references",
-  "before": "/tmp/jsoncompat-github-merged-final/github_models",
-  "after": "/tmp/jsoncompat-github-resource-final/github_models",
-  "seconds": 11.257607874984387,
-  "before_compiler": "05869fd6b421b9f20b2bf82b6e06f2f2167edcb817207cb9657e1def745ef242",
-  "after_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648"
+  "module_code_equal": true,
+  "modules_compared": 980,
+  "schema_fragments_compared": 1551,
+  "before": "/tmp/jsoncompat-github-resource-final/github_models",
+  "after": "/tmp/jsoncompat-github-profile-final/github_models",
+  "seconds": 10.54872558300849,
+  "before_compiler": "f6ff522d6373f6d1322139c0dd0deb5f89ac951a96758943cc6d3b204fdeb648",
+  "after_compiler": "35f68c1327a9f7c0d29c26b8eb8c1ef351b308afae695da4507f653f901d5c0f"
 }

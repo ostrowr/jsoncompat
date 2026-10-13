@@ -1,14 +1,58 @@
 # GitHub OpenAPI generation benchmark
 
-The resource/component layout reduces the full client from **19,599 files to
-1,047**, and from **86.80 MiB to 63.48 MiB**. Generation improves from **7.48 s to
-5.42 s** median. Source API loading improves from **5.548 s to 2.066 s**; bytecode
-loading improves from **2.407 s to 0.852 s**. Strict `ty` checks pass.
+Profiling and removing repeated work reduces full-client generation from
+**5.42 s to 3.95 s** median, about **27% faster**. Peak generation memory falls
+from **1.41 GiB to 1.26 GiB**. The package still contains **1,047 files** and
+**9,124 model classes**. The approximately one-second target remains unmet.
 
-Peak generation memory increases from **0.95 GiB to 1.41 GiB**. API generation now
-uses one shared compilation namespace, so more compiler state is live together.
-This is a remaining cost; the approximately one-second generation target is
-still unmet. Runtime imports remain directed and selective.
+Fast compression trades some disk space for build speed: output grows from
+**63.48 MiB to 67.65 MiB**. Full API loading remains about **2.07 s** from source
+and **0.90 s** from bytecode. Strict `ty` checks pass in **1.15 s**. All model
+schema text, prepared validator bytes, and generated conversion code are unchanged.
+
+## Where the time goes
+
+The previous release binary was sampled on macOS with `sample` at 1 ms intervals.
+Its hot stacks included deep `serde_json`/BTreeMap clones, recursive canonicalization,
+deflate compression, and model rendering. Separate opt-in stage timings identify
+the phases; final benchmarks below ran without CPU sampling.
+
+| Full-client stage | Before | After |
+| --- | ---: | ---: |
+| Validate and normalize the OpenAPI document | 1.149 s | 0.777 s |
+| Validate and normalize the generated model namespace | 1.468 s | 0.859 s |
+| Prepare models and render their Python code | 1.780 s | 1.373 s |
+| Stage source files, metadata, and exports | 0.485 s | 0.467 s |
+| Contracts, grouping, cache keys, and publication | 0.413 s | 0.361 s |
+| Total measured pipeline | 5.295 s | 3.837 s |
+
+These are the primary run's stage timings, not medians. Input loading, process
+startup, and final teardown account for the remaining wall time. Filesystem
+publication itself takes about a millisecond; writing 1,047 files is not the main
+bottleneck. Model preparation still takes **0.489 s** within the render stage,
+while schema-source serialization/compression falls from **0.606 s to 0.240 s**.
+The largest remaining target is schema processing, at roughly **1.64 s** combined.
+No work has been deferred to imports or first use.
+
+Changes made from this profile:
+
+- Move already-normalized trees between rewrite passes, consume canonical results,
+  and prepare options in one owned tree. Infer missing required properties in place.
+  Sort JSON maps in place instead of rebuilding them, and visit legacy definitions once.
+- Cache successful scalar-schema normalization using exact input bytes, only when
+  local reference targets cannot make the location significant. Failures are never
+  cached. Large top-level namespaces use at most eight bounded worker chunks on
+  native targets, with ordered joins preserving the first error. WASM stays sequential.
+- Reuse compressed local schema fragments and use deflate level 1 for package
+  introspection data. Standalone generated-model compression is unchanged; expanded
+  schema text remains exact. This saves around 0.35 s at the cost of 4.18 MiB.
+- Index prepared guard patches and JSON keys by owner once, instead of scanning the
+  whole conversion plan for each module. Preserve their original order.
+- Write hexadecimal byte escapes directly, serialize cache-key inputs by reference,
+  and append resource metadata before staging each new resource file once.
+
+The stable resource/component layout, direct dependency imports, recursive class
+identity, sixteen schema-data buckets, and shared empty-header aliases remain intact.
 
 ## Input and scope
 
@@ -17,8 +61,8 @@ still unmet. Runtime imports remain directed and selective.
 - SHA-256: `0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe`.
 - Original: 13,131,466 bytes, 1,232 operations, 973 component schemas,
   816 paths, and 274 inbound webhooks.
-- The untouched document still fails OpenAPI validation on two duplicate
-  path-template shapes. It is not counted as successfully generated.
+- The untouched document still fails validation on two duplicate path-template
+  shapes. It is not counted as successfully generated.
 - The client projection retains **1,223 operations**. It excludes those two
   operations, seven operations with unsupported media, inbound webhooks, and
   documentation examples. Component constraints and retained operation bodies
@@ -28,135 +72,100 @@ still unmet. Runtime imports remain directed and selective.
   schemas. The harness saves every projection and exclusion.
 
 These are release-build measurements on macOS ARM64 with Python 3.12.2 and
-`ty 0.0.86 --error all --python-version 3.12`. All final runs were sequential,
-after repository tests and builds finished. Generation uses fresh output
-directories with ordinary warm filesystem caches; it includes file publication.
-The table reports three-run medians. Imports run in fresh Python processes;
-source runs disable bytecode and bytecode runs follow `compileall`. Import times
-below measure model/API loading after importing the lightweight package root.
-Root-import overhead, process wall time, memory, and individual samples are
-recorded separately in the JSON results. `ty` times include its launcher.
+`ty 0.0.86 --error all --python-version 3.12`. Final runs were sequential, after
+tests and builds finished. Generation uses fresh output directories and ordinary
+warm filesystem caches, including publication. Generation medians cover three
+runs. Imports use fresh Python processes: source runs disable bytecode, bytecode
+runs follow `compileall`. Import timings below measure model/API loading after
+the lightweight package root; root-import overhead and process wall time are
+recorded separately. Typing times include the launcher.
 
 ## Measurements
 
-| Case | Files, before → after | Classes, before → after | Generation median, before → after |
-| --- | ---: | ---: | ---: |
-| 973 components | 4,095 → **999** | 3,133 → **3,133** | 3.73 → **3.28 s** |
-| 61-operation Issues client | 1,119 → **105** | 664 → **473** | 1.64 → **1.51 s** |
-| 1,223-operation client | 19,599 → **1,047** | 12,351 → **9,124** | 7.48 → **5.42 s** |
+| Case | Generation median, before → after | Files | Output | Generation peak RSS | Source load | Bytecode load | ty |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 973 components | 3.28 → **2.18 s** | 999 | 28.49 MiB | 0.68 GiB | 1.139 s | 0.272 s | 0.410 s |
+| 61-operation Issues client | 1.51 → **1.10 s** | 105 | 3.51 MiB | 0.38 GiB | 0.168 s | 0.080 s | 0.183 s |
+| 1,223-operation client | 5.42 → **3.95 s** | 1,047 | 67.65 MiB | 1.26 GiB | 2.070 s | 0.899 s | 1.154 s |
 
-| Case | Output | Largest Python file | Generation peak RSS | Source load | Bytecode load | ty |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 973 components | 25.79 MiB | 1.16 MiB | 0.70 GiB | 1.118 s | 0.260 s | 0.346 s |
-| 61-operation Issues client | 3.36 MiB | 1.74 MiB | 0.40 GiB | 0.163 s | 0.080 s | 0.186 s |
-| 1,223-operation client | 63.48 MiB | 3.55 MiB | 1.41 GiB | 2.066 s | 0.852 s | 1.117 s |
+The full client's largest Python file is now `_data/s_6.py`, **4,197,964 bytes**
+(4.00 MiB); the largest resource module remains `operations/repos.py`,
+**3,718,810 bytes**. The 1,047 files comprise 973 components, one empty-header
+module, 45 resources, 16 data buckets, and 12 support/manifest files. Sizes exclude
+bytecode caches. All generated files and representative sync/async consumers pass
+strict typing; both client negative consumers retain their two expected errors.
 
-The full client's largest source is `operations/repos.py` (**3,718,810 bytes**).
-Its files comprise 973 component modules, one shared empty-header module,
-45 resource modules, 16 packed schema-data modules, and 12 support/manifest files.
-Output sizes exclude bytecode caches. All generated files and representative
-sync/async consumers type-check without diagnostics; both client negative
-consumers still report the expected argument-type and return-type errors.
-
-The preceding full-client primary `ty` run took 5.714 s, while separate warmed
-interleaved repeats had a 2.236 s median. Those distinct measurements remain in
-the baseline snapshot; they are not treated as interchangeable baselines for
-the new 1.117 s primary run.
+The earlier layout change reduced the client from 19,599 files / 86.80 MiB and
+12,351 classes to the current 1,047-file layout. This profiling pass retains those
+boundaries and all alias names. Baseline snapshots keep earlier typing and import
+measurements separate rather than substituting warmed repeats for primary runs.
 
 ## Direct imports
 
 | Import | Loaded model classes | Source | Bytecode |
 | --- | ---: | ---: | ---: |
-| `models.simple_user` | 1 | 0.021 s | 0.016 s |
-| Issues-only `operations.issues` | 442 | 0.129 s | 0.045 s |
-| Full-client `operations.issues` | 442 | 0.275 s | 0.058 s |
+| `models.simple_user` | 1 | 0.024 s | 0.016 s |
+| Issues-only `operations.issues` | 442 | 0.136 s | 0.046 s |
+| Full-client `operations.issues` | 442 | 0.310 s | 0.057 s |
 
-Previously, accessing `SimpleUser` loaded 2,679 classes. Importing the private
-`issues_get` operation loaded 7,779 classes in the full client. The new public
-resource import loads all 61 Issues operations and their dependencies: **442
-classes**. It does not import unrelated resources or initialize the full API
-registry. These are selective-import measurements, not selectively bound clients:
-importing `GitHubAPI` or binding it still prepares the full registry, as documented.
+The full-client Issues resource loads all 61 Issues operations and their dependencies,
+**442 classes**, without loading unrelated resources. These are selective imports,
+not selectively bound clients: importing `GitHubAPI` still prepares the full registry.
 
-## Implementation and correctness
+## Correctness and checked-in example
 
-- Each named component owns its nested declarations in `models/<component>.py`.
-  Each resource owns requests, response envelopes, anonymous body models, aliases,
-  and operation metadata in `operations/<resource>.py`. Resource names use the
-  `operationId` namespace before `/`, or the first literal path segment as a
-  fallback. No file-size budget changes these boundaries.
-- Dependency edges are directed. Only actual strongly connected module cycles
-  share a `_cycles/` implementation. Canonical helpers outside named components
-  use `models/_shared.py`. Public convenience exports remain lazy, and `.pyi`
-  files provide static exports without duplicating runtime import statements.
-- A module binds its local prepared graph and links already prepared dependency
-  nodes. Linking preserves model identities, scalar guards, branch validators,
-  discriminator ordinals, JSON field prefixes, and slot ownership. Shared nodes
-  in diamond-shaped dependencies are interned by origin. No schema compilation,
-  reflection-based model construction, or first-request preparation is added.
-- The **3,228 empty header classes become one closed-object class**. Old
-  operation-specific header names remain aliases. Nonempty header records remain
-  distinct, empty records still reject extra fields, and raw HTTP headers retain
-  all names, order, and repeated values.
-- Compressed source fragments are interned and packed into sixteen fixed hash
-  buckets. They expand only on explicit schema introspection. The manifest tracks
-  symbol ownership inside each bucket, removes unowned constants, repairs missing
-  or modified files, preserves unmanaged files, and migrates earlier layouts.
-- Resource rendering caches shared fragment identities and precomputes program
-  names once. Pointer-parent lookups assign nested ownership without repeatedly
-  scanning every declaration. The initial exploratory regression to 15.43 s was
-  fixed before these recorded runs.
+Independent AST-only comparisons cover all **12,730 model classes** across the
+three packages. Complete reconstructed schema text and all **12,730 prepared
+validator programs** are byte-identical, and the verifier compares their reachable
+graphs too. **2,094 Python modules/stubs** have identical syntax after excluding
+schema-storage imports and compressed-schema assignments. This includes constructors,
+HTTP metadata, conversion descriptors, and binding plans. Alias and export maps
+also match. No header-name normalization is needed for this pass.
 
-Independent AST-only comparisons cover **all 16,148 previous model names** across
-the three packages. Model schema roots match and complete reachable prepared
-validation graphs are bisimilar. The full client alone covers **148,805 node
-pairs**, including all legacy empty-header aliases. Of its 12,351 previous model
-names, **9,048 prepared programs remain byte-identical**.
+The stronger resource-to-resource verifier checks shared schema fragments once,
+without executing generated code or materializing every repeated namespace.
+Self-tests reject deliberate schema, program, and conversion-code changes and
+pass under ordinary and optimized Python. Earlier layout-migration comparisons
+remain supported.
 
-Compilation namespaces and shared header definition names change, so this pass
-does **not** claim byte-identical full schema-introspection text. The verifier
-compares root constraints separately from build namespace definitions, then
-checks every reachable validation rule, edge, constant, pattern, and diagnostic
-reference. Only the explicitly shared empty-header names are normalized in
-schema references, generated declaration metadata, and validator reference
-pointers. Literal values are never normalized.
-
-Validation: `just check` passed; final focused checks pass all **12 package
-tests**, all **13 local client tests**, and clippy with warnings denied. Tests
-cover direct import isolation, diamond dependencies, recursive identity and type
-hints, canonicalized external components, empty-header aliases, raw repeated
-headers, incremental repair/migration, and strict typing. All three adapters run
-against the local test server. The opt-in public JSONPlaceholder test was not
-rerun for this generator change; earlier live validation remains in the PR.
+`just check` passed, including all **12 package tests**, **14 local client tests**,
+canonicalization fixtures and fuzzing, strict typing, clippy, and the WASM/website
+build. An additional traversal regression and final verifier checks passed afterward.
+The checked-in [Petstore client](../../examples/openapi_client/petstore/) contains
+**40 files / 254 KiB**. Its golden test compares every source, stub, and `py.typed`
+file, including additions/removals. Refresh it with `just regen-openapi-client`.
+The committed client was also run through aiohttp, requests, and sync/async HTTPX
+against the local server, including expected and unexpected errors. The opt-in
+public JSONPlaceholder test was not rerun for this generator change.
 
 ## Artifacts and reproduction
 
-- [Current results](github-openapi-results.json): fingerprints, environment,
-  individual measurements, cold-generation repeats, stage profiles, selective
-  imports, typing diagnostics, and all three equivalence reports.
-- [Previous layout](github-openapi-before-resource-layout.json).
+- [Current results](github-openapi-results.json): fingerprints, individual samples,
+  repeats, stage profiles, selective imports, typing, and three equivalence reports.
+- [Before this profiling pass](github-openapi-before-profiled-generation.json).
+- [Before the resource layout](github-openapi-before-resource-layout.json).
 - [Component equivalence](github-openapi-equivalence.json).
-- Earlier optimization snapshots remain in this directory.
 
 ```sh
 cargo build --release --bin jsoncompat
 cargo rustc --release -p jsoncompat_py --lib -- \
   -C link-arg=-undefined -C link-arg=dynamic_lookup # macOS
 
+JSONCOMPAT_CODEGEN_TIMING=1 \
 uv run --no-config --project pybindings --all-extras --group benchmark --locked \
   python pybindings/bench_github_openapi.py \
-  --output /tmp/github-resource-run --case client --repeats 3
+  --output /tmp/github-profile-run --case client --repeats 3
 ```
 
-Repeat with `--case models`, `--case issues`, and `--case original`. Use a fresh
-output directory for each cold generation run; `--inspect-only` reuses artifacts
-for import/typing measurements. On other platforms, build the Python extension
-with `cargo build --release -p jsoncompat_py`.
+Repeat with `--case models`, `--case issues`, and `--case original`. Use fresh output
+directories for generation repeats; `--inspect-only` reuses packages for import and
+typing measurements. On other platforms, build the extension with
+`cargo build --release -p jsoncompat_py`.
 
 ```sh
 uv run --no-config --project pybindings --all-extras --locked python \
   pybindings/bench_codegen_equivalence.py \
   --before /tmp/previous/github_client \
-  --after /tmp/github-resource-run/github_client \
+  --after /tmp/github-profile-run/github_client \
   --output /tmp/client-equivalence.json
 ```

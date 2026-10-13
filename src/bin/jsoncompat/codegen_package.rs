@@ -172,6 +172,7 @@ pub(super) fn generate(
     let mut stub = String::from("# Generated public model exports.\n");
     let mut rebuilt = 0;
     let mut schema_data: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    let mut resource_sources = BTreeMap::new();
     for directory in ["models", "operations", "_cycles", "_data"] {
         stage(
             &staging,
@@ -243,20 +244,25 @@ pub(super) fn generate(
             .iter()
             .map(|(pointer, name)| (name.clone(), json!({"$ref":pointer})))
             .collect();
-        let input = json!({"$schema":group.dialect, "$defs":group.schemas, "type":"object", "properties":selected});
-        let input_digest = digest(&serde_json::to_vec(&json!([
-            input,
-            declarations,
+        let input = Value::Object(serde_json::Map::from_iter([
+            ("$schema".into(), Value::String(group.dialect)),
+            ("$defs".into(), Value::Object(group.schemas)),
+            ("type".into(), Value::String("object".into())),
+            ("properties".into(), Value::Object(selected)),
+        ]));
+        let input_digest = digest(&serde_json::to_vec(&(
+            &input,
+            &declarations,
             options,
-            metadata.imports,
-            metadata.base_imports,
-            metadata.fields,
-            metadata.bases,
+            &metadata.imports,
+            &metadata.base_imports,
+            &metadata.fields,
+            &metadata.bases,
             declarations
                 .values()
                 .map(|name| (name, &owners[name]))
                 .collect::<BTreeMap<_, _>>(),
-        ]))?);
+        ))?);
         let cached_files = previous.module_files.get(&module_name);
         let cached = previous.version == 6
             && previous.compiler == manifest.compiler
@@ -332,6 +338,8 @@ pub(super) fn generate(
                             .or_default()
                             .insert(symbol, line.into());
                     }
+                } else if api.is_some() && file.starts_with("operations/") {
+                    resource_sources.insert(file, source);
                 } else {
                     stage(&staging, &mut manifest, &file, &source)?;
                 }
@@ -397,12 +405,10 @@ pub(super) fn generate(
         let (files, public) = api.sources(&exports)?;
         for (file, source) in files {
             let source = if file.starts_with("operations/") {
-                let path = if staging.0.join(&file).exists() {
-                    staging.0.join(&file)
-                } else {
-                    destination.join(&file)
+                let declarations = match resource_sources.remove(&file) {
+                    Some(source) => source,
+                    None => fs::read_to_string(destination.join(&file))?,
                 };
-                let declarations = fs::read_to_string(path)?;
                 format!(
                     "{}\n\n{source}",
                     declarations

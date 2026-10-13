@@ -165,6 +165,10 @@ live in modules such as `models/pet.py`. Each module includes its prepared
 implementation. Shared schema data is packed separately. Publish the complete
 generated directory.
 
+Browse the [checked-in Petstore client](examples/openapi_client/petstore/) and
+[run its examples](examples/openapi_client/README.md) with aiohttp, HTTPX, or
+requests. Tests compare the generated package against these goldens.
+
 Install the integration for your HTTP library, then bind your own session:
 
 ```sh

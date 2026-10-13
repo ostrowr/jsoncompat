@@ -9,10 +9,6 @@ requests, or a fetcher you write yourself.
 From the repository root:
 
 ```sh
-cargo run --bin jsoncompat -- codegen \
-  --openapi examples/openapi_client/openapi.json \
-  --api Petstore --output examples/openapi_client/petstore
-
 uv run --project pybindings --extra aiohttp python examples/openapi_client/aiohttp_client.py
 uv run --project pybindings --extra httpx python examples/openapi_client/httpx_client.py
 uv run --project pybindings --extra requests python examples/openapi_client/requests_client.py
@@ -20,13 +16,37 @@ uv run --project pybindings --extra requests python examples/openapi_client/requ
 
 Each example starts a local Petstore server and exercises all ten operations.
 No account or external service is needed. The HTTPX example runs both sync and
-async clients. Generated files are ignored; regenerate them with the command above.
+async clients. The complete [generated Petstore client](petstore/) is checked in,
+so these examples need no generation step.
 
 The package groups operations into `operations/pets.py`, `operations/groups.py`,
 `operations/search.py`, and `operations/health.py`. Each component owns a module
 such as `models/pet.py`, including its nested types. Direct resource/component
 imports load their dependencies; importing `api.py` prepares the full API for
 binding. Publish the whole generated directory.
+
+Start with [the Pet model](petstore/models/pet.py),
+[pet requests and responses](petstore/operations/pets.py), and
+[the API and client types](petstore/api.py). These files are also goldens: the
+test suite regenerates the package and compares every Python source, type stub,
+and `py.typed` file byte for byte, including added or removed files.
+
+After changing the spec or generator, refresh them with:
+
+```sh
+just regen-openapi-client
+```
+
+The equivalent generation command for your own package is:
+
+```sh
+cargo run --bin jsoncompat -- codegen \
+  --openapi examples/openapi_client/openapi.json \
+  --api Petstore --output examples/openapi_client/petstore
+```
+
+The build manifest is ignored because it includes the local compiler fingerprint;
+it is not needed to import or publish the generated client.
 
 ## An aiohttp client
 
@@ -181,8 +201,9 @@ To publish a contract, ship the entire generated directory, including `py.typed`
 and depend on a jsoncompat version supporting this runtime. API preparation uses
 no HTTP library and needs no session. Individual model imports remain lazy.
 
-`cargo test --test openapi_client` generates fresh packages, checks static typing,
-and runs the examples and timeout tests against local servers.
+`cargo test --test openapi_client` checks the committed goldens, generates fresh
+packages, checks static typing, and runs the examples and timeout tests against
+local servers.
 
 ## Test against a public API
 

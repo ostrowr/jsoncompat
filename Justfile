@@ -32,6 +32,10 @@ regen-dataclasses-fixtures:
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_examples --test stamp_examples snapshot
 
+# Refresh the runnable, checked-in generated Petstore client and its goldens.
+regen-openapi-client:
+  JSONCOMPAT_UPDATE_OPENAPI_FIXTURES=1 cargo test --test openapi_client checked_in_petstore_matches_generated_package -- --exact
+
 bench:
   @echo "[just] running Rust benchmarks …"
   cargo bench --workspace --exclude jsoncompat_py --all-features --bench '*' --locked

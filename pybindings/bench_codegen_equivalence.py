@@ -267,6 +267,61 @@ def compare_resource_layout(old, new, output, started):
     print(json.dumps(result), flush=True)
 
 
+def compare_resource_packages(old, new, output, started):
+    """Stronger check for optimizations that retain the resource layout."""
+    ensure(old.models, "no generated models found")
+    ensure(old.models.keys() == new.models.keys(), "model inventory differs")
+    ensure(old.aliases == new.aliases, "header aliases differ")
+    ensure(old.manifest["exports"] == new.manifest["exports"], "public exports differ")
+    counts = dict(models=0, new_classes=len(new.models), empty_header_aliases=len(new.aliases),
+                  prepared_programs_byte_identical=0, prepared_node_pairs=0)
+    checked_fragments = set()
+    for name, (before_parts, before_program) in sorted(old.models.items()):
+        after_parts, after_program = new.models[name]
+        ensure(len(before_parts) == len(after_parts), (name, "schema fragment count differs"))
+        for before, after in zip(before_parts, after_parts):
+            pair = (b"".join(before), b"".join(after))
+            if pair not in checked_fragments:
+                ensure(zlib.decompress(pair[0]) == zlib.decompress(pair[1]), (name, "full schema text differs"))
+                checked_fragments.add(pair)
+        ensure(before_program == after_program, (name, "prepared program bytes differ"))
+        counts["prepared_programs_byte_identical"] += 1
+        counts["prepared_node_pairs"] += compare_programs(
+            json.loads(before_program, parse_float=Decimal),
+            json.loads(after_program, parse_float=Decimal), name,
+        )
+        counts["models"] += 1
+
+    def module_code(package):
+        result = {}
+        for filename in package.manifest["files"]:
+            if filename.startswith("_data/") or not filename.endswith((".py", ".pyi")):
+                continue
+            tree = ast.parse((package.root / filename).read_text())
+            # Only compression and the names of its stored fragments may differ.
+            # Constructors, metadata, complete conversion descriptors, binding
+            # plans, and type declarations must be identical Python syntax.
+            tree.body = [node for node in tree.body if not (
+                isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("_data.s_")
+                or isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id.startswith("_jsoncompat_schema_")
+            )]
+            result[filename] = ast.dump(tree)
+        return result
+    before_code, after_code = module_code(old), module_code(new)
+    ensure(before_code.keys() == after_code.keys(), "module inventory differs")
+    for filename in before_code:
+        ensure(before_code[filename] == after_code[filename], (filename, "generated module code differs"))
+    result = dict(**counts, full_schema_text_equal=True, prepared_programs_bisimilar=True,
+                  module_code_equal=True, modules_compared=len(before_code),
+                  schema_fragments_compared=len(checked_fragments),
+                  before=str(old.root), after=str(new.root), seconds=time.perf_counter()-started,
+                  before_compiler=old.manifest["compiler"], after_compiler=new.manifest["compiler"])
+    output.write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result), flush=True)
+
+
 EDGE_SCALARS = {"not", "property_names", "unevaluated_properties", "unevaluated_items"}
 EDGE_LISTS = {"all", "any", "one"}
 LEAF_RULES = {
@@ -394,6 +449,37 @@ def compare_programs(left, right, name):
 
 
 class VerifierTests(unittest.TestCase):
+    def test_resource_comparison_checks_schema_program_and_conversion_code(self):
+        with tempfile.TemporaryDirectory(prefix="jsoncompat-resource-equivalence-") as directory:
+            base = Path(directory)
+            schema = b'{"type":"string","minLength":2}'
+            program = json.dumps({"version":4, "nodes":[{"types":["string"], "rules":[]}]}).encode()
+            def package(name, level, *, source_schema=schema, source_program=program, annotation="str"):
+                root = base / name
+                (root / "models").mkdir(parents=True, exist_ok=True)
+                (root / "_data").mkdir(exist_ok=True)
+                files = ["models/example.py", "_data/s_a.py"]
+                (root / ".jsoncompat-manifest.json").write_text(json.dumps({
+                    "version":6, "compiler":name, "files":dict.fromkeys(files, "unused"),
+                    "exports":{"Example":"models.example"},
+                }))
+                (root / "_data/s_a.py").write_text(f"S_{name}: bytes = {zlib.compress(source_schema, level)!r}\n")
+                (root / "models/example.py").write_text(
+                    f"from .._data.s_a import S_{name} as _jsoncompat_S_{name}\n"
+                    f"class Example: value: {annotation}\n"
+                    f"_jsoncompat_schema_Example = (_jsoncompat_S_{name},)\n"
+                    f"_jsoncompat_program_Example = {source_program!r}\n"
+                    "raise RuntimeError('never execute generated modules')\n"
+                )
+                return ResourcePackage(root)
+            before = package("before", 9)
+            output = base / "result.json"
+            compare_resource_packages(before, package("after", 1), output, time.perf_counter())
+            self.assertTrue(json.loads(output.read_text())["full_schema_text_equal"])
+            for changes in [{"source_schema":b'{"type":"string"}'}, {"source_program":program+b" "}, {"annotation":"int"}]:
+                with self.subTest(changes=changes), self.assertRaises(AssertionError):
+                    compare_resource_packages(before, package("after", 1, **changes), output, time.perf_counter())
+
     def test_empty_header_normalization_does_not_rewrite_literal_values(self):
         aliases = {"GetPet404Headers": "JsoncompatEmptyHeaders"}
         literal = {"const": {"$ref": "#/$defs/GetPet404Headers"}, "enum": ["GetPet404Headers", "#/$defs/GetPet404Headers"]}
@@ -542,6 +628,9 @@ def main():
     started = time.perf_counter()
     old, new = Package(args.before), Package(args.after)
     if new.manifest["version"] >= 6:
+        if old.manifest["version"] >= 6:
+            compare_resource_packages(ResourcePackage(args.before), ResourcePackage(args.after), args.output, started)
+            return
         compare_resource_layout(old, ResourcePackage(args.after), args.output, started)
         return
     ensure(

@@ -45,6 +45,12 @@ fn canonicalize_every_fuzz_fixture_schema_is_idempotent_and_ast_equivalent()
             })?;
             assert_eq!(
                 canonical,
+                super::canonicalize_schema_with_optimizations(schema_json, false)?,
+                "optimized canonicalization changed {} schema #{index}",
+                path.display(),
+            );
+            assert_eq!(
+                canonical,
                 canonical_again,
                 "canonicalization is not idempotent for {} schema #{}\nraw: {}\ncanonical: {}\nrecanonical: {}",
                 path.display(),
@@ -87,6 +93,43 @@ fn canonicalize_every_fuzz_fixture_schema_is_idempotent_and_ast_equivalent()
     }
 
     Ok(())
+}
+
+#[test]
+fn cached_leaves_and_parallel_namespaces_preserve_context_and_first_errors() {
+    let definitions: Map<_, _> = (0..256)
+        .map(|i| {
+            (
+                format!("Model{i:03}"),
+                json!({"type":"object", "properties":{
+            "a":{"type":["string", "null"], "minLength":2},
+            "b":{"type":["string", "null"], "minLength":2},
+            "flag":{"type":"boolean", "x-extra":false}
+        }, "required":["a"]}),
+            )
+        })
+        .collect();
+    let base = json!({"$defs":definitions, "type":"object", "properties":{
+        "first":{"$ref":"#/$defs/Model000"},
+        "target":{"$ref":"#/$defs/Model128/properties/flag/x-extra"}
+    }});
+    for annotations in [false, true] {
+        let mut raw = base.clone();
+        if annotations {
+            raw["unevaluatedProperties"] = json!(false);
+        }
+        assert_eq!(
+            canonicalize_schema(&raw).unwrap(),
+            super::canonicalize_schema_with_optimizations(&raw, false).unwrap()
+        );
+        raw["$defs"]["Model017"]["properties"]["a"]["minLength"] = json!(-1);
+        raw["$defs"]["Model200"]["properties"]["b"]["minLength"] = json!("invalid");
+        let ordinary = super::canonicalize_schema_with_optimizations(&raw, false)
+            .unwrap_err()
+            .to_string();
+        assert!(ordinary.contains("Model017/properties/a/minLength"));
+        assert_eq!(canonicalize_schema(&raw).unwrap_err().to_string(), ordinary);
+    }
 }
 
 #[test]

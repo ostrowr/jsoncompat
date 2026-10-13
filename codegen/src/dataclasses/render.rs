@@ -124,13 +124,19 @@ fn tuple(items: impl IntoIterator<Item = String>) -> String {
     }
 }
 pub(super) fn bytes(bytes: &[u8]) -> String {
-    let mut out = String::from("b'");
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() + 3);
+    out.push_str("b'");
     for byte in bytes {
         match byte {
             b'\'' => out.push_str("\\'"),
             b'\\' => out.push_str("\\\\"),
             32..=126 => out.push(*byte as char),
-            _ => write!(out, "\\x{byte:02x}").expect("string write"),
+            _ => {
+                out.push_str("\\x");
+                out.push(HEX[(byte >> 4) as usize] as char);
+                out.push(HEX[(byte & 15) as usize] as char);
+            }
         }
     }
     out.push('\'');
@@ -440,15 +446,23 @@ fn compress(source: &[u8]) -> Vec<u8> {
 #[derive(Default)]
 struct SourceRenderer {
     definitions: BTreeMap<(usize, &'static str), Arc<Vec<u8>>>,
+    locals: std::collections::HashMap<String, Vec<u8>>,
 }
 impl SourceRenderer {
+    fn local(&mut self, source: String) -> super::package::SchemaFragment {
+        let bytes = self
+            .locals
+            .entry(source)
+            .or_insert_with_key(|source| package_compress(source.as_bytes()));
+        super::package::SchemaFragment::Local(bytes.clone())
+    }
     fn render(
         &mut self,
         schema: &ClassSchema,
     ) -> Result<super::package::SchemaSource, DataclassError> {
         let (Some(definitions), Some(object)) = (&schema.definitions, schema.value.as_object())
         else {
-            return Ok(super::package::SchemaSource::Whole(compress(
+            return Ok(super::package::SchemaSource::Whole(package_compress(
                 schema.pretty_json()?.as_bytes(),
             )));
         };
@@ -495,16 +509,14 @@ impl SourceRenderer {
                     local.push_str(&source_member(key, &merged)?);
                 } else {
                     if !local.is_empty() {
-                        fragments.push(super::package::SchemaFragment::Local(compress(
-                            local.as_bytes(),
-                        )));
-                        local.clear();
+                        fragments.push(self.local(std::mem::take(&mut local)));
                     }
                     let identity = (Arc::as_ptr(definitions) as usize, keyword);
                     let block = if let Some(block) = self.definitions.get(&identity) {
                         Arc::clone(block)
                     } else {
-                        let block = Arc::new(compress(source_member(key, root)?.as_bytes()));
+                        let block =
+                            Arc::new(package_compress(source_member(key, root)?.as_bytes()));
                         self.definitions.insert(identity, Arc::clone(&block));
                         block
                     };
@@ -515,11 +527,15 @@ impl SourceRenderer {
             }
         }
         local.push_str("\n}");
-        fragments.push(super::package::SchemaFragment::Local(compress(
-            local.as_bytes(),
-        )));
+        fragments.push(self.local(local));
         Ok(super::package::SchemaSource::Fragments(fragments))
     }
+}
+
+fn package_compress(source: &[u8]) -> Vec<u8> {
+    // Schema introspection is cold data. Fast compression keeps its exact text
+    // while avoiding maximum-compression work on every generated package.
+    miniz_oxide::deflate::compress_to_vec_zlib(source, 1)
 }
 
 fn source_member(value_key: &str, value: &impl serde::Serialize) -> Result<String, DataclassError> {

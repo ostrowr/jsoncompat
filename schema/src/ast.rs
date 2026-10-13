@@ -122,16 +122,16 @@ impl SchemaDocument {
         let checked = canonicalize_schema(raw)?;
         let canonical = if crate::references::needs_linking(raw) {
             match crate::references::link(raw) {
-                Ok(linked) => canonicalize_schema(&linked)?.as_value().clone(),
+                Ok(linked) => canonicalize_schema(&linked)?.into_value(),
                 Err(
                     AstError::UnresolvedReference { .. }
                     | AstError::UnsupportedReference { .. }
                     | AstError::AnalysisLimit { .. },
-                ) => checked.as_value().clone(),
+                ) => checked.into_value(),
                 Err(error) => return Err(error),
             }
         } else {
-            checked.as_value().clone()
+            checked.into_value()
         };
         let schema = Self {
             raw: raw.clone(),

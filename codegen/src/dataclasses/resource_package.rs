@@ -59,6 +59,8 @@ impl DataclassModule {
             .iter()
             .map(|m| format!("_jsoncompat_program_{m}"))
             .collect();
+        let prepared = self.parts.prepared.as_ref().unwrap();
+        let plan_index = PlanIndex::new(&prepared.decisions);
         for group in components(&edges) {
             let cyclic = group.len() > 1;
             let module = if cyclic {
@@ -106,7 +108,6 @@ impl DataclassModule {
                     writeln!(source, "from ..{} import {name} as {name}", exports[name]).unwrap();
                 }
             }
-            let prepared = self.parts.prepared.as_ref().unwrap();
             let mut selected = BTreeSet::new();
             let mut pending: Vec<_> = indices.iter().map(|i| prepared.roots[*i].0).collect();
             while let Some(id) = pending.pop() {
@@ -124,7 +125,7 @@ impl DataclassModule {
                 .enumerate()
                 .map(|(i, old)| (*old, i))
                 .collect();
-            let plan = project_plan(&prepared.decisions, &remap, |id| {
+            let plan = plan_index.project(&remap, |id| {
                 model(&prepared.graph.nodes[id]).is_some_and(|m| !local.contains(&m))
             });
             source.push_str("\n# Prepared constructors and programs; no schema compilation on import.\n_jsoncompat_missing = dc.MissingType.MISSING\n");
@@ -236,50 +237,80 @@ fn children(node: &ConversionNode) -> Vec<usize> {
         _ => Vec::new(),
     }
 }
-fn project_plan(
-    plan: &PreparedPlan,
-    remap: &BTreeMap<usize, usize>,
-    external: impl Fn(usize) -> bool,
-) -> PreparedPlan {
-    let mut guard_map = BTreeMap::new();
-    let mut guard_nodes = Vec::new();
-    let guards = plan
-        .guards
-        .iter()
-        .filter(|p| remap.contains_key(&p.owner) && !external(p.owner))
-        .map(|p| {
-            let mut p = p.clone();
-            p.owner = remap[&p.owner];
-            p.guard = *guard_map.entry(p.guard).or_insert_with(|| {
-                let mut guard = plan.guard_nodes[p.guard].clone();
-                guard.original = remap[&guard.original];
-                guard_nodes.push(guard);
-                guard_nodes.len() - 1
-            });
-            p
-        })
-        .collect();
-    let mut conversion_validates: Vec<_> = remap
-        .keys()
-        .map(|id| !external(*id) && plan.conversion_validates[*id])
-        .collect();
-    let mut guard_flags = vec![false; guard_nodes.len()];
-    for (old, new) in guard_map {
-        guard_flags[new] = plan.conversion_validates[plan.base_nodes + old];
+struct PlanIndex<'a> {
+    plan: &'a PreparedPlan,
+    guards: Vec<Vec<usize>>,
+    keys: Vec<Vec<usize>>,
+}
+impl<'a> PlanIndex<'a> {
+    fn new(plan: &'a PreparedPlan) -> Self {
+        let mut guards = vec![Vec::new(); plan.base_nodes];
+        let mut keys = vec![Vec::new(); plan.base_nodes];
+        for (index, patch) in plan.guards.iter().enumerate() {
+            guards[patch.owner].push(index);
+        }
+        for (index, (owner, _)) in plan.json_keys.iter().enumerate() {
+            keys[*owner].push(index);
+        }
+        Self { plan, guards, keys }
     }
-    conversion_validates.extend(guard_flags);
-    PreparedPlan {
-        version: plan.version,
-        base_nodes: remap.len(),
-        guard_nodes,
-        guards,
-        conversion_validates,
-        json_keys: plan
-            .json_keys
-            .iter()
-            .filter(|(id, _)| remap.contains_key(id) && !external(*id))
-            .map(|(id, keys)| (remap[id], keys.clone()))
-            .collect(),
+
+    fn project(
+        &self,
+        remap: &BTreeMap<usize, usize>,
+        external: impl Fn(usize) -> bool,
+    ) -> PreparedPlan {
+        let plan = self.plan;
+        // Visit local owners, rather than scanning the complete graph for every
+        // output module. Retain the original order of patches and JSON keys.
+        let selected = |index: &[Vec<usize>]| {
+            let mut positions: Vec<_> = remap
+                .keys()
+                .filter(|id| !external(**id))
+                .flat_map(|id| index[*id].iter().copied())
+                .collect();
+            positions.sort_unstable();
+            positions
+        };
+        let mut guard_map = BTreeMap::new();
+        let mut guard_nodes = Vec::new();
+        let guards = selected(&self.guards)
+            .into_iter()
+            .map(|index| {
+                let mut p = plan.guards[index].clone();
+                p.owner = remap[&p.owner];
+                p.guard = *guard_map.entry(p.guard).or_insert_with(|| {
+                    let mut guard = plan.guard_nodes[p.guard].clone();
+                    guard.original = remap[&guard.original];
+                    guard_nodes.push(guard);
+                    guard_nodes.len() - 1
+                });
+                p
+            })
+            .collect();
+        let mut conversion_validates: Vec<_> = remap
+            .keys()
+            .map(|id| !external(*id) && plan.conversion_validates[*id])
+            .collect();
+        let mut guard_flags = vec![false; guard_nodes.len()];
+        for (old, new) in guard_map {
+            guard_flags[new] = plan.conversion_validates[plan.base_nodes + old];
+        }
+        conversion_validates.extend(guard_flags);
+        PreparedPlan {
+            version: plan.version,
+            base_nodes: remap.len(),
+            guard_nodes,
+            guards,
+            conversion_validates,
+            json_keys: selected(&self.keys)
+                .into_iter()
+                .map(|index| {
+                    let (id, keys) = &plan.json_keys[index];
+                    (remap[id], keys.clone())
+                })
+                .collect(),
+        }
     }
 }
 
