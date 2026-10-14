@@ -7,6 +7,7 @@ use serde_json::json;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
@@ -391,12 +392,15 @@ fn write_typecheck_files(
     valid_usage: &str,
     invalid_usage: &str,
 ) -> Result<PathBuf, Box<dyn Error>> {
+    // Concurrent tests can observe the same clock tick, even through as_nanos().
+    static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
+    let sequence = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
     let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let dir = std::env::temp_dir().join(format!(
-        "jsoncompat-dataclass-typing-{}-{unique}",
+        "jsoncompat-dataclass-typing-{}-{unique}-{sequence}",
         std::process::id(),
     ));
-    fs::create_dir_all(&dir)?;
+    fs::create_dir(&dir)?;
     fs::write(dir.join("generated_models.py"), source)?;
     fs::write(dir.join("valid_usage.py"), valid_usage)?;
     fs::write(dir.join("invalid_usage.py"), invalid_usage)?;
