@@ -194,6 +194,9 @@ the portable tables and their content identifiers at import; first validation
 performs no compilation or additional loading. These tables contain executable
 validation data and the regex text needed for diagnostics, not source schema JSON.
 See the [Prefect and GitHub measurements](benchmarks/shared-prepared-patterns.md).
+Regeneration advances the timestamps of replaced Python modules so subsequent
+imports cannot reuse stale timestamp-based bytecode, including external Python
+cache directories. Unchanged package files keep their timestamps.
 Complex regex compositions have an
 execution budget; exhausting it rejects validation, including inside negation,
 conditionals, or property patterns. Unsupported features fail explicitly;

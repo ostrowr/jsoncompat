@@ -101,6 +101,15 @@ assert models.Node.__init__ is not other.Node.__init__
         String::from_utf8_lossy(&checked.stderr)
     );
 
+    // The companion must invalidate bytecode even if a previous generation
+    // was stamped in the future (or several runs occur in one second).
+    let previous_time = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&companion)
+        .unwrap()
+        .set_modified(previous_time)
+        .unwrap();
     // Schema changes replace the same companion without changing its import.
     let mut revised: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&schema).unwrap()).unwrap();
@@ -110,6 +119,7 @@ assert models.Node.__init__ is not other.Node.__init__
     assert_eq!(source, fs::read_to_string(&output).unwrap());
     let revised_implementation = fs::read_to_string(&companion).unwrap();
     assert_ne!(implementation, revised_implementation);
+    assert!(fs::metadata(&companion).unwrap().modified().unwrap() > previous_time);
     let companions = fs::read_dir(&package)
         .unwrap()
         .filter_map(Result::ok)

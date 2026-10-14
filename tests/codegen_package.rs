@@ -876,6 +876,42 @@ assert len(loads) == 2
             .output()
             .unwrap(),
     );
+    // Prime a timestamp cache after advancing the source clock. Publication
+    // must progress past that second even on a fast run or a clock rollback.
+    // A separate cache directory verifies PYTHONPYCACHEPREFIX too.
+    let first_file = work.0.join("models/models/first.py");
+    let old_size = fs::metadata(&first_file).unwrap().len();
+    let previous_time = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&first_file)
+        .unwrap()
+        .set_modified(previous_time)
+        .unwrap();
+    for external_cache in [false, true] {
+        let mut command = python_env::python_command();
+        if external_cache {
+            command.env("PYTHONPYCACHEPREFIX", work.0.join("bytecode"));
+        }
+        success(
+            command
+                .arg("-c")
+                .arg(
+                    r#"
+import pathlib, struct, sys
+sys.path.insert(0, sys.argv[1])
+import models.models.first as module
+assert module.First(name='lower').name == 'lower'
+cache = pathlib.Path(module.__cached__).read_bytes()
+assert struct.unpack('<I', cache[4:8])[0] == 0
+assert struct.unpack('<I', cache[8:12])[0] == int(pathlib.Path(module.__file__).stat().st_mtime)
+"#,
+                )
+                .arg(&work.0)
+                .output()
+                .unwrap(),
+        );
+    }
     // A rebuilt group and a cached group may own the same pattern file.
     // Keep the old table until its last consumer disappears.
     let mut spec: Value =
@@ -883,11 +919,23 @@ assert len(loads) == 2
     spec["components"]["schemas"]["First"]["properties"]["name"]["pattern"] = json!("^UPPER$");
     work.write(&spec);
     success(work.generate(&[]));
-    success(
-        python_env::python_command()
-            .arg("-c")
-            .arg(
-                r#"
+    let revised = fs::metadata(&first_file).unwrap();
+    assert_eq!(
+        revised.len(),
+        old_size,
+        "exercise an equal-sized replacement"
+    );
+    assert!(revised.modified().unwrap() > previous_time);
+    for external_cache in [false, true] {
+        let mut command = python_env::python_command();
+        if external_cache {
+            command.env("PYTHONPYCACHEPREFIX", work.0.join("bytecode"));
+        }
+        success(
+            command
+                .arg("-c")
+                .arg(
+                    r#"
 import sys
 sys.path.insert(0, sys.argv[1])
 from models import First, Second, Names
@@ -895,11 +943,12 @@ assert First(name='UPPER').name == 'UPPER'
 assert Second(name='lower').name == 'lower'
 assert Names.from_value({'x':'lower'}).to_value() == {'x':'lower'}
 "#,
-            )
-            .arg(&work.0)
-            .output()
-            .unwrap(),
-    );
+                )
+                .arg(&work.0)
+                .output()
+                .unwrap(),
+        );
+    }
     spec["components"]["schemas"]
         .as_object_mut()
         .unwrap()
