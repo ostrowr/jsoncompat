@@ -5,6 +5,7 @@ from . import (
     Generator as Generator,
     JsonValue,
     ModelRuntime as ModelRuntime,
+    PreparedPattern as PreparedPattern,
     RoleLiteral,
     Validator as Validator,
 )
@@ -28,3 +29,5 @@ def bind_prepared_model_runtimes(
     frozen_dict_type: type[Mapping[Any, Any]],
     prepared_plan: bytes,
 ) -> list[ModelRuntime]: ...
+
+def load_prepared_pattern(data: bytes) -> PreparedPattern: ...

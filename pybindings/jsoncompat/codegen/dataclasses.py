@@ -22,6 +22,8 @@ from jsoncompat import (
     JsonValue,
     MissingType,
     ModelRuntime,
+    PreparedPattern,
+    load_prepared_pattern as load_pattern,
     bind_prepared_model_runtimes,
     is_missing,
 )
@@ -63,6 +65,10 @@ _DATACLASS_MODEL_T = TypeVar("_DATACLASS_MODEL_T", bound="DataclassModel")
 
 
 type Omittable[T] = T | MissingType
+
+# Private generated implementation descriptors. Pattern handles can be shared
+# across resource modules without a process-wide cache.
+type PreparedProgram = bytes | tuple[bytes, tuple[PreparedPattern, ...]]
 
 
 class FrozenList[T](tuple[T, ...]):

@@ -47,6 +47,12 @@ impl DataclassModule {
             })
             .collect();
         let mut files = BTreeMap::new();
+        if !self.parts.patterns.is_empty() {
+            files.insert("_patterns/__init__.py".into(), String::new());
+            for (id, data) in &self.parts.patterns {
+                files.insert(format!("_patterns/p_{id}.py"), render::pattern_file(data));
+            }
+        }
         let mut programs: Vec<_> = self
             .models
             .iter()
@@ -87,6 +93,12 @@ impl DataclassModule {
             if !source.contains("from jsoncompat.codegen import dataclasses as dc\n") {
                 source.push_str("from jsoncompat.codegen import dataclasses as dc\n");
             }
+            let pattern_ids: BTreeSet<_> = indices
+                .iter()
+                .flat_map(|i| &self.parts.program_patterns[*i])
+                .cloned()
+                .collect();
+            source.push_str(&render::pattern_imports(pattern_ids, ".."));
             let references: BTreeSet<_> = indices
                 .iter()
                 .flat_map(|i| &self.parts.references[*i])
@@ -144,7 +156,10 @@ impl DataclassModule {
                     source,
                     "{} = {}",
                     programs[i],
-                    render::bytes(&self.parts.programs[i])
+                    render::program(
+                        &render::bytes(&self.parts.programs[i]),
+                        &self.parts.program_patterns[i]
+                    )
                 )
                 .unwrap();
             }

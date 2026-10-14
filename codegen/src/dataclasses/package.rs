@@ -30,6 +30,8 @@ pub(super) struct Parts {
     pub extra_exports: Vec<Vec<String>>,
     pub footer: String,
     pub programs: Vec<Vec<u8>>,
+    pub program_patterns: Vec<Vec<String>>,
+    pub patterns: BTreeMap<String, Vec<u8>>,
     pub roots: Vec<usize>,
     pub descriptors: Vec<String>,
     pub plan: Vec<u8>,
@@ -53,6 +55,15 @@ impl DataclassModule {
             prefix: module.replace('.', "/"),
             ..Default::default()
         };
+        if !self.parts.patterns.is_empty() {
+            files.add("_patterns/__init__", String::new());
+            for (id, data) in &self.parts.patterns {
+                files.add(
+                    &format!("_patterns/p_{id}"),
+                    super::render::pattern_file(data),
+                );
+            }
+        }
         let filenames = module_names(self.models.iter().map(String::as_str));
         // These imports supply the namespace used by get_type_hints after the
         // declarations move to separate modules. They are intentionally retained.
@@ -90,11 +101,30 @@ impl DataclassModule {
             )
             .unwrap();
 
-            let program = files.blob(
+            let mut program = files.blob(
                 &format!("_program_{stem}"),
                 &self.parts.programs[i],
-                "_jsoncompat_program",
+                if self.parts.program_patterns[i].is_empty() {
+                    "_jsoncompat_program"
+                } else {
+                    "_jsoncompat_program_data"
+                },
             );
+            if !self.parts.program_patterns[i].is_empty() {
+                program.push_str(&super::render::pattern_imports(
+                    self.parts.program_patterns[i].clone(),
+                    ".",
+                ));
+                writeln!(
+                    program,
+                    "_jsoncompat_program = {}",
+                    super::render::program(
+                        "_jsoncompat_program_data",
+                        &self.parts.program_patterns[i]
+                    )
+                )
+                .unwrap();
+            }
             files.add(
                 declaration_module,
                 format!("{declaration}\n# --- Private generated implementation ---\n{program}\n"),
@@ -123,7 +153,7 @@ impl DataclassModule {
                 .iter()
                 .map(|s| format!("        {s},\n"))
                 .collect::<String>();
-            files.add(&shard, format!("{PRIVATE_IMPORTS}def descriptors(_models: tuple[type[dc.DataclassModel], ...], _programs: list[bytes], _descriptors: list[tuple[typing.Any, ...]]) -> None:\n    _descriptors.extend([\n{descriptors}    ])\n"));
+            files.add(&shard, format!("{PRIVATE_IMPORTS}def descriptors(_models: tuple[type[dc.DataclassModel], ...], _programs: list[dc.PreparedProgram], _descriptors: list[tuple[typing.Any, ...]]) -> None:\n    _descriptors.extend([\n{descriptors}    ])\n"));
             writeln!(imports, "from .{shard} import descriptors as _nodes_{i}").unwrap();
             writeln!(calls, "    _nodes_{i}(_models, _programs, _descriptors)").unwrap();
         }
