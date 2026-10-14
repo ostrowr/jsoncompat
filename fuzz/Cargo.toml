@@ -7,6 +7,10 @@ repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
 readme = "README.md"
 
+[features]
+default = []
+arbitrary-precision = ["json_schema_ast/arbitrary-precision"]
+
 [dependencies]
 rand = "0.10.0"
 serde_json = "1.0.149"

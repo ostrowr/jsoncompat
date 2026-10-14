@@ -7,6 +7,14 @@ checks an instance; compatibility must prove a statement about every instance.
 `Incompatible` only with a validated counterexample, and `Unknown` when neither
 is established. `check_compat` preserves its boolean API: false means no proof.
 
+Numeric correctness is relative to the parsed input representation. Arbitrary
+precision is off by default across Rust, Python, and WebAssembly builds. Ordinary
+`serde_json` parsing can round decimals, underflow tiny numbers, or reject numbers
+outside its range before validation or proofs run. Exact decimal arithmetic
+cannot recover those lost digits. Enable the `arbitrary-precision` build feature
+for the exact JSON number semantics described below; see
+[numeric precision](readme.md#numeric-precision) for the opt-in contract.
+
 | Keywords | Parsing and validation | Canonicalization and compatibility | Generation |
 | --- | --- | --- | --- |
 | `type`, `enum`, `const` | Supported, with JSON numeric equality | Type and finite-domain proofs | Supported |
@@ -57,8 +65,9 @@ source document. Canonical output uses the reserved extension
 
 ## Practical limits
 
-JSON input preserves arbitrary-precision decimal numbers. Numeric assertions
-compare their decimal values exactly. Python floats have already been rounded;
+With `arbitrary-precision` enabled, JSON input preserves arbitrary-precision
+decimal numbers. Numeric assertions compare their decimal values exactly.
+Python floats have already been rounded;
 the value API validates their serialized decimal representation. A wire decimal
 can be valid yet round across a bound during Python conversion: deserialization
 accepts the original value, and checked serialization rejects an invalid rounded
