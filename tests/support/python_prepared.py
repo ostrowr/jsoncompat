@@ -145,7 +145,7 @@ class PreparedTests(unittest.TestCase):
 
     def test_prepared_artifacts_preserve_large_integer_divisors(self):
         model = self.modules["large_multiple"].JSONCOMPAT_MODEL
-        validator = jsoncompat.validator_for(model.__jsoncompat_schema__)
+        validator = jsoncompat.validator_for((WORK / "large_multiple.json").read_text())
         divisor = 10_000_000_000_000_001
         for value in (0, divisor, -divisor, 2 * divisor,
                       divisor - 1, divisor + 1, -(divisor - 1)):

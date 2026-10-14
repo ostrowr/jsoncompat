@@ -1,6 +1,6 @@
 # jsoncompat
 
-Python bindings for checking compatibility of evolving JSON Schemas and generating example values.
+Check JSON Schema compatibility, generate example values, and use typed Python models and OpenAPI clients. Start with the [client examples](../examples/openapi_client/README.md) or the API reference below.
 
 ## Installation
 
@@ -926,7 +926,7 @@ changing generated models or the binder. `options=` controls the wire request;
 query parameters, or a body. Both work together while preserving response
 inference and API checks. Passing another adapter's options is a type error.
 
-See the [runnable aiohttp, requests, and HTTPX examples](../examples/openapi_client/README.md#per-call-transport-options)
+See the [runnable aiohttp, requests, and HTTPX examples](../examples/openapi_client/README.md#override-one-call)
 for calls using each integration's native timeout types.
 
 Use `RequestOptions` for fields missing from a spec or an exceptional call:

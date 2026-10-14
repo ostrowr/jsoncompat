@@ -4,7 +4,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/jsoncompat)](https://crates.io/crates/jsoncompat) [![docs.rs](https://docs.rs/jsoncompat/badge.svg)](https://docs.rs/jsoncompat) [![PyPI](https://img.shields.io/pypi/v/jsoncompat.svg)](https://pypi.org/project/jsoncompat/) [![npm](https://img.shields.io/npm/v/jsoncompat.svg)](https://www.npmjs.com/package/jsoncompat) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Check whether evolving JSON Schemas and OpenAPI 3.1 contracts stay backward-compatible.
+Check whether evolving JSON Schemas and OpenAPI 3.1 contracts stay backward-compatible. Generate typed Python models and HTTP clients from the same schemas.
 
 jsoncompat compares:
 
@@ -138,73 +138,42 @@ jsoncompat codegen --target dataclasses reader.schema.json > reader_models.py
 
 ## Dataclass code generation
 
-`jsoncompat codegen --target dataclasses` accepts any JSON Schema document,
-canonicalizes it with `SchemaDocument::canonical_schema_json()`, and emits
-frozen, slotted Python dataclasses backed by one native construction and
-serialization runtime. Generation resolves model types and references, compiles
-validation programs and regexes, and computes conversion optimizations. Import
-creates classes and binds them to those prebuilt programs; first use performs
-no model compilation. Generated files contain prepared programs, not a copy of
-the source schema JSON. Validation and error reporting use those programs; keep
-the input schema separately if you need to inspect it.
-
-```bash
-jsoncompat codegen --target dataclasses schema.json > models.py
-```
-
-To keep the public API easy to read, write a model module and its private companion:
+Generate frozen, slotted Python models with typed constructors and validation:
 
 ```bash
 jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-`models.py` declares the root model, its fields and constructor, and the other
-public classes. It binds the classes to `_models_generated.py` at the bottom.
-Regeneration replaces these same two files; deploy them together. Output to stdout remains self-contained, with the generated
-implementation below the public declarations. Both layouts use the same prepared
-runtime. Import creates classes, loads precomputed programs, and binds slots;
-full dataclass reflection metadata is created only when explicitly requested.
-Constructors and JSON I/O need no further preparation. See
-[generated Python models](pybindings/README.md#generated-model-artifacts) for the
-build contract and benchmarks.
+Ship `models.py` and its generated `_models_generated.py` companion together.
+Use `Model.from_value(...)` and `.to_value()` for Python values, or
+`Model.deserialize(...)` and `.serialize()` for JSON. Optional fields default to
+`MISSING`, keeping omission distinct from an explicit `None`.
 
-Generate an explicitly selected OpenAPI component package in the same build step:
+Generation prepares validation and conversion programs; importing or first using
+a model does not compile its schema. Keep the original schema as your build
+input. See the [Python model guide](pybindings/README.md#generated-model-artifacts)
+for omitted fields, immutable collections, YAML/MessagePack, and stamped models.
+
+To generate models from OpenAPI components without HTTP requests:
 
 ```bash
 jsoncompat codegen --openapi openapi.json --output my_models
 ```
 
-Import a component directly: `from my_models.models.order import Order`.
-Each named component owns one module, including its nested types. Dependencies
-keep the same class identity across imports; unrelated models stay unloaded.
-`from my_models import Order` remains available as a lazy convenience import.
-`--component` selects roots and `--rename` resolves name collisions. See
+Import directly from a component module, such as
+`from my_models.models.order import Order`. See
 [OpenAPI model packages](pybindings/README.md#openapi-model-packages).
 
-Generate API-scoped HTTP requests alongside the models with `--api`:
+## Python clients from OpenAPI
+
+Generate typed requests and responses for Python 3.12 or newer:
 
 ```bash
 jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
-```
-
-Operations share resource modules such as `operations/pets.py`; component models
-live in modules such as `models/pet.py`. Public declarations and documentation
-come first; prepared programs and binding tables live in a private footer.
-Publish the complete generated directory.
-
-Browse the [checked-in Petstore client](examples/openapi_client/petstore/) and
-[run its examples](examples/openapi_client/README.md) with aiohttp, HTTPX, or
-requests. Tests compare the generated package against these goldens.
-
-The [public-spec corpus](pybindings/benchmarks/public-openapi.md) checks larger
-real-world APIs, declared errors, scalar and array bodies, and current support
-limits with reproducible generation and typing tests.
-
-Install the integration for your HTTP library, then bind your own session:
-
-```sh
 pip install 'jsoncompat[requests]'
 ```
+
+Bind a session you own, then pass a generated request to `client.request()`:
 
 ```python
 import requests
@@ -214,84 +183,46 @@ from petstore.api import PetstoreAPI
 from petstore.operations.pets import GetPetRequest
 
 with requests.Session() as session:
-    client = bind(PetstoreAPI, fetch=RequestsFetch(session, "https://example.com"))
+    client = bind(PetstoreAPI, fetch=RequestsFetch(session, "https://api.example.com"))
     response = client.request(GetPetRequest(pet_id="p_123"))
-    pet = response.unwrap()
+    print(response.status)  # The body has been downloaded, but not parsed.
+    pet = response.unwrap()  # Parse and validate; return GetPet200 or raise.
     print(pet.body.name)
 ```
 
-Code generation prepares HTTP dispatch alongside the models. Importing
-`PetstoreAPI` binds those plans without inspecting type annotations.
-Binding just attaches the fetcher. You own the session and its lifetime.
-Use `bind_async` with the aiohttp or async HTTPX integration for async code.
+Replace the URL with your API's base URL. Configure credentials and defaults on
+your session; the adapter never creates or closes it. Use `bind_async` with
+`AiohttpFetch` or `AsyncHttpxFetch` for async code, or `HttpxFetch` with `bind`.
+Install the corresponding `jsoncompat[aiohttp]` or `jsoncompat[httpx]` extra.
 
-`request()` downloads the response; `.unwrap()` parses it and returns the typed
-success response, or raises. Read `response.status`, `.headers`, and `.content`
-without parsing. Use `.result()` to handle an expected error such as a 404.
-Undeclared errors retain their status, headers, and body in `UnexpectedResponse`.
+- `.status`, `.headers`, and `.content` expose the buffered response without parsing.
+- `.unwrap()` returns a typed success or raises. `.result()` gives `Ok`/`Err` for
+  handling expected errors such as a 404. Both share one cached decoding result.
+- Undeclared or malformed non-2xx responses become `UnexpectedResponse`, preserving
+  the status, headers, and body. Invalid successes raise `ResponseError` when parsed.
 
-Pass clients to your application using the generated types:
+Pass clients around using the generated protocol aliases:
 
 ```python
-from petstore import GetPet200, GetPetRequest, PetstoreClient
+from petstore.api import PetstoreClient
+from petstore.operations.pets import GetPet200, GetPetRequest
 
 def get_pet(client: PetstoreClient, pet_id: str) -> GetPet200:
     return client.request(GetPetRequest(pet_id=pet_id)).unwrap()
 ```
 
-`PetstoreAsyncClient` is the async equivalent. Both accept an optional transport
-type, such as `PetstoreAsyncClient[AiohttpOptions]`, for helpers that need native
-per-call settings. The default works with any adapter and preserves API and
-response typing.
+`PetstoreAsyncClient` is the async equivalent. Importing `PetstoreAPI` binds the
+precomputed dispatch plans; `bind` only attaches the fetcher. Requests live in
+resource modules such as `operations/pets.py`, and models in `models/pet.py`.
+Publish the complete generated directory, including `py.typed`.
 
-See the [aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md)
-for complete clients, expected errors, and timeout overrides. The
-[HTTP reference](pybindings/README.md#api-scoped-http-requests) covers custom
-fetchers, extra headers, and other controls.
-
-- `from_value(...)` / `to_value(...)` for schema-checked conversion between
-  generated models and Python JSON values;
-- `deserialize(...)` / `serialize(...)` for JSON, YAML, and MessagePack wire
-  formats, with JSON as the default;
-- keyword-only `skip_validation=True` on direct construction and every
-  conversion method when the caller can guarantee the value is schema-valid;
-- `__jsoncompat_extra__` for schema-admitted object properties that are not
-  declared under `properties`, including `additionalProperties` and
-  `patternProperties`;
-- `MISSING` for omitted optional fields so absent and explicit
-  `null` stay distinguishable. Check with `is MISSING` / `is not MISSING`, or
-  `is_missing(...)`; all support type narrowing.
-
-When the schema structure makes it honest, code generation also keeps Python
-annotations narrow rather than collapsing to `Any`, including primitive local
-`$ref` fields rooted under `$defs` or legacy `definitions`, plus constrained
-tuple-like arrays built from `prefixItems`.
-
-If the input schema contains `x-jsoncompat` metadata from `jsoncompat stamp`,
-generated writer envelopes inherit from `WriterDataclassModel`, which disables
-deserialization methods, and generated reader envelopes inherit from
-`ReaderDataclassModel` / `ReaderDataclassRootModel`, which disable
-serialization methods.
-
-`skip_validation=True` skips only the attached JSON Schema check. Wire-format
-parsing and JSON-value normalization, runtime type conversion, and reader/writer
-direction guards still apply.
-
-The runtime contract applies only to dataclasses emitted by this command.
-Hand-written subclasses, custom `__init__` / `__new__` / `__post_init__`
-hooks, inheritance between generated models, and Python default factories are
-not supported model-definition APIs. JSON Schema `default` remains an
-annotation and does not manufacture a Python value for a missing property.
-
-Install optional codecs with `jsoncompat[yaml]` and `jsoncompat[msgpack]`.
-Every decoded format is restricted to JSON-compatible values before model
-construction; format-specific values such as YAML timestamps or MessagePack
-binary/extension values are rejected.
-
-See the [canonical plain-schema example](examples/dataclasses/demo.py) for an
-ordinary model that both serializes and deserializes. The
-[canonical stamped-schema example](examples/stamp/demo.py) covers separate
-writer/reader envelopes and historical versions.
+Start with the [checked-in Petstore client](examples/openapi_client/petstore/)
+and [runnable aiohttp, HTTPX, and requests examples](examples/openapi_client/README.md).
+They cover expected errors, unexpected responses, and per-call timeouts.
+The [HTTP reference](pybindings/README.md#api-scoped-http-requests) explains custom
+fetchers, transport typing, and request overrides. The
+[public-spec audit](pybindings/benchmarks/public-openapi.md) records real-world
+coverage and current support limits.
 
 ## Choose a role
 
