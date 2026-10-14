@@ -3,6 +3,7 @@
 import itertools
 import json
 import math
+import os
 
 
 def record(properties, required=None, **keywords):
@@ -143,6 +144,16 @@ def cases():
     rows = [{"payload": {"kind": "left", "v": i}, "text": "猫🐲" * 512} for i in range(256)]
     invalid = json.loads(json.dumps(rows)); invalid[-1]["payload"]["v"] = -1
     add("large_union_values", {"type": "array", "items": item}, [rows], [invalid], stress=True)
+    if os.environ.get("JSONCOMPAT_TEST_ARBITRARY_PRECISION") == "0":
+        exact_scalars = ("integer_multiple", "huge_integer", "huge_const", "negative_integer")
+        result = [case for case in result if not any(
+            case["name"] == name or case["name"].startswith(name + "_")
+            for name in exact_scalars
+        )]
+        for case in result:
+            # These witnesses distinguish lexemes that round to the same float.
+            if case["name"] in ("control", "integer_bound_wires", "exact_decimal", "integer_wires"):
+                case["wires"] = []
     return result
 
 

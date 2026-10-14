@@ -15,6 +15,18 @@ json_schema_ast = "0.5.0"
 
 ## Usage
 
+The default uses ordinary `serde_json` numeric limits. Decimal values may round,
+underflow to zero, or fail to parse when out of range. Enable the
+`arbitrary-precision` Cargo feature to retain exact JSON number text:
+
+```toml
+json_schema_ast = { version = "0.5.0", features = ["arbitrary-precision"] }
+```
+
+This enables `serde_json/arbitrary_precision` across shared dependencies. See
+[numeric precision](../readme.md#numeric-precision) for the performance and
+compatibility tradeoff.
+
 ```rust
 use json_schema_ast::{SchemaDocument, compile};
 use serde_json::json;

@@ -34,8 +34,8 @@ enum Assertion {
     Enum(Vec<Value>),
     Unique(bool),
 }
-impl jsonschema::Keyword for Assertion {
-    fn is_valid(&self, value: &Value) -> bool {
+impl<'i> jsonschema::Keyword<'i> for Assertion {
+    fn is_valid(&self, value: &'i Value) -> bool {
         match self {
             Self::Type(kinds) => kinds.iter().any(|kind| kind.accepts(value)),
             Self::Const(expected) => crate::json_values_equal(expected, value),
@@ -54,7 +54,7 @@ impl jsonschema::Keyword for Assertion {
             }
         }
     }
-    fn validate<'i>(&self, value: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
+    fn validate(&self, value: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
         if self.is_valid(value) {
             Ok(())
         } else {

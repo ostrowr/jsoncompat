@@ -50,7 +50,16 @@ impl PreparedSchema {
         }
         // Owning the failed instance makes diagnostic traversal independent of
         // Python lifetimes and leaves the successful borrowed path unchanged.
-        self.explain(&value.to_owned())
+        match value.try_to_owned() {
+            Ok(value) => self.explain(&value),
+            Err(error) => {
+                let mut result = failure("", "", "json");
+                result.kind = ValidationFailureKind::NonJson;
+                result.message =
+                    format!("value exceeds the configured JSON numeric range: {error}");
+                Some(result)
+            }
+        }
     }
 
     pub fn explain(&self, value: &Value) -> Option<ValidationFailure> {

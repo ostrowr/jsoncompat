@@ -9,6 +9,7 @@ import copy
 import importlib.util
 import itertools
 import json
+import os
 import random
 import sys
 from collections import Counter
@@ -258,6 +259,10 @@ def check_fixture_corpus(fixtures):
     for path in sorted(fixtures.rglob('*.py')):
         relative = path.relative_to(fixtures)
         kind = relative.parts[0]
+        if (os.environ.get("JSONCOMPAT_TEST_ARBITRARY_PRECISION") == "0"
+                and relative.parts[:3] == ("fuzz", "optional", "bignum")):
+            # Original labels depend on numbers outside the default precision.
+            continue
         valid, invalid, seeds, wires = [], [], [], []
         original = None
         if kind == 'fuzz':

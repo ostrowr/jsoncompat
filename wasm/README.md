@@ -11,6 +11,19 @@ npm install jsoncompat@0.5.0
 
 ## Quick start
 
+Arbitrary precision is off in the default npm/WebAssembly build. JSON numbers
+follow ordinary `serde_json` numeric limits, including decimal rounding,
+underflow, and rejection outside its range. To opt in when building from this
+repository, use:
+
+```bash
+wasm-pack build wasm --target web --release --features arbitrary-precision
+```
+
+This is a build option. Pass schemas and instances as JSON strings to preserve
+their numeric text; JavaScript `Number` values may already have lost precision.
+See [numeric precision](../readme.md#numeric-precision) for the tradeoffs.
+
 ```js
 import init, { check_compat, generator_for, validator_for } from "jsoncompat";
 

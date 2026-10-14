@@ -1,5 +1,5 @@
 //! Python/Jiter adapters for the portable prepared evaluator.
-//! Fork-only validator types stay inside this unpublished crate.
+//! Runtime-specific views stay inside this unpublished crate.
 use jsoncompat_codegen::prepared_schema as portable;
 pub(crate) use portable::Node;
 use portable::instance::{ArrayView, InstanceView, NumberView, ObjectView};
@@ -26,28 +26,28 @@ impl PreparedSchema {
     }
     pub(crate) fn explain_instance(
         &self,
-        value: jsonschema::InstanceRef<'_>,
+        value: crate::instance::InstanceRef<'_>,
     ) -> Option<portable::ValidationFailure> {
         self.0.explain_view(View(value))
     }
-    pub(crate) fn is_valid_instance(&self, value: jsonschema::InstanceRef<'_>) -> bool {
+    pub(crate) fn is_valid_instance(&self, value: crate::instance::InstanceRef<'_>) -> bool {
         self.0.is_valid_view(View(value))
     }
     pub(crate) fn is_valid_instance_assuming_json(
         &self,
-        value: jsonschema::InstanceRef<'_>,
+        value: crate::instance::InstanceRef<'_>,
     ) -> bool {
         self.0.is_valid_json_view(View(value))
     }
 }
 
 pub(crate) trait NodeExt {
-    fn accepts_leaf(&self, value: jsonschema::InstanceRef<'_>) -> bool;
+    fn accepts_leaf(&self, value: crate::instance::InstanceRef<'_>) -> bool;
     fn accepts_jiter_leaf(&self, value: &jiter::JsonValue<'_>) -> bool;
 }
 impl NodeExt for Node {
     #[inline]
-    fn accepts_leaf(&self, value: jsonschema::InstanceRef<'_>) -> bool {
+    fn accepts_leaf(&self, value: crate::instance::InstanceRef<'_>) -> bool {
         self.accepts_leaf_view(View(value))
     }
     /// The parser and writer already know the concrete scalar representation.
@@ -101,25 +101,25 @@ impl NodeExt for Node {
                             Ordering::Less => !lower,
                         }),
                     Rule::MultipleOf(_) => {
-                        self.accepts_leaf(jsonschema::InstanceRef::from_jiter(value))
+                        self.accepts_leaf(crate::instance::InstanceRef::from_jiter(value))
                     }
                     Rule::StringLength { .. } => true,
                     _ => unreachable!("leaf guards contain only scalar constraints"),
                 })
             }
-            _ => self.accepts_leaf(jsonschema::InstanceRef::from_jiter(value)),
+            _ => self.accepts_leaf(crate::instance::InstanceRef::from_jiter(value)),
         }
     }
 }
 
 #[derive(Clone, Copy)]
-struct View<'a>(jsonschema::InstanceRef<'a>);
+struct View<'a>(crate::instance::InstanceRef<'a>);
 #[derive(Clone, Copy)]
-struct NumberAdapter<'a>(jsonschema::NumberRef<'a>);
+struct NumberAdapter<'a>(crate::instance::NumberRef<'a>);
 #[derive(Clone, Copy)]
-struct ArrayAdapter<'a>(jsonschema::ArrayRef<'a>);
+struct ArrayAdapter<'a>(crate::instance::ArrayRef<'a>);
 #[derive(Clone, Copy)]
-struct ObjectAdapter<'a>(jsonschema::ObjectRef<'a>);
+struct ObjectAdapter<'a>(crate::instance::ObjectRef<'a>);
 
 impl<'a> InstanceView<'a> for View<'a> {
     type Number = NumberAdapter<'a>;
@@ -156,13 +156,18 @@ impl<'a> InstanceView<'a> for View<'a> {
     #[inline]
     fn equals(self, value: &Value) -> bool {
         if value.is_number() || value.is_array() || value.is_object() {
-            json_schema_ast::json_values_equal(&self.0.to_owned(), value)
+            self.0
+                .try_to_owned()
+                .is_ok_and(|owned| json_schema_ast::json_values_equal(&owned, value))
         } else {
             self.0.equals(value)
         }
     }
     fn to_owned(self) -> Value {
         self.0.to_owned()
+    }
+    fn try_to_owned(self) -> Result<Value, serde_json::Error> {
+        self.0.try_to_owned()
     }
 }
 impl<'a> NumberView<'a> for NumberAdapter<'a> {
@@ -185,14 +190,14 @@ impl<'a> NumberView<'a> for NumberAdapter<'a> {
     #[inline]
     fn serde(self) -> Option<&'a Number> {
         match self.0 {
-            jsonschema::NumberRef::Serde(value) => Some(value),
+            crate::instance::NumberRef::Serde(value) => Some(value),
             _ => None,
         }
     }
     #[inline]
     fn big_integer(self) -> Option<&'a num_bigint::BigInt> {
         match self.0 {
-            jsonschema::NumberRef::BigInteger(value) => Some(value),
+            crate::instance::NumberRef::BigInteger(value) => Some(value),
             _ => None,
         }
     }

@@ -12,11 +12,11 @@ use std::ops::Deref;
 use std::ops::Range;
 use std::sync::Arc;
 
-use jiter::JsonValue as JiterJsonValue;
-use jsonschema::{
+use crate::instance::{
     InstanceRef as JsonInstanceRef, ProjectedPythonKind, ProjectedPythonValue,
     PythonInstanceProvider,
 };
+use jiter::JsonValue as JiterJsonValue;
 use pyo3::Borrowed;
 use pyo3::exceptions::{PyIndexError, PyTypeError, PyValueError};
 use pyo3::ffi;

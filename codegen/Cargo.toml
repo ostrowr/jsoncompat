@@ -6,6 +6,10 @@ description = "Canonical stamped JSON Schema bundles for jsoncompat code generat
 repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
 
+[features]
+default = []
+arbitrary-precision = ["json_schema_ast/arbitrary-precision"]
+
 [dependencies]
 json_schema_ast = { path = "../schema", version = "0.5.0" }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
