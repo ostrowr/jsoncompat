@@ -1,5 +1,9 @@
 # OpenAPI support in jsoncompat
 
+The `arbitrary-precision` Cargo feature is off by default. It forwards exact JSON
+number parsing to the schema crate; otherwise schema numbers follow ordinary
+`serde_json` numeric limits. See [numeric precision](../readme.md#numeric-precision).
+
 Most users should start with the [repository README](https://github.com/ostrowr/jsoncompat/blob/main/readme.md). This page covers the OpenAPI-specific workflow.
 
 jsoncompat can compare JSON OpenAPI 3.1 documents with path operations:

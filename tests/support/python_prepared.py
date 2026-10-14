@@ -9,6 +9,7 @@ import dataclasses
 import gc
 import inspect
 import json
+import os
 import pickle
 import sys
 import unittest
@@ -25,6 +26,7 @@ from jsoncompat.codegen import dataclasses as dc
 WORK = Path(sys.argv.pop(1))
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = WORK / "fixtures"
+ARBITRARY_PRECISION = os.environ.get("JSONCOMPAT_TEST_ARBITRARY_PRECISION") != "0"
 
 
 def _load(path):
@@ -80,6 +82,90 @@ class PreparedTests(unittest.TestCase):
                 self.assertEqual(raised.exception.keyword, "minimum")
                 self.assertEqual(raised.exception.kind, "constraint")
 
+    def test_numeric_precision_matches_the_build(self):
+        validator = jsoncompat.validator_for('{"const":0.10000000000000001}')
+        self.assertEqual(validator.is_valid_json('0.1'), not ARBITRARY_PRECISION)
+        zero = jsoncompat.validator_for('{"const":0}')
+        self.assertEqual(zero.is_valid_json('1e-400'), not ARBITRARY_PRECISION)
+        if ARBITRARY_PRECISION:
+            self.assertTrue(jsoncompat.validator_for('true').is_valid_json('1e400'))
+        else:
+            with self.assertRaises(ValueError):
+                jsoncompat.validator_for('true').is_valid_json('1e400')
+
+    def test_oversized_numeric_errors_never_panic(self):
+        model = self.modules["constrained"].Constrained
+        bad = {"name": "ok", "count": -(10**400)}
+        for operation in (lambda: model.from_value(bad),
+                          lambda: model(name="ok", count=bad["count"])):
+            with self.assertRaises(jsoncompat.ValidationError) as raised:
+                operation()
+            self.assertIn(raised.exception.kind, ("constraint", "non_json"))
+        # The streaming parser can reject before constructing diagnostics.
+        with self.assertRaises(ValueError):
+            model.deserialize(json.dumps(bad))
+        # Borrowed equality must also reject out-of-range nested values safely.
+        validator = jsoncompat.validator_for('{"const":{"x":0}}')
+        self.assertFalse(validator._is_valid_borrowed_value({"x":10**400}))
+        if ARBITRARY_PRECISION:
+            self.assertFalse(validator.is_valid_value({"x":10**400}))
+        else:
+            with self.assertRaises(ValueError):
+                validator.is_valid_value({"x":10**400})
+        constant = _load(FIXTURES / "fuzz/const/000.py").JSONCOMPAT_MODEL
+        with self.assertRaises(ValueError):
+            constant.from_value(10**400)
+
+    def test_prepared_numeric_materialization_never_panics(self):
+        huge = 10**400
+        for name, value in (("numeric_unique", [huge]),
+                            ("numeric_unique", [{"nested": [huge]}]),
+                            ("numeric_minimum", huge),
+                            ("numeric_multiple", huge)):
+            for negated in (False, True):
+                model = self.modules[name + ("_not" if negated else "")].JSONCOMPAT_MODEL
+                trusted = model.from_value(value, skip_validation=True)
+                with self.subTest(schema=name, negated=negated, value=value):
+                    for operation in (lambda: model.from_value(value),
+                                      trusted.to_value, trusted.serialize):
+                        if ARBITRARY_PRECISION and not negated:
+                            operation()
+                        else:
+                            # Serialization may reject during JSON conversion,
+                            # before structured schema diagnostics are available.
+                            with self.assertRaises(ValueError):
+                                operation()
+                    # JSON parsing can reject out-of-range values before validation.
+                    for wire in (json.dumps(value), json.dumps(value).encode()):
+                        if ARBITRARY_PRECISION and not negated:
+                            self.assertEqual(model.deserialize(wire).to_value(), value)
+                        else:
+                            with self.assertRaises(ValueError):
+                                model.deserialize(wire)
+
+    def test_prepared_artifacts_preserve_large_integer_divisors(self):
+        model = self.modules["large_multiple"].JSONCOMPAT_MODEL
+        validator = jsoncompat.validator_for((WORK / "large_multiple.json").read_text())
+        divisor = 10_000_000_000_000_001
+        for value in (0, divisor, -divisor, 2 * divisor,
+                      divisor - 1, divisor + 1, -(divisor - 1)):
+            expected = value % divisor == 0
+            with self.subTest(value=value):
+                self.assertEqual(validator.is_valid_value(value), expected)
+                trusted = model.from_value(value, skip_validation=True)
+                for operation in (lambda: model.from_value(value),
+                                  lambda: model(root=value),
+                                  lambda: model.deserialize(str(value)),
+                                  trusted.to_value, trusted.serialize):
+                    if expected:
+                        operation()
+                    else:
+                        with self.assertRaises(jsoncompat.ValidationError):
+                            operation()
+                if expected:
+                    self.assertEqual(model.from_value(value).to_value(), value)
+                    self.assertEqual(json.loads(trusted.serialize()), value)
+
     def test_schema_options_are_explicit_and_shared(self):
         schema = '{"$ref":"https://example.com/name"}'
         options = {"resources": {"https://example.com/name": {"type":"string", "minLength":2}}}
@@ -95,6 +181,44 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             jsoncompat.validator_for("true", options={"unexpected": True})
 
+    def test_validator_backends_preserve_applicators_and_borrowed_values(self):
+        cases = [
+            ({"oneOf": [True, True]}, [(None, False), ({}, False)]),
+            ({"type": "array", "contains": {"type": "integer"},
+              "minContains": 1, "maxContains": 1, "unevaluatedItems": False},
+             [([1], True), ([1, 2], False), ([1, "x"], False)]),
+            ({"anyOf": [{"properties": {"a": True}}, {"properties": {"b": True}}],
+              "unevaluatedProperties": False},
+             [({"a": 1, "b": 2}, True), ({"c": 1}, False)]),
+            ({"type": "object", "propertyNames": {"pattern": "^[a-z]+$"}},
+             [({"name": 1}, True), ({"Name": 1}, False)]),
+            ({"type": "array", "uniqueItems": True},
+             [([1, 1.0], False), ([True, 1], True), ([{"x": 1}, {"x": 1.0}], False)]),
+            ({"type": "object", "properties": {"next": {"$ref": "#"}},
+              "additionalProperties": False},
+             [({"next": {"next": {}}}, True), ({"next": {"bad": 1}}, False)]),
+        ]
+        for schema, examples in cases:
+            validator = jsoncompat.validator_for(json.dumps(schema))
+            for value, expected in examples:
+                with self.subTest(schema=schema, value=value):
+                    self.assertEqual(validator.is_valid_json(json.dumps(value)), expected)
+                    self.assertEqual(validator.is_valid_value(value), expected)
+                    self.assertEqual(validator._is_valid_borrowed_value(value), expected)
+
+    def test_borrowed_validator_rejects_non_json_graphs(self):
+        validator = jsoncompat.validator_for("true")
+        cyclic_list = []
+        cyclic_list.append(cyclic_list)
+        cyclic_dict = {}
+        cyclic_dict["self"] = cyclic_dict
+        for value in (object(), {1: "not a string key"}, float("nan"),
+                      float("inf"), [float("-inf")], cyclic_list, cyclic_dict):
+            with self.subTest(value=type(value).__name__):
+                self.assertFalse(validator._is_valid_borrowed_value(value))
+        shared = {"value": [1, "🐲", None]}
+        self.assertTrue(validator._is_valid_borrowed_value([shared, shared]))
+
     def test_public_verdict_is_structured_and_preserves_exact_witness_json(self):
         result = jsoncompat.analyze_compat('{"type":"string"}', '{"type":"integer"}', "serializer")
         self.assertEqual(result["status"], "incompatible")
@@ -107,6 +231,7 @@ class PreparedTests(unittest.TestCase):
         complex_schema = {"type": "object", "anyOf": [{"properties": {k: True}} for k in properties], "unevaluatedProperties": False}
         self.assertEqual(jsoncompat.analyze_compat(json.dumps(simple), json.dumps(complex_schema))["status"], "unknown")
 
+    @unittest.skipUnless(ARBITRARY_PRECISION, "requires exact JSON numeric lexemes")
     def test_numeric_exponents_never_turn_failed_assertions_into_negations(self):
         for exponent in (324, 10000, 10001, 2147483648):
             for negative in (False, True):
@@ -603,6 +728,7 @@ class PreparedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             model.deserialize('{"value":1,"children":[{"value":-1,"children":[]}]}')
 
+    @unittest.skipUnless(ARBITRARY_PRECISION, "requires exact JSON numeric lexemes")
     def test_decimal_json_boundaries_are_checked_before_float_conversion(self):
         module = _load(FIXTURES / "fuzz/optional/bignum/004.py")
         model = module.JSONCOMPAT_MODEL
@@ -623,6 +749,12 @@ class PreparedTests(unittest.TestCase):
         checked_modules = checked_examples = 0
         for source in sorted(FIXTURES.rglob("*.py")):
             relative = source.relative_to(FIXTURES)
+            # Float parsers can round opposite sides of these huge boundaries.
+            # The all-features run retains the complete bignum corpus.
+            if not ARBITRARY_PRECISION and relative.as_posix() in (
+                "fuzz/optional/bignum/004.py", "fuzz/optional/bignum/006.py",
+            ):
+                continue
             with self.subTest(fixture=str(relative)):
                 module = _load(source)
                 try:

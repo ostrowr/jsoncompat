@@ -32,6 +32,7 @@ getrandom = { version = "0.4.2", features = ["wasm_js"] }
 
 [features]
 default = ["wee_alloc"]
+arbitrary-precision = ["jsoncompat/arbitrary-precision", "json_schema_fuzz/arbitrary-precision"]
 
 [dependencies.wee_alloc]
 version = "0.4.5"

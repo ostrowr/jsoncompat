@@ -15,7 +15,15 @@ pub fn python_command() -> Command {
         .arg("--locked");
     command
         .arg("python")
-        .env("JSONCOMPAT_NATIVE_PROFILE", "debug");
+        .env("JSONCOMPAT_NATIVE_PROFILE", "debug")
+        .env(
+            "JSONCOMPAT_TEST_ARBITRARY_PRECISION",
+            if cfg!(feature = "arbitrary-precision") {
+                "1"
+            } else {
+                "0"
+            },
+        );
     add_repo_python_path(&mut command);
     command
 }

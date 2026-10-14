@@ -7,6 +7,15 @@ repository = "https://github.com/ostrowr/jsoncompat"
 license = "MIT"
 readme = "readme.md"
 
+[features]
+default = []
+arbitrary-precision = [
+    "json_schema_ast/arbitrary-precision",
+    "json_schema_fuzz/arbitrary-precision",
+    "jsoncompat_codegen/arbitrary-precision",
+    "jsoncompat_openapi/arbitrary-precision",
+]
+
 # Workspace definition so we can host the additional sibling crates.
 [workspace]
 members = [
@@ -17,6 +26,11 @@ members = [
     "pybindings", # -> jsoncompat Python bindings
     "wasm"      # -> json_schema_wasm bindings
 ]
+
+[workspace.dependencies]
+# Disable remote resolution so the same backend also works in WebAssembly.
+# Retain internationalized hostname/email validation, now an optional feature.
+jsonschema = { version = "0.58.6", default-features = false, features = ["idna"] }
 
 [dependencies]
 rand = "0.10.0"

@@ -5,6 +5,7 @@
 //! strings and report invalid inputs or hard unsupported core-library cases as
 //! `ValueError`.
 
+mod instance;
 mod model_converter;
 mod prepared_schema;
 mod unicode;
@@ -24,8 +25,8 @@ use pyo3::types::{
 };
 
 use ::jsoncompat::{Role, SchemaDocument, check_compat, validate_compatibility_input};
+use instance::InstanceRef as JSONInstanceRef;
 use json_schema_fuzz::{GenerateError, GenerationConfig, ValueGenerator};
-use jsonschema::InstanceRef as JSONInstanceRef;
 
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
@@ -76,14 +77,14 @@ fn validated_python_schema(raw: &JsonValue) -> Result<PythonSchema, String> {
     })
 }
 
-// The Python-optimized backend delegates assertions with exact arithmetic to
+// The upstream backend delegates assertions with exact arithmetic to
 // the shared compiler, preserving identical semantics on every API surface.
 struct SharedAssertion(json_schema_ast::JSONSchema);
-impl jsonschema::Keyword for SharedAssertion {
-    fn is_valid(&self, instance: &JsonValue) -> bool {
+impl<'i> jsonschema::Keyword<'i> for SharedAssertion {
+    fn is_valid(&self, instance: &'i JsonValue) -> bool {
         self.0.is_valid(instance)
     }
-    fn validate<'i>(&self, instance: &'i JsonValue) -> Result<(), jsonschema::ValidationError<'i>> {
+    fn validate(&self, instance: &'i JsonValue) -> Result<(), jsonschema::ValidationError<'i>> {
         if self.is_valid(instance) {
             Ok(())
         } else {
@@ -316,11 +317,17 @@ impl PythonSchema {
     }
 
     fn is_valid_instance(&self, instance: JSONInstanceRef<'_>) -> bool {
-        self.validator.is_valid_instance(instance)
+        instance.is_json() && self.is_valid_instance_assuming_json(instance)
     }
 
     fn is_valid_instance_assuming_json(&self, instance: JSONInstanceRef<'_>) -> bool {
-        self.validator.is_valid_instance_assuming_json(instance)
+        if let Some(value) = instance.as_serde() {
+            self.validator.is_valid(value)
+        } else {
+            instance
+                .try_to_owned()
+                .is_ok_and(|value| self.validator.is_valid(&value))
+        }
     }
 }
 
@@ -391,7 +398,8 @@ impl ValidatorPy {
         Ok(self.validate_instance_assuming_json(JSONInstanceRef::from_serde(&instance)))
     }
 
-    /// Check a Python JSON value in place without allocating a serde value tree.
+    /// Check a borrowed Python value with the upstream serde-based validator.
+    /// Generated models separately use allocation-free prepared instance views.
     fn _is_valid_borrowed_value(&self, instance: &Bound<'_, PyAny>) -> bool {
         self.validate_instance(JSONInstanceRef::from_python(instance))
     }
@@ -781,7 +789,7 @@ fn construct_model_json_bytes_checked(
     payload: &[u8],
     converter: &ModelConverterPy,
 ) -> PyResult<Option<Py<PyAny>>> {
-    // Retain arbitrary-precision JSON numbers for schemas with exact bounds.
+    // Use serde_json's configured precision for schemas with exact bounds.
     // This decision is built into the artifact, never discovered on first use.
     if converter.schema()?.requires_exact_json_numbers() {
         return construct_exact_model_json(py, payload, converter);

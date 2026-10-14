@@ -427,6 +427,7 @@ fn generation_has_a_configurable_structural_work_budget() {
 }
 
 #[test]
+#[cfg(feature = "arbitrary-precision")]
 fn raw_decimal_lexemes_preserve_membership_and_numeric_equality() {
     for (schema, accepted, rejected) in [
         (
