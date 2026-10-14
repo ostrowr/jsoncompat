@@ -4,8 +4,10 @@
 //! objects. Loading checks its version and every edge without compiling schemas.
 //! Unsupported vocabulary is rejected by the builder, never silently ignored.
 
+use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 pub mod instance;
 use instance::{ArrayView, InstanceRef, InstanceView, NumberView, ObjectView};
@@ -35,10 +37,94 @@ pub struct PatternId(usize);
 pub struct PreparedSchema {
     version: u32,
     nodes: Vec<Node>,
-    patterns: Vec<Pattern>,
+    patterns: Vec<Arc<Pattern>>,
     pattern_sources: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     exact_json_numbers: bool,
+}
+
+/// A compiled pattern shared by all generated programs that reference it.
+/// The identifier covers the source and portable automata, including both byte orders.
+pub struct SharedPattern {
+    identifier: String,
+    source: String,
+    pattern: Arc<Pattern>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PatternData {
+    source: String,
+    pattern: Arc<Pattern>,
+}
+
+impl SharedPattern {
+    pub fn load(bytes: &[u8]) -> Result<Self, String> {
+        let data: PatternData = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        Ok(Self {
+            identifier: format!("{:x}", Sha256::digest(bytes)),
+            source: data.source,
+            pattern: data.pattern,
+        })
+    }
+
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SharedProgram {
+    version: u32,
+    nodes: Vec<Node>,
+    pattern_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    exact_json_numbers: bool,
+}
+
+/// Build-time pool. Source identity avoids serializing a large automaton more
+/// than once; content identities keep references stable as other models change.
+#[derive(Default)]
+pub(crate) struct PatternPool {
+    identifiers: HashMap<String, String>,
+    pub(crate) data: BTreeMap<String, Vec<u8>>,
+}
+
+impl PatternPool {
+    pub(crate) fn program(
+        &mut self,
+        schema: &PreparedSchema,
+    ) -> Result<(Vec<u8>, Vec<String>), String> {
+        if schema.patterns.is_empty() {
+            return schema.to_bytes().map(|bytes| (bytes, Vec::new()));
+        }
+        let mut ids = Vec::new();
+        for (source, pattern) in schema.pattern_sources.iter().zip(&schema.patterns) {
+            let id = if let Some(id) = self.identifiers.get(source) {
+                id.clone()
+            } else {
+                let data = serde_json::to_vec(&PatternData {
+                    source: source.clone(),
+                    pattern: Arc::clone(pattern),
+                })
+                .map_err(|e| e.to_string())?;
+                let id = format!("{:x}", Sha256::digest(&data));
+                self.data.insert(id.clone(), data);
+                self.identifiers.insert(source.clone(), id.clone());
+                id
+            };
+            ids.push(id);
+        }
+        let bytes = serde_json::to_vec(&SharedProgram {
+            version: VERSION,
+            nodes: schema.nodes.clone(),
+            pattern_ids: ids.clone(),
+            exact_json_numbers: schema.exact_json_numbers,
+        })
+        .map_err(|e| e.to_string())?;
+        Ok((bytes, ids))
+    }
 }
 
 #[derive(Clone, PartialEq, Deserialize, Serialize)]
@@ -359,6 +445,39 @@ impl PreparedSchema {
 
     pub fn load(bytes: &[u8]) -> Result<Self, String> {
         let program: Self = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+        program.checked()
+    }
+
+    /// Link already-loaded automata without parsing or compiling a regex again.
+    pub fn load_shared(bytes: &[u8], patterns: &[&SharedPattern]) -> Result<Self, String> {
+        let program: SharedProgram = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        if program.pattern_ids.len() != patterns.len()
+            || program
+                .pattern_ids
+                .iter()
+                .zip(patterns)
+                .any(|(id, pattern)| id != pattern.identifier())
+        {
+            return Err("prepared schema pattern identity mismatch; regenerate models".into());
+        }
+        Self {
+            version: program.version,
+            nodes: program.nodes,
+            exact_json_numbers: program.exact_json_numbers,
+            patterns: patterns
+                .iter()
+                .map(|pattern| Arc::clone(&pattern.pattern))
+                .collect(),
+            pattern_sources: patterns
+                .iter()
+                .map(|pattern| pattern.source.clone())
+                .collect(),
+        }
+        .checked()
+    }
+
+    fn checked(self) -> Result<Self, String> {
+        let program = self;
         if program.version != VERSION
             || program.nodes.is_empty()
             || program.pattern_sources.len() != program.patterns.len()
@@ -794,7 +913,7 @@ struct Builder<'a> {
     nodes: Vec<Node>,
     paths: HashMap<String, NodeId>,
     leaves: HashMap<Vec<u8>, NodeId>,
-    patterns: Vec<Pattern>,
+    patterns: Vec<Arc<Pattern>>,
     pattern_ids: HashMap<String, PatternId>,
 }
 
@@ -804,7 +923,7 @@ impl Builder<'_> {
             return Ok(*id);
         }
         let id = PatternId(self.patterns.len());
-        self.patterns.push(Pattern::compile(pattern)?);
+        self.patterns.push(Arc::new(Pattern::compile(pattern)?));
         self.pattern_ids.insert(pattern.to_owned(), id);
         Ok(id)
     }
@@ -1422,6 +1541,102 @@ fn shared_schema_positions<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_patterns_preserve_validation_diagnostics_and_native_identity() {
+        let schemas = [
+            serde_json::json!({"type":"object", "patternProperties":{"^x":{"type":"string", "pattern":"^(?=.{2,})[a-z]+$"}}, "additionalProperties":false}),
+            serde_json::json!({"type":"array", "items":{"type":"string", "pattern":"^(?=.{2,})[a-z]+$"}}),
+        ];
+        let mut pool = PatternPool::default();
+        let compiled = schemas
+            .iter()
+            .map(|schema| PreparedSchema::compile(schema).unwrap())
+            .collect::<Vec<_>>();
+        let programs = compiled
+            .iter()
+            .map(|schema| pool.program(schema).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(pool.data.len(), 2);
+        let patterns = pool
+            .data
+            .iter()
+            .map(|(id, data)| (id, SharedPattern::load(data).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        let values = serde_json::json!([null, {}, {"x":"ab"}, {"x":"A"}, {"x":3}, {"y":"ab"}, [], ["ab"], ["a"], ["A"], [3]]);
+        for (original, (bytes, ids)) in compiled.iter().zip(&programs) {
+            let handles = ids.iter().map(|id| &patterns[id]).collect::<Vec<_>>();
+            let shared = PreparedSchema::load_shared(bytes, &handles).unwrap();
+            for (pattern, handle) in shared.patterns.iter().zip(&handles) {
+                assert!(Arc::ptr_eq(pattern, &handle.pattern));
+            }
+            for value in values.as_array().unwrap() {
+                assert_eq!(
+                    shared.is_valid_view(InstanceRef::from_serde(value)),
+                    original.is_valid_view(InstanceRef::from_serde(value))
+                );
+                assert_eq!(shared.explain(value), original.explain(value));
+            }
+            assert!(PreparedSchema::load_shared(bytes, &[]).is_err());
+            let wrong = SharedPattern::load(
+                &serde_json::to_vec(&PatternData {
+                    source: "different".into(),
+                    pattern: Arc::clone(&handles[0].pattern),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+            let mut swapped = handles;
+            swapped[0] = &wrong;
+            assert!(
+                PreparedSchema::load_shared(bytes, &swapped)
+                    .err()
+                    .unwrap()
+                    .contains("identity mismatch")
+            );
+        }
+        // Identifiers do not depend on the order programs enter the pool.
+        let mut reversed = PatternPool::default();
+        for schema in compiled.iter().rev() {
+            reversed.program(schema).unwrap();
+        }
+        assert_eq!(pool.data, reversed.data);
+        let (bytes, ids) = pool
+            .program(&PreparedSchema::compile(&serde_json::json!({"type":"null"})).unwrap())
+            .unwrap();
+        assert!(ids.is_empty());
+        assert!(
+            PreparedSchema::load(&bytes)
+                .unwrap()
+                .is_valid_view(InstanceRef::from_serde(&Value::Null))
+        );
+    }
+
+    #[test]
+    fn shared_patterns_reject_corrupt_automata_and_program_edges() {
+        let mut pool = PatternPool::default();
+        let schema =
+            PreparedSchema::compile(&serde_json::json!({"type":"string", "pattern":"^[a-z]+$"}))
+                .unwrap();
+        let (bytes, ids) = pool.program(&schema).unwrap();
+        let data = &pool.data[&ids[0]];
+        let handle = SharedPattern::load(data).unwrap();
+        let mut corrupt: Value = serde_json::from_slice(data).unwrap();
+        corrupt["pattern"]["dfa"]["little"] = serde_json::json!([0]);
+        corrupt["pattern"]["dfa"]["big"] = serde_json::json!([0]);
+        assert!(SharedPattern::load(&serde_json::to_vec(&corrupt).unwrap()).is_err());
+        let mut program: Value = serde_json::from_slice(&bytes).unwrap();
+        program["nodes"][0]["rules"][0]["pattern"] = serde_json::json!(99);
+        assert!(
+            PreparedSchema::load_shared(&serde_json::to_vec(&program).unwrap(), &[&handle])
+                .is_err()
+        );
+        program["version"] = serde_json::json!(0);
+        assert!(
+            PreparedSchema::load_shared(&serde_json::to_vec(&program).unwrap(), &[&handle])
+                .is_err()
+        );
+    }
 
     fn standalone_at(root: &Value, pointer: &str) -> Value {
         let mut schema = root

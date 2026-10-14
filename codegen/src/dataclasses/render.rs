@@ -517,24 +517,38 @@ fn render_module(
     )
     .expect("string write");
     finish_stage("declarations");
+    let mut pattern_pool = crate::prepared_schema::PatternPool::default();
     let programs = classes
         .iter()
         .zip(&prepared.graph.schemas)
         .map(|(class, schema)| {
-            schema
-                .to_bytes()
-                .map(|program| {
+            pattern_pool
+                .program(schema)
+                .map(|(program_bytes, patterns)| {
                     let literal = if standalone {
-                        bytes(&program)
+                        program(&bytes(&program_bytes), &patterns)
                     } else {
                         String::new()
                     };
-                    parts.programs.push(program);
+                    parts.programs.push(program_bytes);
+                    parts.program_patterns.push(patterns);
                     literal
                 })
                 .map_err(|error| super::invalid_schema(class.name.clone(), error))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    parts.patterns = pattern_pool.data;
+    if standalone && !parts.patterns.is_empty() {
+        let shared = patterns(&parts.patterns)
+            .replace("from jsoncompat.codegen import dataclasses as dc\n", "");
+        // Bind-time local constants disappear after model installation; native
+        // graphs retain shared automata through reference-counted handles.
+        let shared = shared
+            .lines()
+            .map(|line| format!("    {line}\n"))
+            .collect::<String>();
+        implementation.push_str(&shared);
+    }
     finish_stage("program serialization");
     let roots = classes
         .iter()
@@ -674,4 +688,53 @@ pub(super) fn descriptor(
             )
         }
     }
+}
+
+/// Local shared handles for a standalone generated module.
+pub(super) fn patterns(patterns: &BTreeMap<String, Vec<u8>>) -> String {
+    let mut source = String::from(
+        "# Shared precompiled regular expressions. Do not edit.\nfrom jsoncompat.codegen import dataclasses as dc\n",
+    );
+    for (id, data) in patterns {
+        writeln!(
+            source,
+            "_jsoncompat_pattern_{id} = dc.load_pattern({})",
+            bytes(data)
+        )
+        .unwrap();
+    }
+    source
+}
+
+pub(super) fn program(bytes: &str, patterns: &[String]) -> String {
+    if patterns.is_empty() {
+        return bytes.to_owned();
+    }
+    format!(
+        "({bytes}, ({},))",
+        patterns
+            .iter()
+            .map(|id| format!("_jsoncompat_pattern_{id}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+pub(super) fn pattern_imports(ids: impl IntoIterator<Item = String>, prefix: &str) -> String {
+    let mut imports = String::new();
+    for id in ids {
+        writeln!(
+            imports,
+            "from {prefix}_patterns.p_{id} import PATTERN as _jsoncompat_pattern_{id}"
+        )
+        .unwrap();
+    }
+    imports
+}
+
+pub(super) fn pattern_file(data: &[u8]) -> String {
+    format!(
+        "# Shared precompiled regular expression. Do not edit.\nfrom jsoncompat.codegen import dataclasses as dc\n\nPATTERN = dc.load_pattern({})\n",
+        bytes(data)
+    )
 }

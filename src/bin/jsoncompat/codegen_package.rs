@@ -630,6 +630,7 @@ fn publish_staged_tree(
             if fs::read(&target).is_ok_and(|bytes| digest(&bytes) == *expected) {
                 continue;
             }
+            super::codegen::prepare_python_replacement(&source, &target)?;
         }
         // Staging lives on the destination filesystem. Cold subtrees move as
         // one unit; changed files in existing trees are atomically replaced.

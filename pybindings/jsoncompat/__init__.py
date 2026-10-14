@@ -116,6 +116,13 @@ class ModelRuntime(Protocol):
     ) -> str: ...
 
 
+class PreparedPattern(Protocol):
+    """Opaque immutable handle to a safely loaded, precompiled regular expression."""
+
+    @property
+    def identifier(self) -> str: ...
+
+
 class NativeModule(Protocol):
     ValidationError: type[ValueError]
     def prepare_schema(self, schema_json: str, options_json: str) -> str: ...
@@ -138,6 +145,8 @@ class NativeModule(Protocol):
     def deserialize_json(self, payload: str | bytes) -> JsonValue: ...
 
     def serialize_json(self, value: JsonValue) -> str: ...
+
+    def load_prepared_pattern(self, data: bytes) -> PreparedPattern: ...
 
     def bind_prepared_model_runtimes(
         self,
@@ -273,6 +282,7 @@ def _has_reusable_schema_api(module: object) -> bool:
         and hasattr(module, "deserialize_json")
         and hasattr(module, "serialize_json")
         and hasattr(module, "bind_prepared_model_runtimes")
+        and hasattr(module, "load_prepared_pattern")
         and hasattr(module, "MISSING")
         and hasattr(module, "MissingType")
         and hasattr(validator, "is_valid_json")
@@ -458,6 +468,13 @@ def deserialize_json_value(payload: str | bytes) -> JsonValue:
 def serialize_json_value(value: JsonValue) -> str:
     serialize_json_native = _serialize_json_native
     return serialize_json_native(value)
+
+
+def load_prepared_pattern(data: bytes) -> PreparedPattern:
+    """Load and validate portable automata; never compile source expressions."""
+    if _native_symbols is None:
+        raise ModuleNotFoundError("jsoncompat._native is required to load prepared patterns")
+    return _native_symbols.load_prepared_pattern(data)
 
 
 def bind_prepared_model_runtimes(

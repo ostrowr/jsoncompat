@@ -1,0 +1,662 @@
+{
+  "baseline_commit": "185ae30f081c7ceec4b41aaf6db254083cce7dbe",
+  "measurement_date": "2026-10-13",
+  "cases": {
+    "prefect-before": {
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+      "revision": "185ae30f081c7ceec4b41aaf6db254083cce7dbe",
+      "dirty": false,
+      "spec_sha256": "d8fd6f1494c68c9c6a62b3e0e0fdbe18d6e0f70ca6d8f4e0b995b911b1930947",
+      "generator_sha256": "dfbe98d707735c50865fa234db5341975a9d9d7b8b89986105a9cd6329278368",
+      "native_sha256": "65b91cdab0e6c2212c7513aa54a7022a7f8c0dc3664e9fe7b139d7669d9afdfe",
+      "repeats": 5,
+      "generation_seconds": [
+        1.7100991669576615,
+        1.2979514170438051,
+        1.301207875018008,
+        1.3830252090119757,
+        1.3903496249695309
+      ],
+      "generation_median_seconds": 1.3830252090119757,
+      "python_files": 441,
+      "python_bytes": 67675921,
+      "largest_files": [
+        [
+          "operations/deployments.py",
+          33004817
+        ],
+        [
+          "models/deployment_response.py",
+          3654769
+        ],
+        [
+          "models/deployment_create.py",
+          3649853
+        ],
+        [
+          "models/deployment_update.py",
+          3647457
+        ],
+        [
+          "models/deployment_pagination_response.py",
+          3640842
+        ]
+      ],
+      "shared_patterns": 0,
+      "imports": {
+        "source": [
+          {
+            "import_seconds": 1.1182730420259759,
+            "first_validation_seconds": 0.00019641703693196177,
+            "peak_rss_bytes": 241893376
+          },
+          {
+            "import_seconds": 0.8160446249530651,
+            "first_validation_seconds": 3.070797538384795e-05,
+            "peak_rss_bytes": 242352128
+          },
+          {
+            "import_seconds": 0.7944474579999223,
+            "first_validation_seconds": 3.7167046684771776e-05,
+            "peak_rss_bytes": 241123328
+          },
+          {
+            "import_seconds": 0.8512805000063963,
+            "first_validation_seconds": 3.85420280508697e-05,
+            "peak_rss_bytes": 242352128
+          },
+          {
+            "import_seconds": 0.8188213750254363,
+            "first_validation_seconds": 3.3541000448167324e-05,
+            "peak_rss_bytes": 240975872
+          }
+        ],
+        "bytecode": [
+          {
+            "import_seconds": 0.384874791954644,
+            "first_validation_seconds": 3.995897714048624e-05,
+            "peak_rss_bytes": 200114176
+          },
+          {
+            "import_seconds": 0.3877942910185084,
+            "first_validation_seconds": 3.0708033591508865e-05,
+            "peak_rss_bytes": 198115328
+          },
+          {
+            "import_seconds": 0.3908847910352051,
+            "first_validation_seconds": 3.195903263986111e-05,
+            "peak_rss_bytes": 199163904
+          },
+          {
+            "import_seconds": 0.39335070800734684,
+            "first_validation_seconds": 3.712502075359225e-05,
+            "peak_rss_bytes": 198410240
+          },
+          {
+            "import_seconds": 0.39085566700669006,
+            "first_validation_seconds": 3.308401210233569e-05,
+            "peak_rss_bytes": 198967296
+          }
+        ]
+      },
+      "import_median_seconds": {
+        "source": 0.8188213750254363,
+        "bytecode": 0.39085566700669006
+      },
+      "peak_rss_median_bytes": {
+        "source": 241893376,
+        "bytecode": 198967296
+      }
+    },
+    "prefect-after": {
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+      "revision": "185ae30f081c7ceec4b41aaf6db254083cce7dbe",
+      "dirty": true,
+      "spec_sha256": "d8fd6f1494c68c9c6a62b3e0e0fdbe18d6e0f70ca6d8f4e0b995b911b1930947",
+      "generator_sha256": "240b10ded0b61f1c391c7c584be69452970b39b74701f1c4e7632b6d91278310",
+      "native_sha256": "f17d7a9b11eccfcff0a77c84e88868046dfcafed067496ce84011eed2d8da82f",
+      "repeats": 5,
+      "generation_seconds": [
+        1.1767722500371747,
+        1.1742946659796871,
+        1.1808405409683473,
+        1.1999933749902993,
+        1.1714370830450207
+      ],
+      "generation_median_seconds": 1.1767722500371747,
+      "python_files": 444,
+      "python_bytes": 9370268,
+      "largest_files": [
+        [
+          "_patterns/p_07f8688a12870254a96da685b62e60368e9ee01d666cbcb0fd8a03ec671f7fef.py",
+          3630818
+        ],
+        [
+          "operations/flow_runs.py",
+          376708
+        ],
+        [
+          "operations/deployments.py",
+          325825
+        ],
+        [
+          "__init__.pyi",
+          263065
+        ],
+        [
+          "operations/task_runs.py",
+          199301
+        ]
+      ],
+      "shared_patterns": 2,
+      "imports": {
+        "source": [
+          {
+            "import_seconds": 0.30115312500856817,
+            "first_validation_seconds": 3.683299291878939e-05,
+            "peak_rss_bytes": 84705280
+          },
+          {
+            "import_seconds": 0.3066050410270691,
+            "first_validation_seconds": 3.1917006708681583e-05,
+            "peak_rss_bytes": 84000768
+          },
+          {
+            "import_seconds": 0.3036471250234172,
+            "first_validation_seconds": 3.4167023841291666e-05,
+            "peak_rss_bytes": 84721664
+          },
+          {
+            "import_seconds": 0.30649887496838346,
+            "first_validation_seconds": 3.308395389467478e-05,
+            "peak_rss_bytes": 83984384
+          },
+          {
+            "import_seconds": 0.299729207996279,
+            "first_validation_seconds": 3.2957992516458035e-05,
+            "peak_rss_bytes": 84525056
+          }
+        ],
+        "bytecode": [
+          {
+            "import_seconds": 0.10062487499089912,
+            "first_validation_seconds": 2.8999987989664078e-05,
+            "peak_rss_bytes": 64962560
+          },
+          {
+            "import_seconds": 0.10829687502700835,
+            "first_validation_seconds": 3.250001464039087e-05,
+            "peak_rss_bytes": 65110016
+          },
+          {
+            "import_seconds": 0.11724179104203358,
+            "first_validation_seconds": 3.024999750778079e-05,
+            "peak_rss_bytes": 64995328
+          },
+          {
+            "import_seconds": 0.11058958398643881,
+            "first_validation_seconds": 4.070805152878165e-05,
+            "peak_rss_bytes": 65650688
+          },
+          {
+            "import_seconds": 0.10284949996275827,
+            "first_validation_seconds": 3.462500171735883e-05,
+            "peak_rss_bytes": 65617920
+          }
+        ]
+      },
+      "import_median_seconds": {
+        "source": 0.3036471250234172,
+        "bytecode": 0.10829687502700835
+      },
+      "peak_rss_median_bytes": {
+        "source": 84525056,
+        "bytecode": 65110016
+      }
+    },
+    "github-before": {
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+      "revision": "185ae30f081c7ceec4b41aaf6db254083cce7dbe",
+      "dirty": false,
+      "spec_sha256": "2bf2c168495fe9851f15aed9dcc5d1f7d23d3276537d65fef6519293f460ed0c",
+      "generator_sha256": "dfbe98d707735c50865fa234db5341975a9d9d7b8b89986105a9cd6329278368",
+      "native_sha256": "65b91cdab0e6c2212c7513aa54a7022a7f8c0dc3664e9fe7b139d7669d9afdfe",
+      "repeats": 5,
+      "generation_seconds": [
+        2.6657253750017844,
+        2.5271919579827227,
+        2.505661500035785,
+        2.5162575840367936,
+        2.498454417043831
+      ],
+      "generation_median_seconds": 2.5162575840367936,
+      "python_files": 1028,
+      "python_bytes": 43962901,
+      "largest_files": [
+        [
+          "operations/repos.py",
+          2647164
+        ],
+        [
+          "__init__.pyi",
+          1989906
+        ],
+        [
+          "operations/actions.py",
+          1982938
+        ],
+        [
+          "models/__init__.pyi",
+          1463929
+        ],
+        [
+          "operations/orgs.py",
+          1397408
+        ]
+      ],
+      "shared_patterns": 0,
+      "imports": {
+        "source": [
+          {
+            "import_seconds": 1.3543247090419754,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 258359296
+          },
+          {
+            "import_seconds": 1.2805790419806726,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 254590976
+          },
+          {
+            "import_seconds": 1.2755634590284899,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 252788736
+          },
+          {
+            "import_seconds": 1.2893207499873824,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 250347520
+          },
+          {
+            "import_seconds": 1.2770996249746531,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 259571712
+          }
+        ],
+        "bytecode": [
+          {
+            "import_seconds": 0.25789545802399516,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 132202496
+          },
+          {
+            "import_seconds": 0.2583229159936309,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 132251648
+          },
+          {
+            "import_seconds": 0.25652616599109024,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 132087808
+          },
+          {
+            "import_seconds": 0.25765012501506135,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 131874816
+          },
+          {
+            "import_seconds": 0.2563924999558367,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 132186112
+          }
+        ]
+      },
+      "import_median_seconds": {
+        "source": 1.2805790419806726,
+        "bytecode": 0.25765012501506135
+      },
+      "peak_rss_median_bytes": {
+        "source": 254590976,
+        "bytecode": 132186112
+      }
+    },
+    "github-after": {
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+      "revision": "185ae30f081c7ceec4b41aaf6db254083cce7dbe",
+      "dirty": true,
+      "spec_sha256": "2bf2c168495fe9851f15aed9dcc5d1f7d23d3276537d65fef6519293f460ed0c",
+      "generator_sha256": "240b10ded0b61f1c391c7c584be69452970b39b74701f1c4e7632b6d91278310",
+      "native_sha256": "f17d7a9b11eccfcff0a77c84e88868046dfcafed067496ce84011eed2d8da82f",
+      "repeats": 5,
+      "generation_seconds": [
+        2.52691908396082,
+        2.488535291980952,
+        2.5055237500346266,
+        2.9105341249960475,
+        3.160727125010453
+      ],
+      "generation_median_seconds": 2.52691908396082,
+      "python_files": 1042,
+      "python_bytes": 43643152,
+      "largest_files": [
+        [
+          "operations/repos.py",
+          2647164
+        ],
+        [
+          "__init__.pyi",
+          1989906
+        ],
+        [
+          "operations/actions.py",
+          1958172
+        ],
+        [
+          "models/__init__.pyi",
+          1463929
+        ],
+        [
+          "operations/issues.py",
+          1297279
+        ]
+      ],
+      "shared_patterns": 13,
+      "imports": {
+        "source": [
+          {
+            "import_seconds": 1.6221535000368021,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 255131648
+          },
+          {
+            "import_seconds": 1.4364515840425156,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 250904576
+          },
+          {
+            "import_seconds": 2.075564375030808,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 258752512
+          },
+          {
+            "import_seconds": 1.3824278329848312,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 252313600
+          },
+          {
+            "import_seconds": 1.4212475410313345,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 258146304
+          }
+        ],
+        "bytecode": [
+          {
+            "import_seconds": 0.2628248329856433,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 131710976
+          },
+          {
+            "import_seconds": 0.2525978329940699,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 131039232
+          },
+          {
+            "import_seconds": 0.26169566600583494,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 131891200
+          },
+          {
+            "import_seconds": 0.26999900001101196,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 131661824
+          },
+          {
+            "import_seconds": 0.2621359159820713,
+            "first_validation_seconds": null,
+            "peak_rss_bytes": 132087808
+          }
+        ]
+      },
+      "import_median_seconds": {
+        "source": 1.4364515840425156,
+        "bytecode": 0.2621359159820713
+      },
+      "peak_rss_median_bytes": {
+        "source": 255131648,
+        "bytecode": 131710976
+      }
+    }
+  },
+  "github_alternating_imports": {
+    "before": [
+      {
+        "phase": "source",
+        "repeat": 0,
+        "import_seconds": 1.4305467089870945,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 253575168
+      },
+      {
+        "phase": "source",
+        "repeat": 1,
+        "import_seconds": 1.3893220840254799,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 255688704
+      },
+      {
+        "phase": "source",
+        "repeat": 2,
+        "import_seconds": 1.3943433749955148,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 258113536
+      },
+      {
+        "phase": "source",
+        "repeat": 3,
+        "import_seconds": 1.3471882920130156,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 252526592
+      },
+      {
+        "phase": "source",
+        "repeat": 4,
+        "import_seconds": 1.3287378750392236,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 251854848
+      },
+      {
+        "phase": "source",
+        "repeat": 5,
+        "import_seconds": 1.3169295000261627,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 259342336
+      },
+      {
+        "phase": "source",
+        "repeat": 6,
+        "import_seconds": 1.3707676660269499,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 253952000
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 0,
+        "import_seconds": 0.28945099998963997,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132857856
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 1,
+        "import_seconds": 0.29914691601879895,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 133414912
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 2,
+        "import_seconds": 0.2766762499813922,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 133726208
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 3,
+        "import_seconds": 0.3100800419924781,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 134578176
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 4,
+        "import_seconds": 0.27159270900301635,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132956160
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 5,
+        "import_seconds": 0.2893806250067428,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 133464064
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 6,
+        "import_seconds": 0.2825816249824129,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132431872
+      }
+    ],
+    "after": [
+      {
+        "phase": "source",
+        "repeat": 0,
+        "import_seconds": 1.363029500003904,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 256409600
+      },
+      {
+        "phase": "source",
+        "repeat": 1,
+        "import_seconds": 1.3943277499638498,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 249233408
+      },
+      {
+        "phase": "source",
+        "repeat": 2,
+        "import_seconds": 1.3385666249669157,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 251101184
+      },
+      {
+        "phase": "source",
+        "repeat": 3,
+        "import_seconds": 1.3199074580334127,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 256753664
+      },
+      {
+        "phase": "source",
+        "repeat": 4,
+        "import_seconds": 1.3226062919711694,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 255295488
+      },
+      {
+        "phase": "source",
+        "repeat": 5,
+        "import_seconds": 1.3554028749931604,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 252297216
+      },
+      {
+        "phase": "source",
+        "repeat": 6,
+        "import_seconds": 1.3563714999472722,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 251822080
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 0,
+        "import_seconds": 0.27096450002864003,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 131792896
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 1,
+        "import_seconds": 0.27335841697640717,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 133431296
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 2,
+        "import_seconds": 0.2642719579744153,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132333568
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 3,
+        "import_seconds": 0.2627136670053005,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 131989504
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 4,
+        "import_seconds": 0.2624211660004221,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132595712
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 5,
+        "import_seconds": 0.26991087500937283,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132743168
+      },
+      {
+        "phase": "bytecode",
+        "repeat": 6,
+        "import_seconds": 0.27043166698422283,
+        "first_validation_seconds": null,
+        "peak_rss_bytes": 132071424
+      }
+    ]
+  },
+  "audits": {
+    "prefect": {
+      "status": "passed",
+      "deterministic": true,
+      "operations": 179,
+      "all_generated_modules_imported": 442,
+      "import_reflection_calls": 0,
+      "dispatch_plans_equivalent": true,
+      "runtime_cases": 43,
+      "differential_failures": 0,
+      "typecheck_exit_code": 0,
+      "negative_typecheck_detected": true
+    },
+    "github": {
+      "status": "passed",
+      "deterministic": true,
+      "operations": 1223,
+      "all_generated_modules_imported": 1040,
+      "import_reflection_calls": 0,
+      "dispatch_plans_equivalent": true,
+      "runtime_cases": 781,
+      "differential_failures": 0,
+      "typecheck_exit_code": 0,
+      "negative_typecheck_detected": true
+    }
+  }
+}
