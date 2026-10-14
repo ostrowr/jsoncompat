@@ -15,6 +15,17 @@ function InstallPage() {
     <main className="mx-auto max-w-4xl px-4 py-8 space-y-8">
       <h1 className="text-3xl font-bold">Installation &amp; usage</h1>
 
+      <p>
+        These examples target <strong>0.6.0 (unreleased)</strong>. Read the{" "}
+        <a
+          className="text-blue-600 hover:underline"
+          href="https://github.com/ostrowr/jsoncompat/blob/main/CHANGELOG.md#migration-from-050"
+        >
+          migration guide from 0.5.0
+        </a>{" "}
+        before upgrading.
+      </p>
+
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
         {tabs.map((t) => (
@@ -76,7 +87,8 @@ function RustTab() {
       <p>
         Add the crate to your <code className="font-mono">Cargo.toml</code>
       </p>
-      <CodeBlock>[dependencies] jsoncompat = "0.5.0"</CodeBlock>
+      <CodeBlock>{`[dependencies]
+jsoncompat = "0.6.0"`}</CodeBlock>
       <CodeBlock>{`use jsoncompat::{Role, SchemaDocument, check_compat};
 use serde_json::json;
 
