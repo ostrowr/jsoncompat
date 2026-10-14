@@ -7,6 +7,21 @@ pub struct ApiMedia {
     pub media_type: String,
     pub parameters: BTreeMap<String, String>,
     pub schema: Value,
+    /// Per-property request-body serialization. None means no explicit encoding map.
+    pub encoding: Option<BTreeMap<String, ApiEncoding>>,
+}
+
+/// OpenAPI form or multipart property serialization, with parameter defaults applied.
+#[derive(Debug, Clone)]
+pub struct ApiEncoding {
+    /// None selects the schema-dependent OpenAPI default.
+    pub content_type: Option<String>,
+    /// Explicit style/explode/allowReserved override contentType in form bodies.
+    pub uses_parameter_encoding: bool,
+    pub style: ParameterStyle,
+    pub explode: bool,
+    pub allow_reserved: bool,
+    pub headers: Vec<ApiParameter>,
 }
 impl ApiMedia {
     fn selector(&self) -> MediaTypeSelector {
@@ -47,7 +62,12 @@ pub struct ApiParameter {
     pub encoding: ParameterEncoding,
 }
 impl ApiParameter {
-    fn new(name: String, location: ParameterLocation, required: bool, value: FieldValue) -> Self {
+    pub(super) fn new(
+        name: String,
+        location: ParameterLocation,
+        required: bool,
+        value: FieldValue,
+    ) -> Self {
         let (schema, encoding) = match value {
             FieldValue::Schema {
                 schema,

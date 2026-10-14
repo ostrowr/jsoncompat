@@ -85,6 +85,31 @@ impl<'converter> ModelProjection<'converter> {
                     ProjectedPythonKind::Native(value)
                 }
             }
+            ConversionNode::Scalar {
+                kind: ScalarKind::Bytes,
+            } => {
+                let bound = value.value().to_owned();
+                let py = bound.py();
+                let identity = bound.as_ptr() as usize;
+                let cached = self
+                    .binary_strings
+                    .borrow()
+                    .get(&identity)
+                    .map(|text| text.clone_ref(py));
+                let encoded = cached.map(Ok).unwrap_or_else(|| {
+                    binary_json_projection(py, &bound).inspect(|text| {
+                        self.binary_strings
+                            .borrow_mut()
+                            .insert(identity, text.clone_ref(py));
+                    })
+                });
+                match encoded {
+                    Ok(encoded) => {
+                        ProjectedPythonKind::Native(self.retain(node_id, encoded.into_bound(py)))
+                    }
+                    Err(_) => ProjectedPythonKind::Invalid,
+                }
+            }
             ConversionNode::Scalar { .. } | ConversionNode::Literal { .. } => {
                 ProjectedPythonKind::Native(value)
             }
@@ -199,9 +224,12 @@ impl<'converter> ModelProjection<'converter> {
 
     fn normalized<'a>(&'a self, value: ProjectedPythonValue<'a>) -> ProjectedPythonValue<'a> {
         match self.resolve(value, MAX_MODEL_DEPTH) {
-            ProjectedPythonKind::Native(value)
-            | ProjectedPythonKind::Array(value)
-            | ProjectedPythonKind::Object(value) => value,
+            // Scalar projections may allocate a JSON representation (bytes ->
+            // base64). Keep their model node paired with the original model
+            // value; feeding the projected string back through a bytes converter
+            // would apply the projection twice.
+            ProjectedPythonKind::Native(_) => value,
+            ProjectedPythonKind::Array(value) | ProjectedPythonKind::Object(value) => value,
             ProjectedPythonKind::Invalid => value,
         }
     }

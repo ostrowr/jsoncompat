@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "description": "Explicit finite buffered public media checks. Synthetic values are labeled; bytes are base64 only in this JSON fixture, and generated binary body fields are Python bytes. No live API calls.",
+  "cases": [
+    {
+      "id": "agent_protocol_finite_sse",
+      "spec": "agent_protocol",
+      "direction": "response",
+      "method": "POST",
+      "path": "/runs/stream",
+      "status": 200,
+      "media_type": "text/event-stream",
+      "body": "id: 1\nevent: message\ndata: {}\n\n",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body": "id: 1\nevent: message\ndata: {}\n\n",
+      "schema_pointer": "#/paths/~1runs~1stream/post/responses/200/content/text~1event-stream/schema"
+    },
+    {
+      "id": "aivisspeech_html",
+      "spec": "aivisspeech",
+      "direction": "response",
+      "method": "GET",
+      "path": "/",
+      "status": 200,
+      "media_type": "text/html",
+      "body": "<p>\u97f3\u58f0</p>",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body": "<p>\u97f3\u58f0</p>",
+      "schema_pointer": "#/paths/~1/get/responses/200/content/text~1html/schema"
+    },
+    {
+      "id": "optimade_csv_media_parameter",
+      "spec": "optimade",
+      "direction": "response",
+      "method": "GET",
+      "path": "/versions",
+      "status": 200,
+      "media_type": "text/csv; header=present",
+      "body": "version\n1\n",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body": "version\n1\n",
+      "schema_pointer": "#/paths/~1versions/get/responses/200/content/text~1csv; header=present/schema"
+    },
+    {
+      "id": "optimade_missing_required_media_parameter",
+      "spec": "optimade",
+      "direction": "response",
+      "method": "GET",
+      "path": "/versions",
+      "status": 200,
+      "media_type": "text/csv",
+      "body": "version\n1\n",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "expect": "parse_error",
+      "raw_body": "version\n1\n",
+      "schema_pointer": "#/paths/~1versions/get/responses/200/content/text~1csv; header=present/schema"
+    },
+    {
+      "id": "typesense_pdf_bytes",
+      "spec": "typesense_cloud",
+      "direction": "response",
+      "method": "GET",
+      "path": "/invoices/{id}/pdf",
+      "status": 200,
+      "media_type": "application/pdf",
+      "body": "JVBERi0xLjcKAP+ACiUlRU9G",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body_base64": "JVBERi0xLjcKAP+ACiUlRU9G",
+      "body_is_bytes": true,
+      "schema_pointer": "#/paths/~1invoices~1{id}~1pdf/get/responses/200/content/application~1pdf/schema"
+    },
+    {
+      "id": "typesense_pdf_wrong_media",
+      "spec": "typesense_cloud",
+      "direction": "response",
+      "method": "GET",
+      "path": "/invoices/{id}/pdf",
+      "status": 200,
+      "media_type": "text/plain",
+      "body": "JVBERi0xLjcKAP+ACiUlRU9G",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body_base64": "JVBERi0xLjcKAP+ACiUlRU9G",
+      "expect": "parse_error",
+      "schema_pointer": "#/paths/~1invoices~1{id}~1pdf/get/responses/200/content/application~1pdf/schema"
+    },
+    {
+      "id": "typesense_binary_unexpected_503",
+      "spec": "typesense_cloud",
+      "direction": "response",
+      "method": "GET",
+      "path": "/invoices/{id}/pdf",
+      "status": 503,
+      "media_type": "application/octet-stream",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body_base64": "JVBERi0xLjcKAP+ACiUlRU9G",
+      "expect": "unexpected",
+      "schema_pointer": "#/paths/~1invoices~1{id}~1pdf/get/responses/503"
+    },
+    {
+      "id": "fossology_yaml",
+      "spec": "fossology",
+      "direction": "response",
+      "method": "GET",
+      "path": "/openapi",
+      "status": 200,
+      "media_type": "application/yaml",
+      "body": {
+        "openapi": "3.1.0",
+        "info": "example"
+      },
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body": "openapi: \"3.1.0\"\ninfo: example\n",
+      "schema_pointer": "#/paths/~1openapi/get/responses/200/content/application~1yaml/schema"
+    },
+    {
+      "id": "fossology_yaml_parse_error",
+      "spec": "fossology",
+      "direction": "response",
+      "method": "GET",
+      "path": "/openapi",
+      "status": 200,
+      "media_type": "application/yaml",
+      "body": null,
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "expect": "parse_error",
+      "raw_body": "[broken",
+      "schema_pointer": "#/paths/~1openapi/get/responses/200/content/application~1yaml/schema"
+    },
+    {
+      "id": "meilisearch_ndjson_records",
+      "spec": "meilisearch",
+      "direction": "response",
+      "method": "GET",
+      "path": "/tasks/{task_id}/documents",
+      "status": 200,
+      "media_type": "application/x-ndjson",
+      "body": [
+        {
+          "id": 1
+        },
+        {
+          "id": 2
+        }
+      ],
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "raw_body": "{\"id\":1}\n{\"id\":2}\n",
+      "schema_pointer": "#/paths/~1tasks~1{task_id}~1documents/get/responses/200/content/application~1x-ndjson/schema"
+    },
+    {
+      "id": "meilisearch_ndjson_parse_error",
+      "spec": "meilisearch",
+      "direction": "response",
+      "method": "GET",
+      "path": "/tasks/{task_id}/documents",
+      "status": 200,
+      "media_type": "application/x-ndjson",
+      "body": null,
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "expect": "parse_error",
+      "raw_body": "{\"id\":1}\n{broken\n",
+      "schema_pointer": "#/paths/~1tasks~1{task_id}~1documents/get/responses/200/content/application~1x-ndjson/schema"
+    },
+    {
+      "id": "airflow_urlencoded_body_variant",
+      "spec": "airflow_simple_auth",
+      "direction": "request",
+      "method": "POST",
+      "path": "/auth/token",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "body": {
+        "content_type": "application/x-www-form-urlencoded",
+        "value": {
+          "username": "alice@example.com",
+          "password": "a b&c"
+        }
+      },
+      "wire_body": "password=a%20b%26c&username=alice%40example.com",
+      "schema_pointer": "#/paths/~1auth~1token/post/requestBody/content/application~1x-www-form-urlencoded/schema"
+    },
+    {
+      "id": "gravit_multipart_json_and_binary",
+      "spec": "gravit_launcher",
+      "direction": "request",
+      "method": "POST",
+      "path": "/updates/upload/{variant}",
+      "provenance": "synthetic wire payload; checked against the unchanged pinned public schema, not a live server response",
+      "parameters": {
+        "variant": "JAR"
+      },
+      "body": {
+        "secrets": {
+          "privateKey": "cHJpdmF0ZQ==",
+          "publicKey": "cHVibGlj"
+        },
+        "file": "iVBORw0KGgoA/w=="
+      },
+      "multipart_parts": [
+        {
+          "name": "file",
+          "content_type": "image/png",
+          "filename": "file",
+          "body_base64": "iVBORw0KGgoA/w=="
+        },
+        {
+          "name": "secrets",
+          "content_type": "application/json",
+          "json": {
+            "privateKey": "cHJpdmF0ZQ==",
+            "publicKey": "cHVibGlj"
+          }
+        }
+      ],
+      "schema_pointer": "#/paths/~1updates~1upload~1{variant}/post/requestBody/content/multipart~1form-data/schema"
+    }
+  ],
+  "typing_consumers": [
+    {
+      "path": "public-openapi-media-consumer.py",
+      "specs": [
+        "typesense_cloud",
+        "agent_protocol",
+        "optimade"
+      ]
+    }
+  ]
+}

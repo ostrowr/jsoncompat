@@ -8,7 +8,7 @@ mod schema_groups;
 pub use schema_groups::ComponentSchemaGroup;
 mod operations;
 pub use operations::{
-    ApiBody, ApiMedia, ApiOperation, ApiParameter, ApiResponse, ParameterEncoding,
+    ApiBody, ApiEncoding, ApiMedia, ApiOperation, ApiParameter, ApiResponse, ParameterEncoding,
 };
 
 use email_address::EmailAddress;
@@ -2558,6 +2558,14 @@ fn lower_content_variants(
     media_type_key_kind: MediaTypeKeyKind,
 ) -> Result<Vec<Value>, OpenApiError> {
     let media = parse_content_variants(resolver, content, pointer, media_type_key_kind)?;
+    // Compatibility envelopes describe decoded values. They cannot prove wire
+    // compatibility when an explicit form/multipart encoding changes the bytes.
+    if let Some(entry) = media.iter().find(|entry| entry.encoding.is_some()) {
+        return Err(unsupported_compatibility_feature(
+            &pointer.child(&entry.media_type).child("encoding"),
+            "media-type encoding",
+        ));
+    }
     Ok(media
         .iter()
         .map(|entry| entry.envelope(media.iter()))
@@ -2603,10 +2611,6 @@ fn parse_content_variants(
                 &media_pointer,
                 &media_pointer.child("encoding"),
             )?;
-            return Err(unsupported_compatibility_feature(
-                &media_pointer.child("encoding"),
-                "media-type encoding",
-            ));
         }
         let schema = media
             .get("schema")
@@ -2622,9 +2626,77 @@ fn parse_content_variants(
                 .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
                 .collect(),
             schema,
+            encoding: media
+                .get("encoding")
+                .map(|encoding| {
+                    parse_media_encoding(resolver, encoding, &media_pointer.child("encoding"))
+                })
+                .transpose()?,
         });
     }
     Ok(variants)
+}
+
+fn parse_media_encoding(
+    resolver: &Resolver<'_>,
+    raw: &Value,
+    pointer: &JsonPointer,
+) -> Result<BTreeMap<String, ApiEncoding>, OpenApiError> {
+    raw.as_object()
+        .expect("encoding document shape was validated")
+        .iter()
+        .map(|(name, raw)| {
+            let pointer = pointer.child(name);
+            let object = raw.as_object().expect("validated encoding object");
+            let style = parse_optional_string(object, "style", &pointer)?
+                .map(|style| {
+                    ParameterStyle::from_value(
+                        ParameterLocation::Query,
+                        &style,
+                        &pointer.child("style"),
+                    )
+                })
+                .transpose()?
+                .unwrap_or(ParameterStyle::Form);
+            let explode = parse_optional_bool(object, "explode", &pointer)?;
+            validate_deep_object_explode(style, explode, &pointer)?;
+            let mut headers = Vec::new();
+            if let Some(raw_headers) = object.get("headers").and_then(Value::as_object) {
+                for (name, raw_header) in raw_headers {
+                    // OpenAPI Encoding Object ignores Content-Type; contentType owns it.
+                    if name.eq_ignore_ascii_case("content-type") {
+                        continue;
+                    }
+                    let field = lower_response_header_field(
+                        resolver,
+                        name,
+                        raw_header,
+                        &pointer.child("headers").child(name),
+                    )?;
+                    headers.push(ApiParameter::new(
+                        field.name,
+                        ParameterLocation::Header,
+                        field.required,
+                        field.value,
+                    ));
+                }
+            }
+            Ok((
+                name.clone(),
+                ApiEncoding {
+                    content_type: parse_optional_string(object, "contentType", &pointer)?,
+                    uses_parameter_encoding: ["style", "explode", "allowReserved"]
+                        .iter()
+                        .any(|field| object.contains_key(*field)),
+                    style,
+                    explode: explode.unwrap_or(style == ParameterStyle::Form),
+                    allow_reserved: parse_optional_bool(object, "allowReserved", &pointer)?
+                        .unwrap_or(false),
+                    headers,
+                },
+            ))
+        })
+        .collect()
 }
 
 fn reject_duplicate_normalized_media_types(

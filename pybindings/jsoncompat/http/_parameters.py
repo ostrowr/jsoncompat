@@ -38,10 +38,20 @@ def scalar(value: JsonValue) -> str:
     )
 
 
-def pieces(value: JsonValue, encode: bool) -> str | list[str] | dict[str, str]:
+def pieces(
+    value: JsonValue, encode: bool, safe: str = "", *, preserve_percent: bool = False
+) -> str | list[str] | dict[str, str]:
     def text(item: JsonValue) -> str:
         result = scalar(item)
-        return quote(result, safe="") if encode else result
+        if not encode:
+            return result
+        encoded = quote(result, safe=safe)
+        if preserve_percent:
+            # RFC6570 reserved expansion preserves existing valid triplets.
+            # Remove precisely the quoting layer just added to their '%' sign;
+            # never unquote their payload or preserve an invalid escape.
+            encoded = re.sub(r"%25([0-9A-Fa-f]{2})", r"%\1", encoded)
+        return encoded
 
     if isinstance(value, dict):
         return {text(key): text(item) for key, item in value.items()}
@@ -75,7 +85,19 @@ def encode_parameter(
             value = "".join(
                 json.dumps(char)[1:-1] if ord(char) > 127 else char for char in value
             )
-    converted = pieces(value, not isinstance(parameter, Header))
+    # Reserved expansion is explicitly requested by the contract. The caller
+    # remains responsible for reserved delimiters that alter query semantics.
+    safe = (
+        ":/?@!$&'()*+,;="
+        if isinstance(parameter, Query) and parameter.allow_reserved
+        else ""
+    )
+    converted = pieces(
+        value,
+        not isinstance(parameter, Header),
+        safe,
+        preserve_percent=isinstance(parameter, Query) and parameter.allow_reserved,
+    )
     name = quote(parameter.name, safe="")
     if isinstance(parameter, Path):
         if parameter.style == "label":
@@ -104,7 +126,7 @@ def encode_parameter(
                 raise ValueError(
                     f"{parameter.style} requires an array and explode=False"
                 )
-            separator = "%20" if parameter.style == "spaceDelimited" else "|"
+            separator = "%20" if parameter.style == "spaceDelimited" else "%7C"
             return [(name, separator.join(converted))]
     if isinstance(converted, dict) and parameter.explode:
         return list(converted.items())

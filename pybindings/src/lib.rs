@@ -752,6 +752,12 @@ fn construct_model_value(
         CandidateConstruction::Mismatch(conversion_error) => {
             let raw_is_valid = converter.is_valid_raw_python(instance)?;
             if raw_is_valid {
+                // Opaque HTTP bytes have a stricter JSON representation than
+                // their source's unconstrained string: invalid base64 is input
+                // error, not a generated converter/schema disagreement.
+                if conversion_error.is_representation_error() {
+                    return Err(PyValueError::new_err(conversion_error.to_string()));
+                }
                 return Err(PyErr::new::<PyRuntimeError, _>(format!(
                     "schema-valid value cannot be represented by its generated model: {conversion_error}"
                 )));

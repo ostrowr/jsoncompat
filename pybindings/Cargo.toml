@@ -25,6 +25,7 @@ jsoncompat = { path = ".." }
 json_schema_ast = { path = "../schema" }
 json_schema_fuzz = { path = "../fuzz" }
 jsonschema.workspace = true
+base64 = "0.22.1"
 
 [build-dependencies]
 pyo3-build-config = "0.28.3"

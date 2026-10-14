@@ -184,6 +184,7 @@ impl<'a> DataclassModuleBuilder<'a> {
                     | "dict"
                     | "tuple"
                     | "type"
+                    | "builtins"
                     | "str"
                     | "int"
                     | "float"
@@ -401,6 +402,35 @@ impl<'a> DataclassModuleBuilder<'a> {
         pointer: &str,
         scope_name: &str,
     ) -> Result<Annotation, DataclassError> {
+        if obj.get("x-jsoncompat-http-binary").and_then(Value::as_bool) == Some(true) {
+            // HTTP binary projections carry opaque bytes as canonical base64 in
+            // the JSON-valued model protocol. Do not reinterpret string assertions.
+            if obj.get("type").and_then(Value::as_str) != Some("string")
+                || obj.keys().any(|key| {
+                    !(key == "minLength" && obj[key] == 0)
+                        && !matches!(
+                            key.as_str(),
+                            "type"
+                                | "x-jsoncompat-http-binary"
+                                | "x-jsoncompat"
+                                | "title"
+                                | "description"
+                                | "$comment"
+                                | "deprecated"
+                                | "readOnly"
+                                | "writeOnly"
+                                | "$defs"
+                                | "definitions"
+                        )
+                })
+            {
+                return Err(invalid_schema(
+                    pointer.to_owned(),
+                    "HTTP binary projections require an unconstrained string schema",
+                ));
+            }
+            return Ok(Annotation::bytes());
+        }
         if obj.get(CODEGEN_ANY_KEY).and_then(Value::as_bool) == Some(true) {
             return Ok(Annotation::json());
         }
@@ -2202,7 +2232,10 @@ pub(crate) fn python_field_name(json_name: &str) -> String {
     if output.is_empty() {
         output.push_str("field_");
     }
-    if output.starts_with("__") && output.ends_with("__") {
+    // Avoid both Python name mangling (__private) and interpreter/model
+    // special attributes (__dunder__). Slots, annotations, constructor locals,
+    // and prepared converters must all address the same unmangled name.
+    if output.starts_with("__") {
         output.insert_str(0, "field_");
     } else if python_keyword_or_reserved(&output) {
         output.push('_');
@@ -2263,6 +2296,7 @@ fn python_keyword_or_reserved(name: &str) -> bool {
             | "yield"
             | "dc"
             | "dict"
+            | "builtins"
             | "str"
             | "int"
             | "float"

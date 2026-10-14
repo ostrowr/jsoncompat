@@ -831,7 +831,10 @@ defer preparation until the first request.
 
 Request and response names derive from `operationId`, or a deterministic
 method/path fallback. Collisions fail generation. Requests flatten parameters
-into Python fields; location prefixes disambiguate collisions. `--rename`
+into Python fields; location prefixes disambiguate collisions. Model property
+names beginning with `__` receive a `field_` prefix to avoid Python name mangling
+and special attributes such as `__init__` or `__slots__`. Numeric suffixes
+disambiguate colliding sanitized names, and JSON wire keys are preserved. `--rename`
 continues to rename component models. Operation schemas participate in the same
 reference graph as components, preserving shared class identity. Inline nested
 model classes are also exported from the package. `--component` selects
@@ -1009,8 +1012,8 @@ Both bound clients use this same preparation/decoding path.
 See [prepared_client.py](../examples/openapi_client/prepared_client.py) for a
 runnable example with native HTTPX timeout settings. Timeouts, authentication,
 redirects, routing, retries, tracing, and cleanup remain caller-owned. These
-interfaces use buffered bytes; streaming uploads, downloads, and SSE require
-separate transport/lifetime abstractions and are not enabled by a request option.
+interfaces use buffered bytes. SSE is available as buffered text; live event
+streams and streaming uploads/downloads require a separate transport lifetime API.
 
 ### Response validation and supported encodings
 
@@ -1036,10 +1039,51 @@ before returning its `RawResponse`.
 `RawResponse.body` contains bytes after HTTP transport decoding (including
 decompression), before JSON or text parsing.
 
-Supported bodies are buffered JSON (`application/json`, concrete
-`application/*+json`) and UTF-8 `text/plain` with string schemas. Media parameters
-may specify a UTF-8 charset. Response selection ignores charset/case; other media
-parameters in the spec are rejected. Headers use case-insensitive names.
+The generated body type follows the declared media and schema:
+
+| Media | Python body | Wire representation |
+| --- | --- | --- |
+| `application/json`, `*+json` | Generated model or typed JSON value | JSON |
+| `text/*` | `str`, or the declared boolean/number/null scalar | UTF-8 text; non-string scalars use JSON lexical forms |
+| `application/x-ndjson`, `application/ndjson` | `Sequence[Record]` | One schema-validated record per line |
+| NDJSON with an explicit string schema | `str` | Raw UTF-8 text |
+| Binary media such as PDF, ZIP, images, audio, octet-stream | `bytes` | Unmodified bytes |
+| `application/x-www-form-urlencoded` | Generated object | OpenAPI form parameter encoding |
+| `multipart/form-data` | Generated object with `bytes` file fields | Multipart parts, with generated boundaries |
+| YAML | Generated model or typed JSON value | YAML; install `jsoncompat[yaml]` |
+
+NDJSON schemas describe each record. An array schema therefore produces a
+sequence of arrays, preserving each record's array constraints. A trailing LF
+or CRLF is accepted; blank records and malformed records fail validation.
+`text/event-stream` remains a string containing the complete SSE payload. The
+adapters buffer it before returning, so this API is intended for finite SSE
+responses, not an indefinitely open event stream.
+
+Binary bodies require an unconstrained schema or `type: string, format: binary`.
+For JSON, YAML, and NDJSON representations, `format: binary` remains an annotation:
+the media codec and declared JSON type still apply, including for explicitly
+JSON/YAML-encoded multipart parts.
+Their public fields are `bytes`: `response.unwrap().body` gives the download
+bytes directly. Binary fields in generated model `to_value()`/`from_value()` use
+canonical base64 strings as their JSON representation; HTTP encoders send the
+original bytes, without base64 on the wire. Ambiguous string constraints such as
+`pattern`, `enum`, or `minLength` on an opaque binary schema are rejected rather
+than reinterpreted as byte constraints.
+
+Multipart object parts default to JSON, scalar parts to text, and binary parts
+to octet-stream. Arrays produce repeated parts. Declared `encoding.contentType`
+is honored unless explicit parameter serialization controls override it;
+`contentType` is ignored for URL-encoded forms as OpenAPI specifies. Binary parts
+use their property name as the filename. Request options still allow overriding
+the complete body for unusual upload requirements. Custom per-part headers,
+ambiguous content-type lists, and fixed multipart boundaries are rejected.
+
+Media parameters declared in the spec are preserved and checked on responses;
+additional response parameters are permitted. UTF-8 charsets are supported for
+text, JSON, and YAML. Exact response media take precedence over wildcard media,
+and selectors with more declared parameters take precedence. Wildcards are
+supported for responses; request media must name a concrete representation.
+Headers use case-insensitive names.
 Schema-style response headers support strings, integers, numbers, booleans,
 and arrays of one of those types; JSON-content headers also support structured
 values. Scalar headers reject repetitions, arrays combine repeated lines, and
@@ -1051,16 +1095,21 @@ Path styles `simple`, `label`, and `matrix`, query `form`, `deepObject`,
 and cookie `form` are supported. Schema-style parameters must have non-null
 scalar or flat array/object values; nested or null values need JSON `content`.
 Booleans use `true`/`false`, numbers use JSON syntax, and URL data is percent
-encoded separately from structural separators. Empty exploded query arrays or
+encoded separately from structural separators. `allowEmptyValue` preserves empty
+string query values. `allowReserved` preserves URI-safe reserved characters;
+`#` and square brackets remain percent-encoded so transports cannot turn query
+data into fragments or malformed URLs. Existing valid percent-encoded triplets
+are preserved when `allowReserved` is true; ordinary expansion encodes their
+percent signs. Reserved query separators such as `&` and `=` still have their
+URI meaning when explicitly allowed. Empty exploded query arrays or
 objects produce no query pairs. Dot segments in an expanded path and invalid
 HTTP header names/values are rejected before network I/O. Request header values
 use ASCII for portability across transports; JSON-content headers escape Unicode.
 Adapters decode raw response header bytes as Latin-1 without losing repeated values.
 
 Generation rejects unsupported features rather than dropping operations:
-multipart/form bodies, binary or streaming transports, wildcard media,
-`allowReserved`, `allowEmptyValue`, and the existing unsupported OpenAPI lowering
-surfaces (including callbacks, webhooks, path-item references, response links,
+streaming transport lifetimes, structured XML, undefined `deepObject` serialization
+with `explode=false`, and the existing unsupported OpenAPI lowering surfaces (including callbacks, webhooks, path-item references, response links,
 and remote references). `readOnly`/`writeOnly` retain the existing JSON Schema
 annotation behavior; the generator does not manufacture directional schema
 variants. Applications with these requirements should adapt the spec explicitly.

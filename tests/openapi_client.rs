@@ -661,13 +661,8 @@ fn generation_rejects_unsupported_or_ambiguous_contracts_before_writing() {
     let mutations: Vec<(&str, Value, &str)> = vec![
         (
             "/paths/~1pets/post/requestBody/content",
-            json!({"multipart/form-data":{"schema":{"type":"object"}}}),
-            "unsupported multipart/form-data",
-        ),
-        (
-            "/paths/~1pets/get/parameters/0/allowReserved",
-            json!(true),
-            "allowReserved",
+            json!({"multipart/form-data":{"schema":{"type":"object","properties":{"file":{"type":"string","format":"binary"}}},"encoding":{"file":{"headers":{"X-Checksum":{"schema":{"type":"string"}}}}}}}),
+            "custom multipart part headers",
         ),
         (
             "/paths/~1pets/get/operationId",
@@ -683,11 +678,7 @@ fn generation_rejects_unsupported_or_ambiguous_contracts_before_writing() {
     for (pointer, value, message) in mutations {
         let work = Work::new();
         let mut spec = example();
-        if pointer.ends_with("allowReserved") {
-            spec["paths"]["/pets"]["get"]["parameters"][0]["allowReserved"] = value;
-        } else {
-            *spec.pointer_mut(pointer).unwrap() = value;
-        }
+        *spec.pointer_mut(pointer).unwrap() = value;
         let output = work.generate(&spec, &[]);
         assert!(!output.status.success());
         assert!(

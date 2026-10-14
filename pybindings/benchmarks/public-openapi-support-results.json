@@ -1,0 +1,2272 @@
+{
+  "environment": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+    "ty": "0.0.86",
+    "generator_sha256": "04f9ed6d8408d5ada130d7d958f4ac22e0d9373bbaf5775c312be6bded917b15",
+    "manifest_sha256": "ef4a559148f27df6f6edd224a4bac41cb113895f976c458b7942fca4547df7a7",
+    "revision": "185ae30f081c7ceec4b41aaf6db254083cce7dbe",
+    "working_tree_dirty": true,
+    "harness_sha256": "b0e60261076a104abb467e8490f3131a00daa6b94109f8dbc2bcc0fa5c17c4ff"
+  },
+  "scope": "Exact original corpus snapshots; no source contract edits. Generation and import timings are single audit observations, not controlled performance comparisons. The inline_examples counters include declared bodyless responses: 649 inline examples and 183 bodyless cases in total.",
+  "counts": {
+    "generation_rejected_needs_review": 13,
+    "passed": 29,
+    "unsupported_version": 14
+  },
+  "passed_operations": 1423,
+  "imported_modules": 3171,
+  "inline_examples": {
+    "Ok": 329,
+    "Err": 450,
+    "example_rejected_needs_review": 53
+  },
+  "uncovered_response_reasons": {
+    "no inline example": 4930,
+    "binary example has no explicit wire bytes; no representation was inferred": 5
+  },
+  "specs": [
+    {
+      "id": "polar",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 2509422,
+      "source_url": "https://raw.githubusercontent.com/polarsource/polar/2a1cb969fb21e2c9811c094069351089736fb172/docs/openapi/2026-10.openapi.json",
+      "sha256": "b40033e015d562b5dafdfde9ea417eab83ae9b6700cba233fd73c24b8dcd57b7",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.3200359590118751,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1v1~1benefits~1/get/parameters/8/explode' must be true when query parameter style is 'deepObject'"
+    },
+    {
+      "id": "unkey",
+      "status": "passed",
+      "source_bytes": 939432,
+      "source_url": "https://raw.githubusercontent.com/unkeyed/unkey/b5a373236aa5a7627a59104d4d2b9ffeb494c829/svc/api/openapi/openapi-generated.yaml",
+      "sha256": "c16a030718afce144f187ee6ffec11371f072c280f34ba01827294cb9dbb7c54",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.2653848750051111,
+      "files": 378,
+      "bytes": 5843753,
+      "python_files": 376,
+      "classes": 1182,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v2.py",
+        "bytes": 2555113
+      },
+      "deterministic": true,
+      "operations": 100,
+      "import_seconds": 0.2199977079872042,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 374,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 36,
+        "Err": 96,
+        "example_rejected_needs_review": 36
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 552
+      },
+      "rejected_examples": [
+        {
+          "origin": "#/paths/~1v2~1apps.createApp/post/responses/400/content/application~1json/examples/invalidSlug/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1apps.getApp/post/responses/200/content/application~1json/examples/app/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1apps.listApps/post/responses/200/content/application~1json/examples/appList/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1apps.listApps/post/responses/400/content/application~1json/examples/invalidLimit/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1apps.updateApp/post/responses/200/content/application~1json/examples/app/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1deployments.getDeployment/post/responses/200/content/application~1json/examples/deployment/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1deployments.listBuildLogs/post/responses/400/content/application~1json/examples/invalidCursor/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1deployments.listDeployments/post/responses/200/content/application~1json/examples/deploymentList/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1deployments.listDeployments/post/responses/400/content/application~1json/examples/missingParent/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.createDomain/post/responses/200/content/application~1json/examples/apex/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.createDomain/post/responses/200/content/application~1json/examples/domainConnect/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.createDomain/post/responses/200/content/application~1json/examples/subdomain/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.createDomain/post/responses/400/content/application~1json/examples/invalidDomain/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.createDomain/post/responses/400/content/application~1json/examples/publicSuffix/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.deleteDomain/post/responses/400/content/application~1json/examples/invalidIdentifier/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.getDomain/post/responses/400/content/application~1json/examples/invalidIdentifier/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.listDomains/post/responses/200/content/application~1json/examples/empty/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.listDomains/post/responses/400/content/application~1json/examples/searchTooLong/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1domains.verifyDomain/post/responses/400/content/application~1json/examples/invalidIdentifier/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1environments.getEnvironment/post/responses/200/content/application~1json/examples/environment/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1environments.listEnvironments/post/responses/200/content/application~1json/examples/environmentList/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1environments.listEnvironments/post/responses/400/content/application~1json/examples/missingApp/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1identities.createIdentity/post/responses/200/content/application~1json/examples/success/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1identities.getIdentity/post/responses/200/content/application~1json/examples/success/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1identities.listIdentities/post/responses/200/content/application~1json/examples/success/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1keys.verifyKey/post/responses/400/content/application~1json/examples/permissionsQuerySyntaxError/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1permissions.updatePermission/post/responses/400/content/application~1json/examples/invalidSlug/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1permissions.updateRole/post/responses/400/content/application~1json/examples/emptyName/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1projects.createProject/post/responses/400/content/application~1json/examples/invalidSlug/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1projects.listProjects/post/responses/400/content/application~1json/examples/invalidLimit/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1ratelimit.multiLimit/post/responses/200/content/application~1json/examples/allAllowed/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1ratelimit.multiLimit/post/responses/200/content/application~1json/examples/mixedResults/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1ratelimit.multiLimit/post/responses/200/content/application~1json/examples/withOverride/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1workspace.getUsage/post/responses/400/content/application~1json/examples/futureMonth/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1workspace.getUsage/post/responses/400/content/application~1json/examples/invalidMonth/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v2~1workspace.getUsage/post/responses/400/content/application~1json/examples/monthTooOld/value",
+          "outcome": "example_rejected_needs_review"
+        }
+      ]
+    },
+    {
+      "id": "openresponses",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 132236,
+      "source_url": "https://raw.githubusercontent.com/openresponses/openresponses/7078a8f1aecd3d1cd41c9891e21c307fcda7f4af/public/openapi/openapi.json",
+      "sha256": "1f469fc044bc3c0ee9bb8210b76435ce2386ed792c16863f8dc9bd6070b87f6a",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.008076000027358532,
+      "diagnostic": "Error: OpenAPI value at '#/components/schemas/Annotation/discriminator' must be a discriminator adjacent to `oneOf`, `anyOf`, or `allOf`"
+    },
+    {
+      "id": "agent_protocol",
+      "status": "passed",
+      "source_bytes": 77595,
+      "source_url": "https://raw.githubusercontent.com/langchain-ai/agent-protocol/440a86ba097b4bc41e8da007b24e419ec07a3e35/openapi.json",
+      "sha256": "7d069e43ca105e8127ce07ba7bd8bd7a78a2fadd6420009f2634a24cfb153f32",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.09127741697011515,
+      "files": 49,
+      "bytes": 560254,
+      "python_files": 47,
+      "classes": 181,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/threads.py",
+        "bytes": 101053
+      },
+      "deterministic": true,
+      "operations": 27,
+      "import_seconds": 0.029823167016729712,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 45,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 6,
+        "Err": 1
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 73
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "landing_ai_ade",
+      "status": "passed",
+      "source_bytes": 151410,
+      "source_url": "https://raw.githubusercontent.com/landing-ai/ade-cli/d1995ffef4e63a2a1c2774d9add93368889353c5/openapi.json",
+      "sha256": "d11fa644f12445e8707b6eb8600cb2214fb30a5cfdf8346e1d43aab1f3b20164",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.07698174996767193,
+      "files": 39,
+      "bytes": 606004,
+      "python_files": 37,
+      "classes": 173,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v2.py",
+        "bytes": 381191
+      },
+      "deterministic": true,
+      "operations": 17,
+      "import_seconds": 0.029948209004942328,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 35,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 39
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "airflow_edge",
+      "status": "passed",
+      "source_bytes": 52289,
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/providers/edge3/src/airflow/providers/edge3/worker_api/v2-edge-generated.yaml",
+      "sha256": "0ac9a331438b50de5227c63ba1463b9e6a3164680b8ee28b5a1d1fc3e151114f",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.0780915420036763,
+      "files": 39,
+      "bytes": 369929,
+      "python_files": 37,
+      "classes": 121,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/edge_worker.py",
+        "bytes": 176619
+      },
+      "deterministic": true,
+      "operations": 18,
+      "import_seconds": 0.022421999950893223,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 35,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 54
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "airflow_fab_auth",
+      "status": "passed",
+      "source_bytes": 31169,
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/providers/fab/src/airflow/providers/fab/auth_manager/api_fastapi/openapi/v2-fab-auth-manager-generated.yaml",
+      "sha256": "8c8a89d290cea7afc15116ed68e19c5b0d4e747318f16c8ffccb1371a69be5cf",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.04896220803493634,
+      "files": 29,
+      "bytes": 308877,
+      "python_files": 27,
+      "classes": 113,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/auth.py",
+        "bytes": 180525
+      },
+      "deterministic": true,
+      "operations": 14,
+      "import_seconds": 0.019404000020585954,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 25,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 1
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 72
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "airflow_keycloak_auth",
+      "status": "passed",
+      "source_bytes": 7562,
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/providers/keycloak/src/airflow/providers/keycloak/auth_manager/openapi/v2-keycloak-auth-manager-generated.yaml",
+      "sha256": "776b1b149cf01a733237423e36deb5d4fc72a02dd14718cf366e29329f28b184",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.049390917003620416,
+      "files": 21,
+      "bytes": 93077,
+      "python_files": 19,
+      "classes": 36,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/auth.py",
+        "bytes": 40772
+      },
+      "deterministic": true,
+      "operations": 6,
+      "import_seconds": 0.00778841704595834,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 17,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 12
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "airflow_simple_auth",
+      "status": "passed",
+      "source_bytes": 6153,
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/airflow-core/src/airflow/api_fastapi/auth/managers/simple/openapi/v2-simple-auth-manager-generated.yaml",
+      "sha256": "9c816daec7bd649923ab53c7ddbde1f9b309ff97f45031749f0b26f68d61b65d",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.05025950004346669,
+      "files": 18,
+      "bytes": 90323,
+      "python_files": 16,
+      "classes": 32,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/auth.py",
+        "bytes": 47773
+      },
+      "deterministic": true,
+      "operations": 4,
+      "import_seconds": 0.0068356250412762165,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 14,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 13
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "aivisspeech",
+      "status": "passed",
+      "source_bytes": 88362,
+      "source_url": "https://raw.githubusercontent.com/Aivis-Project/AivisSpeech/77a3675f7b76865cfa0253ac30f41ef1dd822e27/openapi.json",
+      "sha256": "1d935a3e31b82b6136a48a80241ba9ba666214b3899e7efaf7616dc064318aa1",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.09139054198749363,
+      "files": 87,
+      "bytes": 1040485,
+      "python_files": 85,
+      "classes": 183,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/aivm_models.py",
+        "bytes": 154598
+      },
+      "deterministic": true,
+      "operations": 46,
+      "import_seconds": 0.04792591597652063,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 83,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 12,
+        "Err": 1
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 74
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "chroma_core",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 53823,
+      "source_url": "https://raw.githubusercontent.com/chroma-core/chroma/5f30478c11ffdcf8cba1f872993c29d8f84ce0d9/docs/mintlify/sync.openapi.json",
+      "sha256": "eb103c851427be6da476177e7680249fe7361d7d17cc6f83581364674e58ec30",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.014260124997235835,
+      "diagnostic": "Error: OpenAPI schema at '#/paths/~1api~1v1~1invocations/get/parameters/2/schema' is invalid: local $ref '#/$defs/SourceTypeFilter' does not resolve to a schema node in the current document\n\nCaused by:\n    local $ref '#/$defs/SourceTypeFilter' does not resolve to a schema node in the current document"
+    },
+    {
+      "id": "cohere_ai",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 1135230,
+      "source_url": "https://raw.githubusercontent.com/cohere-ai/cohere-developer-experience/57596d8d2a8df5e3cdeb072cdc602c17805c72d4/cohere-openapi.yaml",
+      "sha256": "814093aac6748d91ca9e6886970b11b34bf2edcf03c4eafac622f17c18e5c851",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.09318633301882073,
+      "diagnostic": "Error: OpenAPI schema at '#/components/schemas/TruncationStrategy' is invalid: failed to compile raw schema validator: schema failed Draft 2020-12 validator compilation: [] has less than 1 item\n\nCaused by:\n    0: failed to compile raw schema validator: schema failed Draft 2020-12 validator compilation: [] has less than 1 item\n    1: schema failed Draft 2020-12 validator compilation: [] has less than 1 item\n    2: [] has less than 1 item"
+    },
+    {
+      "id": "digitalocean",
+      "status": "unsupported_version",
+      "source_bytes": 129479,
+      "source_url": "https://raw.githubusercontent.com/digitalocean/openapi/09ff7b32c6974901f2c89e1059828702a2fa5028/specification/DigitalOcean-public.v2.yaml",
+      "sha256": "02fb0d0195588cb212cb32a38f8ad8021c4e1c75ceb5d3e5736a9f032ec9191c",
+      "openapi": "3.0.0",
+      "generation_seconds": 0.008443707949481905,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.0': expected a 3.1.x document"
+    },
+    {
+      "id": "gematik_fachdienst",
+      "status": "unsupported_version",
+      "source_bytes": 10607,
+      "source_url": "https://raw.githubusercontent.com/gematik/gem-push-notifications-concept/e24377cb87111f294e0562e58fd6b55bba66d2e5/docs_sources/fd_openapi.yaml",
+      "sha256": "1c7f36a9f387d86b2bf65d7e52498bdb84ae27a1bb237f87c405a1334289acd3",
+      "openapi": "3.0.3",
+      "generation_seconds": 0.007701582973822951,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document"
+    },
+    {
+      "id": "gematik_push_gateway",
+      "status": "passed",
+      "source_bytes": 42858,
+      "source_url": "https://raw.githubusercontent.com/gematik/gem-push-notifications-concept/e24377cb87111f294e0562e58fd6b55bba66d2e5/docs_sources/push_gateway_openapi.yaml",
+      "sha256": "e0ae620f1e3d9e91fe877f81bc8c7a5f5e45f2a032d1f7c5482b64d3f3513159",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.048222667013760656,
+      "files": 24,
+      "bytes": 205742,
+      "python_files": 22,
+      "classes": 64,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/notify.py",
+        "bytes": 66227
+      },
+      "deterministic": true,
+      "operations": 3,
+      "import_seconds": 0.01050770899746567,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 20,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 5
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 15
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "langchain_ai",
+      "status": "unsupported_version",
+      "source_bytes": 15260,
+      "source_url": "https://raw.githubusercontent.com/langchain-ai/langsmith-sdk/a155e95489c536c84ebdb02cc1490111b13221c4/openapi/openapi.yaml",
+      "sha256": "51bef3793d7f4b6d6ec8d34684a5b6989b7dd3399776889cd6326b51a83a8817",
+      "openapi": "3.0.2",
+      "generation_seconds": 0.007856750045903027,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.2': expected a 3.1.x document"
+    },
+    {
+      "id": "langfuse",
+      "status": "unsupported_version",
+      "source_bytes": 533093,
+      "source_url": "https://raw.githubusercontent.com/langfuse/langfuse/d6ddf14117c7f0a3c97dbbc1d14271d59f1de77f/web/public/generated/api/openapi.yml",
+      "sha256": "f6b0ec509c47c18c5b89e95fa1c0f47a2798fc28c4e764e90fffd542fbc1baab",
+      "openapi": "3.0.1",
+      "generation_seconds": 0.014603541989345104,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document"
+    },
+    {
+      "id": "langfuse_organizations",
+      "status": "unsupported_version",
+      "source_bytes": 15471,
+      "source_url": "https://raw.githubusercontent.com/langfuse/langfuse/d6ddf14117c7f0a3c97dbbc1d14271d59f1de77f/web/public/generated/organizations-api/openapi.yml",
+      "sha256": "c2f98109a1565f72b938b3667f59fdc1b8ec2e872a4bf561c14e84093b2d863c",
+      "openapi": "3.0.1",
+      "generation_seconds": 0.007882584002800286,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document"
+    },
+    {
+      "id": "linode",
+      "status": "unsupported_version",
+      "source_bytes": 7911272,
+      "source_url": "https://raw.githubusercontent.com/linode/linode-api-docs/ffe9841fd4578f66ffef52e656ac5c83852175a4/openapi.json",
+      "sha256": "c057aa23ec74f53c70ceebc95e06dd8951c078e5b2139cd6b85597e44e0608d6",
+      "openapi": "3.0.1",
+      "generation_seconds": 0.04650275001768023,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document"
+    },
+    {
+      "id": "lsproxy",
+      "status": "passed",
+      "source_bytes": 28297,
+      "source_url": "https://raw.githubusercontent.com/agentic-labs/lsproxy/0b7d96cacd8f5f782bf71fcef4b3bc4a347e8af2/openapi.json",
+      "sha256": "7740a50d6d4e67d33b22904362421c9bec6476e8bc822315dbbc952936af6a47",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.04683304199716076,
+      "files": 38,
+      "bytes": 220545,
+      "python_files": 36,
+      "classes": 60,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/symbol.py",
+        "bytes": 61365
+      },
+      "deterministic": true,
+      "operations": 8,
+      "import_seconds": 0.013984749966766685,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 34,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Err": 15
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 8
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "mantrae",
+      "status": "passed",
+      "source_bytes": 240594,
+      "source_url": "https://raw.githubusercontent.com/MizuchiLabs/mantrae/10e1ee319e7e2ac5fbab1db8bf14ba275c72c024/internal/api/server/openapi/openapi.json",
+      "sha256": "1620fcd957a23ae7e82823439c8b25973ba9b0821453fa57c962cf0b6a25ad17",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.14225987502140924,
+      "files": 181,
+      "bytes": 1980139,
+      "python_files": 179,
+      "classes": 415,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": ".jsoncompat-manifest.json",
+        "bytes": 151498
+      },
+      "deterministic": true,
+      "operations": 84,
+      "import_seconds": 0.08895874995505437,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 177,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 168
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "marimo",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 248900,
+      "source_url": "https://raw.githubusercontent.com/marimo-team/marimo/feaf0b2464be52fb43005d8622708d0af89cf645/packages/openapi/api.yaml",
+      "sha256": "52ce783acf863d6094990404da24feebea82066a0c7ae3224f626d43b449a431",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.014617291977629066,
+      "diagnostic": "Error: OpenAPI value at '#/info/version' must be a string"
+    },
+    {
+      "id": "papr_memory",
+      "status": "passed",
+      "source_bytes": 261091,
+      "source_url": "https://raw.githubusercontent.com/Papr-ai/memory-opensource/a0a816eb00f73b0819ef3fd7115bb6835cd18c39/openapi.json",
+      "sha256": "95a3f6f2c71613c2bba62f71d65d9e08a62248e5e1be21a4a0e382dc61d04155",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.14959120796993375,
+      "files": 91,
+      "bytes": 1687637,
+      "python_files": 89,
+      "classes": 344,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v1.py",
+        "bytes": 840213
+      },
+      "deterministic": true,
+      "operations": 36,
+      "import_seconds": 0.06853954202961177,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 87,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Err": 55,
+        "Ok": 14,
+        "example_rejected_needs_review": 8
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 98
+      },
+      "rejected_examples": [
+        {
+          "origin": "#/components/schemas/UserListResponse/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v1~1memory/post/responses/200/content/application~1json/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v1~1memory/post/responses/207/content/application~1json/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v1~1memory~1search/post/responses/200/content/application~1json/examples/system_nodes_response/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v1~1memory~1search/post/responses/200/content/application~1json/examples/custom_schema_response/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v1~1memory~1search/post/responses/200/content/application~1json/examples/mixed_nodes_response/value",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/paths/~1v1~1schemas/post/responses/201/content/application~1json/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/UserListResponse/example",
+          "outcome": "example_rejected_needs_review"
+        }
+      ]
+    },
+    {
+      "id": "netlify",
+      "status": "unsupported_version",
+      "source_bytes": 155611,
+      "source_url": "https://raw.githubusercontent.com/netlify/open-api/065567609ce5b47bd210876b86460c659d077d3c/swagger.yml",
+      "sha256": "989a86aa134bd90803eda0aff189ca487d0d38c7611257090061d52882dd7c3d",
+      "openapi": "2.0",
+      "generation_seconds": 0.008650665986351669,
+      "diagnostic": "Error: OpenAPI document must declare an `openapi` version string"
+    },
+    {
+      "id": "openai",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 4792164,
+      "source_url": "https://raw.githubusercontent.com/openai/openai-openapi/77618e641a840768f1e58197ca53ddedffea6df9/openapi.json",
+      "sha256": "cf31ebfa19c49cf081757985deec50b28d10f9b7900e5f391eb1a899c1ce22f5",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.04687741701491177,
+      "diagnostic": "Error: OpenAPI value at '#/components/schemas/BetaCodeInterpreterToolCall/properties/outputs/anyOf/0/discriminator' must be a discriminator adjacent to `oneOf`, `anyOf`, or `allOf`"
+    },
+    {
+      "id": "openfga",
+      "status": "unsupported_version",
+      "source_bytes": 182572,
+      "source_url": "https://raw.githubusercontent.com/openfga/api/c0650ce2169bcb39a72d73841fb531c200e32248/docs/openapiv3/apidocs.openapi.json",
+      "sha256": "b2cdbdf0878ea278d198ab8bf21a8c3dc0bd6381f412e1f0a9d543791693fc3e",
+      "openapi": "3.0.3",
+      "generation_seconds": 0.007844291045330465,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document"
+    },
+    {
+      "id": "opensearch",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 2588104,
+      "source_url": "https://github.com/opensearch-project/opensearch-api-specification/releases/download/v0.2.0/opensearch-openapi.yaml",
+      "sha256": "22c5eb078b7ad796930f0a05e178b681dad5cd10a5610e5287d7aa9f8e7a374c",
+      "openapi": "3.1.0",
+      "generation_seconds": 1.5643784580170177,
+      "diagnostic": "Error: DELETE response 204 must not declare content for API generation"
+    },
+    {
+      "id": "prefect",
+      "status": "passed",
+      "source_bytes": 1275954,
+      "source_url": "https://raw.githubusercontent.com/PrefectHQ/prefect/302beb37eb79cd6ba37fcaa9fa002c4429b45702/docs/v3/api-ref/rest-api/server/schema.json",
+      "sha256": "d8fd6f1494c68c9c6a62b3e0e0fdbe18d6e0f70ca6d8f4e0b995b911b1930947",
+      "openapi": "3.1.0",
+      "generation_seconds": 1.3780012499773875,
+      "files": 443,
+      "bytes": 67984668,
+      "python_files": 441,
+      "classes": 1051,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/deployments.py",
+        "bytes": 33004838
+      },
+      "deterministic": true,
+      "operations": 179,
+      "import_seconds": 0.7731976670329459,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 439,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 43
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 313
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "renegade",
+      "status": "passed",
+      "source_bytes": 41906,
+      "source_url": "https://raw.githubusercontent.com/renegade-fi/renegade/744b3abd8e8814acd20e4520740d6f124a9c8c71/openapi.yaml",
+      "sha256": "ff2b9f21f6b6f170b719d753cd879fc8c5e0eb3710427865ad9e557889ce65c1",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.08512474998133257,
+      "files": 87,
+      "bytes": 622347,
+      "python_files": 85,
+      "classes": 142,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v2.py",
+        "bytes": 190429
+      },
+      "deterministic": true,
+      "operations": 23,
+      "import_seconds": 0.028089832980185747,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 83,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 1
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 22
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "intelligencex",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 43402,
+      "source_url": "https://raw.githubusercontent.com/IntelligenceX/SDK/867124360296531330b6fc8fabafaa78bfea4303/openapi.yaml",
+      "sha256": "09fb9b26ddff9fa3c8c3810953072cc2b007c5f3e185955da891a33444477078",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.008331124961841851,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1api~1item~1get/get/responses' must be an object containing at least one response"
+    },
+    {
+      "id": "stripe",
+      "status": "unsupported_version",
+      "source_bytes": 4663536,
+      "source_url": "https://raw.githubusercontent.com/stripe/openapi/e73367dba9e88388c9244de65874fd3a07cb1b4d/latest/openapi.spec3.json",
+      "sha256": "9119e72c7ff8ad142e94f7efa9cf49d8e6eec69df3592e17e8fba15099726ed7",
+      "openapi": "3.0.0",
+      "generation_seconds": 0.05015008302871138,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.0': expected a 3.1.x document"
+    },
+    {
+      "id": "userlist_push",
+      "status": "passed",
+      "source_bytes": 10598,
+      "source_url": "https://raw.githubusercontent.com/userlist/userlist-openapi/bad400a7b54737ce7398b04dfd2d2b21b89ad350/reference/push.v1.yaml",
+      "sha256": "ac17aef460f92ac64584db314d6c6bcfbfea7c3961a18b0340b92b817ccb3871",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.05031933303689584,
+      "files": 27,
+      "bytes": 230466,
+      "python_files": 25,
+      "classes": 44,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/relationships.py",
+        "bytes": 35774
+      },
+      "deterministic": true,
+      "operations": 7,
+      "import_seconds": 0.009138832974713296,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 23,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 7
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 14
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "airflow",
+      "status": "passed",
+      "source_bytes": 543538,
+      "source_url": "https://raw.githubusercontent.com/apache/airflow/9fc4143efc5eba3b0436122ff7505bc516e8f80a/airflow-core/src/airflow/api_fastapi/core_api/openapi/v2-rest-api-generated.yaml",
+      "sha256": "4ac04303fa3e5f089418b4a7eec96fcecf5c3e56f36b476136f45924373641a4",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.3169830839615315,
+      "files": 212,
+      "bytes": 3983938,
+      "python_files": 210,
+      "classes": 1136,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/api.py",
+        "bytes": 2207944
+      },
+      "deterministic": true,
+      "operations": 134,
+      "import_seconds": 0.22683395800413564,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 208,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 22
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 729
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "immich",
+      "status": "unsupported_version",
+      "source_bytes": 954592,
+      "source_url": "https://raw.githubusercontent.com/immich-app/immich/cc7fd671973085baf2a0dfba4e2b0a86cab17e6c/open-api/immich-openapi-specs.json",
+      "sha256": "2cce36a0afe3207316135ff6d8fd3f931d22247332175793c8c5ca4179f1b485",
+      "openapi": "3.0.0",
+      "generation_seconds": 0.015070500026922673,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.0': expected a 3.1.x document"
+    },
+    {
+      "id": "langflow",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 359514,
+      "source_url": "https://raw.githubusercontent.com/langflow-ai/langflow/504c02fc47e76087b82b0e7cbe4186e9cdd916d4/docs/openapi/openapi.json",
+      "sha256": "088c1fc24528a85fe18a433fc1698e3da548e790159a2ed95f98884bc445d0e9",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.014064540970139205,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1api~1v1~1monitor~1messages~1session~1{session_id}' must be a path template shape that is not already declared with different parameter names"
+    },
+    {
+      "id": "meilisearch",
+      "status": "passed",
+      "source_bytes": 825816,
+      "source_url": "https://raw.githubusercontent.com/meilisearch/documentation/0d96f60225eabdfed0721ab95e39b3605a764bed/assets/release-assets/meilisearch-openapi.json",
+      "sha256": "4a69fc9f58ac70cc1bd88df0786a25fa8ec8453686b9ea2fd1b80e8819e2f0d3",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.26312608300941065,
+      "files": 258,
+      "bytes": 3795290,
+      "python_files": 256,
+      "classes": 897,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/indexes.py",
+        "bytes": 866290
+      },
+      "deterministic": true,
+      "operations": 143,
+      "import_seconds": 0.17131933401105925,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 254,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 142,
+        "Err": 257
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 1
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "qdrant",
+      "status": "unsupported_version",
+      "source_bytes": 525536,
+      "source_url": "https://raw.githubusercontent.com/qdrant/qdrant/016542aa5deb6c66380bb137badf73d54f742bde/docs/redoc/master/openapi.json",
+      "sha256": "22a890a799743906f5337588bb8e5ee3fccc518825e7bb5012add1ce579aa174",
+      "openapi": "3.0.1",
+      "generation_seconds": 0.017113834037445486,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.1': expected a 3.1.x document"
+    },
+    {
+      "id": "grafana_slo",
+      "status": "passed",
+      "source_bytes": 17887,
+      "source_url": "https://raw.githubusercontent.com/grafana/slo-openapi-client/75fe08b09d871ab45cb4a5eeca91dbbe43c66672/openapi.yaml",
+      "sha256": "81c2ef10878c5a871bfde5ef7eb95a399049461d5a414ca69316b1eb10cb2707",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.08271891699405387,
+      "files": 44,
+      "bytes": 277494,
+      "python_files": 42,
+      "classes": 74,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v1.py",
+        "bytes": 121789
+      },
+      "deterministic": true,
+      "operations": 10,
+      "import_seconds": 0.01600058301119134,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 40,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 4
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 26
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "mcp_registry",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 43665,
+      "source_url": "https://raw.githubusercontent.com/modelcontextprotocol/registry/11b7b0e274d518b6f449c5ee3518a6151d9848b9/docs/reference/api/openapi.yaml",
+      "sha256": "3ed9ca429754087f2c7de81aa845c1cab3286c33941ac48482f923bbd6f1442d",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.009632417000830173,
+      "diagnostic": "Error: OpenAPI value at '#/$id' must be a supported OpenAPI document field or specification extension beginning with 'x-'"
+    },
+    {
+      "id": "gravit_launcher",
+      "status": "passed",
+      "source_bytes": 27945,
+      "source_url": "https://raw.githubusercontent.com/GravitLauncher/Launcher/eda714f1ebc9f8cd04a3ed7bf31940c8c1c9b23f/openapi.yaml",
+      "sha256": "e883f6981ac00d25446ad4742052a00849cc9d008d38f1986d0ab2442d30ac19",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.08548945898655802,
+      "files": 41,
+      "bytes": 315839,
+      "python_files": 39,
+      "classes": 95,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/profile.py",
+        "bytes": 65711
+      },
+      "deterministic": true,
+      "operations": 21,
+      "import_seconds": 0.019515249994583428,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 37,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 5
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 37
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "nomad",
+      "status": "passed",
+      "source_bytes": 472793,
+      "source_url": "https://nomad-lab.eu/prod/v1/api/v1/openapi.json",
+      "sha256": "3cd8bda452e5b2ebdc491c25829c841d00aaff564c6358b78292978c70e67478",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.266675665974617,
+      "files": 235,
+      "bytes": 3780752,
+      "python_files": 233,
+      "classes": 753,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/entries.py",
+        "bytes": 462479
+      },
+      "deterministic": true,
+      "operations": 100,
+      "import_seconds": 0.15595741604920477,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 231,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 5
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 315,
+        "binary example has no explicit wire bytes; no representation was inferred": 5
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "materials_project",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 555740,
+      "source_url": "https://api.materialsproject.org/openapi.json",
+      "sha256": "66ff8da722c58fd1bcdd31aa96b582a6f9f1c538d28719d6028235eb7d236e27",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.027352833014447242,
+      "diagnostic": "Error: OpenAPI value at '#/components/securitySchemes/ApiKeyAuth/descriptions' must be a supported OpenAPI security-scheme field or specification extension beginning with 'x-'"
+    },
+    {
+      "id": "authentik",
+      "status": "unsupported_version",
+      "source_bytes": 1796768,
+      "source_url": "https://raw.githubusercontent.com/goauthentik/authentik/main/schema.yml",
+      "sha256": "5c269f74a26f3718b07043ad8d3fd2cba823877214531214b3b82dacd646591a",
+      "openapi": "3.0.3",
+      "generation_seconds": 0.03001820796635002,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document"
+    },
+    {
+      "id": "netbox",
+      "status": "unsupported_version",
+      "source_bytes": 14659572,
+      "source_url": "https://demo.netbox.dev/api/schema/?format=json",
+      "sha256": "48281500f3e87d35a37aecbc6f210696efa0469d34e5ba71acbd940d9f3e6118",
+      "openapi": "3.0.3",
+      "generation_seconds": 0.05199458298739046,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.3': expected a 3.1.x document"
+    },
+    {
+      "id": "finmind",
+      "status": "passed",
+      "source_bytes": 8284,
+      "source_url": "https://raw.githubusercontent.com/FinMind/FinMind.github.io/master/openapi.yaml",
+      "sha256": "c338279626aa7f3d950c816c1e62afd664c57f0b90d09eadf437e45fa9e68bc5",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.05238758400082588,
+      "files": 16,
+      "bytes": 59392,
+      "python_files": 14,
+      "classes": 20,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/data.py",
+        "bytes": 14009
+      },
+      "deterministic": true,
+      "operations": 4,
+      "import_seconds": 0.005012624955270439,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 12,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 5
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "typesafe",
+      "status": "passed",
+      "source_bytes": 14158,
+      "source_url": "https://api.typesafe.ai/openapi.json",
+      "sha256": "a191f8a7df6bd6fedced8120dd0fd106f88575d1d1c8360d08900a6c7c0360d5",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.04772095900261775,
+      "files": 29,
+      "bytes": 142595,
+      "python_files": 27,
+      "classes": 51,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v1.py",
+        "bytes": 25050
+      },
+      "deterministic": true,
+      "operations": 2,
+      "import_seconds": 0.010513000015635043,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 25,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 4
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "fossology",
+      "status": "passed",
+      "source_bytes": 222327,
+      "source_url": "https://raw.githubusercontent.com/fossology/fossology/d94e7fa191c8a1f1d46abdf4b207896212c9ca3f/src/www/ui/api/documentation/openapi.yaml",
+      "sha256": "1b65d32686d450d8e23a5166d8d9e5c53f4eadb92cec35c99bfb913f28276940",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.2527985000051558,
+      "files": 109,
+      "bytes": 2870412,
+      "python_files": 107,
+      "classes": 882,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/uploads.py",
+        "bytes": 889361
+      },
+      "deterministic": true,
+      "operations": 167,
+      "import_seconds": 0.1913953329785727,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 105,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Ok": 2
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 530
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "optimade",
+      "status": "passed",
+      "source_bytes": 312038,
+      "source_url": "https://raw.githubusercontent.com/Materials-Consortia/optimade-python-tools/main/openapi/openapi.json",
+      "sha256": "843c6d7e5ffff9b1ca77e104f2618cf2331b2d474fab189061b9fa710b213be6",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.15396304201567546,
+      "files": 78,
+      "bytes": 3171352,
+      "python_files": 76,
+      "classes": 163,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/structures.py",
+        "bytes": 533585
+      },
+      "deterministic": true,
+      "operations": 10,
+      "import_seconds": 0.06402291700942442,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 74,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 73
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "asterwise",
+      "status": "passed",
+      "source_bytes": 822805,
+      "source_url": "https://api.asterwise.com/openapi.json",
+      "sha256": "9da79d842151180c1b1012b78affed9c00df85e6d8d79865919d3cb317c0b4b7",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.5727081669610925,
+      "files": 496,
+      "bytes": 8179581,
+      "python_files": 494,
+      "classes": 2198,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/v1.py",
+        "bytes": 3597900
+      },
+      "deterministic": true,
+      "operations": 143,
+      "import_seconds": 0.4333477499894798,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 492,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 1430
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "coolify",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 538967,
+      "source_url": "https://raw.githubusercontent.com/coollabsio/coolify/v4.x/openapi.yaml",
+      "sha256": "6d9cbbcb0d0690167e84f7a5c599b2224f866579b3ceea64e729654c88a942cf",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.04972533299587667,
+      "diagnostic": "Error: OpenAPI reference '#/components/responses/403' at '#/paths/~1applications~1{uuid}~1previews~1{pull_request_id}/patch/responses/403' did not resolve"
+    },
+    {
+      "id": "jupyterhub",
+      "status": "passed",
+      "source_bytes": 75545,
+      "source_url": "https://raw.githubusercontent.com/jupyterhub/jupyterhub/main/docs/source/_static/rest-api.yml",
+      "sha256": "04a2ecd60098da8812a98b626f36774ade555b9e73bd2e9a06bfc49e42d65e7f",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.08875549997901544,
+      "files": 37,
+      "bytes": 625564,
+      "python_files": 35,
+      "classes": 185,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/users.py",
+        "bytes": 153849
+      },
+      "deterministic": true,
+      "operations": 54,
+      "import_seconds": 0.03685887501342222,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 33,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Err": 13,
+        "Ok": 22
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 36
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "planetary_computer",
+      "status": "passed",
+      "source_bytes": 38852,
+      "source_url": "https://planetarycomputer.microsoft.com/api/stac/v1/openapi.json",
+      "sha256": "1ee256e9583916e3da9bd1368dc5d4c60599b754b29d28d165e47cb1ee1cbb31",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.08192545804195106,
+      "files": 48,
+      "bytes": 1357532,
+      "python_files": 46,
+      "classes": 74,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/api.py",
+        "bytes": 483891
+      },
+      "deterministic": true,
+      "operations": 10,
+      "import_seconds": 0.029260083043482155,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 44,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 10
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "noc_titiler",
+      "status": "unsupported_version",
+      "source_bytes": 409506,
+      "source_url": "https://imfe-pilot-tileserver.noc.ac.uk/openapi.json",
+      "sha256": "43a7b7c72863299fd26c512425df45cb1f6d87b536c89bf3082842b4cf3c9d96",
+      "openapi": "3.0.2",
+      "generation_seconds": 0.016152083000633866,
+      "diagnostic": "Error: unsupported OpenAPI version '3.0.2': expected a 3.1.x document"
+    },
+    {
+      "id": "typesense_cloud",
+      "status": "passed",
+      "source_bytes": 175532,
+      "source_url": "https://cloud.typesense.org/api/v1/openapi.json",
+      "sha256": "e5c69f14964ad52d1b612455173c1322814fc7e0b04d0893b00e601ff9aa1f37",
+      "openapi": "3.1.2",
+      "generation_seconds": 0.20467000000644475,
+      "files": 85,
+      "bytes": 1360907,
+      "python_files": 83,
+      "classes": 351,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/clusters.py",
+        "bytes": 560798
+      },
+      "deterministic": true,
+      "operations": 40,
+      "import_seconds": 0.06527291698148474,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 81,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {},
+      "uncovered_response_reasons": {
+        "no inline example": 205
+      },
+      "rejected_examples": []
+    },
+    {
+      "id": "luma",
+      "status": "passed",
+      "source_bytes": 42664,
+      "source_url": "https://raw.githubusercontent.com/lumalabs/lumaai-api/main/openapi.yaml",
+      "sha256": "d1f79351570e22aabbc239b2ae4a855aef2695fdeae5c07275219399d28e446f",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.09474887500982732,
+      "files": 48,
+      "bytes": 295934,
+      "python_files": 46,
+      "classes": 75,
+      "manifest_hashes_valid": true,
+      "largest_file": {
+        "path": "operations/generations.py",
+        "bytes": 108605
+      },
+      "deterministic": true,
+      "operations": 13,
+      "import_seconds": 0.01644129102351144,
+      "import_reflection_calls": 0,
+      "all_generated_modules_imported": 44,
+      "dispatch_plans_equivalent": true,
+      "differential_failures": [],
+      "typecheck_exit_code": 0,
+      "negative_typecheck_expected_error": true,
+      "inline_examples": {
+        "Err": 12,
+        "Ok": 2,
+        "example_rejected_needs_review": 9
+      },
+      "uncovered_response_reasons": {
+        "no inline example": 2
+      },
+      "rejected_examples": [
+        {
+          "origin": "#/components/schemas/ListGenerationResponse/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        },
+        {
+          "origin": "#/components/schemas/Generation/example",
+          "outcome": "example_rejected_needs_review"
+        }
+      ]
+    },
+    {
+      "id": "openrailwaymap",
+      "status": "generation_rejected_needs_review",
+      "source_bytes": 23022,
+      "source_url": "https://raw.githubusercontent.com/hiddewie/OpenRailwayMap-vector/master/proxy/api/openapi.yaml",
+      "sha256": "9643d86b9482c4f9b9253f7bee02092484b7f7c767de7e7fc4e4cd624f4da170",
+      "openapi": "3.1.0",
+      "generation_seconds": 0.010639583982992917,
+      "diagnostic": "Error: OpenAPI value at '#/paths/~1api~1status/get/responses' must be an object containing at least one response"
+    }
+  ],
+  "explicit_samples": {
+    "media": {
+      "manifest": "public-openapi-media-samples.json",
+      "counts": {
+        "passed": 13
+      },
+      "cases": [
+        {
+          "id": "agent_protocol_finite_sse",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivisspeech_html",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "optimade_csv_media_parameter",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "optimade_missing_required_media_parameter",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "typesense_pdf_bytes",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "typesense_pdf_wrong_media",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "typesense_binary_unexpected_503",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 503,
+          "body_shape": "NoneType",
+          "outcome": "unexpected",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "fossology_yaml",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "fossology_yaml_parse_error",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meilisearch_ndjson_records",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "list",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meilisearch_ndjson_parse_error",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_urlencoded_body_variant",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "dict",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "gravit_multipart_json_and_binary",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "dict",
+          "native_value_equivalent": true
+        }
+      ],
+      "typing_consumers": [
+        {
+          "exit_code": 0
+        }
+      ]
+    },
+    "raw": {
+      "manifest": "public-openapi-samples.json",
+      "counts": {
+        "passed": 30
+      },
+      "cases": [
+        {
+          "id": "prefect_boolean_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "bool",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_string_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_integer_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "int",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_array_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "list",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_number_union_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "float",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_null_union_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "NoneType",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_string_request",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "str",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_array_request",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "list",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_events_array_request",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "list",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_validation_error",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 422,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_declared_400",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 400,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_declared_403",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 403,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_declared_404",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 404,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_declared_409",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 409,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_error_union_object",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 404,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_nullable_job_response",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "NoneType",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "gematik_declared_400",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 400,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "gematik_declared_401",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 401,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "gematik_declared_500",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 500,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "gematik_declared_503",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 503,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "grafana_declared_400",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 400,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "grafana_declared_500",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 500,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_union_request_password",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "dict",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_union_request_client_credentials",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "dict",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_union_request_jwt",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "dict",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_undeclared_503",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 503,
+          "body_shape": "dict",
+          "outcome": "unexpected",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_invalid_declared_404",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 404,
+          "body_shape": "dict",
+          "outcome": "unexpected",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "airflow_invalid_json_404",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 404,
+          "body_shape": "NoneType",
+          "outcome": "unexpected",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_invalid_json_success_is_lazy",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "prefect_invalid_schema_success_is_lazy",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        }
+      ],
+      "typing_consumers": [
+        {
+          "exit_code": 0
+        }
+      ]
+    },
+    "slice": {
+      "manifest": "public-openapi-slice-samples.json",
+      "counts": {
+        "passed": 31
+      },
+      "cases": [
+        {
+          "id": "meili_dictionary",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "list",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_boolean",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "bool",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_integer",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "int",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_string",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_enum",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_reject_array_duplicates",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_reject_array_wrong_item",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_reject_integer_minimum",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_reject_enum_unknown",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_reject_string_null",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_declared_404",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 404,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_unexpected_503",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 503,
+          "body_shape": "dict",
+          "outcome": "unexpected",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_array_request",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "list",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_enum_request",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "str",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "meili_reject_array_request_duplicate",
+          "status": "passed",
+          "direction": "request",
+          "outcome": "request_error",
+          "body_shape": "list"
+        },
+        {
+          "id": "meili_reject_array_request_null",
+          "status": "passed",
+          "direction": "request",
+          "outcome": "request_error",
+          "body_shape": "NoneType"
+        },
+        {
+          "id": "meili_reject_array_request_wrong_item",
+          "status": "passed",
+          "direction": "request",
+          "outcome": "request_error",
+          "body_shape": "list"
+        },
+        {
+          "id": "aivis_string",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "str",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_string_array",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "list",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_boolean",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "bool",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_integer",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "int",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_number_array",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "list",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_object_array",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 200,
+          "body_shape": "list",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_array_request",
+          "status": "passed",
+          "direction": "request",
+          "body_shape": "list",
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_reject_array_request",
+          "status": "passed",
+          "direction": "request",
+          "outcome": "request_error",
+          "body_shape": "dict"
+        },
+        {
+          "id": "aivis_declared_400",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 400,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_declared_422",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 422,
+          "body_shape": "dict",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_bodyless_204",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 204,
+          "body_shape": "NoneType",
+          "outcome": "declared",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_reject_boolean_string",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_reject_array_wrong_item",
+          "status": "passed",
+          "direction": "response",
+          "outcome": "parse_error",
+          "lazy_metadata": true,
+          "cached_parse_failure": true,
+          "native_value_equivalent": true
+        },
+        {
+          "id": "aivis_unexpected_503",
+          "status": "passed",
+          "direction": "response",
+          "http_status": 503,
+          "body_shape": "dict",
+          "outcome": "unexpected",
+          "lazy_metadata": true,
+          "cached_result": true,
+          "native_value_equivalent": true
+        }
+      ],
+      "typing_consumers": [
+        {
+          "exit_code": 0
+        }
+      ],
+      "note": "The existing 31 focused cases ran against complete raw clients; only projection package IDs in the temporary manifest and consumer were renamed."
+    }
+  },
+  "independent_inline_example_review": {
+    "validator": "python-jsonschema against unchanged source schemas",
+    "rejected_operation_examples": 53,
+    "confirmed_invalid": 53,
+    "by_spec": {
+      "unkey": 36,
+      "papr_memory": 8,
+      "luma": 9
+    },
+    "papr_distinct_example_locations": 7
+  }
+}

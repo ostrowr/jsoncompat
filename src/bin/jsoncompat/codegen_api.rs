@@ -124,6 +124,7 @@ struct ResponseModel {
     status: String,
     model: String,
     media: Option<String>,
+    codec: &'static str,
     headers: String,
 }
 
@@ -372,29 +373,27 @@ impl ApiPackage {
             }
             if let Some(body) = &contract.body {
                 let body_schema = if body.content.len() == 1 {
-                    validate_media(&body.content[0], &definitions)?;
-                    metadata.insert(
-                        "body".into(),
-                        if body.content[0].media_type == "application/json" {
-                            format!("{http}.Body()")
-                        } else {
-                            format!("{http}.Body({})", py(&body.content[0].media_type))
-                        },
-                    );
-                    body.content[0].schema.clone()
+                    let media = project_media(&body.content[0], &definitions, false)?;
+                    metadata.insert("body".into(), media.body_metadata(http));
+                    media.schema
                 } else {
                     let mut variants = Vec::new();
-                    for media in &body.content {
-                        validate_media(media, &definitions)?;
+                    let mut codecs = Vec::new();
+                    for original in &body.content {
+                        let media = project_media(original, &definitions, false)?;
                         let name = package.allocate_name(format!(
                             "{prefix}Body{}",
-                            super::codegen_package::class_name(&media.media_type)
+                            super::codegen_package::class_name(&media.content_type)
                         ));
-                        package.insert(&name, record(json!({"content_type":{"enum":[media.media_type]}, "value":media.schema}), &["content_type", "value"]))?;
+                        codecs.push(media.body_metadata(http));
+                        package.insert(&name, record(json!({"content_type":{"enum":[media.content_type]}, "value":media.schema}), &["content_type", "value"]))?;
                         declarations.push(name.clone());
                         variants.push(reference(&name));
                     }
-                    metadata.insert("body".into(), format!("{http}.Body(None)"));
+                    metadata.insert(
+                        "body".into(),
+                        format!("{http}.Body(None, variants={})", tuple(&codecs)),
+                    );
                     json!({"anyOf":variants})
                 };
                 ensure!(
@@ -515,7 +514,7 @@ impl ApiPackage {
                     response.content.iter().map(Some).collect()
                 };
                 for media in media {
-                    if let Some(media) = media {
+                    if media.is_some() {
                         ensure!(
                             contract.key.method != "HEAD"
                                 && !matches!(response.selector.as_str(), "204" | "304"),
@@ -523,18 +522,20 @@ impl ApiPackage {
                             contract.key.method,
                             response.selector
                         );
-                        validate_media(media, &definitions)?;
                     }
                     let suffix = if response.content.len() > 1 {
                         super::codegen_package::class_name(&media.unwrap().media_type)
                     } else {
                         String::new()
                     };
+                    let projected = media
+                        .map(|m| project_media(m, &definitions, true))
+                        .transpose()?;
                     let model = package.allocate_name(format!("{prefix}{status_name}{suffix}"));
-                    let mut properties = json!({"status":status_schema,"body":media.map(|m| m.schema.clone()).unwrap_or_else(|| json!({"type":"null"})),"headers":reference(&headers_name),"raw_headers":{"type":"array","items":{"type":"array","prefixItems":[{"type":"string"},{"type":"string"}],"items":false,"minItems":2}}});
+                    let mut properties = json!({"status":status_schema,"body":projected.as_ref().map(|m| m.schema.clone()).unwrap_or_else(|| json!({"type":"null"})),"headers":reference(&headers_name),"raw_headers":{"type":"array","items":{"type":"array","prefixItems":[{"type":"string"},{"type":"string"}],"items":false,"minItems":2}}});
                     let mut required = vec!["status", "body", "headers", "raw_headers"];
-                    if let Some(media) = media {
-                        properties["content_type"] = json!({"enum":[media.media_type]});
+                    if let Some(media) = &projected {
+                        properties["content_type"] = json!({"enum":[media.content_type]});
                         required.push("content_type");
                     }
                     let mut schema = record(properties, &required);
@@ -544,7 +545,8 @@ impl ApiPackage {
                     responses.push(ResponseModel {
                         status: response.selector.clone(),
                         model,
-                        media: media.map(|m| m.media_type.clone()),
+                        media: projected.as_ref().map(|m| m.content_type.clone()),
+                        codec: projected.as_ref().map_or("json", |m| m.codec),
                         headers: headers_name.clone(),
                     });
                 }
@@ -805,10 +807,11 @@ impl ApiPackage {
                          status,
                          model,
                          media,
+                         codec,
                          ..
                      }| {
                         format!(
-                            "{http}.Response({}, {model}{})",
+                            "{http}.Response({}, {model}{}{})",
                             status
                                 .parse::<u16>()
                                 .map(|n| n.to_string())
@@ -816,7 +819,19 @@ impl ApiPackage {
                             media
                                 .as_ref()
                                 .map(|m| format!(", {}", py(m)))
-                                .unwrap_or_default()
+                                .unwrap_or_default(),
+                            if *codec == "json"
+                                && media
+                                    .as_ref()
+                                    .is_none_or(|m| m.starts_with("application/json")
+                                        || m.split(';')
+                                            .next()
+                                            .is_some_and(|m| m.ends_with("+json")))
+                            {
+                                String::new()
+                            } else {
+                                format!(", codec={}", py(codec))
+                            }
                         )
                     },
                 )
@@ -1134,28 +1149,400 @@ fn field_name(name: &str) -> String {
     };
     jsoncompat_codegen::python_names::field_name(&value)
 }
-fn validate_media(media: &ApiMedia, definitions: &Value) -> Result<()> {
-    validate_media_parameters(&media.parameters)?;
+struct MediaProjection {
+    schema: Value,
+    content_type: String,
+    codec: &'static str,
+    encoding: Vec<String>,
+}
+impl MediaProjection {
+    fn body_metadata(&self, http: &str) -> String {
+        if self.content_type == "application/json" && self.codec == "json" {
+            return format!("{http}.Body()");
+        }
+        let mut args = vec![py(&self.content_type)];
+        if self.codec != "json"
+            || !(self.content_type.starts_with("application/json")
+                || self
+                    .content_type
+                    .split(';')
+                    .next()
+                    .is_some_and(|m| m.ends_with("+json")))
+        {
+            args.push(format!("codec={}", py(self.codec)));
+        }
+        if !self.encoding.is_empty() {
+            args.push(format!(
+                "encoding={}",
+                tuple(
+                    &self
+                        .encoding
+                        .iter()
+                        .map(|field| field.replace("$HTTP", http))
+                        .collect::<Vec<_>>()
+                )
+            ));
+        }
+        format!("{http}.Body({})", args.join(", "))
+    }
+}
+
+fn media_name(media: &ApiMedia) -> String {
+    let mut result = media.media_type.clone();
+    for (name, value) in &media.parameters {
+        result.push_str(&format!(
+            "; {name}=\"{}\"",
+            value.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    result
+}
+
+fn string_schema(schema: &Value) -> bool {
+    schema.get("type").and_then(Value::as_str) == Some("string")
+        || schema
+            .get("enum")
+            .and_then(Value::as_array)
+            .is_some_and(|v| v.iter().all(Value::is_string))
+}
+fn binary_schema(schema: &Value) -> Result<Value> {
     ensure!(
-        media.media_type == "application/json"
-            || media.media_type == "text/plain"
-            || (media.media_type.starts_with("application/")
-                && media.media_type.ends_with("+json")),
-        "API generation supports JSON and text/plain media types; unsupported {}",
-        media.media_type
+        schema == &Value::Bool(true)
+            || schema
+                .as_object()
+                .is_some_and(
+                    |object| object.iter().all(|(key, value)| match key.as_str() {
+                        "type" => value == "string",
+                        "format" => value == "binary",
+                        "title" | "description" | "default" | "examples" | "example"
+                        | "deprecated" | "readOnly" | "writeOnly" | "$comment" => true,
+                        key if key.starts_with("x-") => true,
+                        _ => false,
+                    })
+                ),
+        "opaque binary media require an unconstrained schema or an unconstrained string with format: binary; string assertions cannot be interpreted as byte constraints"
     );
-    if media.media_type == "text/plain" {
-        let schema = resolve_schema(&media.schema, definitions)?;
+    let mut value = schema.as_object().cloned().unwrap_or_default();
+    value.remove("format");
+    value.insert("type".into(), json!("string"));
+    value.insert("x-jsoncompat-http-binary".into(), json!(true));
+    Ok(Value::Object(value))
+}
+
+fn binary_reference_schema<'a>(mut schema: &'a Value, definitions: &'a Value) -> Result<&'a Value> {
+    let mut seen = BTreeSet::new();
+    while let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        ensure!(seen.insert(reference), "recursive binary schema reference");
         ensure!(
-            schema.get("type").and_then(Value::as_str) == Some("string")
-                || schema
-                    .get("enum")
-                    .and_then(Value::as_array)
-                    .is_some_and(|values| values.iter().all(Value::is_string)),
-            "text/plain requires a string schema"
+            schema
+                .as_object()
+                .is_some_and(|object| object.keys().all(|key| matches!(
+                    key.as_str(),
+                    "$ref"
+                        | "title"
+                        | "description"
+                        | "default"
+                        | "example"
+                        | "examples"
+                        | "deprecated"
+                        | "readOnly"
+                        | "writeOnly"
+                        | "$comment"
+                ))),
+            "binary schema references cannot have adjacent validation assertions"
+        );
+        schema = reference
+            .strip_prefix('#')
+            .and_then(|r| definitions.pointer(r))
+            .context("unresolved binary schema reference")?;
+    }
+    Ok(schema)
+}
+
+fn project_binary_property(schema: &Value, definitions: &Value) -> Result<(Value, bool)> {
+    let resolved = resolve_schema(schema, definitions)?;
+    if resolved.get("format").and_then(Value::as_str) == Some("binary") {
+        return Ok((
+            binary_schema(binary_reference_schema(schema, definitions)?)?,
+            true,
+        ));
+    }
+    if resolved.get("type").and_then(Value::as_str) == Some("array")
+        && let Some(items) = resolved.get("items")
+    {
+        let (item, binary) = project_binary_property(items, definitions)?;
+        if binary {
+            binary_reference_schema(schema, definitions)?;
+            let mut projected = resolved.clone();
+            projected["items"] = item;
+            return Ok((projected, true));
+        }
+    }
+    // Nullable file fields are common in FastAPI. A string-or-file union stays
+    // a string, since format annotations alone do not distinguish those branches.
+    if let Some(branches) = resolved.get("anyOf").and_then(Value::as_array)
+        && branches.iter().all(|branch| {
+            branch.get("type").and_then(Value::as_str) == Some("null")
+                || branch.get("format").and_then(Value::as_str) == Some("binary")
+        })
+    {
+        binary_reference_schema(schema, definitions)?;
+        let branches = branches
+            .iter()
+            .map(|branch| project_binary_property(branch, definitions).map(|p| p.0))
+            .collect::<Result<Vec<_>>>()?;
+        let mut value = resolved.clone();
+        value["anyOf"] = json!(branches);
+        return Ok((value, true));
+    }
+    Ok((schema.clone(), false))
+}
+
+fn project_form_schema(
+    schema: &Value,
+    definitions: &Value,
+    properties: &mut BTreeMap<String, (Value, bool)>,
+    stack: &mut BTreeSet<String>,
+    media: &ApiMedia,
+) -> Result<Value> {
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        ensure!(
+            stack.insert(reference.into()),
+            "recursive form body schema is not supported"
+        );
+        let resolved = reference
+            .strip_prefix('#')
+            .and_then(|r| definitions.pointer(r))
+            .context("unresolved form schema reference")?;
+        let projected = project_form_schema(resolved, definitions, properties, stack, media)?;
+        stack.remove(reference);
+        let mut siblings = schema.as_object().expect("reference object").clone();
+        siblings.remove("$ref");
+        if siblings.is_empty() {
+            return Ok(projected);
+        }
+        let siblings = project_form_schema(
+            &Value::Object(siblings),
+            definitions,
+            properties,
+            stack,
+            media,
+        )?;
+        return Ok(json!({"allOf":[projected, siblings]}));
+    }
+    let mut projected = schema.clone();
+    if let Some(branches) = schema.get("allOf").and_then(Value::as_array) {
+        projected["allOf"] = json!(
+            branches
+                .iter()
+                .map(|branch| project_form_schema(branch, definitions, properties, stack, media))
+                .collect::<Result<Vec<_>>>()?
         );
     }
-    Ok(())
+    if let Some(fields) = schema.get("properties").and_then(Value::as_object) {
+        for (name, field) in fields {
+            let content_type = media
+                .encoding
+                .as_ref()
+                .and_then(|encodings| encodings.get(name))
+                .filter(|encoding| !encoding.uses_parameter_encoding)
+                .and_then(|encoding| encoding.content_type.as_deref())
+                .filter(|_| media.media_type == "multipart/form-data");
+            let structured = content_type.is_some_and(|value| {
+                let base = value
+                    .split(';')
+                    .next()
+                    .unwrap_or(value)
+                    .trim()
+                    .to_ascii_lowercase();
+                base == "application/json"
+                    || base.ends_with("+json")
+                    || [
+                        "application/yaml",
+                        "text/yaml",
+                        "application/x-yaml",
+                        "application/vnd.oai.openapi",
+                        "application/x-ndjson",
+                        "application/ndjson",
+                    ]
+                    .contains(&base.as_str())
+            });
+            if content_type.is_some_and(|value| {
+                matches!(
+                    value
+                        .split(';')
+                        .next()
+                        .unwrap_or(value)
+                        .trim()
+                        .to_ascii_lowercase()
+                        .as_str(),
+                    "application/x-ndjson" | "application/ndjson"
+                )
+            }) {
+                ensure!(
+                    string_schema(resolve_schema(field, definitions)?),
+                    "NDJSON multipart parts require an explicit string schema; structured record parts need an explicit multipart representation"
+                );
+            }
+            // A JSON/YAML media representation retains the schema's JSON type.
+            // format:binary is an annotation, not permission to bypass its codec.
+            let (value, binary) = if structured {
+                (field.clone(), false)
+            } else {
+                project_binary_property(field, definitions)?
+            };
+            properties.insert(name.clone(), (value.clone(), binary));
+            projected["properties"][name] = value;
+        }
+    }
+    Ok(projected)
+}
+
+fn project_media(media: &ApiMedia, definitions: &Value, response: bool) -> Result<MediaProjection> {
+    validate_media_parameters(&media.parameters)?;
+    ensure!(
+        response || !media.media_type.contains('*'),
+        "request media selectors must name a concrete content type"
+    );
+    let resolved = resolve_schema(&media.schema, definitions)?;
+    let mut schema = media.schema.clone();
+    let mut encoding = Vec::new();
+    let codec = if media.media_type == "multipart/form-data"
+        || media.media_type == "application/x-www-form-urlencoded"
+    {
+        ensure!(!response, "form response bodies are not supported");
+        ensure!(
+            !media.parameters.contains_key("boundary"),
+            "multipart boundaries are selected by the encoder; omit a fixed boundary parameter"
+        );
+        let mut properties = BTreeMap::new();
+        schema = project_form_schema(
+            &schema,
+            definitions,
+            &mut properties,
+            &mut BTreeSet::new(),
+            media,
+        )?;
+        ensure!(
+            resolved.get("type").and_then(Value::as_str) == Some("object")
+                || resolved.get("properties").is_some()
+                || resolved.get("allOf").is_some(),
+            "form media require an object schema"
+        );
+        for (name, (_, binary)) in properties {
+            let mut args = vec![py(&name)];
+            if binary {
+                ensure!(
+                    media.media_type == "multipart/form-data",
+                    "binary form values require multipart/form-data"
+                );
+                args.push("binary=True".into());
+            }
+            if let Some(field) = media.encoding.as_ref().and_then(|fields| fields.get(&name)) {
+                ensure!(
+                    field.headers.is_empty()
+                        || media.media_type == "application/x-www-form-urlencoded",
+                    "custom multipart part headers require an explicit per-part input model and are not yet supported"
+                );
+                if let Some(content_type) = &field.content_type
+                    && !field.uses_parameter_encoding
+                    && media.media_type == "multipart/form-data"
+                {
+                    ensure!(
+                        !content_type.contains(['*', ',', '\r', '\n']) && content_type.is_ascii(),
+                        "multipart contentType must name one concrete ASCII media type"
+                    );
+                    args.push(format!("content_type={}", py(content_type)));
+                }
+                ensure!(
+                    field.style.as_str() != "deepObject" || field.explode,
+                    "deepObject requires explode=true"
+                );
+                ensure!(
+                    !matches!(field.style.as_str(), "spaceDelimited" | "pipeDelimited")
+                        || !field.explode,
+                    "delimited form arrays require explode=false"
+                );
+                ensure!(
+                    !binary || !field.uses_parameter_encoding,
+                    "binary multipart fields cannot use parameter serialization controls"
+                );
+                if field.uses_parameter_encoding {
+                    args.push("parameter_encoding=True".into());
+                }
+                if field.style.as_str() != "form" {
+                    args.push(format!("style={}", py(field.style.as_str())));
+                }
+                if !field.explode {
+                    args.push("explode=False".into());
+                }
+                if field.allow_reserved {
+                    args.push("allow_reserved=True".into());
+                }
+            }
+            encoding.push(format!("$HTTP.FormField({})", args.join(", ")));
+        }
+        if media.media_type == "multipart/form-data" {
+            "multipart"
+        } else {
+            "urlencoded"
+        }
+    } else if media.media_type == "application/json" || media.media_type.ends_with("+json") {
+        "json"
+    } else if media.media_type == "application/x-ndjson" || media.media_type == "application/ndjson"
+    {
+        if string_schema(resolved) {
+            "text"
+        } else {
+            schema = json!({"type":"array", "items":schema});
+            "ndjson"
+        }
+    } else if [
+        "application/yaml",
+        "text/yaml",
+        "application/x-yaml",
+        "application/vnd.oai.openapi",
+    ]
+    .contains(&media.media_type.as_str())
+    {
+        "yaml"
+    } else if resolved.get("format").and_then(Value::as_str) == Some("binary") {
+        schema = binary_schema(binary_reference_schema(&media.schema, definitions)?)?;
+        "binary"
+    } else if media.media_type.starts_with("text/")
+        || ["application/xml", "application/javascript"].contains(&media.media_type.as_str())
+    {
+        if matches!(
+            resolved.get("type").and_then(Value::as_str),
+            Some("boolean" | "integer" | "number" | "null")
+        ) {
+            // Scalar text uses the canonical JSON lexical forms for booleans,
+            // numbers and null; string bodies remain unquoted UTF-8 text.
+            "json"
+        } else {
+            ensure!(
+                string_schema(resolved)
+                    || resolved == &Value::Bool(true)
+                    || resolved.as_object().is_some_and(Map::is_empty),
+                "text media {} require a scalar schema",
+                media.media_type
+            );
+            if !string_schema(resolved) {
+                schema = json!({"type":"string"});
+            }
+            "text"
+        }
+    } else {
+        schema = binary_schema(binary_reference_schema(&media.schema, definitions)?)
+            .with_context(|| format!("unsupported structured media {}", media.media_type))?;
+        "binary"
+    };
+    Ok(MediaProjection {
+        schema,
+        content_type: media_name(media),
+        codec,
+        encoding,
+    })
 }
 fn parameter_metadata(
     parameter: &ApiParameter,
@@ -1212,10 +1599,12 @@ fn parameter_metadata(
                     allow_reserved,
                     allow_empty_value,
                 } => {
-                    ensure!(
-                        !allow_reserved && !allow_empty_value,
-                        "allowReserved and allowEmptyValue are not supported by API generation"
-                    );
+                    if *allow_reserved {
+                        args.push("allow_reserved=True".into());
+                    }
+                    if *allow_empty_value {
+                        args.push("allow_empty_value=True".into());
+                    }
                     ensure!(
                         !matches!(style.as_str(), "spaceDelimited" | "pipeDelimited") || !explode,
                         "delimited query arrays require explode=false"
@@ -1289,10 +1678,16 @@ fn validate_media_parameters(parameters: &BTreeMap<String, String>) -> Result<()
     ensure!(
         parameters
             .iter()
-            .all(|(name, value)| name.eq_ignore_ascii_case("charset")
-                && matches!(value.to_ascii_lowercase().as_str(), "utf-8" | "utf8")),
-        "API generation supports only an optional UTF-8 charset media parameter"
+            .all(|(name, value)| !name.contains(['\r', '\n'])
+                && !value.chars().any(char::is_control)),
+        "invalid media parameter"
     );
+    if let Some(charset) = parameters.get("charset") {
+        ensure!(
+            matches!(charset.to_ascii_lowercase().as_str(), "utf-8" | "utf8"),
+            "API generation supports only UTF-8 text and JSON charsets"
+        );
+    }
     Ok(())
 }
 

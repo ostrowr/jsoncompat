@@ -53,6 +53,8 @@ It fails early when a valid OpenAPI feature could affect compatibility but is no
 - unsupported remote references;
 - unsupported component collections that carry contract-bearing behavior.
 
+Typed operation contracts used by HTTP code generation preserve form and multipart `encoding` metadata, including per-property content types, serialization controls, and header schemas. Compatibility lowering still rejects explicit encodings because its decoded-value envelopes do not prove equivalence of the encoded bytes.
+
 Those inputs fail before a compatibility verdict is reported, rather than being silently ignored. [developing.md](https://github.com/ostrowr/jsoncompat/blob/main/developing.md) records the detailed lowerability boundary and test strategy.
 
 ## Rust API

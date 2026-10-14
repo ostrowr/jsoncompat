@@ -1,0 +1,780 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Media fixture",
+    "version": "1"
+  },
+  "paths": {
+    "/text": {
+      "post": {
+        "operationId": "text",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv; header=present": {
+              "schema": {
+                "type": "string",
+                "minLength": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "post": {
+        "operationId": "events",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/binary": {
+      "post": {
+        "operationId": "binary",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ndjson": {
+      "post": {
+        "operationId": "ndjson",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ndjsonText": {
+      "post": {
+        "operationId": "ndjsonText",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/form": {
+      "post": {
+        "operationId": "form",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "query": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "tags",
+                  "query"
+                ],
+                "additionalProperties": false
+              },
+              "encoding": {
+                "query": {
+                  "contentType": "application/json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "operationId": "upload",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "quality": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "quality"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  },
+                  "optionalFile": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "binary"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "jsonText": {
+                    "type": "string",
+                    "format": "binary",
+                    "minLength": 2
+                  },
+                  "yamlText": {
+                    "type": "string",
+                    "format": "binary",
+                    "minLength": 2
+                  }
+                },
+                "required": [
+                  "file",
+                  "options",
+                  "tags"
+                ],
+                "additionalProperties": false
+              },
+              "encoding": {
+                "options": {
+                  "contentType": "application/json"
+                },
+                "file": {
+                  "contentType": "image/png"
+                },
+                "tags": {
+                  "style": "pipeDelimited",
+                  "explode": false
+                },
+                "jsonText": {
+                  "contentType": "application/json"
+                },
+                "yamlText": {
+                  "contentType": "application/yaml"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/yaml": {
+      "post": {
+        "operationId": "yaml",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/yaml": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/yaml": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/parameters": {
+      "post": {
+        "operationId": "parameters",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "allowReserved": true
+          },
+          {
+            "in": "query",
+            "name": "blank",
+            "schema": {
+              "type": "string"
+            },
+            "allowEmptyValue": true
+          }
+        ]
+      }
+    },
+    "/wildcard": {
+      "post": {
+        "operationId": "wildcard",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "*/*": {
+                "schema": {}
+              },
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mediaParams": {
+      "post": {
+        "operationId": "mediaParams",
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "text/csv; header=present": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "bad input",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scalarText": {
+      "post": {
+        "operationId": "scalarText",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "integer",
+                "minimum": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "scalar",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/arrayRecords": {
+      "post": {
+        "operationId": "arrayRecords",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "scalar",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "maxItems": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/siblingForm": {
+      "post": {
+        "operationId": "siblingForm",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/BaseForm",
+                "minProperties": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "scalar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jsonBinaryAnnotation": {
+      "post": {
+        "operationId": "jsonBinaryAnnotation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "minLength": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "string format annotation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendorBinaryAnnotation": {
+      "post": {
+        "operationId": "vendorBinaryAnnotation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/vnd.test+json": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "minLength": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "string format annotation",
+            "content": {
+              "application/vnd.test+json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/yamlBinaryAnnotation": {
+      "post": {
+        "operationId": "yamlBinaryAnnotation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/yaml": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "minLength": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "string format annotation",
+            "content": {
+              "application/yaml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ndjsonBinaryAnnotation": {
+      "post": {
+        "operationId": "ndjsonBinaryAnnotation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "minLength": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "string format annotation",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "minLength": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaseForm": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "extra": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}
