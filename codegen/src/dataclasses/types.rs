@@ -95,17 +95,15 @@ impl Annotation {
         match unique.len() {
             0 => Self::any(),
             1 => unique.pop().expect("one branch"),
-            _ => Self::new(
-                format!(
-                    "({})",
-                    unique
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                ),
-                Kind::Union(unique),
-            ),
+            _ => {
+                let sources = union_sources(&unique);
+                let source = if sources.len() == 1 {
+                    sources[0].clone()
+                } else {
+                    format!("({})", sources.join(" | "))
+                };
+                Self::new(source, Kind::Union(unique))
+            }
         }
     }
 }
@@ -134,4 +132,30 @@ impl PartialOrd for Annotation {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
+}
+
+// Literal alternatives share one typing.Literal declaration. Keep the original
+// branch graph intact: validation and discriminator planning still see every
+// distinct literal, including Python's otherwise equal True/1 values.
+fn union_sources(branches: &[Annotation]) -> Vec<String> {
+    let literals: Vec<_> = branches
+        .iter()
+        .filter_map(|branch| match &branch.kind {
+            Kind::Literal(value) => Some(super::python_json_literal(value)),
+            _ => None,
+        })
+        .collect();
+    let mut result = Vec::new();
+    let mut emitted = false;
+    for branch in branches {
+        if matches!(branch.kind, Kind::Literal(_)) && literals.len() > 1 {
+            if !emitted {
+                result.push(format!("typing.Literal[{}]", literals.join(", ")));
+                emitted = true;
+            }
+        } else {
+            result.push(branch.to_string());
+        }
+    }
+    result
 }

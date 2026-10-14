@@ -72,6 +72,14 @@ class Validator(Protocol):
 
 
 class ModelRuntime(Protocol):
+    def _serialize_json_field(
+        self, instance: Any, name: str
+    ) -> tuple[dict[str, JsonValue], bytes | None]: ...
+
+    def _deserialize_json_field(
+        self, fields: dict[str, JsonValue], name: str, payload: bytes
+    ) -> Any | None: ...
+
     def construct_kwargs(
         self,
         kwargs: dict[str, Any],
@@ -213,7 +221,8 @@ def _load_repo_native() -> NativeModule:
     package_dir = Path(__file__).resolve().parent
     repo_root = package_dir.parent.parent
     target_roots = [repo_root / "target"]
-    if cargo_target_dir := os.environ.get("CARGO_TARGET_DIR"):
+    cargo_target_dir = os.environ.get("CARGO_TARGET_DIR")
+    if cargo_target_dir not in (None, ""):
         target_roots.insert(0, Path(cargo_target_dir).expanduser())
 
     native_profile = os.environ.get("JSONCOMPAT_NATIVE_PROFILE")

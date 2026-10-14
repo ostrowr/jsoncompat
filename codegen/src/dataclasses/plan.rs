@@ -3,7 +3,7 @@
 use super::{Annotation, ClassKind, ClassSpec, DataclassError, invalid_schema, types::Kind};
 use crate::{
     model_plan::{GuardPatch, PreparedGuard, PreparedPlan},
-    prepared_schema::{Node, NodeId as SchemaNodeId, PreparedSchema, Rule},
+    prepared_schema::{Node, NodeId as SchemaNodeId, PreparedSchema, PreparedSchemaContext, Rule},
 };
 use serde_json::Value;
 use std::{
@@ -269,8 +269,28 @@ pub(super) struct PreparedModule {
     pub roots: Vec<NodeId>,
     pub decisions: PreparedPlan,
 }
+
+enum ContextDocument<'a> {
+    Canonical(&'a json_schema_ast::SchemaDocument),
+    Source(Option<json_schema_ast::SchemaDocument>),
+}
+
 impl PreparedModule {
     pub fn compile(classes: &[ClassSpec]) -> Result<Self, DataclassError> {
+        Self::compile_with_document(classes, None)
+    }
+
+    pub fn compile_for_package(
+        classes: &[ClassSpec],
+        document: &json_schema_ast::SchemaDocument,
+    ) -> Result<Self, DataclassError> {
+        Self::compile_with_document(classes, Some(document))
+    }
+
+    fn compile_with_document(
+        classes: &[ClassSpec],
+        package_document: Option<&json_schema_ast::SchemaDocument>,
+    ) -> Result<Self, DataclassError> {
         let mut builder = Builder {
             classes,
             class_ids: classes
@@ -285,13 +305,65 @@ impl PreparedModule {
             .iter()
             .map(|class| builder.add(&Annotation::model(class.name.clone())))
             .collect::<Result<_, _>>()?;
+        // Validate and link each shared resource once. The context only accepts
+        // references whose meaning survives promoting a subschema to a model
+        // root; other schemas retain the standalone compiler's full semantics.
+        let package_canonical =
+            package_document.and_then(|document| document.canonical_schema_json().ok());
+        let mut documents = HashMap::new();
+        for class in classes {
+            if let Some(context) = &class.schema.context {
+                let key = std::sync::Arc::as_ptr(context) as usize;
+                if let std::collections::hash_map::Entry::Vacant(entry) = documents.entry(key) {
+                    // Check once per shared resource, not once per class. The
+                    // context must borrow precisely the graph the models use.
+                    if let Some(document) = package_document
+                        && package_canonical == Some(&context.root)
+                    {
+                        entry.insert(ContextDocument::Canonical(document));
+                        continue;
+                    }
+                    // A package-wide wrapper may exceed an analysis limit even
+                    // when each model is supported. Let the standalone compiler
+                    // decide in that case rather than narrowing accepted input.
+                    entry.insert(ContextDocument::Source(
+                        json_schema_ast::SchemaDocument::from_json(&context.root).ok(),
+                    ));
+                }
+            }
+        }
+        let mut contexts = documents
+            .iter()
+            .map(|(key, document)| {
+                let context = match document {
+                    ContextDocument::Canonical(document) => {
+                        PreparedSchemaContext::new_canonical(document)
+                    }
+                    ContextDocument::Source(Some(document)) => PreparedSchemaContext::new(document),
+                    ContextDocument::Source(None) => Ok(None),
+                };
+                context.map(|context| (*key, context))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()
+            .map_err(|error| invalid_schema("#".into(), error))?;
         let schemas = classes
             .iter()
             .map(|class| {
-                let schema =
-                    serde_json::from_str(&class.schema_json).expect("schema generated from JSON");
-                PreparedSchema::compile(&schema)
-                    .map_err(|error| invalid_schema(class.name.clone(), error))
+                let shared = class.schema.context.as_ref().and_then(|context| {
+                    let key = std::sync::Arc::as_ptr(context) as usize;
+                    let value = context
+                        .root
+                        .pointer(class.schema.pointer.strip_prefix('#')?)?;
+                    (value == &class.schema.value).then_some(key)
+                });
+                let result = match shared
+                    .and_then(|key| contexts.get_mut(&key))
+                    .and_then(Option::as_mut)
+                {
+                    Some(context) => context.compile_at(&class.schema.pointer),
+                    None => PreparedSchema::compile(&class.schema.materialize()),
+                };
+                result.map_err(|error| invalid_schema(class.name.clone(), error))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let nodes = builder

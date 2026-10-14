@@ -36,9 +36,7 @@ pub(crate) fn needs_linking(value: &Value) -> bool {
             key.as_str(),
             "$id" | "$anchor" | "$dynamicRef" | "$dynamicAnchor"
         )
-    }) || children(value)
-        .iter()
-        .any(|(_, child)| needs_linking(child))
+    }) || child_values(value).any(|(_, child)| needs_linking(child))
 }
 
 pub(crate) fn link(schema: &Value) -> Result<Value, AstError> {
@@ -51,7 +49,7 @@ pub(crate) fn link(schema: &Value) -> Result<Value, AstError> {
                     .strip_prefix("#/$defs/")
                     .is_some_and(|name| !name.contains('/'))
             })
-            && children(schema).iter().all(|(_, child)| flat(child))
+            && child_values(schema).all(|(_, child)| flat(child))
     }
     // Already linked documents are a stable serialization of the graph.
     if schema.as_object().is_some_and(|object| {
@@ -268,6 +266,53 @@ fn set_child(object: &mut Map<String, Value>, suffix: &str, value: Value) {
     }
 }
 
+/// Visit the same schema children without allocating paths when only their
+/// keyword and value are needed. Literal annotation payloads are never walked.
+pub(crate) fn child_values(value: &Value) -> impl Iterator<Item = (&'static str, &Value)> {
+    let object = value.as_object();
+    SINGLE_SCHEMA_CHILD_KEYWORDS
+        .into_iter()
+        .filter_map(move |keyword| object?.get(keyword).map(|value| (keyword, value)))
+        .chain(
+            SCHEMA_MAP_CHILD_KEYWORDS
+                .into_iter()
+                .flat_map(move |keyword| {
+                    object
+                        .and_then(|object| object.get(keyword))
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .flat_map(move |children| {
+                            children.values().map(move |value| (keyword, value))
+                        })
+                }),
+        )
+        .chain(
+            object
+                .and_then(|object| object.get("dependencies"))
+                .and_then(Value::as_object)
+                .into_iter()
+                .flat_map(|children| {
+                    children
+                        .values()
+                        .filter(|value| !value.is_array())
+                        .map(|value| ("dependencies", value))
+                }),
+        )
+        .chain(
+            SCHEMA_ARRAY_CHILD_KEYWORDS
+                .into_iter()
+                .flat_map(move |keyword| {
+                    object
+                        .and_then(|object| object.get(keyword))
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flat_map(move |children| {
+                            children.iter().map(move |value| (keyword, value))
+                        })
+                }),
+        )
+}
+
 pub(crate) fn children(value: &Value) -> Vec<(String, &Value)> {
     let Some(object) = value.as_object() else {
         return Vec::new();
@@ -278,7 +323,7 @@ pub(crate) fn children(value: &Value) -> Vec<(String, &Value)> {
             result.push((keyword.to_owned(), child));
         }
     }
-    for keyword in SCHEMA_MAP_CHILD_KEYWORDS.into_iter().chain(["definitions"]) {
+    for keyword in SCHEMA_MAP_CHILD_KEYWORDS {
         if let Some(children) = object.get(keyword).and_then(Value::as_object) {
             result.extend(children.iter().map(|(key, value)| {
                 (
@@ -312,4 +357,83 @@ pub(crate) fn children(value: &Value) -> Vec<(String, &Value)> {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_free_traversal_matches_every_child_family_and_malformed_container() {
+        let mut raw = json!({"const":{"properties":{"literal":false}},
+            "dependencies":{"schema":false, "names":["field"]}});
+        for key in SINGLE_SCHEMA_CHILD_KEYWORDS {
+            raw[key] = json!({"const":key});
+        }
+        for key in SCHEMA_MAP_CHILD_KEYWORDS {
+            raw[key] = json!({"a/b~c":true, "other":false});
+        }
+        for key in SCHEMA_ARRAY_CHILD_KEYWORDS {
+            raw[key] = json!([true, false]);
+        }
+        let compare = |schema: &Value| {
+            let paths = children(schema);
+            let values: Vec<_> = child_values(schema).collect();
+            assert_eq!(paths.len(), values.len());
+            for ((path, expected), (keyword, value)) in paths.iter().zip(values) {
+                assert_eq!(path.split('/').next(), Some(keyword));
+                assert!(std::ptr::eq(*expected, value));
+            }
+        };
+        compare(&raw);
+        for malformed in [json!(null), json!(42), json!([]), json!(true)] {
+            compare(&malformed);
+            for key in SCHEMA_MAP_CHILD_KEYWORDS
+                .into_iter()
+                .chain(SCHEMA_ARRAY_CHILD_KEYWORDS)
+                .chain(["dependencies"])
+            {
+                let mut changed = raw.clone();
+                changed[key] = malformed.clone();
+                compare(&changed);
+            }
+        }
+    }
+
+    #[test]
+    fn schema_children_visit_legacy_definitions_once_and_leave_literals_alone() {
+        let raw = json!({
+            "definitions": {"a/b~c": {"type":"string"}},
+            "$defs": {"modern": true},
+            "dependencies": {"record": {"type":"object"}, "names": ["a"]},
+            "properties": {"value": false},
+            "allOf": [true],
+            "const": {"definitions": {"literal": false}}
+        });
+        let children = children(&raw);
+        assert!(
+            child_values(&raw)
+                .zip(&children)
+                .all(|((keyword, value), (path, expected))| {
+                    path.split('/').next() == Some(keyword) && std::ptr::eq(value, *expected)
+                })
+        );
+        assert_eq!(child_values(&raw).count(), children.len());
+        let paths: std::collections::BTreeSet<_> =
+            children.iter().map(|(path, _)| path.as_str()).collect();
+        assert_eq!(children.len(), paths.len());
+        assert_eq!(
+            paths,
+            std::collections::BTreeSet::from([
+                "$defs/modern",
+                "definitions/a~1b~0c",
+                "dependencies/record",
+                "properties/value",
+                "allOf/0"
+            ])
+        );
+        for (path, value) in children {
+            assert_eq!(raw.pointer(&format!("/{path}")), Some(value));
+        }
+    }
 }

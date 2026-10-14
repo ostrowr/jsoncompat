@@ -36,8 +36,7 @@ impl Locations {
 pub(crate) fn present(schema: &Value) -> bool {
     schema.get("unevaluatedProperties").is_some()
         || schema.get("unevaluatedItems").is_some()
-        || crate::references::children(schema)
-            .iter()
+        || crate::references::child_values(schema)
             .any(|(suffix, child)| suffix != "contentSchema" && present(child))
 }
 

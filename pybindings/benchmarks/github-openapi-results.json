@@ -1,0 +1,2414 @@
+{
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]",
+  "source_sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+  "baseline_revision": "9165c10e5dcc65a3967a02aa4602854f8a98b3ce",
+  "method": "Sequential warm-filesystem release builds; three fresh generation directories and five fresh import processes per mode. Identical Python runtime for both variants; generated artifacts are byte-identical.",
+  "variants": {
+    "before": {
+      "compiler_sha256": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+      "cases": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/github_models"
+              ],
+              "seconds": 1.9128619579714723,
+              "exit_code": 0,
+              "max_rss_bytes": 696811520
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_models_1"
+              ],
+              "seconds": 1.9350562079926021,
+              "exit_code": 0,
+              "max_rss_bytes": 690847744
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_models_2"
+              ],
+              "seconds": 1.8963105420116335,
+              "exit_code": 0,
+              "max_rss_bytes": 694108160
+            }
+          ],
+          "generation_median_seconds": 1.9128619579714723,
+          "inventory": {
+            "files": 982,
+            "bytes": 21030811,
+            "python_files": 980,
+            "python_bytes": 20534150,
+            "largest_files": [
+              [
+                620749,
+                "models/webhook_pull_request_review_request_removed.py"
+              ],
+              [
+                617877,
+                "models/webhook_pull_request_review_requested.py"
+              ],
+              [
+                496661,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                286882,
+                "models/webhook_pull_request_review_comment_created.py"
+              ],
+              [
+                286407,
+                "models/webhook_pull_request_review_thread_resolved.py"
+              ],
+              [
+                286251,
+                "models/webhook_pull_request_review_thread_unresolved.py"
+              ],
+              [
+                274741,
+                "models/webhook_pull_request_review_dismissed.py"
+              ],
+              [
+                268681,
+                "models/webhook_pull_request_labeled.py"
+              ],
+              [
+                268027,
+                "models/webhook_pull_request_auto_merge_disabled.py"
+              ],
+              [
+                267737,
+                "models/webhook_pull_request_auto_merge_enabled.py"
+              ]
+            ],
+            "largest_python_file": [
+              620749,
+              "models/webhook_pull_request_review_request_removed.py"
+            ],
+            "p95_python_bytes": 70329,
+            "binding_groups": 4,
+            "declarations": 3133,
+            "component_modules": 973,
+            "resource_modules": 0,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 0
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.00398845796007663,
+                "load_seconds": 1.4029088329989463
+              },
+              {
+                "package_seconds": 0.003928999998606741,
+                "load_seconds": 0.9904032080085017
+              },
+              {
+                "package_seconds": 0.004070041002705693,
+                "load_seconds": 0.9994744170107879
+              },
+              {
+                "package_seconds": 0.003921166004147381,
+                "load_seconds": 1.0024573749979027
+              },
+              {
+                "package_seconds": 0.004052333009894937,
+                "load_seconds": 1.0013602919643745
+              }
+            ],
+            "median_seconds": 1.0013602919643745
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0005677919834852219,
+                "load_seconds": 0.24427841696888208
+              },
+              {
+                "package_seconds": 0.000558875035494566,
+                "load_seconds": 0.24464237497886643
+              },
+              {
+                "package_seconds": 0.0005604170146398246,
+                "load_seconds": 0.24069162498926744
+              },
+              {
+                "package_seconds": 0.0005663750343956053,
+                "load_seconds": 0.23914633295498788
+              },
+              {
+                "package_seconds": 0.0005564999883063138,
+                "load_seconds": 0.24827820900827646
+              }
+            ],
+            "median_seconds": 0.24427841696888208
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.020238832978066057,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.02004204096738249,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.019870833959430456,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01920149999205023,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01905070903012529,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.019870833959430456
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.015867542009800673,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01571329199941829,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015778958972077817,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015242624969687313,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015529791999142617,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.01571329199941829
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/github_models",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/models_consumer.py"
+            ],
+            "seconds": 0.3270637500099838,
+            "exit_code": 0,
+            "max_rss_bytes": 292782080
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.679269
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 8.7e-05
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.064034
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.030689
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: prepare group and check cache",
+              "seconds": 0.000236
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: validate schema document",
+              "seconds": 0.001756
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: generate and render prepared models",
+              "seconds": 0.002438
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: stage package files",
+              "seconds": 0.002455
+            },
+            {
+              "stage": "_models.actions_policy: prepare group and check cache",
+              "seconds": 0.012352
+            },
+            {
+              "stage": "_models.actions_policy: validate schema document",
+              "seconds": 0.312005
+            },
+            {
+              "stage": "_models.actions_policy: generate and render prepared models",
+              "seconds": 0.505108
+            },
+            {
+              "stage": "_models.actions_policy: stage package files",
+              "seconds": 0.102163
+            },
+            {
+              "stage": "_models.actions_public_key: prepare group and check cache",
+              "seconds": 0.033344
+            },
+            {
+              "stage": "_models.actions_public_key: validate schema document",
+              "seconds": 0.012999
+            },
+            {
+              "stage": "_models.actions_public_key: generate and render prepared models",
+              "seconds": 0.016461
+            },
+            {
+              "stage": "_models.actions_public_key: stage package files",
+              "seconds": 0.01039
+            },
+            {
+              "stage": "_models.interaction_expiry: prepare group and check cache",
+              "seconds": 0.001661
+            },
+            {
+              "stage": "_models.interaction_expiry: validate schema document",
+              "seconds": 0.012536
+            },
+            {
+              "stage": "_models.interaction_expiry: generate and render prepared models",
+              "seconds": 0.015452
+            },
+            {
+              "stage": "_models.interaction_expiry: stage package files",
+              "seconds": 0.009319
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.003922
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.001261
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.000759
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.00952
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.001
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.0
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.216
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.029
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.011
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.011
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.007
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.001
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.006
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
+            }
+          ]
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/github_issues",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 1.0349708340363577,
+              "exit_code": 0,
+              "max_rss_bytes": 396165120
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 1.063076334015932,
+              "exit_code": 0,
+              "max_rss_bytes": 395526144
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 1.0231374999857508,
+              "exit_code": 0,
+              "max_rss_bytes": 395575296
+            }
+          ],
+          "generation_median_seconds": 1.0349708340363577,
+          "inventory": {
+            "files": 88,
+            "bytes": 2636375,
+            "python_files": 86,
+            "python_bytes": 2544069,
+            "largest_files": [
+              [
+                1576548,
+                "operations/issues.py"
+              ],
+              [
+                92306,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                82542,
+                "__init__.pyi"
+              ],
+              [
+                65972,
+                "models/timeline_issue_events.py"
+              ],
+              [
+                61101,
+                "models/__init__.pyi"
+              ],
+              [
+                51985,
+                "_exports.py"
+              ],
+              [
+                43017,
+                "models/issue_event_for_issue.py"
+              ],
+              [
+                39784,
+                "models/timeline_cross_referenced_event.py"
+              ],
+              [
+                36410,
+                "models/issue_event.py"
+              ],
+              [
+                34239,
+                "models/issue.py"
+              ]
+            ],
+            "largest_python_file": [
+              1576548,
+              "operations/issues.py"
+            ],
+            "p95_python_bytes": 43017,
+            "binding_groups": 1,
+            "declarations": 473,
+            "component_modules": 76,
+            "resource_modules": 1,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0036320830113254488,
+                "load_seconds": 0.1426868750131689
+              },
+              {
+                "package_seconds": 0.0035842080251313746,
+                "load_seconds": 0.13912479195278138
+              },
+              {
+                "package_seconds": 0.0035869170096702874,
+                "load_seconds": 0.13874329201644287
+              },
+              {
+                "package_seconds": 0.0036263749934732914,
+                "load_seconds": 0.13941862498177215
+              },
+              {
+                "package_seconds": 0.0037801250000484288,
+                "load_seconds": 0.1422928330139257
+              }
+            ],
+            "median_seconds": 0.13941862498177215
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0004957499913871288,
+                "load_seconds": 0.07204291701782495
+              },
+              {
+                "package_seconds": 0.0004909160197712481,
+                "load_seconds": 0.07076991599751636
+              },
+              {
+                "package_seconds": 0.00048733403673395514,
+                "load_seconds": 0.07094491698080674
+              },
+              {
+                "package_seconds": 0.0004934999742545187,
+                "load_seconds": 0.0732854999951087
+              },
+              {
+                "package_seconds": 0.0004955410258844495,
+                "load_seconds": 0.07178045902401209
+              }
+            ],
+            "median_seconds": 0.07178045902401209
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.11125187500147149,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11502766603371128,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11077625001780689,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11153300001751631,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11072041699662805,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.11125187500147149
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04036041599465534,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04063020896865055,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.040493791981134564,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04009787499671802,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04045549995498732,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04045549995498732
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/github_issues",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/issues_consumer.py"
+            ],
+            "seconds": 0.14497333398321643,
+            "exit_code": 0,
+            "max_rss_bytes": 84262912
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "issues-ty-negative.stderr"
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.675132
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.101944
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.065534
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.029569
+            },
+            {
+              "stage": "_models.shared: prepare group and check cache",
+              "seconds": 0.002332
+            },
+            {
+              "stage": "_models.shared: validate schema document",
+              "seconds": 0.032903
+            },
+            {
+              "stage": "_models.shared: generate and render prepared models",
+              "seconds": 0.047184
+            },
+            {
+              "stage": "_models.shared: stage package files",
+              "seconds": 0.008083
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.013002
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.000141
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.00062
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.007895
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.022
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.003
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.002
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.001
+            }
+          ]
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/github_client",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 3.4490696670254692,
+              "exit_code": 0,
+              "max_rss_bytes": 1242234880
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 3.378338790964335,
+              "exit_code": 0,
+              "max_rss_bytes": 1100546048
+            },
+            {
+              "command": [
+                "/tmp/jsoncompat-profile-next/baseline",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/before/repeat_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 3.3996571250027046,
+              "exit_code": 0,
+              "max_rss_bytes": 1264304128
+            }
+          ],
+          "generation_median_seconds": 3.3996571250027046,
+          "inventory": {
+            "files": 1030,
+            "bytes": 49681953,
+            "python_files": 1028,
+            "python_bytes": 47611518,
+            "largest_files": [
+              [
+                3144842,
+                "operations/repos.py"
+              ],
+              [
+                2400274,
+                "operations/actions.py"
+              ],
+              [
+                2070435,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                1989996,
+                "__init__.pyi"
+              ],
+              [
+                1638478,
+                "operations/orgs.py"
+              ],
+              [
+                1575725,
+                "operations/issues.py"
+              ],
+              [
+                1464014,
+                "models/__init__.pyi"
+              ],
+              [
+                1224173,
+                "_exports.py"
+              ],
+              [
+                1137372,
+                "operations/codespaces.py"
+              ],
+              [
+                810347,
+                "operations/activity.py"
+              ]
+            ],
+            "largest_python_file": [
+              3144842,
+              "operations/repos.py"
+            ],
+            "p95_python_bytes": 228907,
+            "binding_groups": 1,
+            "declarations": 9124,
+            "component_modules": 974,
+            "resource_modules": 45,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.057579874992370605,
+                "load_seconds": 1.6889701249892823
+              },
+              {
+                "package_seconds": 0.05683383397990838,
+                "load_seconds": 1.7055239590117708
+              },
+              {
+                "package_seconds": 0.056886292004492134,
+                "load_seconds": 1.6794280839967541
+              },
+              {
+                "package_seconds": 0.05677804199513048,
+                "load_seconds": 1.674236082995776
+              },
+              {
+                "package_seconds": 0.056624915974680334,
+                "load_seconds": 1.6847729590372182
+              }
+            ],
+            "median_seconds": 1.6847729590372182
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.006210041989106685,
+                "load_seconds": 0.7657052089925855
+              },
+              {
+                "package_seconds": 0.005966958007775247,
+                "load_seconds": 0.7471829169662669
+              },
+              {
+                "package_seconds": 0.005880165961571038,
+                "load_seconds": 0.7530030410271138
+              },
+              {
+                "package_seconds": 0.0057427919819019735,
+                "load_seconds": 0.7470827500219457
+              },
+              {
+                "package_seconds": 0.006062417000066489,
+                "load_seconds": 0.7562580840312876
+              }
+            ],
+            "median_seconds": 0.7530030410271138
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.17930370796239004,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.1779757920303382,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17457783402642235,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17476583400275558,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17765079101081938,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.17765079101081938
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04995937499916181,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.05021933402167633,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.049723582982551306,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04985324997687712,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04797520802821964,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04985324997687712
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/github_client",
+              "/private/tmp/jsoncompat-profile-next/paired-final/before/client_consumer.py"
+            ],
+            "seconds": 0.8266543329809792,
+            "exit_code": 0,
+            "max_rss_bytes": 690847744
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "client-ty-negative.stderr"
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.752962
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.161461
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.091869
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.034506
+            },
+            {
+              "stage": "_models.shared: prepare group and check cache",
+              "seconds": 0.043799
+            },
+            {
+              "stage": "_models.shared: validate schema document",
+              "seconds": 0.841076
+            },
+            {
+              "stage": "_models.shared: generate and render prepared models",
+              "seconds": 1.013291
+            },
+            {
+              "stage": "_models.shared: stage package files",
+              "seconds": 0.128725
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.256417
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.001397
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.000976
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.012792
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.462
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.06
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.026
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.021
+            }
+          ]
+        }
+      }
+    },
+    "after": {
+      "compiler_sha256": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+      "cases": {
+        "models": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/github_models"
+              ],
+              "seconds": 1.7384794999961741,
+              "exit_code": 0,
+              "max_rss_bytes": 610222080
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_models_1"
+              ],
+              "seconds": 1.385057749983389,
+              "exit_code": 0,
+              "max_rss_bytes": 609550336
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/models.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_models_2"
+              ],
+              "seconds": 1.3584398750099353,
+              "exit_code": 0,
+              "max_rss_bytes": 616988672
+            }
+          ],
+          "generation_median_seconds": 1.385057749983389,
+          "inventory": {
+            "files": 982,
+            "bytes": 21030811,
+            "python_files": 980,
+            "python_bytes": 20534150,
+            "largest_files": [
+              [
+                620749,
+                "models/webhook_pull_request_review_request_removed.py"
+              ],
+              [
+                617877,
+                "models/webhook_pull_request_review_requested.py"
+              ],
+              [
+                496661,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                286882,
+                "models/webhook_pull_request_review_comment_created.py"
+              ],
+              [
+                286407,
+                "models/webhook_pull_request_review_thread_resolved.py"
+              ],
+              [
+                286251,
+                "models/webhook_pull_request_review_thread_unresolved.py"
+              ],
+              [
+                274741,
+                "models/webhook_pull_request_review_dismissed.py"
+              ],
+              [
+                268681,
+                "models/webhook_pull_request_labeled.py"
+              ],
+              [
+                268027,
+                "models/webhook_pull_request_auto_merge_disabled.py"
+              ],
+              [
+                267737,
+                "models/webhook_pull_request_auto_merge_enabled.py"
+              ]
+            ],
+            "largest_python_file": [
+              620749,
+              "models/webhook_pull_request_review_request_removed.py"
+            ],
+            "p95_python_bytes": 70329,
+            "binding_groups": 4,
+            "declarations": 3133,
+            "component_modules": 973,
+            "resource_modules": 0,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 0
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0038889580173417926,
+                "load_seconds": 0.9968587920302525
+              },
+              {
+                "package_seconds": 0.004092916031368077,
+                "load_seconds": 0.9869850000250153
+              },
+              {
+                "package_seconds": 0.004107084008865058,
+                "load_seconds": 1.0010357919964008
+              },
+              {
+                "package_seconds": 0.003933209052775055,
+                "load_seconds": 0.9994926659855992
+              },
+              {
+                "package_seconds": 0.0039774999604560435,
+                "load_seconds": 1.001951000012923
+              }
+            ],
+            "median_seconds": 0.9994926659855992
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.0005767910042777658,
+                "load_seconds": 0.23830079199979082
+              },
+              {
+                "package_seconds": 0.0005609160289168358,
+                "load_seconds": 0.24247875000583008
+              },
+              {
+                "package_seconds": 0.0005856670322827995,
+                "load_seconds": 0.2416770420386456
+              },
+              {
+                "package_seconds": 0.0005681660259142518,
+                "load_seconds": 0.23800650000339374
+              },
+              {
+                "package_seconds": 0.000561417022254318,
+                "load_seconds": 0.24102987500373274
+              }
+            ],
+            "median_seconds": 0.24102987500373274
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.01912675000494346,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.02003683301154524,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.019042208034079522,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.019130040949676186,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.018947375006973743,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.01912675000494346
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.015008249960374087,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015030083013698459,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015379833988845348,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.01499337499262765,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              },
+              {
+                "load_seconds": 0.015010707953479141,
+                "loaded_models": 1,
+                "loaded_modules": 3
+              }
+            ],
+            "median_seconds": 0.015010707953479141
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/github_models",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/models_consumer.py"
+            ],
+            "seconds": 0.3853208749787882,
+            "exit_code": 0,
+            "max_rss_bytes": 290963456
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.51093
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.000108
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.061887
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.007643
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: prepare group and check cache",
+              "seconds": 0.000161
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: validate schema document",
+              "seconds": 0.001206
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: generate and render prepared models",
+              "seconds": 0.002216
+            },
+            {
+              "stage": "_models.actions_artifact_and_log_retention: stage package files",
+              "seconds": 0.00205
+            },
+            {
+              "stage": "_models.actions_policy: prepare group and check cache",
+              "seconds": 0.007069
+            },
+            {
+              "stage": "_models.actions_policy: validate schema document",
+              "seconds": 0.082441
+            },
+            {
+              "stage": "_models.actions_policy: generate and render prepared models",
+              "seconds": 0.472953
+            },
+            {
+              "stage": "_models.actions_policy: stage package files",
+              "seconds": 0.058895
+            },
+            {
+              "stage": "_models.actions_public_key: prepare group and check cache",
+              "seconds": 0.018225
+            },
+            {
+              "stage": "_models.actions_public_key: validate schema document",
+              "seconds": 0.008423
+            },
+            {
+              "stage": "_models.actions_public_key: generate and render prepared models",
+              "seconds": 0.01497
+            },
+            {
+              "stage": "_models.actions_public_key: stage package files",
+              "seconds": 0.009045
+            },
+            {
+              "stage": "_models.interaction_expiry: prepare group and check cache",
+              "seconds": 0.001303
+            },
+            {
+              "stage": "_models.interaction_expiry: validate schema document",
+              "seconds": 0.008306
+            },
+            {
+              "stage": "_models.interaction_expiry: generate and render prepared models",
+              "seconds": 0.014185
+            },
+            {
+              "stage": "_models.interaction_expiry: stage package files",
+              "seconds": 0.008807
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.002858
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.001257
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.000747
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.011298
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.001
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.0
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.197
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.029
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.011
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.01
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.006
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.001
+            },
+            {
+              "stage": "prepare",
+              "seconds": 0.005
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.001
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.0
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.0
+            }
+          ],
+          "equivalence": {
+            "models": 3133,
+            "new_classes": 3133,
+            "empty_header_aliases": 0,
+            "prepared_programs_byte_identical": 3133,
+            "prepared_node_pairs": 60993,
+            "full_schema_text_equal": null,
+            "source_schemas_removed": false,
+            "prepared_programs_bisimilar": true,
+            "module_code_equal": true,
+            "modules_compared": 980,
+            "schema_fragments_compared": 0,
+            "before": "/private/tmp/jsoncompat-profile-next/paired-final/before/github_models",
+            "after": "/private/tmp/jsoncompat-profile-next/paired-final/after/github_models",
+            "seconds": 10.08881216699956,
+            "before_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+            "after_compiler": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+            "byte_identical_files": 981,
+            "sha256_verified_with_python": true,
+            "all_generation_repeats_byte_identical": true
+          }
+        },
+        "issues": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/github_issues",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.8015631249872968,
+              "exit_code": 0,
+              "max_rss_bytes": 409272320
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_issues_1",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.7977775000035763,
+              "exit_code": 0,
+              "max_rss_bytes": 430440448
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/issues.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_issues_2",
+                "--api",
+                "GitHub",
+                "--component",
+                "basic-error"
+              ],
+              "seconds": 0.787388542026747,
+              "exit_code": 0,
+              "max_rss_bytes": 433651712
+            }
+          ],
+          "generation_median_seconds": 0.7977775000035763,
+          "inventory": {
+            "files": 88,
+            "bytes": 2636375,
+            "python_files": 86,
+            "python_bytes": 2544069,
+            "largest_files": [
+              [
+                1576548,
+                "operations/issues.py"
+              ],
+              [
+                92306,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                82542,
+                "__init__.pyi"
+              ],
+              [
+                65972,
+                "models/timeline_issue_events.py"
+              ],
+              [
+                61101,
+                "models/__init__.pyi"
+              ],
+              [
+                51985,
+                "_exports.py"
+              ],
+              [
+                43017,
+                "models/issue_event_for_issue.py"
+              ],
+              [
+                39784,
+                "models/timeline_cross_referenced_event.py"
+              ],
+              [
+                36410,
+                "models/issue_event.py"
+              ],
+              [
+                34239,
+                "models/issue.py"
+              ]
+            ],
+            "largest_python_file": [
+              1576548,
+              "operations/issues.py"
+            ],
+            "p95_python_bytes": 43017,
+            "binding_groups": 1,
+            "declarations": 473,
+            "component_modules": 76,
+            "resource_modules": 1,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.0036390830064192414,
+                "load_seconds": 0.14204770902870223
+              },
+              {
+                "package_seconds": 0.003849291999358684,
+                "load_seconds": 0.14151983405463398
+              },
+              {
+                "package_seconds": 0.0036182079929858446,
+                "load_seconds": 0.1433529169880785
+              },
+              {
+                "package_seconds": 0.0035719999577850103,
+                "load_seconds": 0.1396280420012772
+              },
+              {
+                "package_seconds": 0.003588334016967565,
+                "load_seconds": 0.14055362500948831
+              }
+            ],
+            "median_seconds": 0.14151983405463398
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.000491167011205107,
+                "load_seconds": 0.07324549998156726
+              },
+              {
+                "package_seconds": 0.00047233299119398,
+                "load_seconds": 0.07081141701200977
+              },
+              {
+                "package_seconds": 0.0005033749621361494,
+                "load_seconds": 0.07139708398608491
+              },
+              {
+                "package_seconds": 0.0004949999856762588,
+                "load_seconds": 0.07050570799037814
+              },
+              {
+                "package_seconds": 0.0004859589971601963,
+                "load_seconds": 0.07114408299094066
+              }
+            ],
+            "median_seconds": 0.07114408299094066
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.11387254198780283,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11159941699588671,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11362008296418935,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11137304198928177,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.11138070799643174,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.11159941699588671
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04031204100465402,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04070020897779614,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04078262497205287,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.040591874974779785,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.040789458027575165,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04070020897779614
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/github_issues",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/issues_consumer.py"
+            ],
+            "seconds": 0.15226349997101352,
+            "exit_code": 0,
+            "max_rss_bytes": 85688320
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "issues-ty-negative.stderr"
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.496585
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.106059
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.067668
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.006614
+            },
+            {
+              "stage": "_models.shared: prepare group and check cache",
+              "seconds": 0.001442
+            },
+            {
+              "stage": "_models.shared: validate schema document",
+              "seconds": 0.015667
+            },
+            {
+              "stage": "_models.shared: generate and render prepared models",
+              "seconds": 0.044465
+            },
+            {
+              "stage": "_models.shared: stage package files",
+              "seconds": 0.006064
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.006594
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.00014
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.000565
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.007288
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.021
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.002
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.002
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.001
+            }
+          ],
+          "equivalence": {
+            "models": 473,
+            "new_classes": 473,
+            "empty_header_aliases": 192,
+            "prepared_programs_byte_identical": 473,
+            "prepared_node_pairs": 10705,
+            "full_schema_text_equal": null,
+            "source_schemas_removed": false,
+            "prepared_programs_bisimilar": true,
+            "module_code_equal": true,
+            "modules_compared": 86,
+            "schema_fragments_compared": 0,
+            "before": "/private/tmp/jsoncompat-profile-next/paired-final/before/github_issues",
+            "after": "/private/tmp/jsoncompat-profile-next/paired-final/after/github_issues",
+            "seconds": 1.1231775830383413,
+            "before_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+            "after_compiler": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+            "byte_identical_files": 87,
+            "sha256_verified_with_python": true,
+            "all_generation_repeats_byte_identical": true
+          }
+        },
+        "client": {
+          "generation_samples": [
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/github_client",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.489264167030342,
+              "exit_code": 0,
+              "max_rss_bytes": 1125515264
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_client_1",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.48499600001378,
+              "exit_code": 0,
+              "max_rss_bytes": 1120206848
+            },
+            {
+              "command": [
+                "/Users/robbie/developer/jsoncompat/target/release/jsoncompat",
+                "codegen",
+                "--openapi",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/client.json",
+                "--output",
+                "/private/tmp/jsoncompat-profile-next/paired-final/after/repeat_client_2",
+                "--api",
+                "GitHub"
+              ],
+              "seconds": 2.4729744579526596,
+              "exit_code": 0,
+              "max_rss_bytes": 1120665600
+            }
+          ],
+          "generation_median_seconds": 2.48499600001378,
+          "inventory": {
+            "files": 1030,
+            "bytes": 49681953,
+            "python_files": 1028,
+            "python_bytes": 47611518,
+            "largest_files": [
+              [
+                3144842,
+                "operations/repos.py"
+              ],
+              [
+                2400274,
+                "operations/actions.py"
+              ],
+              [
+                2070435,
+                ".jsoncompat-manifest.json"
+              ],
+              [
+                1989996,
+                "__init__.pyi"
+              ],
+              [
+                1638478,
+                "operations/orgs.py"
+              ],
+              [
+                1575725,
+                "operations/issues.py"
+              ],
+              [
+                1464014,
+                "models/__init__.pyi"
+              ],
+              [
+                1224173,
+                "_exports.py"
+              ],
+              [
+                1137372,
+                "operations/codespaces.py"
+              ],
+              [
+                810347,
+                "operations/activity.py"
+              ]
+            ],
+            "largest_python_file": [
+              3144842,
+              "operations/repos.py"
+            ],
+            "p95_python_bytes": 228907,
+            "binding_groups": 1,
+            "declarations": 9124,
+            "component_modules": 974,
+            "resource_modules": 45,
+            "schema_storage_bytes": 0,
+            "schema_chunk_files": 0,
+            "empty_header_models": 1
+          },
+          "import_source": {
+            "samples": [
+              {
+                "package_seconds": 0.05744166701333597,
+                "load_seconds": 1.712072416965384
+              },
+              {
+                "package_seconds": 0.05678149999585003,
+                "load_seconds": 1.6978091669734567
+              },
+              {
+                "package_seconds": 0.057842166046611965,
+                "load_seconds": 1.7013445839984342
+              },
+              {
+                "package_seconds": 0.05746016599005088,
+                "load_seconds": 1.7019712090259418
+              },
+              {
+                "package_seconds": 0.05687245796434581,
+                "load_seconds": 1.6743770419852808
+              }
+            ],
+            "median_seconds": 1.7013445839984342
+          },
+          "import_bytecode": {
+            "samples": [
+              {
+                "package_seconds": 0.005915083980653435,
+                "load_seconds": 0.7419937910162844
+              },
+              {
+                "package_seconds": 0.006271834019571543,
+                "load_seconds": 0.7496596660348587
+              },
+              {
+                "package_seconds": 0.005963750008959323,
+                "load_seconds": 0.7415387079818174
+              },
+              {
+                "package_seconds": 0.0059655000222846866,
+                "load_seconds": 0.7420854999800213
+              },
+              {
+                "package_seconds": 0.005887333012651652,
+                "load_seconds": 0.752835999999661
+              }
+            ],
+            "median_seconds": 0.7420854999800213
+          },
+          "selective-import_source": {
+            "samples": [
+              {
+                "load_seconds": 0.17983904195716605,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17956804198911414,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17944591597188264,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17399737500818446,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.17648679204285145,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.17944591597188264
+          },
+          "selective-import_bytecode": {
+            "samples": [
+              {
+                "load_seconds": 0.04842158395331353,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04831154196290299,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.047961957985535264,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04992920800577849,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              },
+              {
+                "load_seconds": 0.04861287499079481,
+                "loaded_models": 442,
+                "loaded_modules": 63
+              }
+            ],
+            "median_seconds": 0.04842158395331353
+          },
+          "ty": {
+            "command": [
+              "uv",
+              "run",
+              "--no-config",
+              "--project",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--all-extras",
+              "--locked",
+              "--with",
+              "ty==0.0.86",
+              "ty",
+              "check",
+              "--project",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--python-version",
+              "3.12",
+              "--extra-search-path",
+              "/Users/robbie/developer/jsoncompat/pybindings",
+              "--extra-search-path",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after",
+              "--error",
+              "all",
+              "--output-format",
+              "gitlab",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/github_client",
+              "/private/tmp/jsoncompat-profile-next/paired-final/after/client_consumer.py"
+            ],
+            "seconds": 0.790095874981489,
+            "exit_code": 0,
+            "max_rss_bytes": 703692800
+          },
+          "ty_negative": {
+            "exit_code": 1,
+            "expected_errors_detected": true,
+            "stderr_file": "client-ty-negative.stderr"
+          },
+          "primary_stage_timings": [
+            {
+              "stage": "validate OpenAPI document",
+              "seconds": 0.551916
+            },
+            {
+              "stage": "prepare operation contracts",
+              "seconds": 0.165325
+            },
+            {
+              "stage": "group component schemas",
+              "seconds": 0.095852
+            },
+            {
+              "stage": "prepare output and compiler fingerprint",
+              "seconds": 0.011765
+            },
+            {
+              "stage": "_models.shared: prepare group and check cache",
+              "seconds": 0.026322
+            },
+            {
+              "stage": "_models.shared: validate schema document",
+              "seconds": 0.317078
+            },
+            {
+              "stage": "_models.shared: generate and render prepared models",
+              "seconds": 0.998431
+            },
+            {
+              "stage": "_models.shared: stage package files",
+              "seconds": 0.083993
+            },
+            {
+              "stage": "render and stage package exports",
+              "seconds": 0.115732
+            },
+            {
+              "stage": "check publication paths",
+              "seconds": 0.001431
+            },
+            {
+              "stage": "publish package files",
+              "seconds": 0.001006
+            },
+            {
+              "stage": "remove obsolete files and publish manifest",
+              "seconds": 0.00964
+            }
+          ],
+          "primary_model_timings": [
+            {
+              "stage": "prepare",
+              "seconds": 0.456
+            },
+            {
+              "stage": "declarations",
+              "seconds": 0.06
+            },
+            {
+              "stage": "program serialization",
+              "seconds": 0.025
+            },
+            {
+              "stage": "conversion descriptors",
+              "seconds": 0.021
+            }
+          ],
+          "equivalence": {
+            "models": 9124,
+            "new_classes": 9124,
+            "empty_header_aliases": 3228,
+            "prepared_programs_byte_identical": 9124,
+            "prepared_node_pairs": 142351,
+            "full_schema_text_equal": null,
+            "source_schemas_removed": false,
+            "prepared_programs_bisimilar": true,
+            "module_code_equal": true,
+            "modules_compared": 1028,
+            "schema_fragments_compared": 0,
+            "before": "/private/tmp/jsoncompat-profile-next/paired-final/before/github_client",
+            "after": "/private/tmp/jsoncompat-profile-next/paired-final/after/github_client",
+            "seconds": 21.34112749999622,
+            "before_compiler": "bbaa7aeb2ddc5d92e916d2c07ab9675edcd1b4b248e445cece4474768dc017aa",
+            "after_compiler": "fcb8d952f6a5ba179b270c1fb32c3333f0ab862953ccaa29368e7bdf08c81a04",
+            "byte_identical_files": 1029,
+            "sha256_verified_with_python": true,
+            "all_generation_repeats_byte_identical": true
+          }
+        }
+      }
+    }
+  },
+  "input": {
+    "revision": "58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1",
+    "sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+    "original_bytes": 13131466,
+    "original_operations": 1232,
+    "original_components": 973,
+    "original_webhooks": 274
+  },
+  "projections": {
+    "models": {
+      "url": "https://raw.githubusercontent.com/github/rest-api-description/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json",
+      "sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+      "case": "models",
+      "operations": 0,
+      "component_schemas": 973,
+      "exclusions": [
+        {
+          "reason": "model-only run; no outbound operations"
+        }
+      ],
+      "exclusion_counts": {
+        "model-only run; no outbound operations": 1
+      },
+      "projected_sha256": "0633b5c2fbc99eb5cbce2c0352fb1c46b3cdaafec68465c092c8d0048ea87ab4"
+    },
+    "issues": {
+      "url": "https://raw.githubusercontent.com/github/rest-api-description/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json",
+      "sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+      "case": "issues",
+      "operations": 61,
+      "component_schemas": 973,
+      "exclusions": [
+        {
+          "path": "/markdown",
+          "method": "post",
+          "operationId": "markdown/render",
+          "reason": "unsupported media: ['text/html']"
+        },
+        {
+          "path": "/markdown/raw",
+          "method": "post",
+          "operationId": "markdown/render-raw",
+          "reason": "unsupported media: ['text/html', 'text/x-markdown']"
+        },
+        {
+          "path": "/octocat",
+          "method": "get",
+          "operationId": "meta/get-octocat",
+          "reason": "unsupported media: ['application/octocat-stream']"
+        },
+        {
+          "path": "/orgs/{org}/attestations/{subject_digest}",
+          "method": "get",
+          "operationId": "orgs/list-attestations",
+          "reason": "duplicate path shape: /orgs/{org}/attestations/{attestation_id}"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/commits/{ref}",
+          "method": "get",
+          "operationId": "repos/get-commit",
+          "reason": "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch', 'application/vnd.github.sha']"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/compare/{basehead}",
+          "method": "get",
+          "operationId": "repos/compare-commits",
+          "reason": "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch']"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/contents/{path}",
+          "method": "get",
+          "operationId": "repos/get-content",
+          "reason": "unsupported media: ['application/vnd.github.object']"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/releases/{release_id}/assets",
+          "method": "post",
+          "operationId": "repos/upload-release-asset",
+          "reason": "unsupported media: ['application/octet-stream']"
+        },
+        {
+          "path": "/users/{username}/attestations/{subject_digest}",
+          "method": "get",
+          "operationId": "users/list-attestations",
+          "reason": "duplicate path shape: /users/{username}/attestations/{attestation_id}"
+        },
+        {
+          "collection": "webhooks",
+          "count": 274,
+          "reason": "unsupported by outbound operation lowering"
+        },
+        {
+          "collection": "examples",
+          "count": 533,
+          "reason": "unsupported by outbound operation lowering"
+        }
+      ],
+      "exclusion_counts": {
+        "outside issues/ namespace": 1162,
+        "unsupported media: ['text/html']": 1,
+        "unsupported media: ['text/html', 'text/x-markdown']": 1,
+        "unsupported media: ['application/octocat-stream']": 1,
+        "duplicate path shape: /orgs/{org}/attestations/{attestation_id}": 1,
+        "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch', 'application/vnd.github.sha']": 1,
+        "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch']": 1,
+        "unsupported media: ['application/vnd.github.object']": 1,
+        "unsupported media: ['application/octet-stream']": 1,
+        "duplicate path shape: /users/{username}/attestations/{attestation_id}": 1,
+        "unsupported by outbound operation lowering": 2
+      },
+      "selection": "issues/ operationId prefix and dependencies",
+      "projected_sha256": "c3aaf41ab0c25688268369df00ff1aeb61fd6cbc9efb503fab4fe05bdd8558b9"
+    },
+    "client": {
+      "url": "https://raw.githubusercontent.com/github/rest-api-description/58b1e0c00b39b9e46c24dc4a0ba6a2669c90e9c1/descriptions-next/api.github.com/api.github.com.json",
+      "sha256": "0db1a3dee41ed680628a2a3381a114da7358ac8aa3f7b9276c9198608ca6a1fe",
+      "case": "client",
+      "operations": 1223,
+      "component_schemas": 973,
+      "exclusions": [
+        {
+          "path": "/markdown",
+          "method": "post",
+          "operationId": "markdown/render",
+          "reason": "unsupported media: ['text/html']"
+        },
+        {
+          "path": "/markdown/raw",
+          "method": "post",
+          "operationId": "markdown/render-raw",
+          "reason": "unsupported media: ['text/html', 'text/x-markdown']"
+        },
+        {
+          "path": "/octocat",
+          "method": "get",
+          "operationId": "meta/get-octocat",
+          "reason": "unsupported media: ['application/octocat-stream']"
+        },
+        {
+          "path": "/orgs/{org}/attestations/{subject_digest}",
+          "method": "get",
+          "operationId": "orgs/list-attestations",
+          "reason": "duplicate path shape: /orgs/{org}/attestations/{attestation_id}"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/commits/{ref}",
+          "method": "get",
+          "operationId": "repos/get-commit",
+          "reason": "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch', 'application/vnd.github.sha']"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/compare/{basehead}",
+          "method": "get",
+          "operationId": "repos/compare-commits",
+          "reason": "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch']"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/contents/{path}",
+          "method": "get",
+          "operationId": "repos/get-content",
+          "reason": "unsupported media: ['application/vnd.github.object']"
+        },
+        {
+          "path": "/repos/{owner}/{repo}/releases/{release_id}/assets",
+          "method": "post",
+          "operationId": "repos/upload-release-asset",
+          "reason": "unsupported media: ['application/octet-stream']"
+        },
+        {
+          "path": "/users/{username}/attestations/{subject_digest}",
+          "method": "get",
+          "operationId": "users/list-attestations",
+          "reason": "duplicate path shape: /users/{username}/attestations/{attestation_id}"
+        },
+        {
+          "collection": "webhooks",
+          "count": 274,
+          "reason": "unsupported by outbound operation lowering"
+        },
+        {
+          "collection": "examples",
+          "count": 533,
+          "reason": "unsupported by outbound operation lowering"
+        }
+      ],
+      "exclusion_counts": {
+        "unsupported media: ['text/html']": 1,
+        "unsupported media: ['text/html', 'text/x-markdown']": 1,
+        "unsupported media: ['application/octocat-stream']": 1,
+        "duplicate path shape: /orgs/{org}/attestations/{attestation_id}": 1,
+        "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch', 'application/vnd.github.sha']": 1,
+        "unsupported media: ['application/vnd.github.diff', 'application/vnd.github.patch']": 1,
+        "unsupported media: ['application/vnd.github.object']": 1,
+        "unsupported media: ['application/octet-stream']": 1,
+        "duplicate path shape: /users/{username}/attestations/{attestation_id}": 1,
+        "unsupported by outbound operation lowering": 2
+      },
+      "projected_sha256": "2bf2c168495fe9851f15aed9dcc5d1f7d23d3276537d65fef6519293f460ed0c"
+    }
+  }
+}

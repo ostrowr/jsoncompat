@@ -10,6 +10,40 @@ const JSON_SCHEMA_DRAFT_2020_12_WITH_FRAGMENT: &str =
 const SUPPORTED_SCHEMA_DIALECTS: &str = "https://json-schema.org/draft/2020-12/schema or https://spec.openapis.org/oas/3.1/dialect/base";
 
 #[test]
+fn large_namespace_preparation_preserves_errors_and_deferred_references() {
+    use serde_json::json;
+    let padding = (0..128)
+        .map(|i| (format!("unused{i:03}"), json!({"type":"integer"})))
+        .collect::<serde_json::Map<_, _>>();
+    for schema in [
+        json!({"type":"object", "properties":{"a":{"pattern":"["}, "z":{"minLength":-1}}}),
+        json!({"type":"object", "properties":{"a":{"pattern":"["}}}),
+    ] {
+        let ordinary = SchemaDocument::from_json(&schema).unwrap_err().to_string();
+        let mut large = schema;
+        large["$defs"] = json!(padding);
+        assert_eq!(
+            SchemaDocument::from_json(&large).unwrap_err().to_string(),
+            ordinary
+        );
+    }
+    let mut raw = json!({"$ref":"#/$defs/absent"});
+    let small = SchemaDocument::from_json(&raw).unwrap();
+    raw["$defs"] = json!(padding);
+    let large = SchemaDocument::from_json(&raw).unwrap();
+    assert_eq!(
+        large.root().unwrap_err().to_string(),
+        small.root().unwrap_err().to_string()
+    );
+
+    let raw = json!({"type":"object", "properties":padding});
+    let document = SchemaDocument::from_json(&raw).unwrap();
+    assert_eq!(document.source_schema_json(), &raw);
+    assert!(document.is_valid(&json!({"unused042":7})).unwrap());
+    assert!(!document.is_valid(&json!({"unused042":"invalid"})).unwrap());
+}
+
+#[test]
 fn fuzz_fixtures_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let dir = Path::new("../tests/fixtures/fuzz");
     let mut files = Vec::new();

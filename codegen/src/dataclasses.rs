@@ -1,8 +1,11 @@
+mod package;
 mod plan;
 mod plan_proof;
 mod render;
+mod resource_package;
 mod types;
-pub use render::DataclassModule;
+pub use package::DataclassPackage;
+pub use render::{DataclassMetadata, DataclassModule};
 use types::Annotation;
 
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
@@ -10,6 +13,7 @@ use json_schema_ast::{SchemaBuildError, SchemaDocument, SchemaNodeKind};
 use serde_json::{Map, Value, json};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 const DATACLASS_ADDITIONAL_MODEL_CLASS: &str = "DataclassAdditionalModel";
 const DATACLASS_MODEL_CLASS: &str = "DataclassModel";
@@ -49,6 +53,7 @@ struct FieldSpec {
     py_name: String,
     annotation: Annotation,
     required: bool,
+    description: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,9 +70,50 @@ enum ClassKind {
 #[derive(Debug, Clone)]
 struct ClassSpec {
     name: String,
-    schema_json: String,
+    schema: ClassSchema,
     base_class: &'static str,
     kind: ClassKind,
+    description: Option<String>,
+}
+
+/// Keep model schemas separate from shared definitions until validator preparation
+/// needs their combined resource. Neither is emitted as source JSON.
+#[derive(Debug, Clone)]
+struct ClassSchema {
+    value: Value,
+    definitions: Option<Arc<RootDefinitions>>,
+    context: Option<Arc<RootDefinitions>>,
+    pointer: String,
+}
+#[derive(Debug)]
+struct RootDefinitions {
+    root: Value,
+}
+impl RootDefinitions {
+    fn defs(&self) -> Option<&Map<String, Value>> {
+        self.root.get("$defs").and_then(Value::as_object)
+    }
+    fn legacy_defs(&self) -> Option<&Map<String, Value>> {
+        self.root.get("definitions").and_then(Value::as_object)
+    }
+}
+impl ClassSchema {
+    fn standalone(value: Value) -> Self {
+        Self {
+            value,
+            definitions: None,
+            context: None,
+            pointer: "#".into(),
+        }
+    }
+    fn materialize(&self) -> Value {
+        let mut value = self.value.clone();
+        if let (Some(object), Some(definitions)) = (value.as_object_mut(), &self.definitions) {
+            merge_root_definition_map(object, "$defs", definitions.defs());
+            merge_root_definition_map(object, "definitions", definitions.legacy_defs());
+        }
+        value
+    }
 }
 
 #[derive(Debug)]
@@ -75,11 +121,11 @@ struct DataclassModuleBuilder<'a> {
     classes: Vec<ClassSpec>,
     class_names: BTreeMap<String, String>,
     named_refs: BTreeMap<String, String>,
+    named_class_names: BTreeSet<String>,
     codegen_root: &'a Value,
     validation_root: &'a Value,
     source_root: &'a Value,
-    validation_root_defs: Option<&'a Map<String, Value>>,
-    validation_root_legacy_defs: Option<&'a Map<String, Value>>,
+    definitions: Arc<RootDefinitions>,
     inline_names: BTreeMap<String, String>,
     inline_name_counters: BTreeMap<String, u32>,
 }
@@ -112,16 +158,12 @@ impl<'a> DataclassModuleBuilder<'a> {
             source_root,
             classes: Vec::new(),
             class_names,
+            named_class_names: named_refs.values().cloned().collect(),
             named_refs,
             codegen_root,
-            validation_root_defs: validation_root
-                .as_object()
-                .and_then(|obj| obj.get("$defs"))
-                .and_then(Value::as_object),
-            validation_root_legacy_defs: validation_root
-                .as_object()
-                .and_then(|obj| obj.get("definitions"))
-                .and_then(Value::as_object),
+            definitions: Arc::new(RootDefinitions {
+                root: validation_root.clone(),
+            }),
             validation_root,
             inline_names: BTreeMap::new(),
             inline_name_counters: BTreeMap::new(),
@@ -195,7 +237,8 @@ impl<'a> DataclassModuleBuilder<'a> {
             Value::Bool(_) => self.register_class(
                 ClassSpec {
                     name: name.to_owned(),
-                    schema_json: self.schema_json(schema, pointer)?,
+                    description: self.source_description(pointer),
+                    schema: self.class_schema(|| schema.clone(), pointer),
                     base_class: DATACLASS_ROOT_MODEL_CLASS,
                     kind: ClassKind::Root {
                         annotation: Annotation::any(),
@@ -237,7 +280,8 @@ impl<'a> DataclassModuleBuilder<'a> {
 
         self.classes.push(ClassSpec {
             name: name.to_owned(),
-            schema_json: self.schema_json(&Value::Object(obj.clone()), pointer)?,
+            description: self.source_description(pointer),
+            schema: self.class_schema(|| Value::Object(obj.clone()), pointer),
             base_class: if matches!(kind, ClassKind::Root { .. }) {
                 DATACLASS_ROOT_MODEL_CLASS
             } else {
@@ -309,42 +353,46 @@ impl<'a> DataclassModuleBuilder<'a> {
             .inline_name_counters
             .entry(base_name.to_owned())
             .or_insert(0);
-        *count += 1;
-        if *count == 1 {
-            base_name.to_owned()
-        } else {
-            format!("{base_name}{count}")
+        loop {
+            *count += 1;
+            let candidate = if *count == 1 {
+                base_name.to_owned()
+            } else {
+                format!("{base_name}{count}")
+            };
+            if !self.named_class_names.contains(&candidate)
+                && !self.class_names.contains_key(&candidate)
+            {
+                return candidate;
+            }
         }
     }
 
-    fn schema_json(
-        &self,
-        fallback_schema: &Value,
-        pointer: &str,
-    ) -> Result<String, DataclassError> {
+    fn source_description(&self, pointer: &str) -> Option<String> {
+        resolve_json_pointer(self.source_root, pointer)
+            .and_then(|schema| schema.get("description"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    }
+
+    fn class_schema(&self, fallback_schema: impl FnOnce() -> Value, pointer: &str) -> ClassSchema {
         if pointer == "#" {
-            return pretty_schema_literal(self.source_root);
+            return ClassSchema::standalone(self.source_root.clone());
         }
-        let validation_schema = resolve_json_pointer(self.validation_root, pointer)
-            .unwrap_or(fallback_schema)
-            .clone();
-        let schema = match (
-            &validation_schema,
-            has_definition_entries(self.validation_root_defs),
-            has_definition_entries(self.validation_root_legacy_defs),
-        ) {
-            (Value::Object(obj), true, _) | (Value::Object(obj), _, true)
-                if contains_reference(&validation_schema) =>
-            {
-                Value::Object(schema_object_with_root_definition_maps(
-                    obj,
-                    self.validation_root_defs,
-                    self.validation_root_legacy_defs,
-                )?)
-            }
-            _ => validation_schema,
-        };
-        pretty_schema_literal(&schema)
+        let value = resolve_json_pointer(self.validation_root, pointer)
+            .cloned()
+            .unwrap_or_else(fallback_schema);
+        let definitions = (value.is_object()
+            && (has_definition_entries(self.definitions.defs())
+                || has_definition_entries(self.definitions.legacy_defs()))
+            && contains_reference(&value))
+        .then(|| Arc::clone(&self.definitions));
+        ClassSchema {
+            value,
+            definitions,
+            context: Some(Arc::clone(&self.definitions)),
+            pointer: pointer.into(),
+        }
     }
 
     fn schema_annotation(
@@ -369,6 +417,9 @@ impl<'a> DataclassModuleBuilder<'a> {
             let ref_value = ref_value.as_str().ok_or_else(|| {
                 invalid_schema(join_pointer(pointer, "$ref"), "$ref must be a string")
             })?;
+            return self.ref_annotation(ref_value, pointer);
+        }
+        if let Some(ref_value) = annotated_all_of_ref(obj) {
             return self.ref_annotation(ref_value, pointer);
         }
 
@@ -638,6 +689,9 @@ impl<'a> DataclassModuleBuilder<'a> {
                 if obj.get("$ref").is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
+                if annotated_all_of_ref(obj).is_some() {
+                    return self.schema_annotation(obj, pointer, scope_name);
+                }
                 if parse_literal_annotation(obj).is_some() {
                     return self.schema_annotation(obj, pointer, scope_name);
                 }
@@ -734,6 +788,61 @@ pub fn generate_dataclass_declarations(
     document: &SchemaDocument,
     declarations: &BTreeMap<String, String>,
 ) -> Result<DataclassModule, DataclassError> {
+    generate_dataclass_declarations_with_metadata(
+        document,
+        declarations,
+        &DataclassMetadata::default(),
+    )
+}
+
+/// Generate declarations with additional public annotation metadata. Expressions
+/// are trusted Python source supplied by a generator, never schema text.
+pub fn generate_dataclass_declarations_with_metadata(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+) -> Result<DataclassModule, DataclassError> {
+    generate_declarations(document, declarations, metadata, false)
+}
+
+/// Generate a package group directly, avoiding an unused monolithic source.
+/// `module_path` names the group within the generated public package.
+pub fn generate_dataclass_package_declarations_with_metadata(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+    module_path: &str,
+) -> Result<DataclassPackage, DataclassError> {
+    let module = generate_declarations(document, declarations, metadata, true)?;
+    Ok(DataclassPackage {
+        exports: module
+            .models
+            .iter()
+            .map(|name| (name.clone(), module_path.to_owned()))
+            .collect(),
+        files: module.package_files(module_path),
+        models: module.models,
+    })
+}
+
+/// Render modules owned by named components and API resources. References bind
+/// in dependency order; only strongly connected module cycles share a binder.
+pub fn generate_dataclass_resource_package_with_metadata(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+    owners: &BTreeMap<String, String>,
+) -> Result<DataclassPackage, DataclassError> {
+    let module = generate_declarations(document, declarations, metadata, true)?;
+    Ok(module.resource_files(owners))
+}
+
+fn generate_declarations(
+    document: &SchemaDocument,
+    declarations: &BTreeMap<String, String>,
+    metadata: &DataclassMetadata,
+    package: bool,
+) -> Result<DataclassModule, DataclassError> {
     document.validate_source_schema()?;
     let canonical = document.canonical_schema_json()?;
     let mut refs = collect_named_refs(canonical)?;
@@ -810,6 +919,26 @@ pub fn generate_dataclass_declarations(
         }
         refs.insert(pointer.clone(), name.clone());
     }
+    if !metadata.reserved_names.is_empty() {
+        // Implicit names for nested $defs are chosen before trusted additions
+        // such as HTTP aliases are emitted. Keep explicitly named declarations
+        // stable, but move these helpers out of the additions' namespace too.
+        let mut used_names = metadata.reserved_names.clone();
+        used_names.extend(refs.values().cloned());
+        for (pointer, name) in &mut refs {
+            if metadata.reserved_names.contains(name)
+                && !declarations.contains_key(pointer)
+                && resolve_json_pointer(canonical, pointer)
+                    .map(|schema| metadata_name_if_any(schema, pointer))
+                    .transpose()?
+                    .flatten()
+                    .is_none()
+            {
+                *name = unique_name(name, &used_names);
+                used_names.insert(name.clone());
+            }
+        }
+    }
     let mut names = BTreeSet::new();
     for (pointer, name) in &refs {
         if pointer != "#" && !names.insert(name) {
@@ -817,6 +946,9 @@ pub fn generate_dataclass_declarations(
         }
     }
     let mut builder = DataclassModuleBuilder::new(refs, canonical, document.source_schema_json());
+    builder
+        .named_class_names
+        .extend(metadata.reserved_names.iter().cloned());
     for pointer in declarations.keys() {
         let schema = pointer
             .strip_prefix('#')
@@ -833,7 +965,14 @@ pub fn generate_dataclass_declarations(
         .values()
         .next()
         .ok_or_else(|| invalid_schema("#".into(), "at least one declaration is required"))?;
-    render::module(&builder.classes, root)
+    if package {
+        let mut module =
+            render::module_with_metadata_for_package(&builder.classes, root, metadata, document)?;
+        module.parts.named_declarations = declarations;
+        Ok(module)
+    } else {
+        render::module_with_metadata(&builder.classes, root, metadata)
+    }
 }
 
 fn unconstrained_codegen_schema(canonical: &Value) -> Value {
@@ -972,7 +1111,11 @@ fn envelope_class(
 ) -> Result<ClassSpec, DataclassError> {
     Ok(ClassSpec {
         name,
-        schema_json: pretty_schema_literal(&schema)?,
+        description: schema
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        schema: ClassSchema::standalone(schema),
         base_class,
         kind: ClassKind::Object {
             fields: vec![
@@ -981,12 +1124,14 @@ fn envelope_class(
                     py_name: "version".into(),
                     annotation: Annotation::literal(json!(version)),
                     required: true,
+                    description: None,
                 },
                 FieldSpec {
                     json_name: "data".into(),
                     py_name: "data".into(),
                     annotation: Annotation::model(payload_type),
                     required: true,
+                    description: None,
                 },
             ],
             extra_annotation: None,
@@ -1139,7 +1284,11 @@ fn reader_root_class(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ClassSpec {
         name,
-        schema_json: pretty_schema_literal(&Value::Object(validation.clone()))?,
+        description: validation
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        schema: ClassSchema::standalone(Value::Object(validation.clone())),
         base_class: READER_ROOT_MODEL_CLASS,
         kind: ClassKind::Root {
             annotation: Annotation::union(&variants),
@@ -1231,6 +1380,7 @@ fn parse_object_fields(
                     property_name,
                 )?,
                 required: required.contains(property_name),
+                description: builder.source_description(&property_pointer),
             });
         }
     }
@@ -1248,6 +1398,7 @@ fn parse_object_fields(
             py_name,
             annotation: fallback_annotation.clone(),
             required: true,
+            description: None,
         });
     }
 
@@ -1469,6 +1620,35 @@ fn single_type_annotation(type_name: &str, pointer: &str) -> Result<Annotation, 
             format!("unsupported JSON Schema type '{type_name}'"),
         )),
     }
+}
+
+/// OpenAPI descriptions often wrap one reference in allOf to attach a field
+/// description. With annotation-only siblings, its model identity is exactly
+/// the referenced model's. The validator still uses the unmodified schema.
+fn annotated_all_of_ref(obj: &Map<String, Value>) -> Option<&str> {
+    fn annotation(keyword: &str) -> bool {
+        matches!(
+            keyword,
+            "title"
+                | "description"
+                | "$comment"
+                | "default"
+                | "examples"
+                | "deprecated"
+                | "readOnly"
+                | "writeOnly"
+        )
+    }
+    if !obj.keys().all(|key| key == "allOf" || annotation(key)) {
+        return None;
+    }
+    let [Value::Object(branch)] = obj.get("allOf")?.as_array()?.as_slice() else {
+        return None;
+    };
+    if !branch.keys().all(|key| key == "$ref" || annotation(key)) {
+        return None;
+    }
+    branch.get("$ref")?.as_str()
 }
 
 fn collect_named_refs(schema: &Value) -> Result<BTreeMap<String, String>, DataclassError> {
@@ -1956,11 +2136,6 @@ fn omittable_annotation(annotation: &str) -> String {
     )
 }
 
-fn pretty_schema_literal(schema: &Value) -> Result<String, DataclassError> {
-    serde_json::to_string_pretty(schema)
-        .map_err(|error| invalid_schema("#".to_owned(), format!("schema is not JSON: {error}")))
-}
-
 fn render_class_base(class_spec: &ClassSpec) -> String {
     match (&class_spec.kind, class_spec.base_class) {
         (
@@ -2012,7 +2187,7 @@ fn python_literal_annotation(value: &Value) -> Option<Annotation> {
     }
 }
 
-fn python_field_name(json_name: &str) -> String {
+pub(crate) fn python_field_name(json_name: &str) -> String {
     let mut output = String::new();
     for (index, ch) in json_name.chars().enumerate() {
         if ch.is_ascii_alphanumeric() || ch == '_' {
@@ -2184,6 +2359,32 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn annotated_all_of_reference_requires_annotation_only_siblings() {
+        let reference =
+            json!({"description":"Details","allOf":[{"$ref":"#/$defs/Item","title":"Item"}]});
+        assert_eq!(
+            annotated_all_of_ref(reference.as_object().unwrap()),
+            Some("#/$defs/Item")
+        );
+        for (keyword, value) in [
+            ("not", json!({})),
+            ("type", json!("object")),
+            ("format", json!("date")),
+            ("$id", json!("https://example.com/resource")),
+            ("$dynamicAnchor", json!("node")),
+        ] {
+            let mut outer = reference.clone();
+            outer[keyword] = value.clone();
+            assert_eq!(annotated_all_of_ref(outer.as_object().unwrap()), None);
+            let mut inner = reference.clone();
+            inner["allOf"][0][keyword] = value;
+            assert_eq!(annotated_all_of_ref(inner.as_object().unwrap()), None);
+        }
+        let multiple = json!({"allOf":[{"$ref":"#/$defs/Item"},{"description":"Another branch"}]});
+        assert_eq!(annotated_all_of_ref(multiple.as_object().unwrap()), None);
+    }
+
+    #[test]
     fn generate_dataclass_models_emits_plain_dataclass_root_alias() {
         let schema = json!({
             "title": "user profile",
@@ -2204,7 +2405,7 @@ mod tests {
         assert!(!source.contains("bind_generated_models"));
         assert!(
             source.find("JSONCOMPAT_MODEL = UserProfile").unwrap()
-                < source.find("def _jsoncompat_init").unwrap()
+                < source.find("def _jsoncompat_bind").unwrap()
         );
     }
 
@@ -2383,11 +2584,11 @@ mod tests {
                 .contains("get_additional_property_: str = dc.field(\"get_additional_property\")")
         );
         assert!(source.contains(
-            "_jsoncompat_validated: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"_jsoncompat_validated\")"
+            "_jsoncompat_validated: typing.Literal[False, True] = dc.field(\"_jsoncompat_validated\")"
         ));
         assert!(source.contains("serialize_: str = dc.field(\"serialize\")"));
         assert!(source.contains(
-            "skip_validation_: (typing.Literal[False] | typing.Literal[True]) = dc.field(\"skip_validation\")"
+            "skip_validation_: typing.Literal[False, True] = dc.field(\"skip_validation\")"
         ));
         assert!(source.contains("to_value_: str = dc.field(\"to_value\")"));
     }
@@ -2575,9 +2776,7 @@ mod tests {
         // The Python runtime tests verify lossless explicit schema access.
         // Public declarations do not carry the expanded source schema.
         assert!(!source.contains(&encoded));
-        assert!(
-            source.find("JSONCOMPAT_MODEL").unwrap() < source.find("dc.install_model").unwrap()
-        );
+        assert!(source.find("JSONCOMPAT_MODEL").unwrap() < source.find("dc.bind_module").unwrap());
         assert!(!source.contains("\"anyOf\":"));
     }
 

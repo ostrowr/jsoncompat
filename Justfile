@@ -22,7 +22,7 @@ check:
   cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
   cargo test --workspace --exclude jsoncompat_py --all-features --locked
   @echo "[just] checking Python code …"
-  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL uv run --no-config --project pybindings --all-extras --group benchmark --locked --with pyright==1.1.408 pyright
+  env -u VIRTUAL_ENV -u UV_DEFAULT_INDEX -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL uv run --no-config --project pybindings --all-extras --group benchmark --locked --with ty==0.0.86 ty check
   @echo "[just] checking TypeScript code …"
   pnpm --prefix web/jsoncompatdotcom run ci
   pnpm --prefix web/jsoncompatdotcom run build
@@ -40,6 +40,10 @@ check-packages:
 regen-dataclasses-fixtures:
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_fixtures -- --exact dataclass_snapshots_are_up_to_date_for_all_sample_schemas
   JSONCOMPAT_UPDATE_DATACLASSES_FIXTURES=1 cargo test --test dataclasses_examples --test stamp_examples snapshot
+
+# Refresh the runnable, checked-in generated Petstore client and its goldens.
+regen-openapi-client:
+  JSONCOMPAT_UPDATE_OPENAPI_FIXTURES=1 cargo test --test openapi_client checked_in_petstore_matches_generated_package -- --exact
 
 bench:
   @echo "[just] running Rust benchmarks …"
@@ -151,6 +155,10 @@ python-bench-full: _build-python-release (_python-bench-provenance "full") (_pyt
 python-bench-profile depth="5" fanout="4" iterations="100" repeats="5": _build-python-release (_python-bench-provenance "profile") (_python-bench-scale-profile depth fanout iterations repeats "standard")
 
 # ---- Basic python smoke test ----
+
+# Opt-in internet E2E: generate a fresh contract and test all four HTTP transports.
+python-http-live:
+  cargo test --test openapi_client --locked jsonplaceholder_live_all_transports -- --ignored --nocapture
 
 python-demo:
   env -u VIRTUAL_ENV uv run --reinstall-package jsoncompat examples/python/basic/demo.py

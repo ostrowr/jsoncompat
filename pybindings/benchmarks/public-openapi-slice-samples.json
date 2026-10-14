@@ -1,0 +1,487 @@
+{
+  "version": 1,
+  "notes": "Secondary tests against explicitly derived operation slices; unmodified full-spec failures remain recorded separately. No live API calls. Public schemas are unmodified. No explicit JSON-null response root occurs in these slices; None coverage is the declared bodyless204.",
+  "cases": [
+    {
+      "id": "meili_dictionary",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": [
+        "red",
+        "green"
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "meili_boolean",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/facet-search",
+      "body": true,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1facet-search/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "meili_integer",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/search-cutoff-ms",
+      "body": 17,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1search-cutoff-ms/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "meili_string",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/distinct-attribute",
+      "body": "id",
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1distinct-attribute/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "meili_enum",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/prefix-search",
+      "body": "indexingTime",
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1prefix-search/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "meili_reject_array_duplicates",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": [
+        "red",
+        "red"
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/get/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "meili_reject_array_wrong_item",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": [
+        1
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/get/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "meili_reject_integer_minimum",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/search-cutoff-ms",
+      "body": -1,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1search-cutoff-ms/get/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "meili_reject_enum_unknown",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/prefix-search",
+      "body": "invalid",
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1prefix-search/get/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "meili_reject_string_null",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/distinct-attribute",
+      "body": null,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1distinct-attribute/get/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "meili_declared_404",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": {
+        "message": "Index `movies` not found.",
+        "code": "index_not_found",
+        "type": "invalid_request",
+        "link": "https://docs.meilisearch.com/errors#index_not_found"
+      },
+      "provenance": "Response media example copied unchanged from the pinned Meilisearch public specification.",
+      "status": 404,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/get/responses/404/content/application~1json/schema"
+    },
+    {
+      "id": "meili_unexpected_503",
+      "spec": "meilisearch_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": {
+        "message": "temporarily unavailable",
+        "retry_after": 7
+      },
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 503,
+      "media_type": "application/json",
+      "expect": "unexpected",
+      "operation_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/get"
+    },
+    {
+      "id": "meili_array_request",
+      "spec": "meilisearch_json_projection",
+      "direction": "request",
+      "method": "PUT",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": [
+        "red",
+        "green"
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/put/requestBody/content/application~1json/schema",
+      "parameters": {
+        "index_uid": "movies"
+      }
+    },
+    {
+      "id": "meili_enum_request",
+      "spec": "meilisearch_json_projection",
+      "direction": "request",
+      "method": "PUT",
+      "path": "/indexes/{index_uid}/settings/prefix-search",
+      "body": "disabled",
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1prefix-search/put/requestBody/content/application~1json/schema",
+      "parameters": {
+        "index_uid": "movies"
+      }
+    },
+    {
+      "id": "meili_reject_array_request_duplicate",
+      "spec": "meilisearch_json_projection",
+      "direction": "request",
+      "method": "PUT",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": [
+        "red",
+        "red"
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/put/requestBody/content/application~1json/schema",
+      "expect": "request_error",
+      "parameters": {
+        "index_uid": "movies"
+      }
+    },
+    {
+      "id": "meili_reject_array_request_null",
+      "spec": "meilisearch_json_projection",
+      "direction": "request",
+      "method": "PUT",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": null,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/put/requestBody/content/application~1json/schema",
+      "expect": "request_error",
+      "parameters": {
+        "index_uid": "movies"
+      }
+    },
+    {
+      "id": "meili_reject_array_request_wrong_item",
+      "spec": "meilisearch_json_projection",
+      "direction": "request",
+      "method": "PUT",
+      "path": "/indexes/{index_uid}/settings/dictionary",
+      "body": [
+        1
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1indexes~1{index_uid}~1settings~1dictionary/put/requestBody/content/application~1json/schema",
+      "expect": "request_error",
+      "parameters": {
+        "index_uid": "movies"
+      }
+    },
+    {
+      "id": "aivis_string",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/version",
+      "body": "1.2.3",
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1version/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_string_array",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/core_versions",
+      "body": [
+        "1.0",
+        "2.0"
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1core_versions/get/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_boolean",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/validate_kana",
+      "body": true,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1validate_kana/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_integer",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/add_preset",
+      "body": 42,
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1add_preset/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_number_array",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/sing_frame_f0",
+      "body": [
+        100.0,
+        110.5,
+        0.0
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1sing_frame_f0/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_object_array",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/mora_data",
+      "body": [
+        {
+          "moras": [
+            {
+              "text": "ア",
+              "vowel": "a",
+              "vowel_length": 0.1,
+              "pitch": 100.0
+            }
+          ],
+          "accent": 1
+        }
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1mora_data/post/responses/200/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_array_request",
+      "spec": "aivisspeech_json_projection",
+      "direction": "request",
+      "method": "POST",
+      "path": "/mora_data",
+      "body": [
+        {
+          "moras": [
+            {
+              "text": "ア",
+              "vowel": "a",
+              "vowel_length": 0.1,
+              "pitch": 100.0
+            }
+          ],
+          "accent": 1
+        }
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1mora_data/post/requestBody/content/application~1json/schema",
+      "parameters": {
+        "speaker": 1
+      }
+    },
+    {
+      "id": "aivis_reject_array_request",
+      "spec": "aivisspeech_json_projection",
+      "direction": "request",
+      "method": "POST",
+      "path": "/mora_data",
+      "body": {
+        "moras": [],
+        "accent": 1
+      },
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "schema_pointer": "#/paths/~1mora_data/post/requestBody/content/application~1json/schema",
+      "expect": "request_error",
+      "parameters": {
+        "speaker": 1
+      }
+    },
+    {
+      "id": "aivis_declared_400",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/validate_kana",
+      "body": {
+        "text": "Unknown kana",
+        "error_name": "UNKNOWN_TEXT",
+        "error_args": {
+          "text": "?"
+        }
+      },
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 400,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1validate_kana/post/responses/400/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_declared_422",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/validate_kana",
+      "body": {
+        "detail": [
+          {
+            "loc": [
+              "query",
+              "text"
+            ],
+            "msg": "Field required",
+            "type": "missing",
+            "input": null
+          }
+        ]
+      },
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 422,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1validate_kana/post/responses/422/content/application~1json/schema"
+    },
+    {
+      "id": "aivis_bodyless_204",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/initialize_speaker",
+      "body": null,
+      "provenance": "Synthetic HTTP204 response with no bytes; the public spec omits content. Tests a bodyless None envelope, not a JSON null payload.",
+      "status": 204,
+      "media_type": null,
+      "response_pointer": "#/paths/~1initialize_speaker/post/responses/204"
+    },
+    {
+      "id": "aivis_reject_boolean_string",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "POST",
+      "path": "/validate_kana",
+      "body": "true",
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1validate_kana/post/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "aivis_reject_array_wrong_item",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/core_versions",
+      "body": [
+        1
+      ],
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 200,
+      "media_type": "application/json",
+      "schema_pointer": "#/paths/~1core_versions/get/responses/200/content/application~1json/schema",
+      "expect": "parse_error"
+    },
+    {
+      "id": "aivis_unexpected_503",
+      "spec": "aivisspeech_json_projection",
+      "direction": "response",
+      "method": "GET",
+      "path": "/version",
+      "body": {
+        "detail": "warming up"
+      },
+      "provenance": "Synthetic test payload checked against the unchanged public operation schema in the explicitly labeled JSON operation slice.",
+      "status": 503,
+      "media_type": "application/json",
+      "expect": "unexpected",
+      "operation_pointer": "#/paths/~1version/get"
+    }
+  ],
+  "typing_consumers": [
+    {
+      "path": "public_openapi_slices/consumer.py",
+      "specs": [
+        "meilisearch_json_projection",
+        "aivisspeech_json_projection"
+      ]
+    }
+  ]
+}

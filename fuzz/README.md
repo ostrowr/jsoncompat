@@ -54,6 +54,14 @@ For repeated generation from the same schema, reuse the same `SchemaDocument`.
 
 Every returned value is accepted by `SchemaDocument::is_valid()` against the original raw schema.
 
+Nested intersections share exhausted-search information within each candidate
+attempt, keyed by schema node and remaining recursion depth. A parent retry
+therefore does not repeatedly restart the same exhausted child search. This is
+a generation heuristic, not a proof of unsatisfiability: the information is
+cleared before the next candidate attempt, and raw validation still checks every
+returned value. Generation remains randomized; exact seeded output sequences
+can change as generation heuristics improve.
+
 ## More detail
 
 - [Repository README](../readme.md) for the broader `jsoncompat` workflow

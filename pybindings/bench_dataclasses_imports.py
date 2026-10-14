@@ -67,7 +67,7 @@ def build(args) -> dict:
         (peer / f"{module}.py").write_text("\n".join(lines) + "\n")
     # Use the exact same lazy namespace policy for the Pydantic baseline.
     (peer / "__init__.py").write_text((args.directory / "generated/__init__.py").read_text())
-    (peer / "_exports.py").write_text("MODELS = " + repr(exports) + "\n")
+    (peer / "_exports.py").write_text("EXPORTS = " + repr(exports) + "\n")
     peer_seconds = time.perf_counter() - start
     start = time.perf_counter()
     assert compileall.compile_dir(args.directory / "generated", quiet=2)

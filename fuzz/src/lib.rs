@@ -11,12 +11,12 @@ mod format_gen;
 mod regex_gen;
 
 use json_schema_ast::{
-    ContainsConstraint, IntegerBounds, NumberBound, NumberBounds, PatternProperty, PatternSupport,
-    SchemaBuildError, SchemaDocument, SchemaNode, SchemaNodeKind,
+    ContainsConstraint, IntegerBounds, NodeId, NumberBound, NumberBounds, PatternProperty,
+    PatternSupport, SchemaBuildError, SchemaDocument, SchemaNode, SchemaNodeKind,
 };
 use rand::{Rng, RngExt};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 const DEFAULT_MAX_GENERATION_ATTEMPTS: usize = 100;
@@ -49,6 +49,7 @@ pub struct ValueGenerator {
     max_generation_attempts: NonZeroUsize,
     max_candidate_nodes: NonZeroUsize,
     remaining_nodes: usize,
+    exhausted_intersections: HashSet<(NodeId, u8)>,
 }
 
 /// Explicit generation controls used by the document-level fuzzer API.
@@ -144,6 +145,7 @@ impl ValueGenerator {
             max_generation_attempts: config.max_generation_attempts,
             max_candidate_nodes: config.max_candidate_nodes,
             remaining_nodes: config.max_candidate_nodes.get(),
+            exhausted_intersections: HashSet::new(),
         };
         generator.generate_from_document(schema, rng, config.depth)
     }
@@ -168,6 +170,7 @@ impl ValueGenerator {
 
         for _ in 0..self.max_generation_attempts.get() {
             self.remaining_nodes = self.max_candidate_nodes.get();
+            self.exhausted_intersections.clear();
             let candidate = self.generate_candidate(root, rng, depth);
             if schema.is_valid(&candidate)? {
                 return Ok(candidate);
@@ -515,6 +518,15 @@ fn generate_candidate_with_context(
         }
 
         AllOf(subs) if !subs.is_empty() => {
+            // A parent retry must not restart an already exhausted child search
+            // at the same depth. Keep this heuristic local to one candidate;
+            // the next raw-validation attempt gets a fresh randomized search.
+            if generator
+                .exhausted_intersections
+                .contains(&(schema.id(), depth))
+            {
+                return random_any(rng, depth);
+            }
             // Heuristic strategy: try to satisfy *all* branches while keeping the
             // generation cheap.  The original implementation relied on a long
             // explanatory comment; reintroduce the gist:
@@ -623,6 +635,9 @@ fn generate_candidate_with_context(
                 }
             }
 
+            generator
+                .exhausted_intersections
+                .insert((schema.id(), depth));
             random_any(rng, depth)
         }
 
@@ -1553,8 +1568,9 @@ fn literal_from_simple_pattern(pattern: &str) -> Option<String> {
 mod tests {
     use super::*;
     use json_schema_ast::SchemaDocument;
-    use rand::{SeedableRng, rngs::StdRng};
+    use rand::{SeedableRng, TryRng, rngs::StdRng};
     use serde_json::json;
+    use std::convert::Infallible;
 
     fn resolve(raw: Value) -> SchemaDocument {
         SchemaDocument::from_json(&raw).unwrap()
@@ -1698,6 +1714,74 @@ mod tests {
         assert!(schema.is_valid(&json!(["foo", "bar"])).unwrap());
 
         assert_generates_raw_valid_value(&schema, 13, 6);
+    }
+
+    #[test]
+    fn nested_conditional_intersections_have_bounded_search_work() {
+        // The unevaluatedItems fixture expands these guards into nested
+        // intersections. Restarting exhausted child searches made 1,000 values
+        // take minutes. Bound RNG work instead of asserting wall-clock timing.
+        let schema = resolve(json!({
+            "if": {"contains": {"const": "a"}},
+            "then": {
+                "if": {"contains": {"const": "b"}},
+                "then": {"if": {"contains": {"const": "c"}}}
+            },
+            "unevaluatedItems": false
+        }));
+        let mut saw_array = false;
+        let mut saw_non_array = false;
+        for seed in 0xBADBABE..0xBADBABE + 8 {
+            let mut rng = LimitedRng {
+                inner: StdRng::seed_from_u64(seed),
+                remaining_words: 100_000,
+            };
+            for _ in 0..16 {
+                let value = ValueGenerator::generate(&schema, GenerationConfig::new(6), &mut rng)
+                    .expect("nested guards remain satisfiable");
+                assert!(schema.is_valid(&value).unwrap(), "invalid value: {value}");
+                saw_array |= value.is_array();
+                saw_non_array |= !value.is_array();
+            }
+        }
+        assert!(
+            saw_array && saw_non_array,
+            "generation must retain both kinds of values"
+        );
+    }
+
+    struct LimitedRng {
+        inner: StdRng,
+        remaining_words: usize,
+    }
+
+    impl LimitedRng {
+        fn charge(&mut self, words: usize) {
+            self.remaining_words = self
+                .remaining_words
+                .checked_sub(words)
+                .expect("nested generation repeated too much exhausted search work");
+        }
+    }
+
+    impl TryRng for LimitedRng {
+        type Error = Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            self.charge(1);
+            Ok(self.inner.next_u32())
+        }
+
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            self.charge(1);
+            Ok(self.inner.next_u64())
+        }
+
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+            self.charge(dst.len().div_ceil(8));
+            self.inner.fill_bytes(dst);
+            Ok(())
+        }
     }
 
     #[test]

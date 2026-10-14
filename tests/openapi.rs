@@ -75,6 +75,76 @@ fn identical_openapi_documents_are_compatible() {
 }
 
 #[test]
+fn empty_response_content_matches_an_omitted_body() {
+    for status in ["200", "204", "404", "4XX", "default"] {
+        for referenced in [false, true] {
+            let response = json!({
+                "description": "No response representation",
+                "headers": {"X-Count": {"required": true, "schema": {"type": "integer"}}}
+            });
+            let mut omitted = spec(json!({"responses": {status: response.clone()}}));
+            let pointer = if referenced {
+                omitted["components"] = json!({"responses": {"Empty": response}});
+                omitted["paths"]["/pets"]["get"]["responses"][status] =
+                    json!({"$ref": "#/components/responses/Empty"});
+                "/components/responses/Empty".to_owned()
+            } else {
+                format!("/paths/~1pets/get/responses/{status}")
+            };
+            let mut empty = omitted.clone();
+            empty.pointer_mut(&pointer).unwrap()["content"] = json!({});
+            assert!(report(omitted.clone(), empty.clone()).is_compatible());
+            assert!(report(empty.clone(), omitted).is_compatible());
+
+            // The empty body does not suppress constraints on response headers.
+            let mut widened = empty.clone();
+            widened.pointer_mut(&pointer).unwrap()["headers"]["X-Count"]["schema"] =
+                json!({"type": ["integer", "string"]});
+            assert!(!report(empty, widened).is_compatible());
+        }
+    }
+}
+
+#[test]
+fn response_content_still_requires_a_map_and_valid_media_entries() {
+    for content in [
+        json!(null),
+        json!([]),
+        json!(""),
+        json!({"application/json": null}),
+    ] {
+        let raw = spec(json!({"responses": {"200": {
+            "description": "Invalid content",
+            "content": content
+        }}}));
+        let error = OpenApiDocument::from_json(&raw)
+            .expect_err("invalid response content remains invalid")
+            .to_string();
+        assert!(
+            error.contains("#/paths/~1pets/get/responses/200/content"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn empty_response_content_does_not_relax_parameter_or_header_content() {
+    let mut parameter = spec(get_operation());
+    parameter["paths"]["/pets"]["get"]["parameters"] = json!([{
+        "name":"filter", "in":"query", "content":{}
+    }]);
+    let mut header = spec(get_operation());
+    header["paths"]["/pets"]["get"]["responses"]["200"]["headers"] =
+        json!({"X-Filter":{"content":{}}});
+    for raw in [parameter, header] {
+        let error = OpenApiDocument::from_json(&raw)
+            .expect_err("parameters and headers require exactly one media type")
+            .to_string();
+        assert!(error.contains("exactly one media type"), "{error}");
+    }
+}
+
+#[test]
 fn adding_an_operation_is_compatible() {
     let old = spec(get_operation());
     let new = json!({

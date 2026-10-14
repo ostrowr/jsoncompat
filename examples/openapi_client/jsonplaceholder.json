@@ -1,0 +1,100 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "JSONPlaceholder posts smoke test",
+    "version": "1.0.0",
+    "description": "A maintained subset of https://jsonplaceholder.typicode.com/#guide for live protocol tests. This is a jsoncompat example contract, not an upstream-published specification. Writes are simulated and do not persist."
+  },
+  "servers": [{"url": "https://jsonplaceholder.typicode.com"}],
+  "paths": {
+    "/posts": {
+      "get": {
+        "operationId": "listPosts",
+        "parameters": [{"name": "userId", "in": "query", "schema": {"type": "integer", "minimum": 1}}],
+        "responses": {
+          "200": {
+            "description": "Posts matching the optional user filter.",
+            "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Post"}}}}
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPost",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NewPost"}}}
+        },
+        "responses": {
+          "201": {
+            "description": "The submitted post with a simulated ID; it is not stored.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Post"}}}
+          }
+        }
+      }
+    },
+    "/posts/{postId}": {
+      "parameters": [{"name": "postId", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1}}],
+      "get": {
+        "operationId": "getPost",
+        "responses": {
+          "200": {
+            "description": "The requested post.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Post"}}}
+          },
+          "404": {
+            "description": "No such post.",
+            "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false}}}
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchPost",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PostPatch"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "The simulated updated post; the stored post is unchanged.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Post"}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Post": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "minimum": 1},
+          "userId": {"type": "integer", "minimum": 1},
+          "title": {"type": "string"},
+          "body": {"type": "string"}
+        },
+        "required": ["id", "userId", "title", "body"],
+        "additionalProperties": false
+      },
+      "NewPost": {
+        "type": "object",
+        "properties": {
+          "userId": {"type": "integer", "minimum": 1},
+          "title": {"type": "string"},
+          "body": {"type": "string"}
+        },
+        "required": ["userId", "title", "body"],
+        "additionalProperties": false
+      },
+      "PostPatch": {
+        "type": "object",
+        "properties": {
+          "userId": {"type": "integer", "minimum": 1},
+          "title": {"type": "string"},
+          "body": {"type": "string"}
+        },
+        "minProperties": 1,
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -257,7 +257,7 @@ def main() -> None:
     json_wire = instance.serialize()
     yaml_wire = instance.serialize(format=SerializationFormat.YAML)
     msgpack_wire = instance.serialize(format=SerializationFormat.MSGPACK)
-    validator = validator_for(BenchEvent.__jsoncompat_schema__)
+    validator = validator_for((Path(__file__).parent / "benchmark_schemas/representative.json").read_text())
     assert instance.to_value() == PAYLOAD
     assert validator.is_valid_json(PAYLOAD_JSON)
     assert validator.is_valid_value(PAYLOAD)

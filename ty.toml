@@ -1,0 +1,14 @@
+[environment]
+python-version = "3.12"
+extra-paths = ["pybindings"]
+
+[src]
+include = [
+    "examples/dataclasses",
+    "examples/stamp",
+    "pybindings/jsoncompat",
+    "tests/fixtures/dataclasses",
+]
+
+[rules]
+all = "error"

@@ -10,7 +10,12 @@ Run [bootstrap.sh](bootstrap.sh) once to install the project dependencies, then 
 just check
 ```
 
-That is the full local validation gate. It runs the Rust checks and tests, the web checks, and the production website build.
+That is the full local validation gate. It runs the Rust checks and tests,
+Python type checking with pinned `ty`, the web checks, and the production
+website build. [ty.toml](ty.toml) checks the Python runtime, generated fixtures,
+and examples with all rules enabled. Generated-client integration tests also
+check inferred types and verify that invalid requests, response types, and
+cross-API calls are rejected.
 
 The full Rust/Python suite runs once with `--all-features`, including exact
 numeric-lexeme fixtures. Focused numeric and prepared-Python tests also check the
@@ -215,6 +220,18 @@ Key suites:
 - `tests/fuzz.rs` runs JSON Schema Test Suite fixtures through parsing, generation, canonicalization parity, and evaluator checks;
 - `tests/dataclasses_backcompat.rs`, `tests/dataclasses_fuzz.rs`, and `tests/dataclasses_stamp_backcompat.rs` keep generated Python models aligned with plain schemas, fuzz fixtures, and stamped writer/reader histories;
 - `schema/src/canonicalize/integration_tests.rs` and `schema/src/roundtrip_tests.rs` cover canonicalization and AST round-tripping.
+
+Both fuzz suites generate 1,000 values per supported fixture schema. To isolate
+the nested conditional/array case without reducing that coverage, run:
+
+```sh
+cargo test --test fuzz --test dataclasses_fuzz --locked -- --exact fixture::unevaluatedItems.json
+```
+
+The generator remembers exhausted intersection searches only within one candidate
+attempt, preventing nested retries from multiplying the same failed work. Its
+regression test bounds RNG work across fixed seeds instead of using a wall-clock
+deadline, so slower development machines exercise the same assertions as CI.
 
 Compatibility fixtures should stay small, synthetic, and net new. Do not add internal or production schemas to the public repository.
 

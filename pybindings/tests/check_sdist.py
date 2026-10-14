@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import venv
+from pathlib import Path
+
+from check_http_extras import check_http_extras
 
 
 def main() -> None:
@@ -51,9 +53,27 @@ def main() -> None:
                 "-m",
                 "pip",
                 "--isolated",
-                "install",
+                "wheel",
                 "--no-cache-dir",
-                f"{source}[msgpack,yaml]",
+                "--no-deps",
+                "--wheel-dir",
+                str(root / "wheels"),
+                str(source),
+            ],
+            cwd=root,
+            env=environment,
+            check=True,
+        )
+        (wheel,) = (root / "wheels").glob("jsoncompat-*.whl")
+        subprocess.run(
+            [
+                str(python),
+                "-I",
+                "-m",
+                "pip",
+                "--isolated",
+                "install",
+                f"{wheel}[msgpack,yaml]",
             ],
             cwd=root,
             env=environment,
@@ -65,6 +85,7 @@ def main() -> None:
             env=environment,
             check=True,
         )
+        check_http_extras(wheel)
 
 
 if __name__ == "__main__":

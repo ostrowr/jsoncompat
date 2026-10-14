@@ -1,0 +1,27 @@
+"""Run with: uv run --project pybindings --extra requests python examples/openapi_client/requests_client.py"""
+
+import requests
+from exercise import exercise
+from jsoncompat.http import bind
+from jsoncompat.http.requests import RequestsFetch, RequestsOptions
+from petstore.api import PetstoreAPI
+from petstore.operations.health import Health200, HealthRequest
+from server import serve
+
+
+def main() -> None:
+    with serve() as base_url, requests.Session() as session:
+        session.trust_env = False
+        session.headers["Authorization"] = "Bearer example-token"
+        client = bind(PetstoreAPI, fetch=RequestsFetch(session, base_url, timeout=10))
+        response = client.request(
+            HealthRequest(), transport=RequestsOptions(timeout=(1, 2))
+        )
+        assert response.headers.get("content-type") == "application/json; charset=utf-8"
+        assert isinstance(response.unwrap(), Health200)
+        exercise(client)
+    print("requests: all ten operations passed")
+
+
+if __name__ == "__main__":
+    main()

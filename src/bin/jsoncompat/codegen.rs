@@ -27,13 +27,17 @@ pub(crate) struct CodegenArgs {
     /// Generate a Python package from OpenAPI component schemas.
     #[arg(long, requires = "output")]
     openapi: bool,
+    /// Also generate NAMEAPI and typed HTTP request models for one shared client.
+    #[arg(long, requires = "openapi", value_name = "NAME")]
+    api: Option<String>,
     /// Select component schemas (dependencies are included). Defaults to all.
     #[arg(long = "component", requires = "openapi")]
     components: Vec<String>,
     /// Rename a component: COMPONENT=PythonName.
     #[arg(long, requires = "openapi")]
     rename: Vec<String>,
-    /// Target module size; connected references stay together even above it.
+    /// Internal compilation batch size for model-only packages; does not change
+    /// public resource/component boundaries. API packages use one build namespace.
     #[arg(long, default_value = "128")]
     models_per_module: std::num::NonZeroUsize,
     /// JSON SchemaOptions: offline resources and optional format assertions.
@@ -68,6 +72,7 @@ pub(crate) fn cmd(args: CodegenArgs) -> Result<()> {
             &args.rename,
             args.models_per_module,
             &options,
+            args.api.as_deref(),
         );
     }
     anyhow::ensure!(

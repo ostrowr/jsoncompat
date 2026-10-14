@@ -18,6 +18,12 @@ pub struct SchemaOptions {
 }
 
 pub(crate) fn prepare(raw: &Value, options: &SchemaOptions) -> Result<Value, AstError> {
+    // Without supplied dialect resources, assertion inheritance starts and
+    // stays false. Default/disabled format options cannot change any node.
+    // Dialect, keyword, and reference validation still run in SchemaDocument.
+    if options.resources.is_empty() && options.assert_formats != Some(true) {
+        return Ok(raw.clone());
+    }
     let mut root = prepare_node(raw, false, options)?;
     if options.resources.is_empty() {
         return Ok(root);
@@ -87,8 +93,17 @@ fn prepare_node(
     options: &SchemaOptions,
 ) -> Result<Value, AstError> {
     let mut result = schema.clone();
-    let Some(object) = result.as_object_mut() else {
-        return Ok(result);
+    prepare_node_in_place(&mut result, inherited, options)?;
+    Ok(result)
+}
+
+fn prepare_node_in_place(
+    schema: &mut Value,
+    inherited: bool,
+    options: &SchemaOptions,
+) -> Result<(), AstError> {
+    let Some(object) = schema.as_object_mut() else {
+        return Ok(());
     };
     let mut asserted = inherited;
     if let Some(uri) = object.get("$schema").and_then(Value::as_str) {
@@ -145,20 +160,25 @@ fn prepare_node(
     {
         object.insert(ASSERT_FORMAT.into(), format);
     }
-    for (suffix, child) in references::children(schema) {
-        let prepared = prepare_node(child, asserted, options)?;
-        if let Some(target) = result.pointer_mut(&format!("/{suffix}")) {
-            *target = prepared;
-        }
+    // Walk the one owned copy instead of cloning every subtree again at each
+    // depth. Use the same schema-child inventory as the reference resolver.
+    let children: Vec<_> = references::children(schema)
+        .into_iter()
+        .map(|(suffix, _)| suffix)
+        .collect();
+    for suffix in children {
+        let child = schema
+            .pointer_mut(&format!("/{suffix}"))
+            .expect("schema child");
+        prepare_node_in_place(child, asserted, options)?;
     }
-    Ok(result)
+    Ok(())
 }
 
 pub(crate) fn has_assertions(schema: &Value) -> bool {
     schema.get(ASSERT_FORMAT).is_some()
-        || references::children(schema)
-            .iter()
-            .any(|(suffix, child)| suffix != "contentSchema" && has_assertions(child))
+        || references::child_values(schema)
+            .any(|(keyword, child)| keyword != "contentSchema" && has_assertions(child))
 }
 
 pub(crate) fn configure(options: jsonschema::ValidationOptions) -> jsonschema::ValidationOptions {
@@ -178,5 +198,48 @@ impl<'i> jsonschema::Keyword<'i> for AssertedFormat {
     }
     fn validate(&self, instance: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
         self.0.validate(instance)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_options_match_the_complete_preparation_walk() {
+        let schemas = [
+            json!(true),
+            json!(false),
+            json!(42),
+            json!({"$schema":"https://example.test/custom", "$vocabulary":{
+                "https://json-schema.org/draft/2020-12/vocab/format-assertion":true
+            }, "type":"object", "properties":{
+                "email":{"type":"string", "format":"email"},
+                "nested":{"$schema":DRAFT, "items":{"format":"date"}}
+            }, "$defs":{"ref":{"$ref":"#/properties/email"}},
+                "contentSchema":{"format":"uuid"}, ASSERT_FORMAT:"ipv4"}),
+        ];
+        for assert_formats in [None, Some(false)] {
+            let options = SchemaOptions {
+                assert_formats,
+                ..Default::default()
+            };
+            for raw in &schemas {
+                assert_eq!(
+                    prepare(raw, &options).unwrap(),
+                    prepare_node(raw, false, &options).unwrap()
+                );
+            }
+        }
+        let raw = json!({"type":"object", "properties":{"email":{"format":"email"}}});
+        let options = SchemaOptions {
+            assert_formats: Some(true),
+            ..Default::default()
+        };
+        let prepared = prepare(&raw, &options).unwrap();
+        assert_eq!(
+            prepared["properties"]["email"][ASSERT_FORMAT],
+            json!("email")
+        );
     }
 }

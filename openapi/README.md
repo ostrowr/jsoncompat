@@ -28,6 +28,10 @@ For supported OpenAPI documents, jsoncompat checks:
 - removed operations;
 - supported local `#/components/...` references.
 
+A response with `content: {}` declares no body, just like a response that omits
+`content`. Its status and declared headers still participate in validation and
+compatibility checks.
+
 OpenAPI compatibility is directional by surface:
 
 - requests are checked in the deserializer direction, because a server should keep accepting requests it previously accepted;
@@ -85,3 +89,14 @@ schemas into readable Python declarations and private prepared companions.
 Use `from models import ComponentName`. See the
 [package build contract](../pybindings/README.md#openapi-model-packages) for
 selection, naming, incremental regeneration, lazy imports, and reference grouping.
+
+## Python HTTP requests
+
+`jsoncompat codegen --openapi api.json --api Service --output service`
+generates validated operation requests and responses with a nominal `ServiceAPI`
+identity. The shared Python client exposes `request(Request[ServiceAPI, R]) -> R`
+and rejects requests from other APIs. It prepares endpoint and field metadata
+once, then delegates HTTP I/O to a caller-owned fetch function. This uses the
+same operation resolution and component-schema graph as compatibility lowering.
+See the [Python runtime documentation](../pybindings/README.md#api-scoped-http-requests)
+and [aiohttp, HTTPX, and requests examples](../examples/openapi_client/README.md).

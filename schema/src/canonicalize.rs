@@ -18,8 +18,9 @@ use crate::schema_metadata::{
 };
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Number, Value};
+use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::{BitOr, BitOrAssign};
 
 type Result<T> = std::result::Result<T, CanonicalizeError>;
@@ -83,6 +84,9 @@ pub enum CanonicalizeError {
 struct CanonicalizationOptions<'a> {
     local_ref_targets: &'a BTreeSet<String>,
     preserve_evaluated_annotations: bool,
+    leaves: Option<&'a RefCell<HashMap<Vec<u8>, Value>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    parallel: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,7 +184,6 @@ impl CanonicalSchema {
         &self.value
     }
 
-    #[cfg(test)]
     pub(crate) fn into_value(self) -> Value {
         self.value
     }
@@ -196,12 +199,22 @@ impl AsRef<Value> for CanonicalSchema {
 /// lowering syntax sugar into explicit forms, preserving declaration metadata
 /// used by downstream codegen, and applying a deterministic key/value ordering.
 pub(crate) fn canonicalize_schema(schema: &Value) -> Result<CanonicalSchema> {
-    validate_schema_dialects(schema)?;
+    canonicalize_schema_with_optimizations(schema, true)
+}
 
+fn canonicalize_schema_with_optimizations(
+    schema: &Value,
+    optimized: bool,
+) -> Result<CanonicalSchema> {
     let local_ref_targets = collect_local_schema_refs(schema);
+    validate_schema_dialects_at_pointer(schema, "#", &local_ref_targets)?;
+    let leaves = RefCell::new(HashMap::new());
     let options = CanonicalizationOptions {
         local_ref_targets: &local_ref_targets,
         preserve_evaluated_annotations: contains_unevaluated_keyword(schema),
+        leaves: optimized.then_some(&leaves),
+        #[cfg(not(target_arch = "wasm32"))]
+        parallel: optimized,
     };
 
     Ok(CanonicalSchema {
@@ -343,6 +356,37 @@ fn canonicalize_schema_value(
     pointer: &str,
     options: CanonicalizationOptions<'_>,
 ) -> Result<Value> {
+    // Repeated scalar field schemas are common in large API namespaces. Their
+    // successful normalization is independent of location unless a local
+    // reference targets that location or one of its members. Keep exact keys,
+    // never cache failures, and share only within the same annotation context.
+    let key = schema.as_object().and_then(|object| {
+        (options.leaves.is_some()
+            && object.values().all(|v| match v {
+                Value::Object(_) => false,
+                Value::Array(values) => values.iter().all(|v| !v.is_object() && !v.is_array()),
+                _ => true,
+            })
+            && !preserve_unknown_keyword_at_pointer(pointer, options.local_ref_targets))
+        .then(|| serde_json::to_vec(schema).expect("JSON schema serialization"))
+    });
+    if let (Some(key), Some(leaves)) = (&key, options.leaves)
+        && let Some(canonical) = leaves.borrow().get(key)
+    {
+        return Ok(canonical.clone());
+    }
+    let canonical = canonicalize_schema_value_uncached(schema, pointer, options)?;
+    if let (Some(key), Some(leaves)) = (key, options.leaves) {
+        leaves.borrow_mut().insert(key, canonical.clone());
+    }
+    Ok(canonical)
+}
+
+fn canonicalize_schema_value_uncached(
+    schema: &Value,
+    pointer: &str,
+    options: CanonicalizationOptions<'_>,
+) -> Result<Value> {
     match schema {
         Value::Bool(_) => Ok(schema.clone()),
         Value::Object(obj) => canonicalize_schema_object(obj, pointer, options),
@@ -360,6 +404,34 @@ fn canonicalize_schema_object(
 ) -> Result<Value> {
     let mut current = canonicalize_schema_members(obj, pointer, options)?;
 
+    // A namespace (or plain optional-property object) has no interacting
+    // constraints to rewrite. Its children are already fully normalized. The
+    // only applicable rewrite fills the implicit object constraints; avoid
+    // copying its entire definition graph for two fixed-point passes.
+    if options.leaves.is_some()
+        && let Some(object) = current.as_object_mut()
+        && object.get("type").and_then(Value::as_str) == Some("object")
+        && object
+            .get("minProperties")
+            .is_none_or(|value| value.as_u64() == Some(0))
+        && object.keys().all(|key| {
+            matches!(
+                key.as_str(),
+                "$schema"
+                    | "$defs"
+                    | "definitions"
+                    | "type"
+                    | "properties"
+                    | "additionalProperties"
+                    | "minProperties"
+                    | JSONCOMPAT_METADATA_KEY
+            )
+        })
+    {
+        fill_implicit_constraints(object, options.preserve_evaluated_annotations);
+        return Ok(Value::Object(sorted_object(std::mem::take(object))));
+    }
+
     for _ in 0..MAX_PASSES {
         let next = rewrite_schema_object(&current, pointer, options)?;
         if next == current {
@@ -369,7 +441,9 @@ fn canonicalize_schema_object(
             });
         }
         current = match next {
-            Value::Object(obj) => canonicalize_schema_members(&obj, pointer, options)?,
+            Value::Object(obj) => {
+                recanonicalize_schema_members(obj, pointer, options, current.as_object())?
+            }
             Value::Bool(_) => next,
             _ => {
                 return Err(CanonicalizeError::InvalidRewriteOutput {
@@ -393,28 +467,48 @@ fn canonicalize_schema_members(
 ) -> Result<Value> {
     let mut canonical = Map::new();
     for (key, value) in obj {
-        if should_strip_keyword(key) {
-            continue;
+        if let Some(value) = canonicalize_schema_member(key, value, pointer, options)? {
+            canonical.insert(key.clone(), value);
         }
-
-        if !is_known_keyword(key) {
-            let pointer = join_pointer(pointer, key);
-            if !preserve_unknown_keyword_at_pointer(&pointer, options.local_ref_targets) {
-                continue;
-            }
-
-            canonical.insert(
-                key.clone(),
-                canonicalize_unknown_keyword_value(value, &pointer, options)?,
-            );
-            continue;
-        }
-
-        let pointer = join_pointer(pointer, key);
-        let value = canonicalize_keyword_value(key, value, &pointer, options)?;
-        canonical.insert(key.clone(), value);
     }
+    Ok(Value::Object(sorted_object(canonical)))
+}
 
+fn canonicalize_schema_member(
+    key: &str,
+    value: &Value,
+    pointer: &str,
+    options: CanonicalizationOptions<'_>,
+) -> Result<Option<Value>> {
+    if should_strip_keyword(key) {
+        return Ok(None);
+    }
+    let pointer = join_pointer(pointer, key);
+    if !is_known_keyword(key) {
+        if !preserve_unknown_keyword_at_pointer(&pointer, options.local_ref_targets) {
+            return Ok(None);
+        }
+        return canonicalize_unknown_keyword_value(value, &pointer, options).map(Some);
+    }
+    canonicalize_keyword_value(key, value, &pointer, options).map(Some)
+}
+
+fn recanonicalize_schema_members(
+    obj: Map<String, Value>,
+    pointer: &str,
+    options: CanonicalizationOptions<'_>,
+    previous: Option<&Map<String, Value>>,
+) -> Result<Value> {
+    let mut canonical = Map::new();
+    for (key, value) in obj {
+        // The previous pass already normalized unchanged members at the same
+        // location. Move their trees instead of allocating another deep copy.
+        if previous.and_then(|members| members.get(&key)) == Some(&value) {
+            canonical.insert(key, value);
+        } else if let Some(value) = canonicalize_schema_member(&key, &value, pointer, options)? {
+            canonical.insert(key, value);
+        }
+    }
     Ok(Value::Object(sorted_object(canonical)))
 }
 
@@ -457,6 +551,13 @@ fn canonicalize_keyword_value(
             let entries = value
                 .as_object()
                 .ok_or_else(|| invalid_keyword_type(pointer, key, "an object", value))?;
+            #[cfg(not(target_arch = "wasm32"))]
+            if options.parallel
+                && matches!(pointer, "#/$defs" | "#/definitions" | "#/properties")
+                && entries.len() >= 128
+            {
+                return canonicalize_namespace(entries, pointer, options);
+            }
             let mut canonical = Map::new();
             for (name, child) in entries {
                 canonical.insert(
@@ -567,6 +668,66 @@ fn canonicalize_keyword_value(
         }
         _ => Ok(canonicalize_json(value)),
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn canonicalize_namespace(
+    entries: &Map<String, Value>,
+    pointer: &str,
+    options: CanonicalizationOptions<'_>,
+) -> Result<Value> {
+    let workers = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(8);
+    let entries: Vec<_> = entries.iter().collect();
+    let local_ref_targets = options.local_ref_targets;
+    let preserve_evaluated_annotations = options.preserve_evaluated_annotations;
+    let cache = options.leaves.is_some();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let entries = &entries;
+                let next = &next;
+                scope.spawn(move || {
+                    let leaves = RefCell::new(HashMap::new());
+                    let options = CanonicalizationOptions {
+                        local_ref_targets,
+                        preserve_evaluated_annotations,
+                        leaves: cache.then_some(&leaves),
+                        parallel: false,
+                    };
+                    let mut results = Vec::new();
+                    // Definition sizes vary widely. Take the next definition
+                    // when ready rather than leaving one worker with all the
+                    // large schemas at the end of an alphabetic namespace.
+                    loop {
+                        let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some((name, child)) = entries.get(index) else {
+                            break;
+                        };
+                        results.push((
+                            index,
+                            canonicalize_schema_value(child, &join_pointer(pointer, name), options),
+                        ));
+                    }
+                    results
+                })
+            })
+            .collect();
+        let mut results: Vec<_> = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap())
+            .collect();
+        results.sort_unstable_by_key(|(index, _)| *index);
+        let mut canonical = Map::new();
+        // Consume in source order, including failures: scheduling cannot
+        // change the first diagnostic or any generated bytes.
+        for (index, result) in results {
+            canonical.insert(entries[index].0.clone(), result?);
+        }
+        Ok(Value::Object(sorted_object(canonical)))
+    })
 }
 
 fn canonicalize_unknown_keyword_value(
@@ -1210,11 +1371,8 @@ fn infer_required_properties(schema: &mut Map<String, Value>, pointer: &str) -> 
         return Ok(());
     };
 
-    let mut properties = schema
-        .get("properties")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
+    let properties = schema.get("properties").and_then(Value::as_object);
+    let mut missing = Vec::new();
 
     let required_pointer = join_pointer(pointer, "required");
     for (index, name) in required.iter().enumerate() {
@@ -1227,16 +1385,19 @@ fn infer_required_properties(schema: &mut Map<String, Value>, pointer: &str) -> 
                 name,
             ));
         };
-        properties
-            .entry(name.to_owned())
-            .or_insert(Value::Bool(true));
+        if properties.is_none_or(|properties| !properties.contains_key(name)) {
+            missing.push(name.to_owned());
+        }
     }
 
-    if !properties.is_empty() {
-        schema.insert(
-            "properties".to_owned(),
-            Value::Object(sorted_object(properties)),
-        );
+    if !missing.is_empty() {
+        let properties = schema
+            .entry("properties")
+            .or_insert_with(|| Value::Object(Map::new()))
+            .as_object_mut()
+            .expect("canonical properties are an object");
+        properties.extend(missing.into_iter().map(|name| (name, Value::Bool(true))));
+        properties.sort_keys();
     }
     Ok(())
 }
@@ -2113,10 +2274,10 @@ fn compare_json(left: &Value, right: &Value) -> Ordering {
     left.cmp(&right)
 }
 
-fn sorted_object(entries: Map<String, Value>) -> Map<String, Value> {
-    let mut items = entries.into_iter().collect::<Vec<_>>();
-    items.sort_by(|(left, _), (right, _)| left.cmp(right));
-    items.into_iter().collect()
+fn sorted_object(mut entries: Map<String, Value>) -> Map<String, Value> {
+    // BTreeMap is already sorted; preserve_order builds sort in place.
+    entries.sort_keys();
+    entries
 }
 
 fn join_pointer(base: &str, token: &str) -> String {

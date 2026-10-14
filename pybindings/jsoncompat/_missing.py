@@ -2,7 +2,7 @@
 
 import sys
 from enum import Enum
-from typing import Final, NoReturn, final
+from typing import Final, NoReturn, final, override
 
 if sys.version_info >= (3, 13):
     from typing import TypeIs
@@ -16,9 +16,11 @@ class MissingType(Enum):
 
     MISSING = "MISSING"
 
+    @override
     def __repr__(self) -> str:
         return "MISSING"
 
+    @override
     def __str__(self) -> str:
         return "MISSING"
 

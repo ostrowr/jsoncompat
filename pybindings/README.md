@@ -1,6 +1,6 @@
 # jsoncompat
 
-Python bindings for checking compatibility of evolving JSON Schemas and generating example values.
+Check JSON Schema compatibility, generate example values, and use typed Python models and OpenAPI clients. Start with the [client examples](../examples/openapi_client/README.md) or the API reference below.
 
 ## Installation
 
@@ -19,7 +19,7 @@ pip install --no-binary=jsoncompat jsoncompat
 
 Source builds require Python 3.12 or newer, a current stable Rust toolchain,
 and the platform's native linker/build tools. Network access is required to
-fetch the build backend, Rust crates, and the pinned Git validator dependency.
+fetch the build backend and Rust crates.
 The archive includes the local Rust workspace dependencies and Python sources;
 you do not need a repository checkout.
 
@@ -159,11 +159,11 @@ conversion optimizations in the same command that emits Python:
 jsoncompat codegen --target dataclasses schema.json --output models.py
 ```
 
-The public `models.py` imports a private `_models_generated.py` companion at the
-top, followed by the root model and readable field declarations. A binding call
-after the classes connects them to the companion's constructor signatures,
-schemas, and precomputed runtime programs. Imports support both package and
-top-level modules.
+The public `models.py` contains readable field declarations and typed constructors.
+A binding call after the classes connects them to the private
+`_models_generated.py` companion's precomputed runtime programs. Constructors
+are declared in their classes rather than installed and patched during import.
+Imports support both package and top-level modules.
 
 Regeneration replaces the same two filenames. Generate them during your build
 and deploy both files together; the pair is a single build artifact. Each file
@@ -226,7 +226,7 @@ subclass with `kind`, `instance_path`, `schema_path`, and `keyword`. Paths are
 RFC 6901 pointers; the schema pointer refers to the linked schema used by the
 prepared program. `kind="resource_limit"` distinguishes evaluation budgets from
 ordinary constraint failures. Diagnostics traverse the prebuilt program only
-on failure; they do not expand the stored schema or compile a validator.
+on failure; they do not need source schema JSON or compile a validator.
 
 ```python
 try:
@@ -331,11 +331,13 @@ Earlier cached-shard measurements are not evidence of unique-package startup and
 have been removed from this guide. All steady-state benchmarks share
 `benchmark_harness.py` for warmup, rotating order, GC policy, and timing samples.
 
-`Model.__jsoncompat_schema__` decompresses and caches the original source only
-on explicit access; imports, first round trips, and validation errors do not
-expand it. Dataclass reflection similarly materializes full field metadata only
-when requested. Generation removes compilation from startup; creating and
-connecting runtime objects still costs time and memory.
+Generated artifacts contain prepared validation programs and conversion plans;
+they do not retain source schema JSON or expose `Model.__jsoncompat_schema__`.
+Keep the input JSON Schema or OpenAPI document separately for inspection.
+Regenerate older artifacts with the matching generator before using this runtime.
+Dataclass reflection materializes full field metadata only when requested.
+Generation removes compilation from startup; creating and connecting runtime
+objects still costs time and memory.
 
 Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and raises `ValueError` for invalid JSON, invalid schemas, or hard unsupported compatibility cases.
 
@@ -343,7 +345,7 @@ Schemas are passed as JSON strings. `check_compat` returns a boolean verdict and
 ## OpenAPI model packages
 
 ```bash
-jsoncompat codegen --openapi openapi.json --output my_models --models-per-module 128
+jsoncompat codegen --openapi openapi.json --output my_models
 python -m compileall -q my_models
 ```
 
@@ -351,25 +353,707 @@ python -m compileall -q my_models
 from my_models import Order, Customer
 ```
 
-The package exports component models by name. `__init__.pyi` makes those exports
-visible to type checkers. Public `models_0000.py` modules contain readable class
-and field declarations; private companions contain the prepared implementation.
-Package import loads only the export index. Accessing a model loads its module
-and binds all models in that module. No model compilation moves to first access.
+Each named component owns a readable module, including its nested types:
+
+```python
+from my_models.models.order import Order
+from my_models.models.customer import Customer
+```
+
+The package root and `models` package also provide lazy convenience exports;
+all import paths return the same classes. Their `.pyi` files expose these names
+to type checkers. Direct imports load the component's directed dependencies,
+without loading other components that merely reference it. Only actual recursive
+module cycles share a private implementation under `_cycles/`. Canonical helpers
+without a named component owner live in `models/_shared.py`.
+
+With `--api`, operations share a resource module containing their requests,
+responses, nested body types, aliases, and endpoint metadata:
+
+```python
+from petstore.api import PetstoreAPI, PetstoreAsyncClient
+from petstore.operations.pets import GetPetRequest, GetPet404
+from petstore.models.pet import Pet
+```
+
+The resource is the prefix before `/` in `operationId` (for example,
+`issues/get` becomes `operations/issues.py`). Otherwise it is the first literal
+URL path segment, or `root` when none exists. Named component boundaries and
+resource boundaries do not depend on file sizes. Long or colliding names receive
+a digest for portability across case-insensitive filesystems.
+
+Empty response-header records share one generated closed-object type. Existing
+names such as `GetPet404Headers` remain aliases to that type. Header records with
+any declared fields remain distinct. Validation still rejects fields in an empty
+typed record; actual HTTP headers, including undeclared names and repeated values,
+remain available on the response envelope's `raw_headers` and buffered response's
+`headers`.
+
+Generation prepares each shared definition graph once, while preserving every
+model's own validation root. Scope-sensitive schemas retain the standalone
+compiler's reference handling. Generated files contain prepared validation
+programs, without stored or compressed copies of the source schema.
+
+OpenAPI validation also retains proof that the component definitions were checked.
+Generation reuses that proof for unchanged definitions and validates new operation
+wrappers separately. Changed definitions, resource scopes, dynamic references,
+and unsupported reference shapes use the full validation path. This changes no
+model constraints, instance validation, or error reporting.
+
+Each model module contains its prepared validation program and constructor.
+Source schema JSON is not emitted, so there are no schema-data modules to load
+or compressed schema payloads to expand. Imports and first use do not compile
+schemas. Keep the source OpenAPI document alongside your build inputs.
+
+See the [GitHub scale experiment](benchmarks/github-openapi.md) for real-world
+file sizes, generation/import costs, strict type checking, and current limits.
+The [public-spec corpus](benchmarks/public-openapi.md) also checks declared
+errors, non-object bodies, schema examples, and generated-source readability.
 
 `--component Order` selects a component and its dependencies; repeat the flag
 for several roots. `--rename Order=Purchase` changes a public class name.
-Name collisions fail with a diagnostic. Reference-connected models stay together,
-including mutually recursive models, so class identities do not depend on import
-order. A connected group may exceed `--models-per-module`. Resource identifiers
-and anchor references conservatively keep all components in one group to retain
-scope. This command emits schema models, not an HTTP client or server.
+Conflicting explicit names fail with a diagnostic. Generated HTTP wrappers,
+aliases, and anonymous helpers use a numeric suffix when their natural name is
+already occupied, preserving the named component. A single-reference `allOf`
+with annotation-only siblings retains the referenced model's Python type and
+identity; its original validation constraints remain active.
+`--models-per-module` retains its
+legacy spelling but controls internal compilation batches for model-only output,
+not public modules or runtime imports. API generation uses one shared build
+namespace so resource-owned declarations and header aliases are consistent.
+Resource scopes stay intact during compilation. Without `--api`, only component
+models are emitted. `api.py` exports the API identity and client types and prepares
+the complete operation registry on import. Direct resource imports do not prepare
+the complete API; binding the API still does. Regeneration migrates older managed
+packages to this layout.
 
 An output manifest fingerprints the compiler, schemas, options, and managed
 files. Unchanged groups reuse their artifacts; edited schemas rebuild affected
-groups. Regeneration removes obsolete managed files, preserves unrelated files,
-and refuses to overwrite unmanaged files. Deploy the complete directory as one
+groups. Shared data constants are retained until their last compilation batch stops
+using them; missing or edited data files rebuild their affected batches. Regeneration removes obsolete
+managed files, preserves unrelated files, and refuses to overwrite unmanaged
+files. Deploy the complete directory as one
 build artifact; generation is not a live-reload or concurrent-writer protocol.
+Generation completes and checks all destination paths before publishing files.
+New subdirectories are moved into place together; existing files are replaced
+atomically. The directory update is not a crash-consistent transaction. A later
+generation detects missing or changed managed files through their digests and
+rebuilds the affected groups.
+
+## API-scoped HTTP requests
+
+```sh
+jsoncompat codegen --openapi openapi.json --api Petstore --output petstore
+```
+
+Install an HTTP integration, for example `pip install 'jsoncompat[aiohttp]'`,
+and bind a session you own:
+
+```python
+import asyncio
+import aiohttp
+from jsoncompat.http import bind_async
+from jsoncompat.http.aiohttp import AiohttpFetch
+from petstore import GetPetRequest, PetstoreAPI
+
+async def main() -> None:
+    async with aiohttp.ClientSession() as session:
+        client = bind_async(
+            PetstoreAPI,
+            fetch=AiohttpFetch(session, "https://example.com"),
+        )
+        response = await client.request(GetPetRequest(pet_id="p_123"))
+        pet = response.unwrap()  # GetPet200; parsing happens here.
+        print(pet.body.name)
+
+asyncio.run(main())
+```
+
+Code generation validates and prepares all operation dispatch plans. Importing
+`PetstoreAPI` binds them to the generated classes without resolving annotations.
+No session or network access is needed. The plans live with the API class;
+`bind` and `bind_async` reuse them when attaching a fetcher. Import your API
+during application startup to keep module loading out of request handling.
+Importing the package alone or an individual model remains lazy.
+
+### Passing clients to your code
+
+The package exports `PetstoreClient` and `PetstoreAsyncClient` for annotations:
+
+```python
+from petstore import GetPet200, GetPetRequest, PetstoreAsyncClient
+
+async def get_pet(client: PetstoreAsyncClient, pet_id: str) -> GetPet200:
+    return (await client.request(GetPetRequest(pet_id=pet_id))).unwrap()
+```
+
+This helper accepts aiohttp, async HTTPX, or a correctly typed fake. Request and
+response types remain precise; requests from another API are rejected.
+Use `PetstoreClient` for synchronous helpers.
+
+Both aliases have an optional transport-options type parameter, defaulting to
+`Never`. The default permits omitting `transport=` or passing `None`; shared
+`options=RequestOptions(...)` overrides remain available. If a helper needs
+native options, declare them explicitly:
+
+```python
+from jsoncompat.http.aiohttp import AiohttpOptions
+
+async def get_pet_quickly(
+    client: PetstoreAsyncClient[AiohttpOptions], pet_id: str,
+) -> GetPet200:
+    response = await client.request(
+        GetPetRequest(pet_id=pet_id),
+        transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
+    )
+    return response.unwrap()
+```
+
+Binding still infers the full transport type from the fetcher. A helper's
+annotation only controls which options that helper can supply. Generated aliases
+use `typing_extensions` to support defaults on Python 3.12.
+
+The aliases refer to the shared structural protocols
+`Client[PetstoreAPI, Options]` and `AsyncClient[PetstoreAPI, Options]`.
+Each generated API has a distinct identity, even when two packages contain the
+same spec. Static typing and runtime registration checks enforce that boundary.
+Generated packages include a `py.typed` marker; include the entire package when
+publishing it. Sessions, authentication, retries, and cleanup remain yours.
+
+### Working with responses and results
+
+`request()` returns `ClientResponse[Success, Error]`. The transport buffers and
+releases the HTTP response before returning; jsoncompat parses and validates the
+body only when you call `.result()` or `.unwrap()`. No second `await`, mode flag,
+or response context manager is needed. The caller still owns the session.
+
+Use `.unwrap()` for the usual success path and `.result()` when you want to
+branch on `Ok`/`Err`. Properties never trigger parsing:
+
+| Access | What happens to the response body? |
+| --- | --- |
+| `request()` / `await request()` | Buffer decompressed bytes and release the HTTP response; no JSON parsing or model validation. |
+| `response.status`, `.headers`, `.content`, `.raw` | Read buffered data without parsing. |
+| `response.result()` | Decode and validate once; return cached `Ok`/`Err` or raise a cached contract failure. |
+| `response.unwrap()` | Use the same cached decoding; return the success envelope or raise. |
+| `result.value` / `result.error` after narrowing | Read an already materialized field; no implicit parsing. |
+| `unexpected.status`, `.headers`, `.body` | Read preserved metadata and bytes without parsing. |
+| `unexpected.text()` / `.json()` | Explicitly decode text or JSON without schema validation. |
+
+Both `.result()` and `.unwrap()` are synchronous even with an async client:
+network I/O has already finished. They share one cached outcome. The diagnostic
+`.text()` and `.json()` helpers perform a conversion on each call; save their
+return value if you want to reuse it.
+
+```python
+from jsoncompat.http import Ok, Err, UnexpectedResponse
+from petstore import GetPetRequest, GetPet404
+
+response = client.request(GetPetRequest(pet_id="p_123"))
+print(response.status, response.headers.get("ETag"))  # No model parsing.
+print(response.headers.get_all("Set-Cookie"))
+# response.content contains buffered bytes; response.raw is the original RawResponse.
+
+match response.result():  # GetPetResult; decode and validate now.
+    case Ok(value=pet):
+        print(pet.body.name, pet.headers.etag)  # GetPet200.
+    case Err(error=GetPet404(body=problem)):
+        print(problem.message)
+    case Err(error=UnexpectedResponse(status=503) as error):
+        print(error.text(), error.headers.get("Retry-After"))
+    case result:
+        result.unwrap()  # Raise for other non-2xx responses, including 304.
+```
+
+For the usual success path, write
+`pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()` or
+`pet = (await client.request(GetPetRequest(pet_id="p_123"))).unwrap()`.
+This returns the generated success **envelope**, with its typed `.body`,
+`.headers`, `.status`, and `.raw_headers`. Before decoding, `response.headers` is
+an immutable `ResponseHeaders` mapping with case-insensitive lookup. Lookup and
+`.get()` return the first value; `.get_all()` returns every matching value as a
+tuple. `.raw` preserves original header names, ordering, and duplicate pairs.
+These raw headers are distinct from the generated, validated header model.
+
+`.result()` returns `Result[Success, Error]`, an alias for
+`Ok[Success] | Err[Error | UnexpectedResponse]`. `PreparedRequest.decode(raw)`
+returns that Result directly and decodes immediately. Immutable `Ok` and `Err`
+wrappers support `isinstance` and Python pattern matching.
+
+Both response methods share one cached decoding outcome, including contract
+failures. Repeated calls never reparse, resend, retry, or copy the decoded model;
+concurrent calls on one response also decode once. `Ok.unwrap()` returns its
+exact `value`. `Err.unwrap()` raises `HTTPStatusError`, whose `error` is the same
+object as `Err.error` and whose `response` is the original buffered `RawResponse`.
+Exception handlers can use `isinstance` to narrow `error`; they do not infer an
+operation-specific error type.
+
+| Response | `.result()` behavior |
+| --- | --- |
+| Declared, valid 200–299 | `Ok(success_model)` |
+| Declared, valid non-2xx, including redirects and 304 | `Err(error_model)` |
+| Undeclared non-2xx | `Err(UnexpectedResponse(...))` |
+| Non-2xx with invalid JSON, media type, body, or declared headers | `Err(UnexpectedResponse(...))` |
+| Undeclared or invalid 2xx | Raise `ResponseError` |
+
+`UnexpectedResponse` exposes `.status`, `.headers`, `.body` (bytes), and the
+original `.response`. `.decode_error` retains the `ResponseError` and its original
+cause. `.text(encoding="utf-8", errors="replace")` decodes diagnostic text;
+`.json()` explicitly parses JSON into `JsonValue`, regardless of Content-Type,
+and raises `ValueError` for invalid JSON or UTF-8. Neither helper guesses a model
+or discards the original bytes. Invalid error bodies never become instances of
+declared models. A declared range or default is decoded before using the fallback.
+A failed exact match does not retry a less-specific range or default.
+
+A malformed success remains a contract failure: catch `ResponseError` around
+`.result()` or `.unwrap()` and inspect `.response`. The response's raw metadata
+and bytes remain accessible before and after the failure. Invalid fetcher output
+(such as a non-integer status or a non-bytes body) is also a contract failure,
+not an `UnexpectedResponse`. Network errors, timeouts, and cancellation propagate
+from `request()` without being wrapped. Lazy parsing does **not** skip downloading
+the body; streaming and headers-only requests are separate future capabilities.
+
+The generator exports `GetPetSuccess`, `GetPetError`, and
+`GetPetResult = Result[GetPetSuccess, GetPetError]`. `GetPetResponse` remains the
+union of declared decoded models, without wrappers. Selection uses exact status,
+then range, then `default`. A default model appears in both success and error
+aliases if it can match both; `default` is not inherently an error. An unreachable
+declared side is `Never`; `Result[S, Never]` still includes unexpected errors.
+Multiple legitimate success variants still need narrowing after `unwrap()`.
+
+Regenerate API packages created before the Result interface: request bases carry
+`Request[API, Success, Error]`. Custom clients return `ClientResponse[S, E]`;
+construct one from `raw` and `prepare(API, request).decode`. Fetchers still return
+`RawResponse` and do not need to implement lazy decoding or manage response objects.
+
+### Inspecting unexpected responses
+
+An unexpected error keeps the server's useful details even when the spec omits
+that status or describes a different body. With an existing async client:
+
+```python
+from jsoncompat.http import Err, UnexpectedResponse
+from petstore import GetPetRequest
+
+response = await client.request(GetPetRequest(pet_id="unavailable"))
+match response.result():  # Attempt contract decoding explicitly.
+    case Err(error=UnexpectedResponse() as error):
+        print(error.status)                      # 503
+        print(error.headers.get("Retry-After"))   # "10"
+        print(error.body)                        # Original buffered bytes.
+        print(error.text())                      # Decode diagnostic text.
+        try:
+            details = error.json()               # Explicit JSON parsing.
+        except ValueError:
+            print("Non-JSON error:", error.text())
+        else:
+            print("JSON error details:", details)
+        print(error.decode_error)                # Why typed decoding failed.
+    case result:
+        pet = result.unwrap()                    # Other errors still raise.
+        print(pet.body.name)
+```
+
+`.json()` returns `JsonValue`, which can be an object, array, scalar, or null;
+narrow it before accessing object fields. HTML gateway errors are easy to read
+with `.text()`, and `.body` always retains the exact buffered bytes even when
+text decoding replaces invalid characters or JSON parsing fails. Duplicate
+headers remain available through `.headers.get_all(name)` and `.headers.raw`.
+A malformed declared 404 also becomes `UnexpectedResponse`; match `GetPet404`
+only when you need its validated, typed body.
+
+The normal `.unwrap()` path retains these details on its exception too:
+
+```python
+from jsoncompat.http import HTTPStatusError
+
+try:
+    pet = (await client.request(GetPetRequest(pet_id="unavailable"))).unwrap()
+except HTTPStatusError as exc:
+    print(exc.response.status, exc.response.body)  # No type narrowing needed.
+    if isinstance(exc.error, UnexpectedResponse):
+        print(exc.error.headers.get("Retry-After"), exc.error.text())
+```
+
+Malformed successes instead raise `ResponseError` when `.result()` or
+`.unwrap()` is called, with the original bytes at `exc.response.body`.
+The [runnable unexpected-response example](../examples/openapi_client/unexpected_responses.py)
+demonstrates a JSON 503, an HTML 502, a schema-invalid 404, an unwrapped error,
+and an invalid 200. The aiohttp, requests, and sync/async HTTPX examples all
+exercise those cases against the local server.
+
+### The fetcher contract
+
+To bind to a generated API, implement **one callable** matching `Fetch[Options]`
+or `AsyncFetch[Options]`, exported by `jsoncompat.http`. These are the complete
+protocols, using Python 3.12 syntax:
+
+```python
+from typing import Protocol
+from jsoncompat.http import EncodedRequest, RawResponse
+
+class Fetch[Options](Protocol):
+    def __call__(
+        self, request: EncodedRequest, /, *, transport: Options | None = None
+    ) -> RawResponse: ...
+
+class AsyncFetch[Options](Protocol):
+    async def __call__(
+        self, request: EncodedRequest, /, *, transport: Options | None = None
+    ) -> RawResponse: ...
+```
+
+A function, closure, or callable instance works; no inheritance or registration
+is required. Use `bind(MyAPI, fetch=my_fetch)` or
+`bind_async(MyAPI, fetch=my_async_fetch)`. The generated API class supplies the
+operation registry; the fetcher does not need to inspect request models or
+implement operation methods.
+
+The binder calls `fetch(encoded_request, transport=transport)` exactly once per
+valid call, always passing the keyword, including `None` when omitted. The
+fetcher must accept that keyword with a default. A fetcher with no per-call
+controls declares `transport: None = None` and explicitly annotates its bound
+client with the generated `MyClient` (or `MyAsyncClient`) alias. This supplies
+the option type when there is no concrete type to infer from the callback.
+A callback accepting only `request` does not satisfy the contract.
+
+The adapter's responsibilities are:
+
+- Join its configured base URL with `request.target`, an already encoded
+  origin-relative path and query. Preserve any base URL prefix and existing
+  percent escapes; do not re-encode the target or pass it as separate `params`.
+- Send `request.method`, `request.headers` (ordered string pairs), and
+  `request.body` (`bytes | None`) without serializing again. `None` means an
+  omitted body. Preserve repeated header pairs, or reject them explicitly if
+  the HTTP library cannot represent them.
+- Return `RawResponse(status, headers, body)` with an integer HTTP status,
+  all response header pairs including duplicates, and fully buffered bytes
+  after HTTP decompression but before JSON/text parsing. Consume and release
+  the response according to the HTTP library's lifetime rules.
+- Return every HTTP status, including undeclared errors, for the binder to decode; do not call
+  `raise_for_status`. Choose a redirect policy deliberately: following redirects
+  hides the intermediate responses from the generated contract. Our examples
+  disable redirects.
+- Own sessions, pools, credentials, timeout defaults, retries, and cleanup.
+  Propagate transport errors and async cancellation. The binder does not retry,
+  catch a fetcher's `TypeError` to guess its signature, or close sessions.
+
+`request.operation` exposes endpoint, server, and security metadata if the
+adapter needs it. The binder does not choose servers or implement authentication.
+The adapter interprets `transport=None` as its defaults; otherwise it receives
+the exact supplied object. jsoncompat does not copy, inspect, or runtime-validate
+transport options. Their type is checked statically, and the adapter owns any
+runtime validation. Prefer immutable option values when sharing concurrent calls.
+
+The resulting client has this structural interface (the async version uses
+`async def` with the same parameters and result annotation):
+
+```python
+from typing import Protocol
+from jsoncompat.http import API, ClientResponse, Request, RequestOptions
+
+class Client[A: API, Options](Protocol):
+    def request[S, E](
+        self,
+        request: Request[A, S, E],
+        /,
+        *,
+        options: RequestOptions | None = None,
+        transport: Options | None = None,
+    ) -> ClientResponse[S, E]: ...
+```
+
+Implement that method directly for a custom client or test double. At a boundary
+that needs native controls, annotate `PetstoreClient[MyOptions]` or
+`PetstoreAsyncClient[MyOptions]`. For ordinary helpers, use `PetstoreClient` or
+`PetstoreAsyncClient`. Their default of `Never` accepts clients with any concrete
+option type but only permits `transport=None` or omission. The underlying
+`Client[A, Options]` / `AsyncClient[A, Options]` protocols still require both
+parameters: the API is invariant and transport options are contravariant.
+
+### Generated metadata and dispatch
+
+The generator emits `Annotated` field metadata (`Path`, `Query`, `Header`,
+`Cookie`, `Body`) in public resource modules alongside request/response classes,
+response aliases, and HTTP endpoint metadata. Related declarations are grouped
+by operation, with method/path, summaries, and descriptions included as docstrings.
+Constructors have explicit typed signatures, and equivalent literal alternatives
+share one `Literal[...]` annotation. Public declarations and metadata precede a
+marked private footer containing compact prepared programs and binding tables.
+Identical programs within a module share one emitted value. Modules reference
+the shared missing sentinel directly instead of defining a local alias.
+
+Fixed JSON request bodies serialize directly from native model slots to bytes.
+JSON responses parse into the generated envelope without first constructing an
+intermediate Python body tree. Both paths validate the complete envelope. Cases
+that require the existing value conversion, including precision-sensitive
+numbers, use that path to preserve acceptance and diagnostics. Parameter order,
+typed headers, omitted fields, and explicit conversion overrides retain their
+existing behavior. This changes the work inside encoding and explicit decoding;
+`request()` still buffers bytes, and `.result()` or `.unwrap()` triggers parsing.
+See the [readability and HTTP conversion measurements](benchmarks/github-readable-clients.md)
+for GitHub output, import costs, checked body conversion, and correctness checks.
+
+`api.py` re-exports the operation aliases,
+collects the operation registry, and exports the client types. Small and large
+APIs use this same layout; adding an operation updates its resource module.
+Component and resource boundaries stay independent of spec size. `_api.py` holds the
+API identity separately so request/response model imports remain acyclic.
+Code generation also validates HTTP contracts and emits immutable dispatch plans:
+parameter/body mappings, response header conversions, the Accept value, and
+escaped path segments. Success/error partitions are checked during generation.
+The public `api.py` binds those plans to their model classes when imported,
+including through the package's API or client-alias exports. It checks the plan
+format and nominal request identities, then publishes the complete registry
+atomically on the exact API class. Sync and async clients share that registry.
+Imports, binding, and requests do not resolve annotations or rebuild HTTP plans.
+Individual model imports use the lightweight `_api.py` identity and do not load
+the whole API. Manually declared APIs retain runtime contract validation on bind.
+Model validation programs are also prepared during code generation; importing an
+API does not compile schemas. Treat published metadata as immutable after import.
+API identities are final, and unregistered request types and inherited API
+identities are rejected by the shared binder.
+
+Generated dispatch uses the versioned `jsoncompat.codegen.http` interface.
+Applications use `jsoncompat.http`; the generated-code interface keeps private
+runtime class names out of emitted files. It does not perform reflection or
+defer preparation until the first request.
+
+Request and response names derive from `operationId`, or a deterministic
+method/path fallback. Collisions fail generation. Requests flatten parameters
+into Python fields; location prefixes disambiguate collisions. `--rename`
+continues to rename component models. Operation schemas participate in the same
+reference graph as components, preserving shared class identity. Inline nested
+model classes are also exported from the package. `--component` selects
+additional component roots; every operation and its dependencies remain included.
+
+Request constructors, including `RequestModel(**mapping)`, preserve `MISSING`.
+Omitted parameters are not sent; an omitted optional body produces `body=None`
+and no Content-Type header. A JSON body containing Python `None` produces
+`b"null"`. For several request media types, `body` is a union of generated
+`OperationBodyApplicationJson`, `OperationBodyTextPlain`, etc. models, each
+containing `content_type` and `value`. `request.serialize()` serializes the
+logical request object; the HTTP encoder distributes its fields across the wire.
+
+`EncodedRequest` contains the method, an encoded origin-relative `target`, header
+pairs, optional body bytes, and its `Endpoint`. Transports choose the base URL
+and must preserve the encoded target. Endpoint metadata exposes effective server
+URLs/default variables and security requirements; `SECURITY_SCHEMES` exports the
+scheme definitions. The binder does not select servers, acquire credentials,
+apply authentication, retry, follow redirects, or close sessions. Configure these
+in the transport. The [complete examples](../examples/openapi_client/README.md)
+show adapters using caller-owned aiohttp, HTTPX, and requests sessions.
+
+### Optional HTTP integrations
+
+Install only the client library you use:
+
+| Install | Import | Fetcher and options |
+| --- | --- | --- |
+| `pip install 'jsoncompat[aiohttp]'` | `jsoncompat.http.aiohttp` | `AiohttpFetch`, `AiohttpOptions` |
+| `pip install 'jsoncompat[httpx]'` | `jsoncompat.http.httpx` | `HttpxFetch`, `AsyncHttpxFetch`, `HttpxOptions` |
+| `pip install 'jsoncompat[requests]'` | `jsoncompat.http.requests` | `RequestsFetch`, `RequestsOptions` |
+
+The requests extra includes `types-requests` for static checking. Core imports
+and generated packages work without any HTTP client installed. Importing one
+integration does not import the others. No adapter creates or closes a session:
+pass an existing session and an absolute API base URL (including any path prefix)
+to its constructor, then give the fetcher to `bind` or `bind_async`. The caller
+configures authentication, TLS, proxies, pooling, hooks, and session cleanup.
+
+```python
+import httpx
+from jsoncompat.http import bind
+from jsoncompat.http.httpx import HttpxFetch
+from petstore import PetstoreAPI, GetPetRequest
+
+with httpx.Client(timeout=30) as session:
+    client = bind(PetstoreAPI, fetch=HttpxFetch(session, "https://api.example.com/v1"))
+    pet = client.request(GetPetRequest(pet_id="p_123")).unwrap()
+    print(pet.body.name)
+    # session remains available for other native or generated requests here.
+```
+
+Calls buffer and release responses, preserving decompressed body bytes and
+repeated response headers. Redirects are returned without following them.
+Adapters return every HTTP status for typed decoding and do not call
+`raise_for_status`; aiohttp's session-level setting is disabled per call.
+Caller-configured hooks can still raise, and native I/O errors and cancellation
+propagate unchanged. The binder wraps declared responses in `Ok` or `Err`;
+`Err.unwrap()` raises `HTTPStatusError` without performing another request.
+
+Aiohttp explicitly enables response decompression and suppresses its automatic
+Content-Type header so an omitted body stays omitted. Requests cannot transmit
+repeated request header names, so `RequestsFetch` rejects them rather than
+silently dropping values. Request defaults set on the session still apply.
+
+Without `transport=`, aiohttp and HTTPX inherit their session timeout.
+Requests has no session timeout setting, so `RequestsFetch(..., timeout=10)`
+sets a default in seconds; it also accepts `(connect, read)` or `None`.
+Per-call options never change these defaults. `timeout=None` disables timeouts
+for HTTPX and requests; for aiohttp use `ClientTimeout(total=None)`. These
+integrations currently expose only timeout overrides; other per-call transport
+policies belong in a custom fetcher implementing the same protocol.
+
+### Per-call overrides and prepared requests
+
+Use `transport=` for adapter-specific settings such as a single-call timeout.
+`Options` can be any adapter-defined type. HTTP client dependencies are optional.
+For example, using the shipped aiohttp integration:
+
+```python
+import aiohttp
+from jsoncompat.http import bind_async, RequestOptions
+from petstore import PetstoreAPI, GetPetRequest
+from jsoncompat.http.aiohttp import AiohttpFetch, AiohttpOptions
+
+async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+    client = bind_async(PetstoreAPI, fetch=AiohttpFetch(session, base_url))
+    # Inferred: AsyncClient[PetstoreAPI, AiohttpOptions]
+    response = await client.request(
+        GetPetRequest(pet_id="p_123"),
+        transport=AiohttpOptions(timeout=aiohttp.ClientTimeout(total=2)),
+        options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
+    )  # ClientResponse[GetPetSuccess, GetPetError]
+    # Later calls without transport= still use the session's 30-second timeout.
+```
+
+`AiohttpOptions` is a frozen dataclass with one required
+`timeout: aiohttp.ClientTimeout` field. A custom fetcher can define richer options
+for authentication, routing, retries, tracing, or other native settings without
+changing generated models or the binder. `options=` controls the wire request;
+`transport=` goes only to the fetcher and is never serialized into headers,
+query parameters, or a body. Both work together while preserving response
+inference and API checks. Passing another adapter's options is a type error.
+
+See the [runnable aiohttp, requests, and HTTPX examples](../examples/openapi_client/README.md#override-one-call)
+for calls using each integration's native timeout types.
+
+Use `RequestOptions` for fields missing from a spec or an exceptional call:
+
+```python
+from jsoncompat.http import RequestOptions
+
+response = client.request(
+    GetPetRequest(pet_id="p_123", include_history=False),
+    options=RequestOptions(
+        extra_headers={"X-Trace-ID": "trace-123"},
+        remove_headers=("Accept",),
+        remove_query=("includeHistory",),
+        extra_query=(("includeHistory", "true"), ("preview", "beta")),
+    ),
+)
+```
+
+The same keyword works on async clients. Header/query inputs accept mappings
+or sequences of string pairs; sequences retain duplicates and order. Options
+snapshot their inputs into immutable tuples, and affect only this call:
+
+- Header removal and replacement match names case-insensitively. Extra headers
+  replace all generated occurrences of the same name and are appended after
+  removal, so an explicit extra wins over removal of that name.
+- Query removals match case-sensitive, decoded wire names, including expanded
+  names such as `filter[species]`. Extra pairs append after removal, with names
+  and values percent-encoded. Remove a name and add new pairs to replace it.
+  Existing query segments retain their exact encoding.
+- Overrides apply after schema validation and serialization. They deliberately
+  permit values outside the request schema. They cannot supply missing required
+  model fields or bypass API registration checks.
+- Removals affect the generated request. Session defaults, authentication, and
+  automatically added headers are controlled by the fetcher and may add them back.
+
+For further customization, `RequestOptions(transform=...)` takes a synchronous
+`Callable[[EncodedRequest], EncodedRequest]`. It runs once, after the overrides
+and before fetching. Use `dataclasses.replace` to change the method, encoded
+origin-relative target, headers, or buffered body. The result is checked for
+valid wire structure and portable ASCII headers; it must retain the original
+`operation` metadata. The selected response contract remains unchanged. Transform
+exceptions propagate unchanged. Authentication requiring a final absolute URL
+or asynchronous credential refresh belongs in the fetcher.
+
+`prepare` exposes encoding and decoding independently of transport I/O:
+
+```python
+from jsoncompat.http import prepare
+
+call = prepare(
+    PetstoreAPI,
+    GetPetRequest(pet_id="p_123"),
+    options=RequestOptions(extra_headers={"X-Trace-ID": "trace-123"}),
+)  # PreparedRequest[PetstoreAPI, GetPetResult]
+
+# Your fetcher defines its own typed transport options.
+raw = await my_fetch(call.request, timeout=5, follow_redirects=False)
+result = call.decode(raw)  # GetPetResult
+pet = result.unwrap()  # GetPet200
+```
+
+Preparation is synchronous and performs no I/O. The immutable result contains
+the explicit API identity (`call.api`), encoded request (`call.request`), and
+the selected operation's validated decoder. A caller may inspect `RawResponse`
+without decoding, or call `decode` later; only decoding promises the typed
+response. Invalid or undeclared 2xx responses raise `ResponseError`, retaining
+the raw response; non-2xx decoding failures become `Err(UnexpectedResponse(...))`.
+Both bound clients use this same preparation/decoding path.
+
+See [prepared_client.py](../examples/openapi_client/prepared_client.py) for a
+runnable example with native HTTPX timeout settings. Timeouts, authentication,
+redirects, routing, retries, tracing, and cleanup remain caller-owned. These
+interfaces use buffered bytes; streaming uploads, downloads, and SSE require
+separate transport/lifetime abstractions and are not enabled by a request option.
+
+### Response validation and supported encodings
+
+Response models contain `status`, a typed `body`, typed `headers`, and
+`raw_headers` preserving repeated header values. Responses with content also have
+`content_type`; responses declaring no content have `body=None`. Several media
+representations produce distinct response variants. Explicit statuses take
+precedence over ranges, then `default`. Exact statuses have literal Python types;
+range/default statuses remain integers with generated runtime constraints.
+Use `result.unwrap()` for success-only inference, or match `Ok`/`Err` and inspect
+its generated model. Multiple success media/status variants can still require
+`isinstance` checks within the success union.
+
+Declared non-2xx responses such as 304 and 404 decode as `Err`. Undeclared
+statuses/media, malformed bodies, missing required response headers, and schema
+failures become `Err(UnexpectedResponse(...))` for non-2xx responses. For 2xx
+responses they raise `ResponseError`, retaining the `RawResponse` and original
+cause. Both behaviors occur only when decoding is requested.
+Invalid API metadata raises `ContractError` at binding. Invalid request models
+or unrepresentable parameters fail before fetching. Transport exceptions and async
+cancellation propagate unchanged. Do not call a transport's `raise_for_status`
+before returning its `RawResponse`.
+`RawResponse.body` contains bytes after HTTP transport decoding (including
+decompression), before JSON or text parsing.
+
+Supported bodies are buffered JSON (`application/json`, concrete
+`application/*+json`) and UTF-8 `text/plain` with string schemas. Media parameters
+may specify a UTF-8 charset. Response selection ignores charset/case; other media
+parameters in the spec are rejected. Headers use case-insensitive names.
+Schema-style response headers support strings, integers, numbers, booleans,
+and arrays of one of those types; JSON-content headers also support structured
+values. Scalar headers reject repetitions, arrays combine repeated lines, and
+`Set-Cookie` arrays retain each whole line. Undeclared headers remain in
+`raw_headers`.
+
+Path styles `simple`, `label`, and `matrix`, query `form`, `deepObject`,
+`spaceDelimited`/`pipeDelimited` arrays with `explode=false`, header `simple`,
+and cookie `form` are supported. Schema-style parameters must have non-null
+scalar or flat array/object values; nested or null values need JSON `content`.
+Booleans use `true`/`false`, numbers use JSON syntax, and URL data is percent
+encoded separately from structural separators. Empty exploded query arrays or
+objects produce no query pairs. Dot segments in an expanded path and invalid
+HTTP header names/values are rejected before network I/O. Request header values
+use ASCII for portability across transports; JSON-content headers escape Unicode.
+Adapters decode raw response header bytes as Latin-1 without losing repeated values.
+
+Generation rejects unsupported features rather than dropping operations:
+multipart/form bodies, binary or streaming transports, wildcard media,
+`allowReserved`, `allowEmptyValue`, and the existing unsupported OpenAPI lowering
+surfaces (including callbacks, webhooks, path-item references, response links,
+and remote references). `readOnly`/`writeOnly` retain the existing JSON Schema
+annotation behavior; the generator does not manufacture directional schema
+variants. Applications with these requirements should adapt the spec explicitly.
 
 ## Offline resources and format policy
 

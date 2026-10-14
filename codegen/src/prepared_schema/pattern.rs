@@ -11,6 +11,7 @@ use regex_automata::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[derive(Clone)]
 pub(super) struct PortableDfa {
     native: sparse::DFA<Vec<u8>>,
 }
@@ -101,7 +102,7 @@ impl PortableDfa {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum WordBoundary {
     Both,
@@ -126,7 +127,7 @@ impl WordBoundary {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Pattern {
     Dfa(Box<PortableDfa>),

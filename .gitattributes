@@ -1,0 +1,2 @@
+# Keep executable documentation and generated golden files byte-stable on Windows.
+examples/openapi_client/** text=auto eol=lf

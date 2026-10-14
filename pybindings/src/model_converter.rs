@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(all(Py_3_11, not(any(PyPy, GraalPy, Py_GIL_DISABLED))))]
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::instance::{
@@ -31,10 +32,12 @@ use pyo3::{exceptions::PyAttributeError, types::PyModule};
 use super::prepared_schema::{NodeExt, PreparedSchema};
 
 mod input;
+mod link;
 mod output;
 mod prepared;
 mod projection;
 mod streaming;
+pub(crate) use streaming::http_number_fallback;
 pub(crate) use streaming::rounded_integer_float;
 
 // Keep recursive conversion comfortably inside the smallest native thread
@@ -146,7 +149,7 @@ impl<'a> IntoIterator for &'a UnionPlan {
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 enum DiscriminatorKey {
     Null,
     Boolean(bool),
@@ -736,6 +739,7 @@ enum ConversionNode {
 }
 
 pub(crate) struct ModelConverterPlan {
+    origins: Vec<link::NodeOrigin>,
     nodes: Vec<ConversionNode>,
     conversion_validates: Vec<bool>,
     leaf_guards: Vec<Option<super::prepared_schema::Node>>,
@@ -751,6 +755,14 @@ pub(crate) struct ModelConverterPy {
     root: RootNode,
     output_overrides: Cell<bool>,
     checked_output: Cell<bool>,
+}
+
+/// A native envelope serialization, small materialized parameters, and its
+/// body's byte range. The body needs no intermediate Python value tree.
+pub(crate) struct SerializedFields {
+    pub(crate) json: String,
+    pub(crate) fields: Py<PyDict>,
+    pub(crate) body: Option<Range<usize>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1073,15 +1085,22 @@ impl RootedModelConverterPlan {
 
 impl ModelConverterPy {
     pub(crate) fn validate_emitted_json(&self, payload: &str) -> PyResult<bool> {
+        if !self.schema()?.requires_exact_json_numbers()
+            && self.conversion_validates[self.root.0.0]
+            && !self.output_overrides.get()
+        {
+            return Ok(true);
+        }
+        self.validate_complete_json(payload)
+    }
+
+    pub(crate) fn validate_complete_json(&self, payload: &str) -> PyResult<bool> {
         if self.schema()?.requires_exact_json_numbers() {
             let exact: serde_json::Value = serde_json::from_str(payload)
                 .map_err(|error| PyValueError::new_err(error.to_string()))?;
             return Ok(self
                 .schema()?
                 .is_valid_instance_assuming_json(JsonInstanceRef::from_serde(&exact)));
-        }
-        if self.conversion_validates[self.root.0.0] && !self.output_overrides.get() {
-            return Ok(true);
         }
         let parsed = JiterJsonValue::parse(payload.as_bytes(), false)
             .map_err(|error| PyValueError::new_err(error.to_string()))?;
@@ -1254,6 +1273,75 @@ impl ModelConverterPy {
         // field prefixes are parsed as JSON strings when loaded. Every write
         // therefore preserves UTF-8, including rollback after a union miss.
         Ok(unsafe { String::from_utf8_unchecked(output) })
+    }
+
+    pub(crate) fn serialize_fields_checked(
+        &self,
+        py: Python<'_>,
+        value: &Bound<'_, PyAny>,
+        body_name: &str,
+    ) -> PyResult<SerializedFields> {
+        let ConversionNode::Model {
+            fields,
+            extra: None,
+            ..
+        } = self.node(self.root.0)
+        else {
+            return Err(PyTypeError::new_err(
+                "HTTP envelopes must be closed object models",
+            ));
+        };
+        let mut output = Vec::with_capacity(256);
+        let values = PyDict::new(py);
+        let mut body = None;
+        ActiveContainers::default().with_pyresult(value, |active| {
+            output.push(b'{');
+            for field in fields {
+                let item = field.attribute.get(value)?;
+                if field.presence.is_omittable() && item.is(self.missing_sentinel.bind(py)) {
+                    continue;
+                }
+                if !values.is_empty() {
+                    output.push(b',');
+                }
+                output.extend_from_slice(&field.json_prefix);
+                if field.json_name == body_name {
+                    let start = output.len();
+                    self.write_json_node(
+                        py,
+                        field.value_node,
+                        &item,
+                        MAX_MODEL_DEPTH - 1,
+                        active,
+                        &mut output,
+                    )?;
+                    body = Some(start..output.len());
+                    values.set_item(field.json_name.as_str(), py.None())?;
+                } else {
+                    // Object-valued HTTP parameters preserve insertion order.
+                    // Materialize them once, separately from the large body;
+                    // re-parsing canonical JSON would reorder their mappings.
+                    let item = self.to_python_value_node(
+                        py,
+                        field.value_node,
+                        &item,
+                        MAX_MODEL_DEPTH - 1,
+                        active,
+                    )?;
+                    write_serializable_json_value(&mut output, item.bind(py), MAX_MODEL_DEPTH - 1)?;
+                    values.set_item(field.json_name.as_str(), item)?;
+                }
+            }
+            output.push(b'}');
+            Ok(())
+        })?;
+        // The same writer and prepared prefixes as serialize_model_trusted.
+        let json = unsafe { String::from_utf8_unchecked(output) };
+        Ok(SerializedFields {
+            json,
+            fields: values.unbind(),
+            body,
+        })
     }
 
     pub(crate) fn materialize_json_value(
@@ -1479,6 +1567,22 @@ fn write_serializable_json_value(
     value: &Bound<'_, PyAny>,
     remaining_depth: u16,
 ) -> PyResult<()> {
+    write_json_value(output, value, remaining_depth, true)
+}
+
+pub(crate) fn write_ordered_json_value(
+    output: &mut Vec<u8>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    write_json_value(output, value, MAX_MODEL_DEPTH, false)
+}
+
+fn write_json_value(
+    output: &mut Vec<u8>,
+    value: &Bound<'_, PyAny>,
+    remaining_depth: u16,
+    sort_keys: bool,
+) -> PyResult<()> {
     if remaining_depth == 0 {
         return Err(PyErr::new::<PyValueError, _>(
             "generated model serialization exceeds the maximum nesting depth",
@@ -1523,7 +1627,7 @@ fn write_serializable_json_value(
             if index != 0 {
                 output.push(b',');
             }
-            write_serializable_json_value(output, &value, remaining_depth - 1)?;
+            write_json_value(output, &value, remaining_depth - 1, sort_keys)?;
         }
         output.push(b']');
         return Ok(());
@@ -1534,7 +1638,7 @@ fn write_serializable_json_value(
             if index != 0 {
                 output.push(b',');
             }
-            write_serializable_json_value(output, &value, remaining_depth - 1)?;
+            write_json_value(output, &value, remaining_depth - 1, sort_keys)?;
         }
         output.push(b']');
         return Ok(());
@@ -1549,7 +1653,9 @@ fn write_serializable_json_value(
                 .to_owned();
             entries.push((key, value));
         }
-        entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        if sort_keys {
+            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        }
         output.push(b'{');
         for (index, (key, value)) in entries.into_iter().enumerate() {
             if index != 0 {
@@ -1557,7 +1663,7 @@ fn write_serializable_json_value(
             }
             write_json_string(output, &key)?;
             output.push(b':');
-            write_serializable_json_value(output, &value, remaining_depth - 1)?;
+            write_json_value(output, &value, remaining_depth - 1, sort_keys)?;
         }
         output.push(b'}');
         return Ok(());
@@ -1814,11 +1920,36 @@ pub(crate) fn compile_model_converter_plan(
     let mut nodes = Vec::with_capacity(descriptors.len());
     let node_count = descriptors.len();
     let mut schemas = HashMap::new();
+    let mut dependencies = Vec::new();
     for descriptor in descriptors {
-        nodes.push(parse_node(py, &descriptor, node_count, &mut schemas)?);
+        let tuple = descriptor.cast::<PyTuple>()?;
+        if !tuple.is_empty() && tuple.get_item(0)?.extract::<String>()? == "external" {
+            require_arity(tuple, 2, "external model node")?;
+            let model = tuple.get_item(1)?.cast_into::<PyType>()?;
+            let runtime = model
+                .getattr("__dict__")?
+                .get_item("__jsoncompat_runtime__")?;
+            let converter = runtime
+                .extract::<PyRef<'_, super::ModelRuntimePy>>()?
+                .converter(py)?;
+            if !converter.model_type()?.bind(py).is(&model) {
+                return Err(PyTypeError::new_err(
+                    "external runtime belongs to a different model",
+                ));
+            }
+            dependencies.push((nodes.len(), converter));
+            // Install this module's precomputed local decisions before linking
+            // imported nodes, whose own decisions have already been installed.
+            nodes.push(ConversionNode::Scalar {
+                kind: ScalarKind::Any,
+            });
+        } else {
+            nodes.push(parse_node(py, &descriptor, node_count, &mut schemas)?);
+        }
     }
     let object_new = py.get_type::<PyAny>().getattr("__new__")?.unbind();
     let mut plan = ModelConverterPlan {
+        origins: Vec::new(),
         conversion_validates: vec![false; nodes.len()],
         leaf_guards: vec![None; nodes.len()],
         nodes,
@@ -1829,6 +1960,7 @@ pub(crate) fn compile_model_converter_plan(
         frozen_dict_items_attribute: ModelAttribute::compile(py, frozen_dict_type, "_items")?,
     };
     plan.install_prepared_plan(prepared_plan)?;
+    plan.link_dependencies(py, dependencies);
     Ok(Arc::new(plan))
 }
 

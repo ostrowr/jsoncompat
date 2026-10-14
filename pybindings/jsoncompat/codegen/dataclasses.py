@@ -14,6 +14,7 @@ from typing import (
     cast,
     dataclass_transform,
     overload,
+    override,
 )
 
 from jsoncompat import (
@@ -50,7 +51,6 @@ __all__ = [
 
 
 JSONCOMPAT_EXTRA_FIELD = "__jsoncompat_extra__"
-JSONCOMPAT_SCHEMA_FIELD = "__jsoncompat_schema__"
 JSONCOMPAT_RUNTIME_FIELD = "__jsoncompat_runtime__"
 JSONCOMPAT_JSON_NAME_METADATA = "jsoncompat_json_name"
 JSONCOMPAT_MISSING_METADATA = "jsoncompat_omittable"
@@ -70,11 +70,13 @@ class FrozenList[T](tuple[T, ...]):
 
     __slots__ = ()
 
+    @override
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Sequence) and not isinstance(other, (str, bytes, Mapping)):
             return tuple(self) == tuple(cast(Sequence[Any], other))
         return NotImplemented
 
+    @override
     def __ne__(self, other: object) -> bool:
         equal = self.__eq__(other)
         if equal is NotImplemented:
@@ -104,29 +106,36 @@ class FrozenDict[K, V](Mapping[K, V]):
             materialized = dict(values)
         object.__setattr__(self, "_items", tuple(materialized.items()))
 
+    @override
     def __setattr__(self, name: str, value: Any) -> NoReturn:
         _ = (name, value)
         raise TypeError("generated model JSON objects are immutable")
 
+    @override
     def __delattr__(self, name: str) -> NoReturn:
         _ = name
         raise TypeError("generated model JSON objects are immutable")
 
+    @override
     def __getitem__(self, key: K) -> V:
         for candidate, value in self._items:
             if candidate == key:
                 return value
         raise KeyError(key)
 
+    @override
     def __iter__(self) -> Iterator[K]:
         return (key for key, _ in self._items)
 
+    @override
     def __len__(self) -> int:
         return len(self._items)
 
+    @override
     def __repr__(self) -> str:
         return f"FrozenDict({dict(self._items)!r})"
 
+    @override
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Mapping):
             return dict(self._items) == dict(cast(Mapping[Any, Any], other).items())
@@ -160,32 +169,41 @@ class _FieldSpec:
         if self.factory is not None:
             result = cast(
                 dataclasses.Field[Any],
-                dataclasses.field(
-                    default_factory=self.factory,
-                    metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_EXTRA_FIELD},
-                    repr=False,
-                    kw_only=True,
+                cast(
+                    object,
+                    dataclasses.field(
+                        default_factory=self.factory,
+                        metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_EXTRA_FIELD},
+                        repr=False,
+                        kw_only=True,
+                    ),
                 ),
             )
         elif self.json_name is not None:
             result = cast(
                 dataclasses.Field[Any],
-                dataclasses.field(
-                    default=_NATIVE_MISSING if self.omittable else dataclasses.MISSING,
-                    metadata={
-                        JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
-                        JSONCOMPAT_JSON_NAME_METADATA: self.json_name,
-                        JSONCOMPAT_MISSING_METADATA: self.omittable,
-                    },
-                    kw_only=True,
+                cast(
+                    object,
+                    dataclasses.field(
+                        default=_NATIVE_MISSING if self.omittable else dataclasses.MISSING,
+                        metadata={
+                            JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_PROPERTY_FIELD,
+                            JSONCOMPAT_JSON_NAME_METADATA: self.json_name,
+                            JSONCOMPAT_MISSING_METADATA: self.omittable,
+                        },
+                        kw_only=True,
+                    ),
                 ),
             )
         else:
             result = cast(
                 dataclasses.Field[Any],
-                dataclasses.field(
-                    metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_ROOT_FIELD},
-                    kw_only=True,
+                cast(
+                    object,
+                    dataclasses.field(
+                        metadata={JSONCOMPAT_FIELD_KIND_METADATA: _JSONCOMPAT_ROOT_FIELD},
+                        kw_only=True,
+                    ),
                 ),
             )
         result.name = name
@@ -211,15 +229,19 @@ class _DataclassFields(Mapping[str, dataclasses.Field[Any]]):
             self._materialized = fields
         return fields
 
+    @override
     def __getitem__(self, name: str) -> dataclasses.Field[Any]:
         return self._fields()[name]
 
+    @override
     def values(self) -> ValuesView[dataclasses.Field[Any]]:
         return self._fields().values()
 
+    @override
     def __iter__(self) -> Iterator[str]:
         return iter(self._specs)
 
+    @override
     def __len__(self) -> int:
         return len(self._specs)
 
@@ -260,6 +282,7 @@ class _DataclassModelMeta(type):
             _DataclassModelMeta, super().__new__(mcls, name, bases, namespace, **kwargs)
         )
 
+    @override
     def __setattr__(cls, name: str, value: object) -> None:
         if JSONCOMPAT_RUNTIME_FIELD in cls.__dict__ and (
             name == "__slots__"
@@ -268,6 +291,7 @@ class _DataclassModelMeta(type):
             raise TypeError("generated slot descriptors are immutable")
         super().__setattr__(name, value)
 
+    @override
     def __delattr__(cls, name: str) -> None:
         if JSONCOMPAT_RUNTIME_FIELD in cls.__dict__ and (
             name == "__slots__"
@@ -281,6 +305,7 @@ class _DataclassModelMeta(type):
         signature = inspect.signature(cls.__init__)
         return signature.replace(parameters=tuple(signature.parameters.values())[1:])
 
+    @override
     def __call__(
         cls: type[_DATACLASS_MODEL_T],  # pyright: ignore[reportGeneralTypeIssues]
         *args: Any,
@@ -333,7 +358,6 @@ class DataclassModel(metaclass=_DataclassModelMeta):
     __slots__ = ()
 
     skip_validation: dataclasses.InitVar[bool] = False
-    __jsoncompat_schema__: ClassVar[str]
     __jsoncompat_runtime__: ClassVar[ModelRuntime]
 
     def __post_init__(self, skip_validation: bool) -> NoReturn:
@@ -470,10 +494,12 @@ class DataclassRootModel(DataclassModel):
 class ReaderDataclassModel(DataclassModel):
     __slots__ = ()
 
+    @override
     def to_value(self, *, skip_validation: bool = False) -> NoReturn:
         _ = skip_validation
         raise TypeError("Reader dataclasses do not support serialization")
 
+    @override
     def serialize(
         self,
         *,
@@ -487,10 +513,12 @@ class ReaderDataclassModel(DataclassModel):
 class ReaderDataclassRootModel(DataclassRootModel):
     __slots__ = ()
 
+    @override
     def to_value(self, *, skip_validation: bool = False) -> NoReturn:
         _ = skip_validation
         raise TypeError("Reader dataclasses do not support serialization")
 
+    @override
     def serialize(
         self,
         *,
@@ -505,6 +533,7 @@ class WriterDataclassModel(DataclassModel):
     __slots__ = ()
 
     @classmethod
+    @override
     def from_value(
         cls,
         value: JsonValue,
@@ -515,6 +544,7 @@ class WriterDataclassModel(DataclassModel):
         raise TypeError("Writer dataclasses do not support deserialization")
 
     @classmethod
+    @override
     def deserialize(
         cls,
         payload: str | bytes,
@@ -588,47 +618,6 @@ _params = getattr(DataclassModel, "__dataclass_params__")
 for _name, _value in (("slots", True), ("weakref_slot", False)):
     if hasattr(_params, _name):
         setattr(_params, _name, _value)
-
-
-class _SchemaSource:
-    """Expand the original schema only when a caller explicitly requests it."""
-
-    __slots__ = ("_compressed",)
-
-    def __init__(self, compressed: bytes) -> None:
-        self._compressed = compressed
-
-    def __get__(self, instance: object, owner: type[DataclassModel]) -> str:
-        import zlib
-
-        schema = zlib.decompress(self._compressed).decode("utf-8")
-        setattr(owner, JSONCOMPAT_SCHEMA_FIELD, schema)
-        return schema
-
-
-def install_model(
-    model: type[DataclassModel],
-    initializer: Callable[..., None],
-    schema_source: bytes,
-    namespace: dict[str, Any],
-) -> None:
-    """Bind the constructor namespace and retain compressed schema source."""
-    if not isinstance(initializer, types.FunctionType):
-        raise TypeError("Generated initializer must be a Python function")
-    # A companion can bind several separately imported copies of the models.
-    # Give each constructor the public namespace for recursive type hints.
-    if initializer.__globals__ is not namespace:
-        original = initializer
-        initializer = types.FunctionType(original.__code__, namespace, original.__name__)
-        initializer.__kwdefaults__ = original.__kwdefaults__
-    initializer.__annotations__ = model.__annotations__.copy()
-    initializer.__annotations__["skip_validation"] = bool
-    initializer.__kwdefaults__ = (initializer.__kwdefaults__ or {}).copy()
-    initializer.__annotations__["return"] = None
-    initializer.__qualname__ = model.__qualname__ + ".__init__"
-    initializer.__module__ = model.__module__
-    setattr(model, "__init__", initializer)
-    setattr(model, JSONCOMPAT_SCHEMA_FIELD, _SchemaSource(schema_source))
 
 
 def bind_module(
