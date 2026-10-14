@@ -6,11 +6,13 @@ Schema-guided JSON value generation for Draft 2020-12 JSON Schema documents.
 
 ## Installation
 
+These examples target **0.6.0 (unreleased)**.
+
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json_schema_fuzz = "0.5.0"
+json_schema_fuzz = "0.6.0"
 ```
 
 ## Usage

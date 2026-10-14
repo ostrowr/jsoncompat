@@ -5,8 +5,10 @@ generating example values from JavaScript.
 
 ## Installation
 
+These examples target **0.6.0 (unreleased)**. After release, install with:
+
 ```bash
-npm install jsoncompat@0.5.0
+npm install jsoncompat@0.6.0
 ```
 
 ## Quick start
