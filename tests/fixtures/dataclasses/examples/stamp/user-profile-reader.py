@@ -25,10 +25,10 @@ class ExamplesStampUserProfileReader(dc.ReaderDataclassRootModel):
 
 
 @typing.final
-class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel["typing.Any"]):
+class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel["dc.FrozenJsonValue"]):
     age: int = dc.field("age")
     name: str = dc.field("name")
-    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
+    __jsoncompat_extra__: collections.abc.Mapping[str, dc.FrozenJsonValue] = dc.extra_field(default_factory=dict)
 
     if not typing.TYPE_CHECKING:
         __slots__ = ("age", "name", "__jsoncompat_extra__",)
@@ -39,17 +39,20 @@ class ExamplesStampUserProfileV1(dc.DataclassAdditionalModel["typing.Any"]):
         skip_validation: bool = False,
         age: int,
         name: str,
-        __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.EXTRA_DEFAULT,
+        __jsoncompat_extra__: collections.abc.Mapping[
+            str,
+            (dc.JsonValue | dc.FrozenJsonValue),
+        ] = dc.EXTRA_DEFAULT,
     ) -> None:
         self.__post_init__(skip_validation)
 
 
 @typing.final
-class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
+class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel["dc.FrozenJsonValue"]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
+    __jsoncompat_extra__: collections.abc.Mapping[str, dc.FrozenJsonValue] = dc.extra_field(default_factory=dict)
 
     if not typing.TYPE_CHECKING:
         __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
@@ -61,7 +64,10 @@ class ExamplesStampUserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
         age: int,
         interests: int,
         name: str,
-        __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.EXTRA_DEFAULT,
+        __jsoncompat_extra__: collections.abc.Mapping[
+            str,
+            (dc.JsonValue | dc.FrozenJsonValue),
+        ] = dc.EXTRA_DEFAULT,
     ) -> None:
         self.__post_init__(skip_validation)
 
@@ -109,7 +115,7 @@ __all__ = ("ExamplesStampUserProfileReader", "ExamplesStampUserProfileV1", "Exam
 
 def _jsoncompat_bind(_models: tuple[type[dc.DataclassModel], ...]) -> None:
     (ExamplesStampUserProfileReader, ExamplesStampUserProfileV1, ExamplesStampUserProfileV2, ExamplesStampUserProfileV2Reader, ExamplesStampUserProfileV1Reader,) = _models
-    dc.bind_module(1, [(ExamplesStampUserProfileReader, 0), (ExamplesStampUserProfileV1, 4), (ExamplesStampUserProfileV2, 10), (ExamplesStampUserProfileV2Reader, 8), (ExamplesStampUserProfileV1Reader, 2)], [
+    dc.bind_module(2, [(ExamplesStampUserProfileReader, 0), (ExamplesStampUserProfileV1, 4), (ExamplesStampUserProfileV2, 10), (ExamplesStampUserProfileV2Reader, 8), (ExamplesStampUserProfileV1Reader, 2)], [
         ('root', ExamplesStampUserProfileReader, 1, b'{"version":4,"nodes":[{"types":null,"choices":null,"rules":[{"one":[1,9]}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["data",2],["version",7]],"patterns":[],"required":["version","data"],"additional":8}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/v2"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["age",4],["interests",5],["name",6]],"patterns":[],"required":["name","age","interests"],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["integer"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":[2],"constant":true,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["data",10],["version",12]],"patterns":[],"required":["version","data"],"additional":8}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":11,"pointer":"/$defs/v1"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["age",4],["name",6]],"patterns":[],"required":["name","age"],"additional":null}}]},{"types":null,"choices":[1],"constant":true,"rules":[]}],"patterns":[],"pattern_sources":[]}'),
         ('union', (2, 8,), "version", ((1, 0), (2, 1),)),
         ('model', ExamplesStampUserProfileV1Reader, (("data", "data", 4, False), ("version", "version", 3, False),), None, b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["data",1],["version",5]],"patterns":[],"required":["version","data"],"additional":6}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":2,"pointer":"/$defs/v1"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["age",3],["name",4]],"patterns":[],"required":["name","age"],"additional":null}}]},{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":[1],"constant":true,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'),

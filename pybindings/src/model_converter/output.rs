@@ -254,6 +254,7 @@ impl ModelConverterPy {
             ConversionNode::Scalar {
                 kind: ScalarKind::Any
             } | ConversionNode::List { .. }
+                | ConversionNode::Tuple { .. }
                 | ConversionNode::Dict { .. }
                 | ConversionNode::Model { .. }
                 | ConversionNode::Root { .. }
@@ -336,6 +337,34 @@ impl ModelConverterPy {
                         py,
                         *item,
                         &item_value,
+                        remaining_depth - 1,
+                        active_containers,
+                        output,
+                    )?;
+                }
+                output.push(b']');
+                Ok(())
+            }
+            ConversionNode::Tuple { items } => {
+                let values = value
+                    .cast::<PyTuple>()
+                    .map_err(|_| expected_type("immutable tuple", value).unwrap())?;
+                if values.len() != items.len() {
+                    return Err(ConversionMismatch::TupleLength {
+                        expected: items.len(),
+                        actual: values.len(),
+                    }
+                    .into_pyerr());
+                }
+                output.push(b'[');
+                for (index, (item, value)) in items.iter().zip(values.iter()).enumerate() {
+                    if index != 0 {
+                        output.push(b',');
+                    }
+                    self.write_json_node(
+                        py,
+                        *item,
+                        &value,
                         remaining_depth - 1,
                         active_containers,
                         output,
@@ -541,6 +570,7 @@ impl ModelConverterPy {
         if matches!(
             node,
             ConversionNode::List { .. }
+                | ConversionNode::Tuple { .. }
                 | ConversionNode::Dict { .. }
                 | ConversionNode::Model { .. }
                 | ConversionNode::Root { .. }
@@ -578,6 +608,29 @@ impl ModelConverterPy {
                         py,
                         *item,
                         &item_value,
+                        remaining_depth - 1,
+                        active_containers,
+                    )?)?;
+                }
+                Ok(output.into_any().unbind())
+            }
+            ConversionNode::Tuple { items } => {
+                let values = value
+                    .cast::<PyTuple>()
+                    .map_err(|_| expected_type("immutable tuple", value).unwrap())?;
+                if values.len() != items.len() {
+                    return Err(ConversionMismatch::TupleLength {
+                        expected: items.len(),
+                        actual: values.len(),
+                    }
+                    .into_pyerr());
+                }
+                let output = PyList::empty(py);
+                for (item, value) in items.iter().zip(values.iter()) {
+                    output.append(self.to_python_value_node(
+                        py,
+                        *item,
+                        &value,
                         remaining_depth - 1,
                         active_containers,
                     )?)?;
@@ -720,6 +773,12 @@ impl ModelConverterPy {
             },
             ConversionNode::List { .. } => {
                 value.is_instance_of::<PyTuple>()
+                    && !value.is_instance(self.frozen_dict_type.bind(py))?
+            }
+            ConversionNode::Tuple { items } => {
+                value
+                    .cast::<PyTuple>()
+                    .is_ok_and(|values| values.len() == items.len())
                     && !value.is_instance(self.frozen_dict_type.bind(py))?
             }
             ConversionNode::Dict { .. } => value.is_instance(self.frozen_dict_type.bind(py))?,

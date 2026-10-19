@@ -2,6 +2,7 @@
 //! together; moving their declarations and prepared bytes must not duplicate types.
 use super::{
     ClassKind, ClassSpec, DataclassModule,
+    render::GENERATED_FORMAT_VERSION,
     types::{Annotation, Kind},
 };
 use crate::python_names::module_names;
@@ -166,7 +167,7 @@ impl DataclassModule {
             .map(|(i, node)| format!("(_models[{i}], {node})"))
             .collect::<Vec<_>>()
             .join(", ");
-        files.add("_binding", format!("{PRIVATE_IMPORTS}{imports}\n__all__ = (\"bind_models\",)\n\ndef bind_models(_models: tuple[type[dc.DataclassModel], ...]) -> None:\n    _programs = [{}]\n    _descriptors: list[tuple[typing.Any, ...]] = []\n{calls}    dc.bind_module(1, [{roots}], _descriptors, _plan)\n", programs.join(", ")));
+        files.add("_binding", format!("{PRIVATE_IMPORTS}{imports}\n__all__ = (\"bind_models\",)\n\ndef bind_models(_models: tuple[type[dc.DataclassModel], ...]) -> None:\n    _programs = [{}]\n    _descriptors: list[tuple[typing.Any, ...]] = []\n{calls}    dc.bind_module({GENERATED_FORMAT_VERSION}, [{roots}], _descriptors, _plan)\n", programs.join(", ")));
         files.sources
     }
 }
@@ -223,7 +224,7 @@ pub(super) fn references(class: &ClassSpec) -> BTreeSet<String> {
                 names.insert(name.clone());
             }
             Kind::Sequence(item) | Kind::Mapping(item) => visit(item, names),
-            Kind::Union(branches) => {
+            Kind::Tuple(branches) | Kind::Union(branches) => {
                 for branch in branches {
                     visit(branch, names);
                 }

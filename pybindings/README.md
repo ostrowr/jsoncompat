@@ -107,6 +107,18 @@ construction boundaries, then store them as deeply immutable values exposed as
 `Sequence[...]` and `Mapping[...]`. Use `to_value()` when a mutable JSON-value
 tree is required by another API.
 
+Unconstrained JSON-shaped fields use `FrozenJsonValue`, a recursive union of
+JSON scalars, `FrozenList`, and `FrozenDict`, instead of `Any`. Their constructor
+arguments accept either ordinary `JsonValue` trees or existing `FrozenJsonValue`
+trees, so values can be reused with `dataclasses.replace`. Both paths preserve
+JSON-value checks and schema validation.
+
+Arrays whose `prefixItems` schemas cover every position and whose length is
+fixed by `minItems`, `maxItems`, and/or `items: false` use positional tuple
+types such as `tuple[str, int]` and store exact Python tuples. Variable-length
+prefixes remain `Sequence` types. Both serialize as JSON arrays; tuple arity and positional Python types
+remain enforced when schema validation is skipped.
+
 See the [canonical plain-schema example](../examples/dataclasses/demo.py) for an
 ordinary generated model that both serializes and deserializes. The
 [canonical stamped-schema example](../examples/stamp/demo.py) covers versioned
@@ -177,6 +189,7 @@ jsoncompat codegen --target dataclasses schema.json > models.py
 
 Its public declarations appear first and implementation follows a marked divider.
 These are two packaging layouts of one generated format, with identical behavior.
+Generated format 2 adds positional tuple descriptors; this runtime also imports format 1.
 There is no unprepared model format, runtime fallback compiler, or separate Python
 preparation command. Regenerate models produced by older jsoncompat versions.
 The generator does not require a Python interpreter. Python's ordinary `.pyc`

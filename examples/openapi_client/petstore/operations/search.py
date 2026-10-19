@@ -50,7 +50,7 @@ class SearchPets200(dc.DataclassModel):
     body: collections.abc.Sequence[Pet] = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: SearchPets200Headers = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -63,7 +63,7 @@ class SearchPets200(dc.DataclassModel):
         body: collections.abc.Sequence[Pet],
         content_type: typing.Literal["application/json"],
         headers: SearchPets200Headers,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -76,7 +76,7 @@ class SearchPets400(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[400] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -89,7 +89,7 @@ class SearchPets400(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[400],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -169,12 +169,13 @@ _jsoncompat_program_SearchPets200 = b'{"version":4,"nodes":[{"types":["object"],
 _jsoncompat_program_SearchPets400 = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["body",1],["content_type",5],["headers",6],["raw_headers",8],["status",10]],"patterns":[],"required":["body","content_type","headers","raw_headers","status"],"additional":4}},{"object_length":{"min":5,"max":null}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":2,"pointer":"/$defs/Problem"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["code",3],["message",3]],"patterns":[],"required":["code","message"],"additional":4}},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":["application/json"],"rules":[]},{"types":null,"choices":null,"rules":[{"ref":{"node":7,"pointer":"/$defs/JsoncompatEmptyHeaders"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":4}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":9}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[3,3],"items":4}},{"array_length":{"min":2,"max":null}}]},{"types":null,"choices":[400],"rules":[]}],"patterns":[],"pattern_sources":[]}'
 _jsoncompat_program_SearchPetsRequest = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["criteria",1],["fields",6],["x_flags",7]],"patterns":[],"required":["criteria"],"additional":5}},{"object_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":2,"pointer":"/$defs/SearchCriteria"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["name",3],["tags",4]],"patterns":[],"required":[],"additional":5}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(SearchPets200Headers, 11), (SearchPets200, 12), (SearchPets400, 13), (SearchPetsRequest, 14)], [
+dc.bind_module(2, [(SearchPets200Headers, 12), (SearchPets200, 13), (SearchPets400, 14), (SearchPetsRequest, 15)], [
     ('external', Pet),
     ("str",),
     ('list', 1),
     ('literal', ("application/json",)),
-    ('list', 2),
+    ('list', 5),
+    ('tuple', (1, 1,)),
     ('external', Problem),
     ('external', JsoncompatEmptyHeaders),
     ('literal', (400,)),
@@ -182,10 +183,10 @@ dc.bind_module(1, [(SearchPets200Headers, 11), (SearchPets200, 12), (SearchPets4
     ('literal', (200,)),
     ('external', SearchCriteria),
     ('model', SearchPets200Headers, (("x_selected_fields", "x_selected_fields", 2, True),), None, _jsoncompat_program_SearchPets200Headers),
-    ('model', SearchPets200, (("body", "body", 8, False), ("content_type", "content_type", 3, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 9, False),), None, _jsoncompat_program_SearchPets200),
-    ('model', SearchPets400, (("body", "body", 5, False), ("content_type", "content_type", 3, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 7, False),), None, _jsoncompat_program_SearchPets400),
-    ('model', SearchPetsRequest, (("criteria", "criteria", 10, False), ("fields", "fields", 2, True), ("x_flags", "x_flags", 2, True),), None, _jsoncompat_program_SearchPetsRequest),
-], b'{"version":4,"base_nodes":15,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,false,false,false,false,false,false,true,false,false,true],"json_keys":[[11,["\\"x_selected_fields\\":"]],[12,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[13,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[14,["\\"criteria\\":","\\"fields\\":","\\"x_flags\\":"]]]}')
+    ('model', SearchPets200, (("body", "body", 9, False), ("content_type", "content_type", 3, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 10, False),), None, _jsoncompat_program_SearchPets200),
+    ('model', SearchPets400, (("body", "body", 6, False), ("content_type", "content_type", 3, False), ("headers", "headers", 7, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 8, False),), None, _jsoncompat_program_SearchPets400),
+    ('model', SearchPetsRequest, (("criteria", "criteria", 11, False), ("fields", "fields", 2, True), ("x_flags", "x_flags", 2, True),), None, _jsoncompat_program_SearchPetsRequest),
+], b'{"version":4,"base_nodes":16,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,true],"json_keys":[[12,["\\"x_selected_fields\\":"]],[13,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[14,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[15,["\\"criteria\\":","\\"fields\\":","\\"x_flags\\":"]]]}')
 
 # --- Prepared HTTP dispatch ---
 # Prevalidated dispatch; importing this module does not inspect annotations.

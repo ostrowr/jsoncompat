@@ -495,6 +495,10 @@ pub(crate) enum ConversionMismatch {
     JsonObjectKey,
     BinaryEncoding,
     Literal,
+    TupleLength {
+        expected: usize,
+        actual: usize,
+    },
     Depth,
     UnknownProperty(String),
     MissingField(String),
@@ -519,6 +523,12 @@ impl std::fmt::Display for ConversionMismatch {
             }
             Self::JsonObjectKey => formatter.write_str("JSON object keys must be strings"),
             Self::Literal => formatter.write_str("value does not match the generated literal"),
+            Self::TupleLength { expected, actual } => {
+                write!(
+                    formatter,
+                    "expected tuple of length {expected}, got length {actual}"
+                )
+            }
             Self::Depth => {
                 formatter.write_str("generated model conversion exceeds the maximum nesting depth")
             }
@@ -730,6 +740,9 @@ enum ConversionNode {
     },
     List {
         item: NodeId,
+    },
+    Tuple {
+        items: Vec<NodeId>,
     },
     Dict {
         value: NodeId,
@@ -1019,6 +1032,7 @@ impl ModelConverterPlan {
                     root_attribute.traverse(visit)?;
                 }
                 ConversionNode::List { .. }
+                | ConversionNode::Tuple { .. }
                 | ConversionNode::Dict { .. }
                 | ConversionNode::Union(_) => {}
             }
@@ -2172,6 +2186,17 @@ fn parse_node(
             require_arity(descriptor, 2, "list node")?;
             Ok(ConversionNode::List {
                 item: NodeId::parse(descriptor.get_item(1)?.extract()?, node_count)?,
+            })
+        }
+        "tuple" => {
+            require_arity(descriptor, 2, "tuple node")?;
+            let items = descriptor.get_item(1)?;
+            let items = items.cast::<PyTuple>()?;
+            Ok(ConversionNode::Tuple {
+                items: items
+                    .iter()
+                    .map(|item| NodeId::parse(item.extract()?, node_count))
+                    .collect::<PyResult<Vec<_>>>()?,
             })
         }
         "dict" => {

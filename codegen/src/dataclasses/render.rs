@@ -8,6 +8,8 @@ use super::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
+pub(super) const GENERATED_FORMAT_VERSION: u8 = 2;
+
 /// Trusted Python metadata for generated declarations. Keys are public class
 /// and Python field names. Annotation and base overrides do not change validation plans.
 #[derive(Default)]
@@ -73,6 +75,7 @@ impl DataclassModule {
 struct Field {
     name: String,
     annotation: String,
+    input_annotation: String,
     expression: String,
     default: Option<&'static str>,
     description: Option<String>,
@@ -82,6 +85,7 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
         ClassKind::Root { annotation } => vec![Field {
             name: "root".into(),
             annotation: annotation.to_string(),
+            input_annotation: annotation.input_source().to_owned(),
             expression: "dc.root_field()".into(),
             default: None,
             description: None,
@@ -98,6 +102,11 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
                         field.annotation.to_string()
                     } else {
                         omittable_annotation(&field.annotation)
+                    },
+                    input_annotation: if field.required {
+                        field.annotation.input_source().to_owned()
+                    } else {
+                        omittable_annotation(field.annotation.input_source())
                     },
                     expression: format!(
                         "dc.field({}{})",
@@ -120,6 +129,10 @@ fn fields(class: &ClassSpec) -> Vec<Field> {
                 result.push(Field {
                     name: EXTRA_FIELD_NAME.into(),
                     annotation: format!("collections.abc.Mapping[str, {annotation}]"),
+                    input_annotation: format!(
+                        "collections.abc.Mapping[str, {}]",
+                        annotation.input_source()
+                    ),
                     expression: "dc.extra_field(default_factory=dict)".into(),
                     default: Some("dc.EXTRA_DEFAULT"),
                     description: None,
@@ -425,8 +438,8 @@ fn render_module(
                 .fields
                 .get(&class.name)
                 .and_then(|fields| fields.get(&field.name))
-                .map(|extra| format!("typing.Annotated[{}, {extra}]", field.annotation))
-                .unwrap_or_else(|| field.annotation.clone());
+                .map(|extra| format!("typing.Annotated[{}, {extra}]", field.input_annotation))
+                .unwrap_or_else(|| field.input_annotation.clone());
             let prefix = format!("        {}: ", field.name);
             let annotation = wrap_annotation(&annotation, prefix.len(), 8);
             writeln!(
@@ -585,7 +598,7 @@ fn render_module(
     if standalone {
         writeln!(
             implementation,
-            "    dc.bind_module(1, [{roots}], [\n        {descriptors}\n    ], {})\n",
+            "    dc.bind_module({GENERATED_FORMAT_VERSION}, [{roots}], [\n        {descriptors}\n    ], {})\n",
             bytes(&plan)
         )
         .expect("string write");
@@ -636,6 +649,10 @@ pub(super) fn descriptor(
             tuple(values.iter().map(python_json_literal))
         ),
         ConversionNode::List { item } => format!("('list', {})", index(*item)),
+        ConversionNode::Tuple { items } => format!(
+            "('tuple', {})",
+            tuple(items.iter().map(|item| index(*item).to_string()))
+        ),
         ConversionNode::Dict { value } => format!("('dict', {})", index(*value)),
         ConversionNode::Root { model, value } => {
             format!(

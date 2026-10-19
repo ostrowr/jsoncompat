@@ -43,7 +43,7 @@ class DeletePet204(dc.DataclassModel):
 
     body: None = dc.field("body")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[204] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -55,7 +55,7 @@ class DeletePet204(dc.DataclassModel):
         skip_validation: bool = False,
         body: None,
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[204],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -68,7 +68,7 @@ class DeletePet404(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[404] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -81,7 +81,7 @@ class DeletePet404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -133,7 +133,7 @@ class ListPets200(dc.DataclassModel):
     body: PetPage = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: ListPets200Headers = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -146,7 +146,7 @@ class ListPets200(dc.DataclassModel):
         body: PetPage,
         content_type: typing.Literal["application/json"],
         headers: ListPets200Headers,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -159,7 +159,7 @@ class ListPets400(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[400] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -172,7 +172,7 @@ class ListPets400(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[400],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -185,7 +185,7 @@ class ListPetsDefault(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: int = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -198,7 +198,7 @@ class ListPetsDefault(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -278,7 +278,7 @@ class GetPet200(dc.DataclassModel):
     body: Pet = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: GetPet200Headers = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -291,7 +291,7 @@ class GetPet200(dc.DataclassModel):
         body: Pet,
         content_type: typing.Literal["application/json"],
         headers: GetPet200Headers,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -303,7 +303,7 @@ class GetPet304(dc.DataclassModel):
 
     body: None = dc.field("body")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[304] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -315,7 +315,7 @@ class GetPet304(dc.DataclassModel):
         skip_validation: bool = False,
         body: None,
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[304],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -328,7 +328,7 @@ class GetPet404(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[404] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -341,7 +341,7 @@ class GetPet404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -387,7 +387,7 @@ class GetPetNote200ApplicationJson(dc.DataclassModel):
     body: (str | None) = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -400,7 +400,7 @@ class GetPetNote200ApplicationJson(dc.DataclassModel):
         body: (str | None),
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -413,7 +413,7 @@ class GetPetNote200TextPlain(dc.DataclassModel):
     body: str = dc.field("body")
     content_type: typing.Literal["text/plain"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -426,7 +426,7 @@ class GetPetNote200TextPlain(dc.DataclassModel):
         body: str,
         content_type: typing.Literal["text/plain"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -439,7 +439,7 @@ class GetPetNote404(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[404] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -452,7 +452,7 @@ class GetPetNote404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -504,7 +504,7 @@ class UpdatePet200(dc.DataclassModel):
     body: Pet = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: UpdatePet200Headers = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -517,7 +517,7 @@ class UpdatePet200(dc.DataclassModel):
         body: Pet,
         content_type: typing.Literal["application/json"],
         headers: UpdatePet200Headers,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -530,7 +530,7 @@ class UpdatePet404(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[404] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -543,7 +543,7 @@ class UpdatePet404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -556,7 +556,7 @@ class UpdatePet412(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[412] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -569,7 +569,7 @@ class UpdatePet412(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[412],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -635,7 +635,7 @@ class CreatePet201(dc.DataclassModel):
     body: Pet = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: CreatePet201Headers = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[201] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -648,7 +648,7 @@ class CreatePet201(dc.DataclassModel):
         body: Pet,
         content_type: typing.Literal["application/json"],
         headers: CreatePet201Headers,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[201],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -661,7 +661,7 @@ class CreatePet400(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[400] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -674,7 +674,7 @@ class CreatePet400(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[400],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -687,7 +687,7 @@ class CreatePetDefault(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: int = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -700,7 +700,7 @@ class CreatePetDefault(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -772,7 +772,7 @@ class SetPetNote200(dc.DataclassModel):
     body: (str | None) = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -785,7 +785,7 @@ class SetPetNote200(dc.DataclassModel):
         body: (str | None),
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -798,7 +798,7 @@ class SetPetNote404(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[404] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -811,7 +811,7 @@ class SetPetNote404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -986,65 +986,66 @@ _jsoncompat_program_SetPetNoteBodyApplicationJson = b'{"version":4,"nodes":[{"ty
 _jsoncompat_program_SetPetNoteBodyTextPlain = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["content_type",1],["value",2]],"patterns":[],"required":["content_type","value"],"additional":3}},{"object_length":{"min":2,"max":null}}]},{"types":null,"choices":["text/plain"],"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 _jsoncompat_program_SetPetNoteRequest = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["body",1],["pet_id",12]],"patterns":[],"required":["body","pet_id"],"additional":8}},{"object_length":{"min":2,"max":null}}]},{"types":null,"choices":null,"rules":[{"any":[2,9]}]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/SetPetNoteBodyApplicationJson"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["content_type",4],["value",5]],"patterns":[],"required":["content_type","value"],"additional":8}},{"object_length":{"min":2,"max":null}}]},{"types":null,"choices":["application/json"],"rules":[]},{"types":null,"choices":null,"rules":[{"any":[6,7]}]},{"types":null,"choices":[null],"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[{"ref":{"node":10,"pointer":"/$defs/SetPetNoteBodyTextPlain"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["content_type",11],["value",7]],"patterns":[],"required":["content_type","value"],"additional":8}},{"object_length":{"min":2,"max":null}}]},{"types":null,"choices":["text/plain"],"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(DeletePet204, 18), (DeletePet404, 20), (DeletePetRequest, 22), (ListPets200Headers, 37), (ListPets200, 38), (ListPets400, 39), (ListPetsDefault, 40), (ListPetsRequest, 42), (GetPet200Headers, 24), (GetPet200, 25), (GetPet304, 26), (GetPet404, 28), (GetPetRequest, 34), (GetPetNote200ApplicationJson, 29), (GetPetNote200TextPlain, 30), (GetPetNote404, 32), (GetPetNoteRequest, 33), (UpdatePet200Headers, 51), (UpdatePet200, 52), (UpdatePet404, 53), (UpdatePet412, 54), (UpdatePetRequest, 56), (CreatePet201Headers, 5), (CreatePet201, 6), (CreatePet400, 12), (CreatePetDefault, 14), (CreatePetRequest, 17), (SetPetNoteBodyApplicationJson, 47), (SetPetNoteBodyTextPlain, 48), (SetPetNote200, 45), (SetPetNote404, 46), (SetPetNoteRequest, 49)], [
+dc.bind_module(2, [(DeletePet204, 19), (DeletePet404, 21), (DeletePetRequest, 23), (ListPets200Headers, 38), (ListPets200, 39), (ListPets400, 40), (ListPetsDefault, 41), (ListPetsRequest, 43), (GetPet200Headers, 25), (GetPet200, 26), (GetPet304, 27), (GetPet404, 29), (GetPetRequest, 35), (GetPetNote200ApplicationJson, 30), (GetPetNote200TextPlain, 31), (GetPetNote404, 33), (GetPetNoteRequest, 34), (UpdatePet200Headers, 52), (UpdatePet200, 53), (UpdatePet404, 54), (UpdatePet412, 55), (UpdatePetRequest, 57), (CreatePet201Headers, 5), (CreatePet201, 6), (CreatePet400, 13), (CreatePetDefault, 15), (CreatePetRequest, 18), (SetPetNoteBodyApplicationJson, 48), (SetPetNoteBodyTextPlain, 49), (SetPetNote200, 46), (SetPetNote404, 47), (SetPetNoteRequest, 50)], [
     ('external', Pet),
     ("str",),
     ('union', (1, 3,), None, None),
     ("null",),
     ('list', 1),
     ('model', CreatePet201Headers, (("etag", "etag", 1, False), ("location", "location", 1, False),), None, _jsoncompat_program_CreatePet201Headers),
-    ('model', CreatePet201, (("body", "body", 0, False), ("content_type", "content_type", 7, False), ("headers", "headers", 5, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 9, False),), None, _jsoncompat_program_CreatePet201),
+    ('model', CreatePet201, (("body", "body", 0, False), ("content_type", "content_type", 7, False), ("headers", "headers", 5, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 10, False),), None, _jsoncompat_program_CreatePet201),
     ('literal', ("application/json",)),
-    ('list', 4),
+    ('list', 9),
+    ('tuple', (1, 1,)),
     ('literal', (201,)),
     ('external', Problem),
     ('external', JsoncompatEmptyHeaders),
-    ('model', CreatePet400, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 13, False),), None, _jsoncompat_program_ListPets400),
+    ('model', CreatePet400, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 14, False),), None, _jsoncompat_program_ListPets400),
     ('literal', (400,)),
-    ('model', CreatePetDefault, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 15, False),), None, _jsoncompat_program_CreatePetDefault),
+    ('model', CreatePetDefault, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 16, False),), None, _jsoncompat_program_CreatePetDefault),
     ("int",),
     ('external', PetCreate),
-    ('model', CreatePetRequest, (("body", "body", 16, False),), None, _jsoncompat_program_CreatePetRequest),
-    ('model', DeletePet204, (("body", "body", 3, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 19, False),), None, _jsoncompat_program_DeletePet204),
+    ('model', CreatePetRequest, (("body", "body", 17, False),), None, _jsoncompat_program_CreatePetRequest),
+    ('model', DeletePet204, (("body", "body", 3, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 20, False),), None, _jsoncompat_program_DeletePet204),
     ('literal', (204,)),
-    ('model', DeletePet404, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 21, False),), None, _jsoncompat_program_DeletePet404),
+    ('model', DeletePet404, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 22, False),), None, _jsoncompat_program_DeletePet404),
     ('literal', (404,)),
     ('model', DeletePetRequest, (("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_DeletePetRequest),
     ('literal', (200,)),
     ('model', GetPet200Headers, (("etag", "etag", 1, False),), None, _jsoncompat_program_GetPet200Headers),
-    ('model', GetPet200, (("body", "body", 0, False), ("content_type", "content_type", 7, False), ("headers", "headers", 24, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 23, False),), None, _jsoncompat_program_GetPet200),
-    ('model', GetPet304, (("body", "body", 3, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 27, False),), None, _jsoncompat_program_GetPet304),
+    ('model', GetPet200, (("body", "body", 0, False), ("content_type", "content_type", 7, False), ("headers", "headers", 25, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 24, False),), None, _jsoncompat_program_GetPet200),
+    ('model', GetPet304, (("body", "body", 3, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 28, False),), None, _jsoncompat_program_GetPet304),
     ('literal', (304,)),
-    ('model', GetPet404, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 21, False),), None, _jsoncompat_program_DeletePet404),
-    ('model', GetPetNote200ApplicationJson, (("body", "body", 2, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 23, False),), None, _jsoncompat_program_GetPetNote200ApplicationJson),
-    ('model', GetPetNote200TextPlain, (("body", "body", 1, False), ("content_type", "content_type", 31, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 23, False),), None, _jsoncompat_program_GetPetNote200TextPlain),
+    ('model', GetPet404, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 22, False),), None, _jsoncompat_program_DeletePet404),
+    ('model', GetPetNote200ApplicationJson, (("body", "body", 2, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 24, False),), None, _jsoncompat_program_GetPetNote200ApplicationJson),
+    ('model', GetPetNote200TextPlain, (("body", "body", 1, False), ("content_type", "content_type", 32, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 24, False),), None, _jsoncompat_program_GetPetNote200TextPlain),
     ('literal', ("text/plain",)),
-    ('model', GetPetNote404, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 21, False),), None, _jsoncompat_program_DeletePet404),
+    ('model', GetPetNote404, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 22, False),), None, _jsoncompat_program_DeletePet404),
     ('model', GetPetNoteRequest, (("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_DeletePetRequest),
-    ('model', GetPetRequest, (("if_none_match", "if_none_match", 1, True), ("include_history", "include_history", 35, True), ("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_GetPetRequest),
+    ('model', GetPetRequest, (("if_none_match", "if_none_match", 1, True), ("include_history", "include_history", 36, True), ("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_GetPetRequest),
     ('literal', (False, True,)),
     ('external', PetPage),
-    ('model', ListPets200Headers, (("x_total_count", "x_total_count", 15, False),), None, _jsoncompat_program_ListPets200Headers),
-    ('model', ListPets200, (("body", "body", 36, False), ("content_type", "content_type", 7, False), ("headers", "headers", 37, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 23, False),), None, _jsoncompat_program_ListPets200),
-    ('model', ListPets400, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 13, False),), None, _jsoncompat_program_ListPets400),
-    ('model', ListPetsDefault, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 15, False),), None, _jsoncompat_program_ListPetsDefault),
+    ('model', ListPets200Headers, (("x_total_count", "x_total_count", 16, False),), None, _jsoncompat_program_ListPets200Headers),
+    ('model', ListPets200, (("body", "body", 37, False), ("content_type", "content_type", 7, False), ("headers", "headers", 38, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 24, False),), None, _jsoncompat_program_ListPets200),
+    ('model', ListPets400, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 14, False),), None, _jsoncompat_program_ListPets400),
+    ('model', ListPetsDefault, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 16, False),), None, _jsoncompat_program_ListPetsDefault),
     ('external', PetFilter),
-    ('model', ListPetsRequest, (("filter", "filter", 41, True), ("limit", "limit", 15, True), ("locale", "locale", 43, True), ("offset", "offset", 15, True), ("tags", "tags", 4, True), ("x_request_id", "x_request_id", 1, True),), None, _jsoncompat_program_ListPetsRequest),
+    ('model', ListPetsRequest, (("filter", "filter", 42, True), ("limit", "limit", 16, True), ("locale", "locale", 44, True), ("offset", "offset", 16, True), ("tags", "tags", 4, True), ("x_request_id", "x_request_id", 1, True),), None, _jsoncompat_program_ListPetsRequest),
     ('literal', ("en", "fr",)),
     ('external', PetPatch),
-    ('model', SetPetNote200, (("body", "body", 2, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 23, False),), None, _jsoncompat_program_GetPetNote200ApplicationJson),
-    ('model', SetPetNote404, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 21, False),), None, _jsoncompat_program_DeletePet404),
+    ('model', SetPetNote200, (("body", "body", 2, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 24, False),), None, _jsoncompat_program_GetPetNote200ApplicationJson),
+    ('model', SetPetNote404, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 22, False),), None, _jsoncompat_program_DeletePet404),
     ('model', SetPetNoteBodyApplicationJson, (("content_type", "content_type", 7, False), ("value", "value", 2, False),), None, _jsoncompat_program_SetPetNoteBodyApplicationJson),
-    ('model', SetPetNoteBodyTextPlain, (("content_type", "content_type", 31, False), ("value", "value", 1, False),), None, _jsoncompat_program_SetPetNoteBodyTextPlain),
-    ('model', SetPetNoteRequest, (("body", "body", 50, False), ("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_SetPetNoteRequest),
-    ('union', (47, 48,), "content_type", (("application/json", 0), ("text/plain", 1),)),
+    ('model', SetPetNoteBodyTextPlain, (("content_type", "content_type", 32, False), ("value", "value", 1, False),), None, _jsoncompat_program_SetPetNoteBodyTextPlain),
+    ('model', SetPetNoteRequest, (("body", "body", 51, False), ("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_SetPetNoteRequest),
+    ('union', (48, 49,), "content_type", (("application/json", 0), ("text/plain", 1),)),
     ('model', UpdatePet200Headers, (("etag", "etag", 1, False),), None, _jsoncompat_program_GetPet200Headers),
-    ('model', UpdatePet200, (("body", "body", 0, False), ("content_type", "content_type", 7, False), ("headers", "headers", 51, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 23, False),), None, _jsoncompat_program_UpdatePet200),
-    ('model', UpdatePet404, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 21, False),), None, _jsoncompat_program_DeletePet404),
-    ('model', UpdatePet412, (("body", "body", 10, False), ("content_type", "content_type", 7, False), ("headers", "headers", 11, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 55, False),), None, _jsoncompat_program_UpdatePet412),
+    ('model', UpdatePet200, (("body", "body", 0, False), ("content_type", "content_type", 7, False), ("headers", "headers", 52, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 24, False),), None, _jsoncompat_program_UpdatePet200),
+    ('model', UpdatePet404, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 22, False),), None, _jsoncompat_program_DeletePet404),
+    ('model', UpdatePet412, (("body", "body", 11, False), ("content_type", "content_type", 7, False), ("headers", "headers", 12, False), ("raw_headers", "raw_headers", 8, False), ("status", "status", 56, False),), None, _jsoncompat_program_UpdatePet412),
     ('literal', (412,)),
-    ('model', UpdatePetRequest, (("body", "body", 44, True), ("dry_run", "dry_run", 35, True), ("if_match", "if_match", 1, True), ("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_UpdatePetRequest),
-], b'{"version":4,"base_nodes":57,"guard_nodes":[{"original":1,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]}},{"original":15,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}},{"original":15,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":1,"lower":true,"exclusive":false}},{"bound":{"value":100,"lower":false,"exclusive":false}}]}}],"guards":[{"owner":22,"field":0,"guard":0},{"owner":33,"field":0,"guard":0},{"owner":34,"field":2,"guard":0},{"owner":37,"field":0,"guard":1},{"owner":42,"field":1,"guard":2},{"owner":42,"field":3,"guard":1},{"owner":49,"field":1,"guard":0},{"owner":56,"field":3,"guard":0}],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,true,true,false,false,true,false,false,false,false,true,false,false,false,false,false,true,false,false,true,false,false,false,false,false,false,false,false],"json_keys":[[5,["\\"etag\\":","\\"location\\":"]],[6,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[12,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[14,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[17,["\\"body\\":"]],[18,["\\"body\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[20,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[22,["\\"pet_id\\":"]],[24,["\\"etag\\":"]],[25,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[26,["\\"body\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[28,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[29,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[30,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[32,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[33,["\\"pet_id\\":"]],[34,["\\"if_none_match\\":","\\"include_history\\":","\\"pet_id\\":"]],[37,["\\"x_total_count\\":"]],[38,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[39,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[40,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[42,["\\"filter\\":","\\"limit\\":","\\"locale\\":","\\"offset\\":","\\"tags\\":","\\"x_request_id\\":"]],[45,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[46,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[47,["\\"content_type\\":","\\"value\\":"]],[48,["\\"content_type\\":","\\"value\\":"]],[49,["\\"body\\":","\\"pet_id\\":"]],[51,["\\"etag\\":"]],[52,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[53,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[54,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[56,["\\"body\\":","\\"dry_run\\":","\\"if_match\\":","\\"pet_id\\":"]]]}')
+    ('model', UpdatePetRequest, (("body", "body", 45, True), ("dry_run", "dry_run", 36, True), ("if_match", "if_match", 1, True), ("pet_id", "pet_id", 1, False),), None, _jsoncompat_program_UpdatePetRequest),
+], b'{"version":4,"base_nodes":58,"guard_nodes":[{"original":1,"guard":{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]}},{"original":16,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":0,"lower":true,"exclusive":false}}]}},{"original":16,"guard":{"types":["integer"],"choices":null,"rules":[{"bound":{"value":1,"lower":true,"exclusive":false}},{"bound":{"value":100,"lower":false,"exclusive":false}}]}}],"guards":[{"owner":23,"field":0,"guard":0},{"owner":34,"field":0,"guard":0},{"owner":35,"field":2,"guard":0},{"owner":38,"field":0,"guard":1},{"owner":43,"field":1,"guard":2},{"owner":43,"field":3,"guard":1},{"owner":50,"field":1,"guard":0},{"owner":57,"field":3,"guard":0}],"conversion_validates":[false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,true,true,false,false,true,false,false,false,false,true,false,false,false,false,false,true,false,false,true,false,false,false,false,false,false,false,false],"json_keys":[[5,["\\"etag\\":","\\"location\\":"]],[6,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[13,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[15,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[18,["\\"body\\":"]],[19,["\\"body\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[21,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[23,["\\"pet_id\\":"]],[25,["\\"etag\\":"]],[26,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[27,["\\"body\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[29,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[30,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[31,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[33,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[34,["\\"pet_id\\":"]],[35,["\\"if_none_match\\":","\\"include_history\\":","\\"pet_id\\":"]],[38,["\\"x_total_count\\":"]],[39,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[40,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[41,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[43,["\\"filter\\":","\\"limit\\":","\\"locale\\":","\\"offset\\":","\\"tags\\":","\\"x_request_id\\":"]],[46,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[47,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[48,["\\"content_type\\":","\\"value\\":"]],[49,["\\"content_type\\":","\\"value\\":"]],[50,["\\"body\\":","\\"pet_id\\":"]],[52,["\\"etag\\":"]],[53,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[54,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[55,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[57,["\\"body\\":","\\"dry_run\\":","\\"if_match\\":","\\"pet_id\\":"]]]}')
 
 # --- Prepared HTTP dispatch ---
 # Prevalidated dispatch; importing this module does not inspect annotations.

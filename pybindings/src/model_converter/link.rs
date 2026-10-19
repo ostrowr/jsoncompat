@@ -78,6 +78,9 @@ impl ConversionNode {
             Self::List { item } => Self::List {
                 item: reference(*item),
             },
+            Self::Tuple { items } => Self::Tuple {
+                items: items.iter().map(|item| reference(*item)).collect(),
+            },
             Self::Dict { value } => Self::Dict {
                 value: reference(*value),
             },

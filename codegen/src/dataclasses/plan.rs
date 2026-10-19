@@ -74,6 +74,9 @@ pub(super) enum ConversionNode {
     List {
         item: NodeId,
     },
+    Tuple {
+        items: Vec<NodeId>,
+    },
     Dict {
         value: NodeId,
     },
@@ -426,6 +429,12 @@ impl Builder<'_> {
             },
             Kind::Sequence(item) => ConversionNode::List {
                 item: self.add(item)?,
+            },
+            Kind::Tuple(items) => ConversionNode::Tuple {
+                items: items
+                    .iter()
+                    .map(|item| self.add(item))
+                    .collect::<Result<Vec<_>, _>>()?,
             },
             Kind::Mapping(value) => ConversionNode::Dict {
                 value: self.add(value)?,

@@ -165,6 +165,47 @@ assert _install.deserialize(_install(**{f'f{i:03}': i for i in range(200)}).seri
 }
 
 #[test]
+fn fixed_tuples_link_positional_models_across_component_modules() {
+    let work = Work::new();
+    work.write(&json!({"openapi":"3.1.0","info":{"title":"Tuple links","version":"1"},"components":{"schemas":{
+        "Left":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false},
+        "Right":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false},
+        "Pair":{"type":"object","properties":{"positions":{"type":"array","prefixItems":[{"$ref":"#/components/schemas/Left"},{"$ref":"#/components/schemas/Right"}],"items":false,"minItems":2}},"required":["positions"],"additionalProperties":false},
+        "Outer":{"type":"object","properties":{"pair":{"$ref":"#/components/schemas/Pair"}},"required":["pair"],"additionalProperties":false}
+    }}}));
+    success(work.generate_with_group_size("1", &[]));
+    success(
+        python_env::python_command()
+            .arg("-c")
+            .arg(
+                r#"
+import json
+import sys
+from typing import get_type_hints
+sys.path.insert(0, sys.argv[1])
+from models import Outer, Pair, Left, Right
+
+assert get_type_hints(Pair)["positions"] == tuple[Left, Right]
+wire = {"pair": {"positions": [{"value": "left"}, {"value": "right"}]}}
+for skip_validation in (False, True):
+    for outer in (
+        Outer.from_value(wire, skip_validation=skip_validation),
+        Outer.deserialize(json.dumps(wire), skip_validation=skip_validation),
+    ):
+        assert type(outer.pair.positions) is tuple
+        assert type(outer.pair.positions[0]) is Left
+        assert type(outer.pair.positions[1]) is Right
+        assert outer.to_value(skip_validation=skip_validation) == wire
+        assert json.loads(outer.serialize(skip_validation=skip_validation)) == wire
+"#,
+            )
+            .arg(&work.0)
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
 fn annotated_single_reference_all_of_preserves_typed_model_identity() {
     let work = Work::new();
     work.write(&json!({"openapi":"3.1.0","info":{"title":"Annotated references","version":"1"},"components":{"schemas":{

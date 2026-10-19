@@ -26,7 +26,7 @@ class GetGroupPets200(dc.DataclassModel):
     body: collections.abc.Sequence[Pet] = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -39,7 +39,7 @@ class GetGroupPets200(dc.DataclassModel):
         body: collections.abc.Sequence[Pet],
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -104,15 +104,15 @@ OPERATIONS: typing.Final[tuple[_http.Operation, ...]] = (
 _jsoncompat_program_GetGroupPets200 = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["body",1],["content_type",11],["headers",12],["raw_headers",14],["status",16]],"patterns":[],"required":["body","content_type","headers","raw_headers","status"],"additional":10}},{"object_length":{"min":5,"max":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/Pet"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",4],["name",5],["nickname",6],["species",8],["tags",9]],"patterns":[],"required":["id","name","species","tags"],"additional":10}},{"object_length":{"min":4,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"any":[7,4]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":["cat","dog"],"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":["application/json"],"rules":[]},{"types":null,"choices":null,"rules":[{"ref":{"node":13,"pointer":"/$defs/JsoncompatEmptyHeaders"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":10}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":15}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[4,4],"items":10}},{"array_length":{"min":2,"max":null}}]},{"types":null,"choices":[200],"rules":[]}],"patterns":[],"pattern_sources":[]}'
 _jsoncompat_program_GetGroupPetsRequest = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["group_id",1],["pet_ids",2]],"patterns":[],"required":["group_id","pet_ids"],"additional":4}},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":3}}]},{"types":["integer"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(GetGroupPets200, 7), (GetGroupPetsRequest, 10)], [
+dc.bind_module(2, [(GetGroupPets200, 7), (GetGroupPetsRequest, 10)], [
     ('external', Pet),
     ("str",),
-    ('list', 1),
     ('literal', ("application/json",)),
-    ('list', 2),
+    ('list', 4),
+    ('tuple', (1, 1,)),
     ('external', JsoncompatEmptyHeaders),
     ("int",),
-    ('model', GetGroupPets200, (("body", "body", 8, False), ("content_type", "content_type", 3, False), ("headers", "headers", 5, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 9, False),), None, _jsoncompat_program_GetGroupPets200),
+    ('model', GetGroupPets200, (("body", "body", 8, False), ("content_type", "content_type", 2, False), ("headers", "headers", 5, False), ("raw_headers", "raw_headers", 3, False), ("status", "status", 9, False),), None, _jsoncompat_program_GetGroupPets200),
     ('list', 0),
     ('literal', (200,)),
     ('model', GetGroupPetsRequest, (("group_id", "group_id", 1, False), ("pet_ids", "pet_ids", 11, False),), None, _jsoncompat_program_GetGroupPetsRequest),

@@ -529,6 +529,10 @@ cases = (
     ("scalar trailing item", [("str", "trailing")]),
     ("short list", [("list",)]),
     ("external list item", [("list", 1)]),
+    ("short tuple", [("tuple",)]),
+    ("long tuple", [("tuple", (), "trailing")]),
+    ("wrong tuple items", [("tuple", [0])]),
+    ("external tuple item", [("tuple", (1,))]),
     ("external dict value", [("dict", 1)]),
     ("external union branch", [("union", (1,), None, None)]),
     ("external root value", [("root", Model, 1)]),
@@ -648,6 +652,20 @@ compile(
         ("union", (0, 1), "kind", (("text", 0), ("number", 1))),
     ]
 )
+compile([("str",), ("int",), ("tuple", (0, 1))])
+compile([("tuple", ())])
+
+from jsoncompat.codegen.dataclasses import bind_module
+empty_plan = b'{"version":4,"base_nodes":0,"guard_nodes":[],"guards":[],"conversion_validates":[],"json_keys":[]}'
+for version in (1, 2):
+    bind_module(version, [], [], empty_plan)
+for version in (0, 3):
+    try:
+        bind_module(version, [], [], empty_plan)
+    except ImportError:
+        pass
+    else:
+        raise AssertionError("unsupported generated format was accepted")
 
 # The old protocol treated any non-None fourth item as the missing sentinel,
 # so False could cause a present JSON false value to disappear on output. The
@@ -2197,10 +2215,9 @@ fn cyclic_values_reject_across_the_complete_graph_on_a_constrained_thread_stack(
         },
     }))
     .expect("generate ordinary mapping cycle-test dataclass");
-    assert!(
-        ordinary_mapping_source
-            .contains("root: (collections.abc.Mapping[str, typing.Any] | str) = dc.root_field()")
-    );
+    assert!(ordinary_mapping_source.contains(
+        "root: (collections.abc.Mapping[str, dc.FrozenJsonValue] | str) = dc.root_field()"
+    ));
     let ordinary_mapping_module_path = write_temp_module(
         "cyclic_ordinary_mapping_small_stack",
         &ordinary_mapping_source,
@@ -3030,7 +3047,61 @@ for invalid in (
 }
 
 #[test]
-fn generated_dataclasses_keep_prefix_item_types_ergonomic_without_losing_schema_checks() {
+fn unconstrained_json_values_round_trip_and_reuse_immutable_trees() {
+    let source =
+        generate_dataclass_models(&json!(true)).expect("generate unconstrained JSON dataclass");
+    let module_path = write_temp_module("frozen_json_values", &source);
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import dataclasses
+import importlib.util
+import sys
+
+from jsoncompat.codegen.dataclasses import FrozenDict, FrozenList
+
+spec = importlib.util.spec_from_file_location("frozen_json_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+value = {"nested": [1, "a", None, {"enabled": True}]}
+model = module.GeneratedSchema(root=value)
+assert isinstance(model.root, FrozenDict)
+assert isinstance(model.root["nested"], FrozenList)
+assert isinstance(model.root["nested"][3], FrozenDict)
+assert model.to_value() == value
+assert dataclasses.replace(model).to_value() == value
+assert module.GeneratedSchema(root=model.root).to_value() == value
+assert module.GeneratedSchema.from_value(value).to_value() == value
+assert module.GeneratedSchema.deserialize(model.serialize()).to_value() == value
+
+cyclic = FrozenDict()
+object.__setattr__(cyclic, "_items", (("self", cyclic),))
+for invalid in (object(), b"opaque", {1: "non-string key"}, FrozenDict({"bad": object()}), cyclic):
+    for skip_validation in (False, True):
+        try:
+            module.GeneratedSchema(root=invalid, skip_validation=skip_validation)
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError("invalid immutable JSON value was accepted")
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run immutable JSON round-trip test");
+    assert!(
+        output.status.success(),
+        "immutable JSON round-trip test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn fixed_prefix_items_preserve_positional_models_and_structure() {
     let source = generate_dataclass_models(&json!({
         "title": "TracePoint",
         "type": "object",
@@ -3044,10 +3115,46 @@ fn generated_dataclasses_keep_prefix_item_types_ergonomic_without_losing_schema_
                 "items": false,
                 "minItems": 2,
                 "maxItems": 2,
-            }
+            },
+            "pair": {
+                "type": "array",
+                "prefixItems": [
+                    {"$ref": "#/$defs/Left"},
+                    {"$ref": "#/$defs/Right"},
+                ],
+                "items": false,
+                "minItems": 2,
+            },
+            "choice": {
+                "anyOf": [
+                    {
+                        "type": "array",
+                        "prefixItems": [{"type": "string"}, {"type": "integer"}],
+                        "items": false,
+                        "minItems": 2,
+                    },
+                    {"type": "string"},
+                ],
+            },
         },
-        "required": ["coordinates"],
+        "required": ["coordinates", "pair"],
         "additionalProperties": false,
+        "$defs": {
+            "Left": {
+                "title": "Left",
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": false,
+            },
+            "Right": {
+                "title": "Right",
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": false,
+            },
+        },
     }))
     .expect("generate dataclasses from prefixItems schema");
     let module_path = write_temp_module("prefix_items", &source);
@@ -3056,7 +3163,10 @@ fn generated_dataclasses_keep_prefix_item_types_ergonomic_without_losing_schema_
     command.arg("-B").arg("-c").arg(
         r###"
 import importlib.util
+import json
 import sys
+
+from jsoncompat.codegen.dataclasses import FrozenList
 
 module_path = sys.argv[1]
 spec = importlib.util.spec_from_file_location("prefix_item_models", module_path)
@@ -3065,32 +3175,85 @@ assert spec.loader is not None
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
-point = module.TracePoint(coordinates=["aisle", 7])
-assert point.to_value() == {"coordinates": ["aisle", 7]}
-assert module.TracePoint.from_value({"coordinates": ["aisle", 7]}).to_value() == {
-    "coordinates": ["aisle", 7]
-}
+left = module.Left(value="left")
+right = module.Right(value="right")
+pair = (left, right)
+wire = {"coordinates": ["aisle", 7], "pair": [{"value": "left"}, {"value": "right"}]}
 
-for factory in (
-    lambda: module.TracePoint(coordinates=[7, "aisle"]),
-    lambda: module.TracePoint(coordinates=["aisle", 7, 9]),
-    lambda: module.TracePoint.from_value({"coordinates": [7, "aisle"]}),
+def point():
+    return module.TracePoint(coordinates=("aisle", 7), pair=pair)
+
+assert point().to_value() == wire
+for skip_validation in (False, True):
+    for parsed in (
+        module.TracePoint.from_value(wire, skip_validation=skip_validation),
+        module.TracePoint.deserialize(json.dumps(wire), skip_validation=skip_validation),
+    ):
+        assert type(parsed.coordinates) is tuple
+        assert type(parsed.pair) is tuple
+        assert type(parsed.pair[0]) is module.Left
+        assert type(parsed.pair[1]) is module.Right
+        assert parsed.to_value(skip_validation=skip_validation) == wire
+        assert json.loads(parsed.serialize(skip_validation=skip_validation)) == wire
+
+class WrongLength:
+    def __len__(self) -> int:
+        return 2
+
+    def __getitem__(self, index: int) -> object:
+        return ("aisle", 7, 9)[index]
+
+class MisleadingList(list[object]):
+    def __len__(self) -> int:
+        return 99
+
+class MisleadingTuple(tuple[object, ...]):
+    def __len__(self) -> int:
+        return 99
+
+for skip_validation in (False, True):
+    for value in (MisleadingList(("aisle", 7)), MisleadingTuple(("aisle", 7))):
+        parsed = module.TracePoint.from_value({**wire, "choice": value}, skip_validation=skip_validation)
+        assert type(parsed.choice) is tuple
+        assert parsed.choice == ("aisle", 7)
+    for factory in (
+        lambda: module.TracePoint(coordinates=(7, "aisle"), pair=pair, skip_validation=skip_validation),
+        lambda: module.TracePoint(coordinates=("aisle",), pair=pair, skip_validation=skip_validation),
+        lambda: module.TracePoint(coordinates=("aisle", 7, 9), pair=pair, skip_validation=skip_validation),
+        lambda: module.TracePoint(coordinates=WrongLength(), pair=pair, skip_validation=skip_validation),
+        lambda: module.TracePoint(coordinates=("aisle", 7), pair=(right, left), skip_validation=skip_validation),
+        lambda: module.TracePoint.from_value({**wire, "coordinates": [7, "aisle"]}, skip_validation=skip_validation),
+    ):
+        try:
+            factory()
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError("fixed tuple structure was not enforced")
+
+for field, invalid in (
+    ("coordinates", FrozenList(("aisle", 7, 9))),
+    ("pair", FrozenList((right, left))),
 ):
-    try:
-        factory()
-    except (TypeError, ValueError):
-        pass
-    else:
-        raise AssertionError("prefixItems schema invariant was not enforced")
+    changed = point()
+    object.__setattr__(changed, field, invalid)
+    for skip_validation in (False, True):
+        for output in (changed.to_value, changed.serialize):
+            try:
+                output(skip_validation=skip_validation)
+            except (TypeError, ValueError):
+                pass
+            else:
+                raise AssertionError("invalid fixed tuple state was serialized")
 "###,
     );
     command.arg(module_path);
     let output = command
         .output()
-        .expect("run generated dataclass prefixItems test");
+        .expect("run generated dataclass fixed tuple test");
     assert!(
         output.status.success(),
-        "generated dataclass prefixItems test failed: {}",
+        "generated dataclass fixed tuple test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
