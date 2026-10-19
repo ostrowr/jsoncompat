@@ -41,6 +41,15 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
                 ],
                 "items": false,
             },
+            "fixedCoordinates": {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string"},
+                    {"type": "integer"},
+                ],
+                "items": false,
+                "minItems": 2,
+            },
         },
         "required": ["sku", "metadata"],
         "additionalProperties": {"type": "number"},
@@ -86,6 +95,10 @@ assert_type(item.metadata.warehouse, str)
 assert_type(item.tags, Omittable[Sequence[str]])
 assert_type(item.warehouseCode, Omittable[str])
 assert_type(item.coordinates, Omittable[Sequence[int | str]])
+assert_type(item.fixedCoordinates, Omittable[tuple[str, int]])
+if item.fixedCoordinates is not MISSING:
+    assert_type(item.fixedCoordinates[0], str)
+    assert_type(item.fixedCoordinates[1], int)
 assert_type(item.__jsoncompat_extra__, Mapping[str, float])
 assert_type(
     item.get_additional_property("priority"),
@@ -103,6 +116,7 @@ item_from_constructor = InventoryItem(
     tags=["dry"],
     warehouseCode="WH-123",
     coordinates=["aisle", 7],
+    fixedCoordinates=("aisle", 7),
     __jsoncompat_extra__={"priority": 2.5},
     skip_validation=True,
 )
@@ -138,6 +152,18 @@ InventoryItem(
     sku="sku-456",
     metadata=InventoryItemMetadata(warehouse="east"),
     coordinates=[{}],
+)
+
+InventoryItem(
+    sku="sku-456",
+    metadata=InventoryItemMetadata(warehouse="east"),
+    fixedCoordinates=(7, "aisle"),
+)
+
+InventoryItem(
+    sku="sku-456",
+    metadata=InventoryItemMetadata(warehouse="east"),
+    fixedCoordinates=("aisle",),
 )
 
 InventoryItem(
@@ -194,6 +220,7 @@ InventoryItem(
     );
     for rejected in [
         "coordinates",
+        "fixedCoordinates",
         "skip_validation",
         "get_additional_property",
         "no-matching-overload",
@@ -204,6 +231,69 @@ InventoryItem(
         );
     }
 
+    Ok(())
+}
+
+#[test]
+fn unconstrained_json_values_have_precise_immutable_types() -> Result<(), Box<dyn Error>> {
+    let module =
+        generate_dataclass_module_from_document(&SchemaDocument::from_json(&json!(true))?)?;
+    let source = module.public_file("_generated_impl");
+    assert!(!source.contains("typing.Any"));
+    assert!(source.contains("root: dc.FrozenJsonValue = dc.root_field()"));
+    assert!(source.contains("root: (dc.JsonValue | dc.FrozenJsonValue),"));
+    let work_dir = write_typecheck_files(
+        &source,
+        r#"
+from typing import assert_type
+
+from generated_models import GeneratedSchema
+from jsoncompat import JsonValue
+from jsoncompat.codegen.dataclasses import FrozenDict, FrozenJsonValue, FrozenList
+
+raw: JsonValue = {"nested": [1, "a", None]}
+model = GeneratedSchema(root=raw)
+assert_type(model.root, FrozenJsonValue)
+reused = GeneratedSchema(root=model.root)
+assert_type(reused, GeneratedSchema)
+
+def size(value: FrozenJsonValue) -> int:
+    if isinstance(value, (FrozenList, FrozenDict)):
+        return len(value)
+    return 1
+"#,
+        r#"
+from generated_models import GeneratedSchema
+from jsoncompat.codegen.dataclasses import FrozenDict, FrozenJsonValue, FrozenList
+
+GeneratedSchema(root=object())
+GeneratedSchema(root=b"opaque")
+GeneratedSchema(root={1: "non-string key"})
+
+def mutate(value: FrozenJsonValue) -> None:
+    if isinstance(value, FrozenList):
+        value.append(1)
+    elif isinstance(value, FrozenDict):
+        value["a"] = 1
+"#,
+    )?;
+    fs::write(work_dir.join("_generated_impl.py"), module.private_file())?;
+    let valid_output = run_ty(&work_dir, "valid_usage.py")?;
+    assert!(
+        valid_output.status.success(),
+        "ty rejected valid immutable JSON usage:\n{}\n{}",
+        String::from_utf8_lossy(&valid_output.stdout),
+        String::from_utf8_lossy(&valid_output.stderr),
+    );
+    let invalid_output = run_ty(&work_dir, "invalid_usage.py")?;
+    assert!(!invalid_output.status.success());
+    let diagnostics = String::from_utf8_lossy(&invalid_output.stdout);
+    for rejected in ["root", "object", "opaque", "append", "FrozenDict"] {
+        assert!(
+            diagnostics.contains(rejected),
+            "ty did not reject {rejected}:\n{diagnostics}"
+        );
+    }
     Ok(())
 }
 

@@ -34,7 +34,7 @@ __all__: tuple[str, ...] = ("PetPatch",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_PetPatch = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["name",1],["nickname",2],["tags",5]],"patterns":[],"required":[],"additional":6}}]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"any":[3,4]}]},{"types":null,"choices":[null],"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(PetPatch, 4)], [
+dc.bind_module(2, [(PetPatch, 4)], [
     ("str",),
     ('union', (0, 2,), None, None),
     ("null",),

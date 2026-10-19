@@ -38,7 +38,7 @@ __all__: tuple[str, ...] = ("Pet",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_Pet = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",1],["name",2],["nickname",3],["species",5],["tags",6]],"patterns":[],"required":["id","name","species","tags"],"additional":7}},{"object_length":{"min":4,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"any":[4,1]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":["cat","dog"],"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":1}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(Pet, 0)], [
+dc.bind_module(2, [(Pet, 0)], [
     ('model', Pet, (("id", "id", 1, False), ("name", "name", 1, False), ("nickname", "nickname", 2, True), ("species", "species", 4, False), ("tags", "tags", 5, False),), None, _jsoncompat_program_Pet),
     ("str",),
     ('union', (1, 3,), None, None),

@@ -31,7 +31,7 @@ __all__: tuple[str, ...] = ("Problem",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_Problem = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["code",1],["message",1]],"patterns":[],"required":["code","message"],"additional":2}},{"object_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(Problem, 1)], [
+dc.bind_module(2, [(Problem, 1)], [
     ("str",),
     ('model', Problem, (("code", "code", 0, False), ("message", "message", 0, False),), None, _jsoncompat_program_Problem),
 ], b'{"version":4,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[false,true],"json_keys":[[1,["\\"code\\":","\\"message\\":"]]]}')

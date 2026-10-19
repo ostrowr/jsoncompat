@@ -32,6 +32,7 @@ impl ModelConverterPy {
         if matches!(
             node,
             ConversionNode::List { .. }
+                | ConversionNode::Tuple { .. }
                 | ConversionNode::Dict { .. }
                 | ConversionNode::Model { .. }
         ) {
@@ -76,6 +77,14 @@ impl ModelConverterPy {
             ConversionNode::List { item } => self.convert_list(
                 py,
                 *item,
+                value,
+                union_selection,
+                remaining_depth,
+                active_containers,
+            ),
+            ConversionNode::Tuple { items } => self.convert_tuple(
+                py,
+                items,
                 value,
                 union_selection,
                 remaining_depth,
@@ -149,7 +158,9 @@ impl ModelConverterPy {
         let node = self.node(node_id);
         if matches!(
             node,
-            ConversionNode::List { .. } | ConversionNode::Dict { .. }
+            ConversionNode::List { .. }
+                | ConversionNode::Tuple { .. }
+                | ConversionNode::Dict { .. }
         ) {
             return active_containers.with(value, |active_containers| {
                 self.convert_direct_node(
@@ -249,6 +260,51 @@ impl ModelConverterPy {
                 }
                 self.freeze_list(py, output)
                     .map_err(ConversionFailure::Raised)
+            }
+            ConversionNode::Tuple { items } => {
+                let is_builtin_sequence =
+                    value.cast::<PyList>().is_ok() || value.cast::<PyTuple>().is_ok();
+                if value.is_instance(self.frozen_dict_type.bind(py))?
+                    || (!is_builtin_sequence
+                        && (value.is_instance_of::<PyString>()
+                            || value.is_instance_of::<PyBytes>()
+                            || value.cast::<PyMapping>().is_ok()
+                            || value.cast::<PySequence>().is_err()))
+                {
+                    return Err(ConversionFailure::Mismatch(expected_type_mismatch(
+                        "sequence", value,
+                    )?));
+                }
+                let values = if let Ok(input) = value.cast::<PyList>() {
+                    input.iter().collect::<Vec<_>>()
+                } else if let Ok(input) = value.cast::<PyTuple>() {
+                    input.iter().collect::<Vec<_>>()
+                } else {
+                    value.try_iter()?.collect::<PyResult<Vec<_>>>()?
+                };
+                if values.len() != items.len() {
+                    return Err(ConversionFailure::Mismatch(
+                        ConversionMismatch::TupleLength {
+                            expected: items.len(),
+                            actual: values.len(),
+                        },
+                    ));
+                }
+                let output = items
+                    .iter()
+                    .zip(values)
+                    .map(|(item, value)| {
+                        self.convert_direct(
+                            py,
+                            *item,
+                            &value,
+                            remaining_depth - 1,
+                            json_shape,
+                            active_containers,
+                        )
+                    })
+                    .collect::<ConversionResult<Vec<_>>>()?;
+                Ok(PyTuple::new(py, output)?.into_any().unbind())
             }
             ConversionNode::Dict { value: value_node } => {
                 if value.cast::<PyDict>().is_err() && value.cast::<PyMapping>().is_err() {
@@ -462,6 +518,28 @@ impl ModelConverterPy {
                 output.finish(py, self).map_err(ConversionFailure::Raised)
             });
         }
+        // Constructors also accept a previously normalized JSON tree, which
+        // keeps dataclasses.replace valid for unconstrained object values.
+        // Normalize again so manually constructed or subclassed FrozenDict
+        // values cannot bypass JSON-value and schema validation.
+        if value.is_instance(self.frozen_dict_type.bind(py))? {
+            return active_containers.with(value, |active_containers| {
+                let properties = value.cast::<PyMapping>().map_err(PyErr::from)?;
+                let output = NormalizingFrozenDictBuilder::new(py);
+                for entry in properties.items()? {
+                    let (source_key, item) = mapping_pair(&entry)?;
+                    let key = canonical_json_object_key(py, &source_key)?;
+                    let value = self.freeze_python_json_value(
+                        py,
+                        &item,
+                        remaining_depth - 1,
+                        active_containers,
+                    )?;
+                    output.insert(py, key, value)?;
+                }
+                output.finish(py, self).map_err(ConversionFailure::Raised)
+            });
+        }
         if let Ok(items) = value.cast::<PyTuple>() {
             return active_containers.with(value, |active_containers| {
                 let output = items
@@ -574,6 +652,49 @@ impl ModelConverterPy {
         }
         self.freeze_list(py, output)
             .map_err(ConversionFailure::Raised)
+    }
+
+    pub(super) fn convert_tuple(
+        &self,
+        py: Python<'_>,
+        items: &[NodeId],
+        value: &Bound<'_, PyAny>,
+        union_selection: UnionSelection,
+        remaining_depth: u16,
+        active_containers: ActiveContainers<'_>,
+    ) -> ConversionResult<Py<PyAny>> {
+        let values = if let Ok(input) = value.cast::<PyList>() {
+            input.iter().collect::<Vec<_>>()
+        } else if let Ok(input) = value.cast::<PyTuple>() {
+            input.iter().collect::<Vec<_>>()
+        } else {
+            return Err(ConversionFailure::Mismatch(expected_type_mismatch(
+                "list", value,
+            )?));
+        };
+        if values.len() != items.len() {
+            return Err(ConversionFailure::Mismatch(
+                ConversionMismatch::TupleLength {
+                    expected: items.len(),
+                    actual: values.len(),
+                },
+            ));
+        }
+        let output = items
+            .iter()
+            .zip(values)
+            .map(|(item, value)| {
+                self.convert(
+                    py,
+                    *item,
+                    &value,
+                    union_selection,
+                    remaining_depth - 1,
+                    active_containers,
+                )
+            })
+            .collect::<ConversionResult<Vec<_>>>()?;
+        Ok(PyTuple::new(py, output)?.into_any().unbind())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -709,6 +830,14 @@ impl ModelConverterPy {
                 ScalarKind::Null => value.is_none(),
             },
             ConversionNode::List { .. } => is_python_json_array(value),
+            ConversionNode::Tuple { items } => {
+                value
+                    .cast::<PyList>()
+                    .is_ok_and(|values| values.len() == items.len())
+                    || value
+                        .cast::<PyTuple>()
+                        .is_ok_and(|values| values.len() == items.len())
+            }
             ConversionNode::Dict { .. } | ConversionNode::Model { .. } => {
                 value.is_instance_of::<PyDict>()
             }
@@ -768,6 +897,29 @@ impl ModelConverterPy {
                         py,
                         *item,
                         &item_value,
+                        remaining_depth - 1,
+                    )? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            ConversionNode::Tuple { items } => {
+                let values = if let Ok(input) = value.cast::<PyList>() {
+                    input.iter().collect::<Vec<_>>()
+                } else if let Ok(input) = value.cast::<PyTuple>() {
+                    input.iter().collect::<Vec<_>>()
+                } else {
+                    return Ok(false);
+                };
+                if values.len() != items.len() {
+                    return Ok(false);
+                }
+                for (item, value) in items.iter().zip(values) {
+                    if !self.node_can_represent_python_value(
+                        py,
+                        *item,
+                        &value,
                         remaining_depth - 1,
                     )? {
                         return Ok(false);
@@ -1180,6 +1332,30 @@ impl ModelConverterPy {
                 self.freeze_list(py, converted)
                     .map_err(ConversionFailure::Raised)
             }
+            ConversionNode::Tuple { items } => {
+                let JiterJsonValue::Array(values) = value else {
+                    return Err(ConversionFailure::Mismatch(
+                        ConversionMismatch::ExpectedType {
+                            expected: "list".to_owned(),
+                            actual: None,
+                        },
+                    ));
+                };
+                if values.len() != items.len() {
+                    return Err(ConversionFailure::Mismatch(
+                        ConversionMismatch::TupleLength {
+                            expected: items.len(),
+                            actual: values.len(),
+                        },
+                    ));
+                }
+                let converted = items
+                    .iter()
+                    .zip(values.iter())
+                    .map(|(item, value)| self.convert_jiter(py, *item, value, union_selection))
+                    .collect::<ConversionResult<Vec<_>>>()?;
+                Ok(PyTuple::new(py, converted)?.into_any().unbind())
+            }
             ConversionNode::Dict { value: value_node } => {
                 let JiterJsonValue::Object(entries) = value else {
                     return Err(ConversionFailure::Mismatch(
@@ -1366,6 +1542,9 @@ impl ModelConverterPy {
                 ScalarKind::Null => matches!(value, JiterJsonValue::Null),
             },
             ConversionNode::List { .. } => matches!(value, JiterJsonValue::Array(_)),
+            ConversionNode::Tuple { items } => {
+                matches!(value, JiterJsonValue::Array(values) if values.len() == items.len())
+            }
             ConversionNode::Dict { .. } | ConversionNode::Model { .. } => {
                 matches!(value, JiterJsonValue::Object(_))
             }
@@ -1398,6 +1577,20 @@ impl ModelConverterPy {
                     return Ok(false);
                 };
                 for value in values.iter() {
+                    if !self.jiter_node_can_represent_value(*item, value, remaining_depth - 1)? {
+                        return Ok(false);
+                    }
+                }
+                true
+            }
+            ConversionNode::Tuple { items } => {
+                let JiterJsonValue::Array(values) = value else {
+                    return Ok(false);
+                };
+                if values.len() != items.len() {
+                    return Ok(false);
+                }
+                for (item, value) in items.iter().zip(values.iter()) {
                     if !self.jiter_node_can_represent_value(*item, value, remaining_depth - 1)? {
                         return Ok(false);
                     }

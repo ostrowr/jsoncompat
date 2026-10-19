@@ -165,7 +165,8 @@ impl DataclassModule {
             }
             writeln!(
                 source,
-                "\ndc.bind_module(1, [{}], [",
+                "\ndc.bind_module({}, [{}], [",
+                render::GENERATED_FORMAT_VERSION,
                 indices
                     .iter()
                     .map(|i| format!("({}, {})", self.models[*i], remap[&prepared.roots[*i].0]))
@@ -238,6 +239,7 @@ fn children(node: &ConversionNode) -> Vec<usize> {
             .collect(),
         ConversionNode::Root { value, .. } | ConversionNode::Dict { value } => vec![value.0],
         ConversionNode::List { item } => vec![item.0],
+        ConversionNode::Tuple { items } => items.iter().map(|item| item.0).collect(),
         ConversionNode::Union(u) => u.branches.iter().map(|b| b.0).collect(),
         _ => Vec::new(),
     }

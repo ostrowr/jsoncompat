@@ -27,6 +27,6 @@ __all__: tuple[str, ...] = ("JsoncompatEmptyHeaders",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_JsoncompatEmptyHeaders = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(JsoncompatEmptyHeaders, 0)], [
+dc.bind_module(2, [(JsoncompatEmptyHeaders, 0)], [
     ('model', JsoncompatEmptyHeaders, (), None, _jsoncompat_program_JsoncompatEmptyHeaders),
 ], b'{"version":4,"base_nodes":1,"guard_nodes":[],"guards":[],"conversion_validates":[true],"json_keys":[[0,[]]]}')

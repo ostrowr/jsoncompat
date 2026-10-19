@@ -29,7 +29,7 @@ __all__: tuple[str, ...] = ("Health",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_Health = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["status",1]],"patterns":[],"required":["status"],"additional":2}},{"object_length":{"min":1,"max":null}}]},{"types":null,"choices":["ok","starting"],"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(Health, 0)], [
+dc.bind_module(2, [(Health, 0)], [
     ('model', Health, (("status", "status", 1, False),), None, _jsoncompat_program_Health),
     ('literal', ("ok", "starting",)),
 ], b'{"version":4,"base_nodes":2,"guard_nodes":[],"guards":[],"conversion_validates":[true,false],"json_keys":[[0,["\\"status\\":"]]]}')

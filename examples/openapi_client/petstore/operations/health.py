@@ -30,7 +30,7 @@ class Health200(dc.DataclassModel):
     body: Health = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: typing.Literal[200] = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -43,7 +43,7 @@ class Health200(dc.DataclassModel):
         body: Health,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -56,7 +56,7 @@ class Health2XX(dc.DataclassModel):
     body: Health = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: int = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -69,7 +69,7 @@ class Health2XX(dc.DataclassModel):
         body: Health,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -82,7 +82,7 @@ class Health5XX(dc.DataclassModel):
     body: Problem = dc.field("body")
     content_type: typing.Literal["application/json"] = dc.field("content_type")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: int = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -95,7 +95,7 @@ class Health5XX(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -107,7 +107,7 @@ class HealthDefault(dc.DataclassModel):
 
     body: None = dc.field("body")
     headers: JsoncompatEmptyHeaders = dc.field("headers")
-    raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]] = dc.field("raw_headers")
+    raw_headers: collections.abc.Sequence[tuple[str, str]] = dc.field("raw_headers")
     status: int = dc.field("status")
 
     if not typing.TYPE_CHECKING:
@@ -119,7 +119,7 @@ class HealthDefault(dc.DataclassModel):
         skip_validation: bool = False,
         body: None,
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[collections.abc.Sequence[str]],
+        raw_headers: collections.abc.Sequence[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -177,21 +177,21 @@ _jsoncompat_program_Health5XX = b'{"version":4,"nodes":[{"types":["object"],"cho
 _jsoncompat_program_HealthDefault = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["body",1],["headers",2],["raw_headers",5],["status",8]],"patterns":[],"required":["body","headers","raw_headers","status"],"additional":4}},{"object_length":{"min":4,"max":null}}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/JsoncompatEmptyHeaders"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":4}}]},{"types":null,"choices":null,"rules":["false"]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":6}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[7,7],"items":4}},{"array_length":{"min":2,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["integer"],"choices":null,"rules":[{"not":9},{"bound":{"value":100,"lower":true,"exclusive":false}},{"bound":{"value":599,"lower":false,"exclusive":false}}]},{"types":null,"choices":null,"rules":[{"any":[10,11,17]}]},{"types":null,"choices":[200],"rules":[]},{"types":null,"choices":null,"rules":[{"any":[1,12,13,14,7,16]}]},{"types":null,"choices":[false,true],"rules":[]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":15}}]},{"types":null,"choices":null,"rules":[]},{"types":["number"],"choices":null,"rules":[{"bound":{"value":200,"lower":true,"exclusive":false}},{"bound":{"value":299,"lower":false,"exclusive":false}}]},{"types":null,"choices":null,"rules":[{"any":[1,12,18,19,7,20]}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":15}}]},{"types":["number"],"choices":null,"rules":[{"bound":{"value":500,"lower":true,"exclusive":false}},{"bound":{"value":599,"lower":false,"exclusive":false}}]}],"patterns":[],"pattern_sources":[]}'
 _jsoncompat_program_HealthRequest = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[],"patterns":[],"required":[],"additional":1}}]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(Health200, 10), (Health2XX, 11), (Health5XX, 12), (HealthDefault, 13), (HealthRequest, 14)], [
+dc.bind_module(2, [(Health200, 10), (Health2XX, 11), (Health5XX, 12), (HealthDefault, 13), (HealthRequest, 14)], [
     ("str",),
     ("null",),
-    ('list', 0),
     ('literal', ("application/json",)),
-    ('list', 2),
+    ('list', 4),
+    ('tuple', (0, 0,)),
     ('external', Problem),
     ('external', JsoncompatEmptyHeaders),
     ("int",),
     ('literal', (200,)),
     ('external', Health),
-    ('model', Health200, (("body", "body", 9, False), ("content_type", "content_type", 3, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 8, False),), None, _jsoncompat_program_Health200),
-    ('model', Health2XX, (("body", "body", 9, False), ("content_type", "content_type", 3, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 7, False),), None, _jsoncompat_program_Health2XX),
-    ('model', Health5XX, (("body", "body", 5, False), ("content_type", "content_type", 3, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 7, False),), None, _jsoncompat_program_Health5XX),
-    ('model', HealthDefault, (("body", "body", 1, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 4, False), ("status", "status", 7, False),), None, _jsoncompat_program_HealthDefault),
+    ('model', Health200, (("body", "body", 9, False), ("content_type", "content_type", 2, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 3, False), ("status", "status", 8, False),), None, _jsoncompat_program_Health200),
+    ('model', Health2XX, (("body", "body", 9, False), ("content_type", "content_type", 2, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 3, False), ("status", "status", 7, False),), None, _jsoncompat_program_Health2XX),
+    ('model', Health5XX, (("body", "body", 5, False), ("content_type", "content_type", 2, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 3, False), ("status", "status", 7, False),), None, _jsoncompat_program_Health5XX),
+    ('model', HealthDefault, (("body", "body", 1, False), ("headers", "headers", 6, False), ("raw_headers", "raw_headers", 3, False), ("status", "status", 7, False),), None, _jsoncompat_program_HealthDefault),
     ('model', HealthRequest, (), None, _jsoncompat_program_HealthRequest),
 ], b'{"version":4,"base_nodes":15,"guard_nodes":[],"guards":[],"conversion_validates":[false,false,false,false,false,false,false,false,false,false,false,false,false,false,true],"json_keys":[[10,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[11,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[12,["\\"body\\":","\\"content_type\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[13,["\\"body\\":","\\"headers\\":","\\"raw_headers\\":","\\"status\\":"]],[14,[]]]}')
 

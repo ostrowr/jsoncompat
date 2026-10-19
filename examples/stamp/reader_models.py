@@ -31,10 +31,10 @@ class UserProfileReader(dc.ReaderDataclassRootModel):
 
 
 @typing.final
-class UserProfileV1(dc.DataclassAdditionalModel["typing.Any"]):
+class UserProfileV1(dc.DataclassAdditionalModel["dc.FrozenJsonValue"]):
     age: int = dc.field("age")
     name: str = dc.field("name")
-    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
+    __jsoncompat_extra__: collections.abc.Mapping[str, dc.FrozenJsonValue] = dc.extra_field(default_factory=dict)
 
     if not typing.TYPE_CHECKING:
         __slots__ = ("age", "name", "__jsoncompat_extra__",)
@@ -45,17 +45,20 @@ class UserProfileV1(dc.DataclassAdditionalModel["typing.Any"]):
         skip_validation: bool = False,
         age: int,
         name: str,
-        __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.EXTRA_DEFAULT,
+        __jsoncompat_extra__: collections.abc.Mapping[
+            str,
+            (dc.JsonValue | dc.FrozenJsonValue),
+        ] = dc.EXTRA_DEFAULT,
     ) -> None:
         self.__post_init__(skip_validation)
 
 
 @typing.final
-class UserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
+class UserProfileV2(dc.DataclassAdditionalModel["dc.FrozenJsonValue"]):
     age: int = dc.field("age")
     interests: int = dc.field("interests")
     name: str = dc.field("name")
-    __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.extra_field(default_factory=dict)
+    __jsoncompat_extra__: collections.abc.Mapping[str, dc.FrozenJsonValue] = dc.extra_field(default_factory=dict)
 
     if not typing.TYPE_CHECKING:
         __slots__ = ("age", "interests", "name", "__jsoncompat_extra__",)
@@ -67,7 +70,10 @@ class UserProfileV2(dc.DataclassAdditionalModel["typing.Any"]):
         age: int,
         interests: int,
         name: str,
-        __jsoncompat_extra__: collections.abc.Mapping[str, typing.Any] = dc.EXTRA_DEFAULT,
+        __jsoncompat_extra__: collections.abc.Mapping[
+            str,
+            (dc.JsonValue | dc.FrozenJsonValue),
+        ] = dc.EXTRA_DEFAULT,
     ) -> None:
         self.__post_init__(skip_validation)
 

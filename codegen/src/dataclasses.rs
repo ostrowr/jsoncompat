@@ -657,6 +657,29 @@ impl<'a> DataclassModuleBuilder<'a> {
                 )
             })?;
 
+        // Emit positional types only when every accepted position is described
+        // by prefixItems and the schema proves one exact length. This avoids
+        // expanding a large homogeneous tail into generated source.
+        if let Some(length) = fixed_prefix_length(obj, prefix_items.len()) {
+            let items = prefix_items
+                .iter()
+                .take(length)
+                .enumerate()
+                .map(|(index, item)| {
+                    if item == &Value::Bool(true) {
+                        return Ok(Annotation::any());
+                    }
+                    self.inline_annotation(
+                        item,
+                        &join_pointer(&join_pointer(pointer, "prefixItems"), &index.to_string()),
+                        scope_name,
+                        &format!("PrefixItem{index}"),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(Annotation::tuple(items));
+        }
+
         let mut item_annotations = Vec::new();
         let mut has_unconstrained_prefix_item = false;
         for (index, item) in prefix_items.iter().enumerate() {
@@ -1497,12 +1520,8 @@ fn merge_extra_annotations(annotations: Vec<Annotation>) -> Option<Annotation> {
     if annotations.is_empty() {
         return None;
     }
-    let any_annotation = Annotation::any();
-    if annotations
-        .iter()
-        .any(|annotation| annotation == &any_annotation)
-    {
-        return Some(any_annotation);
+    if annotations.iter().any(Annotation::absorbs_union) {
+        return Some(Annotation::any());
     }
     Some(union_annotation(&annotations))
 }
@@ -2144,6 +2163,31 @@ fn is_array_schema(obj: &Map<String, Value>) -> bool {
         || schema_literal_values_are_exclusively(obj, Value::is_array)
 }
 
+fn fixed_prefix_length(obj: &Map<String, Value>, prefix_count: usize) -> Option<usize> {
+    let minimum = match obj.get("minItems") {
+        Some(value) => value.as_u64()?,
+        None => 0,
+    };
+    let declared_maximum = match obj.get("maxItems") {
+        Some(value) => Some(value.as_u64()?),
+        None => None,
+    };
+    let prefix_maximum = (obj.get("items") == Some(&Value::Bool(false)))
+        .then(|| u64::try_from(prefix_count).ok())
+        .flatten();
+    let maximum = match (declared_maximum, prefix_maximum) {
+        (Some(left), Some(right)) => left.min(right),
+        (Some(maximum), None) | (None, Some(maximum)) => maximum,
+        (None, None) => return None,
+    };
+    if minimum != maximum {
+        return None;
+    }
+    usize::try_from(minimum)
+        .ok()
+        .filter(|length| *length <= prefix_count)
+}
+
 fn union_annotation(annotations: &[Annotation]) -> Annotation {
     Annotation::union(annotations)
 }
@@ -2497,7 +2541,7 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+        assert!(source.contains("    root: dc.FrozenJsonValue = dc.root_field()"));
         assert!(!source.contains("class GeneratedSchemaBranch"));
         assert!(!source.contains("bind_generated_models"));
     }
@@ -2518,7 +2562,7 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+        assert!(source.contains("    root: dc.FrozenJsonValue = dc.root_field()"));
         assert!(!source.contains("class GeneratedSchemaBranch"));
         assert!(!source.contains("bind_generated_models"));
     }
@@ -2544,7 +2588,7 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+        assert!(source.contains("    root: dc.FrozenJsonValue = dc.root_field()"));
         assert!(!source.contains("class GeneratedSchemaBranch"));
         assert!(!source.contains("bind_generated_models"));
     }
@@ -2936,6 +2980,40 @@ mod tests {
     }
 
     #[test]
+    fn fixed_prefix_items_preserve_positional_types() {
+        for (bounds, expected) in [
+            (json!({"items": false, "minItems": 2}), "tuple[str, int]"),
+            (
+                json!({"items": false, "minItems": 2, "maxItems": 4}),
+                "tuple[str, int]",
+            ),
+            (json!({"minItems": 2, "maxItems": 2}), "tuple[str, int]"),
+            (json!({"minItems": 1, "maxItems": 1}), "tuple[str]"),
+        ] {
+            let mut coordinates = json!({
+                "type": "array",
+                "prefixItems": [{"type": "string"}, {"type": "integer"}]
+            });
+            coordinates
+                .as_object_mut()
+                .unwrap()
+                .extend(bounds.as_object().unwrap().clone());
+            let source = generate_dataclass_models(&json!({
+                "title": "Trace",
+                "type": "object",
+                "properties": {"coordinates": coordinates},
+                "required": ["coordinates"],
+                "additionalProperties": false
+            }))
+            .unwrap();
+            assert!(source.contains(&format!(
+                "coordinates: {expected} = dc.field(\"coordinates\")"
+            )));
+            assert!(source.contains("('tuple', ("));
+        }
+    }
+
+    #[test]
     fn prefix_items_preserve_a_constrained_element_union() {
         let schema = json!({
             "title": "trace",
@@ -2961,7 +3039,7 @@ mod tests {
         ));
         assert!(source.contains("import collections.abc"));
         assert!(!source.contains(
-            "coordinates: collections.abc.Sequence[typing.Any] = dc.field(\"coordinates\")"
+            "coordinates: collections.abc.Sequence[dc.FrozenJsonValue] = dc.field(\"coordinates\")"
         ));
     }
 
@@ -2984,7 +3062,7 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains(
-            "coordinates: collections.abc.Sequence[typing.Any] = dc.field(\"coordinates\")"
+            "coordinates: collections.abc.Sequence[dc.FrozenJsonValue] = dc.field(\"coordinates\")"
         ));
         assert!(!source.contains("PrefixItem"));
     }
@@ -3033,7 +3111,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_same_value_recursive_union_branches_fall_back_to_any() {
+    fn direct_same_value_recursive_union_branches_fall_back_to_json_values() {
         let schema = json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$defs": {
@@ -3054,7 +3132,7 @@ mod tests {
         let source = generate_dataclass_models(&schema).unwrap();
 
         assert!(source.contains("class GeneratedSchemaValue(dc.DataclassRootModel):"));
-        assert!(source.contains("    root: typing.Any = dc.root_field()"));
+        assert!(source.contains("    root: dc.FrozenJsonValue = dc.root_field()"));
     }
 
     #[test]
@@ -3091,7 +3169,7 @@ mod tests {
             let canonical = document.canonical_schema_json().unwrap();
             let source = generate_dataclass_models_from_document(&document).unwrap();
 
-            assert!(source.contains("    root: dc.JsonValue = dc.root_field()"));
+            assert!(source.contains("    root: dc.FrozenJsonValue = dc.root_field()"));
             assert!(
                 !source.contains("class GeneratedSchemaBranch"),
                 "canonical={canonical}\n{source}"

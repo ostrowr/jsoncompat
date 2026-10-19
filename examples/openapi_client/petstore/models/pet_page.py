@@ -33,7 +33,7 @@ __all__: tuple[str, ...] = ("PetPage",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_PetPage = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["items",1],["nextOffset",11]],"patterns":[],"required":["items","nextOffset"],"additional":10}},{"object_length":{"min":2,"max":null}}]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":2}}]},{"types":null,"choices":null,"rules":[{"ref":{"node":3,"pointer":"/$defs/Pet"}}]},{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["id",4],["name",5],["nickname",6],["species",8],["tags",9]],"patterns":[],"required":["id","name","species","tags"],"additional":10}},{"object_length":{"min":4,"max":null}}]},{"types":["string"],"choices":null,"rules":[]},{"types":["string"],"choices":null,"rules":[{"string_length":{"min":1,"max":null}}]},{"types":null,"choices":null,"rules":[{"any":[7,4]}]},{"types":null,"choices":[null],"rules":[]},{"types":null,"choices":["cat","dog"],"rules":[]},{"types":["array"],"choices":null,"rules":[{"array":{"prefix":[],"items":4}}]},{"types":null,"choices":null,"rules":["false"]},{"types":null,"choices":null,"rules":[{"any":[12,7]}]},{"types":["integer"],"choices":null,"rules":[]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(PetPage, 4)], [
+dc.bind_module(2, [(PetPage, 4)], [
     ('external', Pet),
     ("null",),
     ("int",),

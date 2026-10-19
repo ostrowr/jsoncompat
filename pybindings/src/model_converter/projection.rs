@@ -126,6 +126,22 @@ impl<'converter> ModelProjection<'converter> {
                     ProjectedPythonKind::Invalid
                 }
             }
+            ConversionNode::Tuple { items } => {
+                let py = value.value().py();
+                if value
+                    .value()
+                    .cast::<PyTuple>()
+                    .is_ok_and(|values| values.len() == items.len())
+                    && !value
+                        .value()
+                        .is_instance(self.converter.frozen_dict_type.bind(py))
+                        .unwrap_or(false)
+                {
+                    ProjectedPythonKind::Array(value)
+                } else {
+                    ProjectedPythonKind::Invalid
+                }
+            }
             ConversionNode::Dict { .. } => {
                 let py = value.value().py();
                 if value
@@ -361,6 +377,7 @@ impl PythonInstanceProvider for ModelProjection<'_> {
             .node(self.converter.projected_node_id(value.node()))
         {
             ConversionNode::List { .. }
+            | ConversionNode::Tuple { .. }
             | ConversionNode::Scalar {
                 kind: ScalarKind::Any,
                 ..
@@ -383,6 +400,7 @@ impl PythonInstanceProvider for ModelProjection<'_> {
             .node(self.converter.projected_node_id(value.node()))
         {
             ConversionNode::List { item } => *item,
+            ConversionNode::Tuple { items } => *items.get(index)?,
             ConversionNode::Scalar {
                 kind: ScalarKind::Any,
                 ..

@@ -35,6 +35,7 @@ __all__ = [
     "DataclassModel",
     "DataclassRootModel",
     "FrozenDict",
+    "FrozenJsonValue",
     "FrozenList",
     "JSONCOMPAT_EXTRA_FIELD",
     "MISSING",
@@ -148,6 +149,17 @@ class FrozenDict[K, V](Mapping[K, V]):
         return NotImplemented
 
     __hash__ = None  # type: ignore[assignment]
+
+
+type FrozenJsonValue = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | FrozenList[FrozenJsonValue]
+    | FrozenDict[str, FrozenJsonValue]
+)
 
 
 _DATACLASS_FIELD = getattr(dataclasses, "_FIELD")
@@ -633,8 +645,10 @@ def bind_module(
     prepared_plan: bytes,
 ) -> None:
     """Bind process-local class references in a precomputed model graph."""
-    if version != 1:
-        raise ImportError("Unsupported jsoncompat generated format; regenerate models")
+    if version not in (1, 2):
+        raise ImportError(
+            "Unsupported jsoncompat generated format; install a matching runtime or regenerate models"
+        )
     runtimes = bind_prepared_model_runtimes(
         roots, descriptors, FrozenList, FrozenDict, prepared_plan
     )

@@ -31,7 +31,7 @@ __all__: tuple[str, ...] = ("PetFilter",)
 # Prepared validation and conversion programs; no schema compilation on import.
 _jsoncompat_program_PetFilter = b'{"version":4,"nodes":[{"types":["object"],"choices":null,"rules":[{"object":{"properties":[["adopted",1],["species",2]],"patterns":[],"required":[],"additional":3}}]},{"types":null,"choices":[false,true],"rules":[]},{"types":["string"],"choices":null,"rules":[]},{"types":null,"choices":null,"rules":["false"]}],"patterns":[],"pattern_sources":[]}'
 
-dc.bind_module(1, [(PetFilter, 2)], [
+dc.bind_module(2, [(PetFilter, 2)], [
     ("str",),
     ('literal', (False, True,)),
     ('model', PetFilter, (("adopted", "adopted", 1, True), ("species", "species", 0, True),), None, _jsoncompat_program_PetFilter),
