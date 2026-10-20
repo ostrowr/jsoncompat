@@ -73,6 +73,20 @@ impl SharedPattern {
     }
 }
 
+/// Match known property names at build time using prepared validation semantics.
+pub(crate) struct PropertyPatternMatcher(Pattern);
+
+impl PropertyPatternMatcher {
+    pub(crate) fn compile(source: &str) -> Result<Self, String> {
+        Pattern::compile(source).map(Self)
+    }
+
+    /// None means evaluation could not finish, never a negative match.
+    pub(crate) fn is_match(&self, name: &str) -> Option<bool> {
+        self.0.is_match(name)
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SharedProgram {

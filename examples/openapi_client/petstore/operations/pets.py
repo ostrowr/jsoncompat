@@ -55,7 +55,7 @@ class DeletePet204(dc.DataclassModel):
         skip_validation: bool = False,
         body: None,
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[204],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -81,7 +81,7 @@ class DeletePet404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -146,7 +146,7 @@ class ListPets200(dc.DataclassModel):
         body: PetPage,
         content_type: typing.Literal["application/json"],
         headers: ListPets200Headers,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -172,7 +172,7 @@ class ListPets400(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[400],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -198,7 +198,7 @@ class ListPetsDefault(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -246,10 +246,7 @@ class ListPetsRequest(_http.Request[PetstoreAPI, "ListPetsSuccess", "ListPetsErr
             _http.Cookie("locale"),
         ] = dc.MissingType.MISSING,
         offset: typing.Annotated[dc.Omittable[int], _http.Query("offset")] = dc.MissingType.MISSING,
-        tags: typing.Annotated[
-            dc.Omittable[collections.abc.Sequence[str]],
-            _http.Query("tags"),
-        ] = dc.MissingType.MISSING,
+        tags: typing.Annotated[dc.Omittable[dc.ArrayInput[str]], _http.Query("tags")] = dc.MissingType.MISSING,
         x_request_id: typing.Annotated[dc.Omittable[str], _http.Header("X-Request-ID")] = dc.MissingType.MISSING,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -291,7 +288,7 @@ class GetPet200(dc.DataclassModel):
         body: Pet,
         content_type: typing.Literal["application/json"],
         headers: GetPet200Headers,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -315,7 +312,7 @@ class GetPet304(dc.DataclassModel):
         skip_validation: bool = False,
         body: None,
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[304],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -341,7 +338,7 @@ class GetPet404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -400,7 +397,7 @@ class GetPetNote200ApplicationJson(dc.DataclassModel):
         body: (str | None),
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -426,7 +423,7 @@ class GetPetNote200TextPlain(dc.DataclassModel):
         body: str,
         content_type: typing.Literal["text/plain"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -452,7 +449,7 @@ class GetPetNote404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -517,7 +514,7 @@ class UpdatePet200(dc.DataclassModel):
         body: Pet,
         content_type: typing.Literal["application/json"],
         headers: UpdatePet200Headers,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -543,7 +540,7 @@ class UpdatePet404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -569,7 +566,7 @@ class UpdatePet412(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[412],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -648,7 +645,7 @@ class CreatePet201(dc.DataclassModel):
         body: Pet,
         content_type: typing.Literal["application/json"],
         headers: CreatePet201Headers,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[201],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -674,7 +671,7 @@ class CreatePet400(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[400],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -700,7 +697,7 @@ class CreatePetDefault(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -785,7 +782,7 @@ class SetPetNote200(dc.DataclassModel):
         body: (str | None),
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -811,7 +808,7 @@ class SetPetNote404(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[404],
     ) -> None:
         self.__post_init__(skip_validation)

@@ -21,7 +21,7 @@ class PetPage(dc.DataclassModel):
         self,
         *,
         skip_validation: bool = False,
-        items: collections.abc.Sequence[Pet],
+        items: dc.ArrayInput[Pet],
         nextOffset: (int | None),
     ) -> None:
         self.__post_init__(skip_validation)

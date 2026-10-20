@@ -43,7 +43,7 @@ class Health200(dc.DataclassModel):
         body: Health,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -69,7 +69,7 @@ class Health2XX(dc.DataclassModel):
         body: Health,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -95,7 +95,7 @@ class Health5XX(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)
@@ -119,7 +119,7 @@ class HealthDefault(dc.DataclassModel):
         skip_validation: bool = False,
         body: None,
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: int,
     ) -> None:
         self.__post_init__(skip_validation)

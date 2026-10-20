@@ -95,6 +95,14 @@ already guarantees schema validity. It skips only the attached JSON Schema
 check; wire-format parsing and JSON-value normalization, runtime type
 conversion, and reader/writer direction guards still apply.
 
+`Model.deserialize(...)` and
+`jsoncompat.codegen.serialization.deserialize_value(...)` accept `str | bytes`
+for JSON and YAML and require `bytes` for MessagePack. Text is also accepted
+when the format type is
+`Literal[SerializationFormat.JSON, SerializationFormat.YAML]`. A general
+`SerializationFormat` requires bytes in typed calls because it may select
+MessagePack.
+
 Only classes emitted by `jsoncompat codegen --target dataclasses` implement
 this runtime contract. The generator builds the shared conversion plan and
 validation programs ahead of time. Import binds the plan to the generated
@@ -102,10 +110,31 @@ classes, and it is then shared across threads. Custom subclasses, construction
 hooks, and Python defaults/default factories are outside the model-definition
 surface.
 
-Generated array and object fields accept ordinary lists and dictionaries at
-construction boundaries, then store them as deeply immutable values exposed as
-`Sequence[...]` and `Mapping[...]`. Use `to_value()` when a mutable JSON-value
-tree is required by another API.
+Arrays represented as sequences store deeply immutable values. Stored
+annotations use `Sequence[...]` with the stored item type. Constructor
+annotations use `ArrayInput[...]` with the item's constructor input type.
+`ArrayInput[T]` is a public alias for `list[T] | tuple[T, ...] | FrozenList[T]`.
+Nested arrays use the alias recursively. Generated mapping fields accept
+ordinary dictionaries at construction boundaries and store deeply immutable
+values exposed as `Mapping[...]`. Use `to_value()` when another API requires a
+mutable JSON value tree.
+
+Typed array constructors reject `str`, `bytes`, and values typed only as
+`Sequence[T]`. Runtime acceptance of ranges and custom sequences is preserved.
+To migrate a typed call for a flat array, including a stored array field, pass
+`list(values)` or `tuple(values)` to the constructor. For nested `Sequence`
+values, convert each sequence level, for example
+`tuple(tuple(group) for group in groups)`. Python list invariance can also reject
+a narrower list variable, such as `list[int]` for a number array whose item type
+is `int | float`. Passing `tuple(values)` or copying into an explicitly annotated
+`list[int | float]` provides a compatible concrete input.
+
+General JSON Schema `number` annotations expose `int | float`, reflecting that
+stored values may be either Python numeric type. The same union appears in
+annotations for collections and additional properties; `const` and `enum`
+projections can remain narrower as `Literal` types. Narrow with
+`isinstance(value, float)` before using methods available only on floats, such
+as `value.hex()`.
 
 Unconstrained JSON-shaped fields use `FrozenJsonValue`, a recursive union of
 JSON scalars, `FrozenList`, and `FrozenDict`, instead of `Any`. Their constructor
@@ -113,11 +142,17 @@ arguments accept either ordinary `JsonValue` trees or existing `FrozenJsonValue`
 trees, so values can be reused with `dataclasses.replace`. Both paths preserve
 JSON-value checks and schema validation.
 
+A name listed in `required` but absent from `properties` uses the representation
+of its single matching `patternProperties` schema. `additionalProperties`
+applies only when no pattern matches. Overlapping or indeterminate matches retain
+`FrozenJsonValue`; schema validation enforces all applicable constraints.
+
 Arrays whose `prefixItems` schemas cover every position and whose length is
 fixed by `minItems`, `maxItems`, and/or `items: false` use positional tuple
 types such as `tuple[str, int]` and store exact Python tuples. Variable-length
-prefixes remain `Sequence` types. Both serialize as JSON arrays; tuple arity and positional Python types
-remain enforced when schema validation is skipped.
+prefixes use the concrete array constructor inputs described above and expose
+stored values as `Sequence` types. Both serialize as JSON arrays; tuple arity
+and positional Python types remain enforced when schema validation is skipped.
 
 See the [canonical plain-schema example](../examples/dataclasses/demo.py) for an
 ordinary generated model that both serializes and deserializes. The

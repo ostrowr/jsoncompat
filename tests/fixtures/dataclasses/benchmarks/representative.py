@@ -28,7 +28,7 @@ class GeneratedSchema(dc.DataclassAdditionalModel["str"]):
         currency: typing.Literal["EUR", "GBP", "USD"],
         customer: GeneratedSchemaCustomer,
         event: typing.Literal["checkout.completed", "checkout.failed"],
-        items: collections.abc.Sequence[GeneratedSchemaItem],
+        items: dc.ArrayInput[GeneratedSchemaItem],
         __jsoncompat_extra__: collections.abc.Mapping[str, str] = dc.EXTRA_DEFAULT,
     ) -> None:
         self.__post_init__(skip_validation)

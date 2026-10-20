@@ -36,7 +36,7 @@ class SearchPets200Headers(dc.DataclassModel):
         *,
         skip_validation: bool = False,
         x_selected_fields: typing.Annotated[
-            dc.Omittable[collections.abc.Sequence[str]],
+            dc.Omittable[dc.ArrayInput[str]],
             _http.Header("x-selected-fields", array=True),
         ] = dc.MissingType.MISSING,
     ) -> None:
@@ -60,10 +60,10 @@ class SearchPets200(dc.DataclassModel):
         self,
         *,
         skip_validation: bool = False,
-        body: collections.abc.Sequence[Pet],
+        body: dc.ArrayInput[Pet],
         content_type: typing.Literal["application/json"],
         headers: SearchPets200Headers,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[200],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -89,7 +89,7 @@ class SearchPets400(dc.DataclassModel):
         body: Problem,
         content_type: typing.Literal["application/json"],
         headers: JsoncompatEmptyHeaders,
-        raw_headers: collections.abc.Sequence[tuple[str, str]],
+        raw_headers: dc.ArrayInput[tuple[str, str]],
         status: typing.Literal[400],
     ) -> None:
         self.__post_init__(skip_validation)
@@ -129,13 +129,10 @@ class SearchPetsRequest(_http.Request[PetstoreAPI, "SearchPetsSuccess", "SearchP
             _http.Query("criteria", content_type="application/json"),
         ],
         fields: typing.Annotated[
-            dc.Omittable[collections.abc.Sequence[str]],
+            dc.Omittable[dc.ArrayInput[str]],
             _http.Query("fields", style="pipeDelimited", explode=False),
         ] = dc.MissingType.MISSING,
-        x_flags: typing.Annotated[
-            dc.Omittable[collections.abc.Sequence[str]],
-            _http.Header("X-Flags"),
-        ] = dc.MissingType.MISSING,
+        x_flags: typing.Annotated[dc.Omittable[dc.ArrayInput[str]], _http.Header("X-Flags")] = dc.MissingType.MISSING,
     ) -> None:
         self.__post_init__(skip_validation)
 

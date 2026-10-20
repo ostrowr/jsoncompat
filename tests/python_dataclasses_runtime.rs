@@ -41,7 +41,7 @@ assert Node.__init__.__module__ == Node.__module__
 assert Node.__init__.__qualname__ == 'DocumentedNode.__init__'
 assert Node.__init__.__globals__ is vars(module)
 hints = typing.get_type_hints(Node.__init__)
-assert typing.get_args(hints['children']) == (Node,)
+assert hints['children'] == dc.ArrayInput[Node]
 assert hints['kind'] == typing.Literal['cat', 'dog']
 assert hints['label'] == dc.Omittable[str]
 assert hints['skip_validation'] is bool
@@ -1928,6 +1928,120 @@ for exception in (TypeError, ValueError, KeyboardInterrupt):
 }
 
 #[test]
+fn generated_dataclasses_preserve_runtime_sequence_inputs() {
+    let source = generate_dataclass_models(&json!({
+        "title": "IntegerArray",
+        "type": "array",
+        "items": { "type": "integer" }
+    }))
+    .expect("generate dataclasses from integer array schema");
+    let module_path = write_temp_module("runtime_sequence_inputs", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+from collections.abc import Sequence
+from typing import overload
+
+from jsoncompat.codegen.dataclasses import FrozenList
+
+spec = importlib.util.spec_from_file_location("sequence_input_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+
+class CustomSequence(Sequence[int]):
+    def __init__(self, values: tuple[int, ...]) -> None:
+        self.values = values
+
+    def __len__(self) -> int:
+        return len(self.values)
+
+    @overload
+    def __getitem__(self, index: int) -> int: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> tuple[int, ...]: ...
+
+    def __getitem__(self, index: int | slice) -> int | tuple[int, ...]:
+        return self.values[index]
+
+
+for skip_validation in (False, True):
+    for values in (range(3), CustomSequence((0, 1, 2))):
+        model = module.IntegerArray(root=values, skip_validation=skip_validation)
+        assert type(model.root) is FrozenList
+        assert model.to_value(skip_validation=skip_validation) == [0, 1, 2]
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass runtime sequence input test");
+    assert!(
+        output.status.success(),
+        "generated dataclass runtime sequence input test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_resolve_array_input_alias_with_model_named_list() {
+    let source = generate_dataclass_models(&json!({
+        "title": "Probe",
+        "type": "object",
+        "properties": {
+            "values": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["values"],
+        "additionalProperties": false,
+        "x-jsoncompat": {
+            "kind": "declaration",
+            "stable_id": "probe",
+            "name": "list",
+            "version": 1,
+            "schema_ref": "#"
+        }
+    }))
+    .expect("generate dataclasses with a model named list");
+    let module_path = write_temp_module("array_input_named_list", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+import typing
+
+from jsoncompat.codegen import dataclasses as dc
+
+spec = importlib.util.spec_from_file_location("array_input_named_list_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+Model = module.list
+assert typing.get_type_hints(Model.__init__)["values"] == dc.ArrayInput[str]
+assert Model(values=["x"]).to_value() == {"values": ["x"]}
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass array alias name test");
+    assert!(
+        output.status.success(),
+        "generated dataclass array alias name test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn direct_union_construction_does_not_retry_hard_failures() {
     let source = generate_dataclass_models(&json!({
         "title": "DirectUnionEnvelope",
@@ -2761,6 +2875,104 @@ for skip_validation in (False, True):
 }
 
 #[test]
+fn generated_dataclasses_expose_and_preserve_both_number_representations() {
+    let source = generate_dataclass_models(&json!({
+        "title": "NumericValue",
+        "type": "number",
+    }))
+    .expect("generate dataclasses from number schema");
+    let module_path = write_temp_module("number_representations", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+import typing
+
+spec = importlib.util.spec_from_file_location("number_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+Model = module.NumericValue
+assert typing.get_type_hints(Model)["root"] == int | float
+assert typing.get_type_hints(Model.__init__)["root"] == int | float
+for skip_validation in (False, True):
+    for value in (1, 2.5):
+        models = (
+            Model(root=value, skip_validation=skip_validation),
+            Model.from_value(value, skip_validation=skip_validation),
+            Model.deserialize(json.dumps(value), skip_validation=skip_validation),
+        )
+        for model in models:
+            assert type(model.root) is type(value)
+            assert model.to_value(skip_validation=skip_validation) == value
+            assert json.loads(model.serialize(skip_validation=skip_validation)) == value
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass number representation test");
+    assert!(
+        output.status.success(),
+        "generated dataclass number representation test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_preserve_number_union_conversion_precedence() {
+    let source = generate_dataclass_models(&json!({
+        "title": "NumericChoice",
+        "anyOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "number", "maximum": 10 }
+        ]
+    }))
+    .expect("generate dataclasses from overlapping numeric union");
+    let module_path = write_temp_module("number_union_precedence", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_file_location("number_union_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+Model = module.NumericChoice
+for skip_validation in (False, True):
+    models = (
+        Model(root=1.0, skip_validation=skip_validation),
+        Model.from_value(1.0, skip_validation=skip_validation),
+        Model.deserialize("1.0", skip_validation=skip_validation),
+    )
+    for model in models:
+        assert model.root == 1.0
+        assert type(model.root) is float
+        assert model.serialize(skip_validation=skip_validation) == "1.0"
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass number union precedence test");
+    assert!(
+        output.status.success(),
+        "generated dataclass number union precedence test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_dataclasses_normalize_integer_valued_json_numbers_into_python_ints() {
     let source = generate_dataclass_models(&json!({
         "title": "Counter",
@@ -3312,6 +3524,193 @@ for skip_validation in (False, True):
     assert!(
         output.status.success(),
         "generated dataclass patternProperties test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_project_undeclared_required_pattern_properties() {
+    let single = generate_dataclass_models(&json!({
+        "title": "RequiredPatterns",
+        "type": "object",
+        "required": ["count", "label", "opaque"],
+        "patternProperties": {
+            "^count$": { "type": "integer" },
+            "^opaque$": true
+        },
+        "additionalProperties": { "type": "string" }
+    }))
+    .expect("generate dataclasses from required pattern schema");
+    let single_path = write_temp_module("required_patterns", &single);
+    let overlapping = generate_dataclass_models(&json!({
+        "title": "OverlappingPatterns",
+        "type": "object",
+        "required": ["entry"],
+        "patternProperties": {
+            "^ent": {
+                "type": "object",
+                "properties": { "name": { "type": "string" } },
+                "required": ["name"]
+            },
+            "try$": {
+                "type": "object",
+                "properties": { "count": { "type": "integer" } },
+                "required": ["count"]
+            }
+        },
+        "additionalProperties": { "type": "string" }
+    }))
+    .expect("generate dataclasses from overlapping pattern schema");
+    let overlapping_path = write_temp_module("overlapping_patterns", &overlapping);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+import typing
+
+from jsoncompat.codegen import dataclasses as dc
+
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+single = load("required_pattern_models", sys.argv[1]).RequiredPatterns
+overlapping = load("overlapping_pattern_models", sys.argv[2]).OverlappingPatterns
+single_hints = typing.get_type_hints(single)
+assert single_hints["count"] is int
+assert single_hints["label"] is str
+assert single_hints["opaque"] == dc.FrozenJsonValue
+assert typing.get_type_hints(overlapping)["entry"] == dc.FrozenJsonValue
+
+single_value = {"count": 7, "label": "sample", "opaque": {"nested": [1]}}
+overlapping_value = {"entry": {"name": "Ada", "count": 7}}
+for skip_validation in (False, True):
+    for Model, value in ((single, single_value), (overlapping, overlapping_value)):
+        models = (
+            Model(**value, skip_validation=skip_validation),
+            Model.from_value(value, skip_validation=skip_validation),
+            Model.deserialize(json.dumps(value), skip_validation=skip_validation),
+        )
+        for model in models:
+            assert model.to_value(skip_validation=skip_validation) == value
+            assert json.loads(model.serialize(skip_validation=skip_validation)) == value
+    assert type(single.from_value(single_value, skip_validation=skip_validation).opaque) is dc.FrozenDict
+    assert type(overlapping.from_value(overlapping_value, skip_validation=skip_validation).entry) is dc.FrozenDict
+
+for Model, value in (
+    (single, {"count": "wrong", "label": "sample", "opaque": 1}),
+    (single, {"count": 7, "label": 1, "opaque": 1}),
+    (overlapping, {"entry": {"name": "Ada"}}),
+    (overlapping, {"entry": {"name": "Ada", "count": "wrong"}}),
+):
+    for convert in (
+        lambda: Model(**value),
+        lambda: Model.from_value(value),
+        lambda: Model.deserialize(json.dumps(value)),
+    ):
+        try:
+            convert()
+        except (TypeError, ValueError):
+            pass
+        else:
+            raise AssertionError(f"invalid required pattern value accepted: {value}")
+"###,
+    );
+    command.arg(single_path).arg(overlapping_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass required pattern test");
+    assert!(
+        output.status.success(),
+        "generated dataclass required pattern test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_dataclasses_preserve_pattern_property_model_names() {
+    let source = generate_dataclass_models(&json!({
+        "title": "Patterns",
+        "type": "object",
+        "required": ["b"],
+        "patternProperties": {
+            "^a$": {
+                "type": "object",
+                "properties": { "a": { "type": "string" } },
+                "required": ["a"],
+                "additionalProperties": false
+            },
+            "^b$": {
+                "type": "object",
+                "properties": { "b": { "type": "integer" } },
+                "required": ["b"],
+                "additionalProperties": false
+            }
+        },
+        "additionalProperties": {
+            "type": "object",
+            "properties": { "b": { "type": "integer" } },
+            "required": ["b"],
+            "additionalProperties": false
+        }
+    }))
+    .expect("generate dataclasses from named pattern models");
+    let module_path = write_temp_module("pattern_model_names", &source);
+
+    let mut command = python_env::python_command();
+    command.arg("-B").arg("-c").arg(
+        r###"
+import importlib.util
+import json
+import sys
+import typing
+
+spec = importlib.util.spec_from_file_location("pattern_name_models", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+First = module.PatternsPatternPropertyValue
+Second = module.PatternsPatternPropertyValue2
+assert typing.get_type_hints(First)["a"] is str
+assert typing.get_type_hints(Second)["b"] is int
+assert typing.get_type_hints(module.Patterns)["b"] is Second
+value = {"a": {"a": "sample"}, "b": {"b": 7}}
+for skip_validation in (False, True):
+    first = First(a="sample", skip_validation=skip_validation)
+    second = Second(b=7, skip_validation=skip_validation)
+    models = (
+        module.Patterns(
+            b=second,
+            __jsoncompat_extra__={"a": first},
+            skip_validation=skip_validation,
+        ),
+        module.Patterns.from_value(value, skip_validation=skip_validation),
+        module.Patterns.deserialize(json.dumps(value), skip_validation=skip_validation),
+    )
+    for model in models:
+        assert type(model.__jsoncompat_extra__["a"]) is First
+        assert type(model.b) is Second
+        assert model.to_value(skip_validation=skip_validation) == value
+"###,
+    );
+    command.arg(module_path);
+    let output = command
+        .output()
+        .expect("run generated dataclass pattern model name test");
+    assert!(
+        output.status.success(),
+        "generated dataclass pattern model name test failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

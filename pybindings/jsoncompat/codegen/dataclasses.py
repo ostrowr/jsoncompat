@@ -31,6 +31,7 @@ from jsoncompat import (
 from .serialization import SerializationFormat, deserialize_value, serialize_value
 
 __all__ = [
+    "ArrayInput",
     "DataclassAdditionalModel",
     "DataclassModel",
     "DataclassRootModel",
@@ -91,6 +92,9 @@ class FrozenList[T](tuple[T, ...]):
         return not equal
 
     __hash__ = None  # type: ignore[assignment]
+
+
+type ArrayInput[T] = list[T] | tuple[T, ...] | FrozenList[T]
 
 
 class FrozenDict[K, V](Mapping[K, V]):
@@ -400,6 +404,46 @@ class DataclassModel(metaclass=_DataclassModelMeta):
         )
 
     @classmethod
+    @overload
+    def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
+        cls: type[JSONCOMPAT_MODEL_T],
+        payload: str | bytes,
+        *,
+        format: Literal[SerializationFormat.JSON] = SerializationFormat.JSON,
+        skip_validation: bool = False,
+    ) -> JSONCOMPAT_MODEL_T: ...
+
+    @classmethod
+    @overload
+    def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
+        cls: type[JSONCOMPAT_MODEL_T],
+        payload: str | bytes,
+        *,
+        format: Literal[SerializationFormat.YAML],
+        skip_validation: bool = False,
+    ) -> JSONCOMPAT_MODEL_T: ...
+
+    @classmethod
+    @overload
+    def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
+        cls: type[JSONCOMPAT_MODEL_T],
+        payload: bytes,
+        *,
+        format: Literal[SerializationFormat.MSGPACK],
+        skip_validation: bool = False,
+    ) -> JSONCOMPAT_MODEL_T: ...
+
+    @classmethod
+    @overload
+    def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
+        cls: type[JSONCOMPAT_MODEL_T],
+        payload: bytes,
+        *,
+        format: SerializationFormat,
+        skip_validation: bool = False,
+    ) -> JSONCOMPAT_MODEL_T: ...
+
+    @classmethod
     def deserialize[JSONCOMPAT_MODEL_T: DataclassModel](
         cls: type[JSONCOMPAT_MODEL_T],
         payload: str | bytes,
@@ -420,10 +464,13 @@ class DataclassModel(metaclass=_DataclassModelMeta):
                     skip_validation=skip_validation,
                 ),
             )
-        return cls.from_value(
-            deserialize_value(payload, format=selected_format),
-            skip_validation=skip_validation,
-        )
+        if selected_format is SerializationFormat.YAML:
+            value = deserialize_value(payload, format=SerializationFormat.YAML)
+        else:
+            if not isinstance(payload, bytes):
+                raise TypeError("MessagePack payloads must be bytes")
+            value = deserialize_value(payload, format=SerializationFormat.MSGPACK)
+        return cls.from_value(value, skip_validation=skip_validation)
 
     def to_value(self, *, skip_validation: bool = False) -> JsonValue:
         return _jsoncompat_runtime_for(type(self)).to_value(
