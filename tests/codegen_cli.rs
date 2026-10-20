@@ -82,7 +82,7 @@ for module in (models, other, standalone):
     assert dataclasses.is_dataclass(instance)
     assert pickle.loads(pickle.dumps(instance)) == instance
     assert json.loads(instance.serialize()) == {'value':1,'children':[{'value':2,'children':[]}]}
-    assert typing.get_args(typing.get_type_hints(Node.__init__)['children']) == (Node,)
+    assert typing.get_type_hints(Node.__init__)['children'] == module.dc.ArrayInput[Node]
     assert inspect.signature(Node).parameters['label'].default is module.dc.MISSING
     assert dataclasses.replace(instance, value=3).value == 3
     assert Node(value=1, label='okay', children=[]).label == 'okay'

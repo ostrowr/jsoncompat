@@ -21,7 +21,7 @@ class SearchCriteria(dc.DataclassModel):
         *,
         skip_validation: bool = False,
         name: dc.Omittable[str] = dc.MissingType.MISSING,
-        tags: dc.Omittable[collections.abc.Sequence[str]] = dc.MissingType.MISSING,
+        tags: dc.Omittable[dc.ArrayInput[str]] = dc.MissingType.MISSING,
     ) -> None:
         self.__post_init__(skip_validation)
 

@@ -31,7 +31,7 @@ class Order(dc.DataclassModel):
         skip_validation: bool = False,
         customer: Customer,
         id: str,
-        items: collections.abc.Sequence[OrderItem],
+        items: dc.ArrayInput[OrderItem],
         note: dc.Omittable[str | None] = dc.MissingType.MISSING,
         status: typing.Literal["paid", "pending"],
     ) -> None:

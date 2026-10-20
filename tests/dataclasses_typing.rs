@@ -30,6 +30,13 @@ fn generated_dataclasses_typecheck_and_expose_precise_field_types() -> Result<()
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "tagGroups": {
+                "type": "array",
+                "items": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
             "warehouseCode": {
                 "$ref": "#/$defs/warehouseCode",
             },
@@ -70,7 +77,7 @@ from typing import Literal, Mapping, Sequence, assert_type
 from generated_models import InventoryItem, InventoryItemMetadata, JSONCOMPAT_MODEL
 from jsoncompat import JsonValue
 from jsoncompat.codegen import SerializationFormat
-from jsoncompat.codegen.dataclasses import MISSING, MissingType, Omittable
+from jsoncompat.codegen.dataclasses import FrozenList, MISSING, MissingType, Omittable
 
 
 item = InventoryItem.from_value({
@@ -93,17 +100,20 @@ assert_type(item.quantity, Omittable[int])
 assert_type(item.metadata, InventoryItemMetadata)
 assert_type(item.metadata.warehouse, str)
 assert_type(item.tags, Omittable[Sequence[str]])
+assert_type(item.tagGroups, Omittable[Sequence[Sequence[str]]])
 assert_type(item.warehouseCode, Omittable[str])
 assert_type(item.coordinates, Omittable[Sequence[int | str]])
 assert_type(item.fixedCoordinates, Omittable[tuple[str, int]])
 if item.fixedCoordinates is not MISSING:
     assert_type(item.fixedCoordinates[0], str)
     assert_type(item.fixedCoordinates[1], int)
-assert_type(item.__jsoncompat_extra__, Mapping[str, float])
-assert_type(
-    item.get_additional_property("priority"),
-    float | MissingType,
-)
+assert_type(item.__jsoncompat_extra__, Mapping[str, int | float])
+priority = item.get_additional_property("priority")
+assert_type(priority, int | float | MissingType)
+if priority is not MISSING:
+    assert_type(priority, int | float)
+    if isinstance(priority, float):
+        assert_type(priority.hex(), str)
 assert_type(MISSING, Literal[MissingType.MISSING])
 
 minimal = InventoryItem(sku="minimal", metadata=InventoryItemMetadata(warehouse="east"))
@@ -114,6 +124,7 @@ item_from_constructor = InventoryItem(
     metadata=InventoryItemMetadata(warehouse="east"),
     quantity=MISSING,
     tags=["dry"],
+    tagGroups=[["list"], ("tuple",), FrozenList(["frozen"])],
     warehouseCode="WH-123",
     coordinates=["aisle", 7],
     fixedCoordinates=("aisle", 7),
@@ -122,11 +133,37 @@ item_from_constructor = InventoryItem(
 )
 assert_type(item_from_constructor, InventoryItem)
 assert_type(
+    InventoryItem(sku="tuple", metadata=item.metadata, tags=("dry",)),
+    InventoryItem,
+)
+assert_type(
+    InventoryItem(sku="frozen", metadata=item.metadata, tags=FrozenList(["dry"])),
+    InventoryItem,
+)
+
+
+def migrate_tags(values: Sequence[str]) -> InventoryItem:
+    return InventoryItem(sku="sequence", metadata=item.metadata, tags=list(values))
+
+
+def migrate_tag_groups(values: Sequence[Sequence[str]]) -> InventoryItem:
+    return InventoryItem(
+        sku="groups",
+        metadata=item.metadata,
+        tagGroups=tuple(tuple(group) for group in values),
+    )
+
+
+assert_type(migrate_tags(("migrated",)), InventoryItem)
+assert_type(migrate_tag_groups((("migrated",),)), InventoryItem)
+assert_type(
     InventoryItem.from_value(item.to_value(), skip_validation=True),
     InventoryItem,
 )
 "#,
         r#"
+
+from typing import Sequence
 
 from generated_models import InventoryItem, InventoryItemMetadata
 from jsoncompat.codegen.dataclasses import MissingType
@@ -181,6 +218,21 @@ InventoryItem(
     sku="sku-456",
     metadata=InventoryItemMetadata(warehouse="east"),
 ).serialize(format="json")
+
+
+def invalid_array_inputs(
+    string_array: str,
+    bytes_array: bytes,
+    broad_strings: Sequence[str],
+    broad_integers: Sequence[int],
+    broad_inner: Sequence[str],
+) -> None:
+    metadata = InventoryItemMetadata(warehouse="east")
+    InventoryItem(sku="str", metadata=metadata, tags=string_array)
+    InventoryItem(sku="bytes", metadata=metadata, coordinates=bytes_array)
+    InventoryItem(sku="strings", metadata=metadata, tags=broad_strings)
+    InventoryItem(sku="integers", metadata=metadata, coordinates=broad_integers)
+    InventoryItem(sku="nested", metadata=metadata, tagGroups=[broad_inner])
 "#,
     )?;
 
@@ -224,10 +276,181 @@ InventoryItem(
         "skip_validation",
         "get_additional_property",
         "no-matching-overload",
+        "string_array",
+        "bytes_array",
+        "broad_strings",
+        "broad_integers",
+        "broad_inner",
     ] {
         assert!(
             invalid_stdout.contains(rejected),
             "ty did not reject {rejected}:\n{invalid_stdout}"
+        );
+    }
+
+    fs::write(
+        work_dir.join("invalid_number_usage.py"),
+        r#"
+from generated_models import InventoryItem
+from jsoncompat.codegen.dataclasses import MISSING
+
+
+def number_hex(item: InventoryItem) -> None:
+    priority = item.get_additional_property("priority")
+    if priority is not MISSING:
+        priority.hex()
+"#,
+    )?;
+    let invalid_number_output = run_ty(&work_dir, "invalid_number_usage.py")?;
+    assert!(
+        !invalid_number_output.status.success(),
+        "ty accepted a float-only method on a stored number"
+    );
+    let invalid_number_stdout = String::from_utf8_lossy(&invalid_number_output.stdout);
+    assert!(
+        invalid_number_stdout.contains("unresolved-attribute")
+            && invalid_number_stdout.contains("hex"),
+        "ty did not reject the float-only method:\n{invalid_number_stdout}"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn deserialization_input_types_follow_the_selected_format() -> Result<(), Box<dyn Error>> {
+    let schema = json!({
+        "title": "Message",
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": false,
+    });
+    let module = generate_dataclass_module_from_document(&SchemaDocument::from_json(&schema)?)?;
+    let source = module.public_file("_generated_impl");
+    let work_dir = write_typecheck_files(
+        &source,
+        r#"
+from typing import Literal, assert_type
+
+from generated_models import Message
+from jsoncompat import JsonValue
+from jsoncompat.codegen import SerializationFormat
+from jsoncompat.codegen.serialization import deserialize_value
+
+
+json_text = '{"value":"hello"}'
+yaml_text = "value: hello"
+msgpack_bytes = b"\x81\xa5value\xa5hello"
+
+assert_type(Message.deserialize(json_text), Message)
+assert_type(
+    Message.deserialize(json_text.encode(), format=SerializationFormat.JSON),
+    Message,
+)
+assert_type(Message.deserialize(yaml_text, format=SerializationFormat.YAML), Message)
+assert_type(
+    Message.deserialize(yaml_text.encode(), format=SerializationFormat.YAML),
+    Message,
+)
+assert_type(
+    Message.deserialize(msgpack_bytes, format=SerializationFormat.MSGPACK),
+    Message,
+)
+
+assert_type(deserialize_value(json_text), JsonValue)
+assert_type(
+    deserialize_value(json_text.encode(), format=SerializationFormat.JSON),
+    JsonValue,
+)
+assert_type(deserialize_value(yaml_text, format=SerializationFormat.YAML), JsonValue)
+assert_type(
+    deserialize_value(yaml_text.encode(), format=SerializationFormat.YAML),
+    JsonValue,
+)
+assert_type(
+    deserialize_value(msgpack_bytes, format=SerializationFormat.MSGPACK),
+    JsonValue,
+)
+
+
+def decode_text(
+    payload: str,
+    format: Literal[SerializationFormat.JSON, SerializationFormat.YAML],
+) -> None:
+    assert_type(Message.deserialize(payload, format=format), Message)
+    assert_type(deserialize_value(payload, format=format), JsonValue)
+
+
+def decode_bytes(payload: bytes, format: SerializationFormat) -> None:
+    assert_type(Message.deserialize(payload, format=format), Message)
+    assert_type(deserialize_value(payload, format=format), JsonValue)
+"#,
+        r#"
+from generated_models import Message
+from jsoncompat.codegen import SerializationFormat
+
+Message.deserialize('{"value":"hello"}', format=SerializationFormat.MSGPACK)
+"#,
+    )?;
+    fs::write(work_dir.join("_generated_impl.py"), module.private_file())?;
+    for (file_name, usage) in [
+        (
+            "invalid_value_msgpack_text.py",
+            r#"
+from jsoncompat.codegen import SerializationFormat
+from jsoncompat.codegen.serialization import deserialize_value
+
+deserialize_value("{}", format=SerializationFormat.MSGPACK)
+"#,
+        ),
+        (
+            "invalid_model_dynamic_text.py",
+            r#"
+from generated_models import Message
+from jsoncompat.codegen import SerializationFormat
+
+
+def decode(format: SerializationFormat) -> None:
+    Message.deserialize('{"value":"hello"}', format=format)
+"#,
+        ),
+        (
+            "invalid_value_dynamic_text.py",
+            r#"
+from jsoncompat.codegen import SerializationFormat
+from jsoncompat.codegen.serialization import deserialize_value
+
+
+def decode(format: SerializationFormat) -> None:
+    deserialize_value("{}", format=format)
+"#,
+        ),
+    ] {
+        fs::write(work_dir.join(file_name), usage)?;
+    }
+
+    let valid_output = run_ty(&work_dir, "valid_usage.py")?;
+    assert!(
+        valid_output.status.success(),
+        "ty rejected valid deserialization formats:\n{}\n{}",
+        String::from_utf8_lossy(&valid_output.stdout),
+        String::from_utf8_lossy(&valid_output.stderr),
+    );
+    for file_name in [
+        "invalid_usage.py",
+        "invalid_value_msgpack_text.py",
+        "invalid_model_dynamic_text.py",
+        "invalid_value_dynamic_text.py",
+    ] {
+        let invalid_output = run_ty(&work_dir, file_name)?;
+        assert!(
+            !invalid_output.status.success(),
+            "ty accepted text for a possibly binary format in {file_name}"
+        );
+        let invalid_stdout = String::from_utf8_lossy(&invalid_output.stdout);
+        assert!(
+            invalid_stdout.contains("no-matching-overload"),
+            "ty did not report the format input mismatch in {file_name}:\n{invalid_stdout}"
         );
     }
 

@@ -20,10 +20,19 @@ pub(super) enum Kind {
     Union(Vec<Annotation>),
 }
 
+#[derive(Clone, Copy)]
+enum AnnotationSource {
+    Stored,
+    Input,
+    UnionOrder,
+}
+
 #[derive(Clone, Debug, Eq)]
 pub(super) struct Annotation {
     source: String,
     input_source: String,
+    // Conversion precedence is independent of public annotation spelling.
+    union_order_source: String,
     // Context-dependent JSON projections retain neighboring model branches;
     // a fully unconstrained fallback absorbs them. Both expose the same type.
     absorbs_union: bool,
@@ -35,6 +44,7 @@ impl Annotation {
         let source = source.into();
         Self {
             input_source: source.clone(),
+            union_order_source: source.clone(),
             source,
             absorbs_union: false,
             kind,
@@ -50,12 +60,20 @@ impl Annotation {
         Self {
             source: "dc.FrozenJsonValue".into(),
             input_source: "(dc.JsonValue | dc.FrozenJsonValue)".into(),
+            union_order_source: "dc.FrozenJsonValue".into(),
             absorbs_union: false,
             kind: Kind::Any,
         }
     }
     pub fn input_source(&self) -> &str {
         &self.input_source
+    }
+    fn source_for(&self, projection: AnnotationSource) -> &str {
+        match projection {
+            AnnotationSource::Stored => &self.source,
+            AnnotationSource::Input => &self.input_source,
+            AnnotationSource::UnionOrder => &self.union_order_source,
+        }
     }
     pub fn absorbs_union(&self) -> bool {
         self.absorbs_union
@@ -70,7 +88,12 @@ impl Annotation {
         Self::new("int", Kind::Integer)
     }
     pub fn number() -> Self {
-        Self::new("float", Kind::Number)
+        Self {
+            // Keep the historical union conversion precedence while exposing
+            // both Python representations preserved by the number converter.
+            union_order_source: "float".into(),
+            ..Self::new("int | float", Kind::Number)
+        }
     }
     pub fn boolean() -> Self {
         Self::new("bool", Kind::Boolean)
@@ -90,32 +113,28 @@ impl Annotation {
     pub fn sequence(item: Self) -> Self {
         Self {
             source: format!("collections.abc.Sequence[{item}]"),
-            input_source: format!("collections.abc.Sequence[{}]", item.input_source),
+            input_source: format!("dc.ArrayInput[{}]", item.input_source),
+            union_order_source: format!("collections.abc.Sequence[{}]", item.union_order_source),
             absorbs_union: false,
             kind: Kind::Sequence(Box::new(item)),
         }
     }
     pub fn tuple(items: Vec<Self>) -> Self {
-        let tuple_source = |inputs: bool| {
+        let tuple_source = |projection: AnnotationSource| {
             if items.is_empty() {
                 return "tuple[()]".to_owned();
             }
             let elements = items
                 .iter()
-                .map(|item| {
-                    if inputs {
-                        item.input_source()
-                    } else {
-                        &item.source
-                    }
-                })
+                .map(|item| item.source_for(projection))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("tuple[{elements}]")
         };
         Self {
-            source: tuple_source(false),
-            input_source: tuple_source(true),
+            source: tuple_source(AnnotationSource::Stored),
+            input_source: tuple_source(AnnotationSource::Input),
+            union_order_source: tuple_source(AnnotationSource::UnionOrder),
             absorbs_union: false,
             kind: Kind::Tuple(items),
         }
@@ -124,6 +143,10 @@ impl Annotation {
         Self {
             source: format!("collections.abc.Mapping[str, {value}]"),
             input_source: format!("collections.abc.Mapping[str, {}]", value.input_source),
+            union_order_source: format!(
+                "collections.abc.Mapping[str, {}]",
+                value.union_order_source
+            ),
             absorbs_union: false,
             kind: Kind::Mapping(Box::new(value)),
         }
@@ -145,27 +168,27 @@ impl Annotation {
         unique.sort_by(|a, b| match (a.source == "None", b.source == "None") {
             (true, false) => Ordering::Greater,
             (false, true) => Ordering::Less,
-            _ => a.cmp(b),
+            _ => a.union_order_source.cmp(&b.union_order_source),
         });
         match unique.len() {
             0 => Self::any(),
             1 => unique.pop().expect("one branch"),
             _ => {
-                let sources = union_sources(&unique, false);
-                let source = if sources.len() == 1 {
-                    sources[0].clone()
-                } else {
-                    format!("({})", sources.join(" | "))
+                let union_source = |projection| {
+                    let sources = union_sources(&unique, projection);
+                    if sources.len() == 1 {
+                        sources[0].clone()
+                    } else {
+                        format!("({})", sources.join(" | "))
+                    }
                 };
-                let inputs = union_sources(&unique, true);
-                let input_source = if inputs.len() == 1 {
-                    inputs[0].clone()
-                } else {
-                    format!("({})", inputs.join(" | "))
-                };
+                let source = union_source(AnnotationSource::Stored);
+                let input_source = union_source(AnnotationSource::Input);
+                let union_order_source = union_source(AnnotationSource::UnionOrder);
                 Self {
                     source,
                     input_source,
+                    union_order_source,
                     absorbs_union: false,
                     kind: Kind::Union(unique),
                 }
@@ -203,7 +226,7 @@ impl PartialOrd for Annotation {
 // Literal alternatives share one typing.Literal declaration. Keep the original
 // branch graph intact: validation and discriminator planning still see every
 // distinct literal, including Python's otherwise equal True/1 values.
-fn union_sources(branches: &[Annotation], input: bool) -> Vec<String> {
+fn union_sources(branches: &[Annotation], projection: AnnotationSource) -> Vec<String> {
     let literals: Vec<_> = branches
         .iter()
         .filter_map(|branch| match &branch.kind {
@@ -220,11 +243,7 @@ fn union_sources(branches: &[Annotation], input: bool) -> Vec<String> {
                 emitted = true;
             }
         } else {
-            result.push(if input {
-                branch.input_source.clone()
-            } else {
-                branch.to_string()
-            });
+            result.push(branch.source_for(projection).to_owned());
         }
     }
     result

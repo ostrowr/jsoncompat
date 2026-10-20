@@ -23,7 +23,7 @@ class PetCreate(dc.DataclassModel):
         skip_validation: bool = False,
         name: str,
         species: typing.Literal["cat", "dog"],
-        tags: dc.Omittable[collections.abc.Sequence[str]] = dc.MissingType.MISSING,
+        tags: dc.Omittable[dc.ArrayInput[str]] = dc.MissingType.MISSING,
     ) -> None:
         self.__post_init__(skip_validation)
 

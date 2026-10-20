@@ -94,6 +94,38 @@ def serialize_value(
     return encoded
 
 
+@overload
+def deserialize_value(
+    payload: str | bytes,
+    *,
+    format: Literal[SerializationFormat.JSON] = SerializationFormat.JSON,
+) -> JsonValue: ...
+
+
+@overload
+def deserialize_value(
+    payload: str | bytes,
+    *,
+    format: Literal[SerializationFormat.YAML],
+) -> JsonValue: ...
+
+
+@overload
+def deserialize_value(
+    payload: bytes,
+    *,
+    format: Literal[SerializationFormat.MSGPACK],
+) -> JsonValue: ...
+
+
+@overload
+def deserialize_value(
+    payload: bytes,
+    *,
+    format: SerializationFormat,
+) -> JsonValue: ...
+
+
 def deserialize_value(
     payload: str | bytes,
     *,

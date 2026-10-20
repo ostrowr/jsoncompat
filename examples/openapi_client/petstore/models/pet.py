@@ -27,7 +27,7 @@ class Pet(dc.DataclassModel):
         name: str,
         nickname: dc.Omittable[str | None] = dc.MissingType.MISSING,
         species: typing.Literal["cat", "dog"],
-        tags: collections.abc.Sequence[str],
+        tags: dc.ArrayInput[str],
     ) -> None:
         self.__post_init__(skip_validation)
 

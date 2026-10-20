@@ -8,6 +8,7 @@ pub use package::DataclassPackage;
 pub use render::{DataclassMetadata, DataclassModule};
 use types::Annotation;
 
+use crate::prepared_schema::PropertyPatternMatcher;
 use crate::{JSONCOMPAT_METADATA_KEY, JsoncompatMetadata};
 use json_schema_ast::{SchemaBuildError, SchemaDocument, SchemaNodeKind};
 use serde_json::{Map, Value, json};
@@ -1396,6 +1397,11 @@ fn emit_root_defs(
     emit_nested_defs(builder, root, "#")
 }
 
+struct RequiredPropertyPattern {
+    annotation: Annotation,
+    matcher: PropertyPatternMatcher,
+}
+
 fn parse_object_fields(
     builder: &mut DataclassModuleBuilder<'_>,
     obj: &Map<String, Value>,
@@ -1440,6 +1446,17 @@ fn parse_object_fields(
 
     let fallback_annotation =
         required_property_fallback_annotation(builder, obj, pointer, scope_name)?;
+    let has_undeclared_required = required
+        .iter()
+        .any(|name| !properties.is_some_and(|properties| properties.contains_key(name)));
+    let required_patterns = if has_undeclared_required {
+        // The fallback above historically emits before extras. Emit every
+        // pattern in extras order so selecting a required name cannot rename
+        // nested models that existing callers import.
+        parse_required_property_patterns(builder, obj, pointer, scope_name)?
+    } else {
+        Vec::new()
+    };
     for property_name in required {
         if properties.is_some_and(|properties| properties.contains_key(&property_name)) {
             continue;
@@ -1449,13 +1466,82 @@ fn parse_object_fields(
         fields.push(FieldSpec {
             json_name: property_name.clone(),
             py_name,
-            annotation: fallback_annotation.clone(),
+            annotation: required_property_annotation(
+                &required_patterns,
+                &fallback_annotation,
+                &property_name,
+            ),
             required: true,
             description: None,
         });
     }
 
     Ok(fields)
+}
+
+fn parse_required_property_patterns(
+    builder: &mut DataclassModuleBuilder<'_>,
+    obj: &Map<String, Value>,
+    pointer: &str,
+    scope_name: &str,
+) -> Result<Vec<RequiredPropertyPattern>, DataclassError> {
+    let Some(pattern_properties) = obj.get("patternProperties") else {
+        return Ok(Vec::new());
+    };
+    let pattern_properties = pattern_properties.as_object().ok_or_else(|| {
+        invalid_schema(
+            join_pointer(pointer, "patternProperties"),
+            "patternProperties must be an object",
+        )
+    })?;
+
+    pattern_properties
+        .iter()
+        .map(|(pattern, schema)| {
+            let pointer = join_pointer(
+                &join_pointer(pointer, "patternProperties"),
+                &escape_pointer_token(pattern),
+            );
+            let annotation = match schema {
+                Value::Bool(_) => Annotation::any(),
+                schema => builder.inline_annotation(
+                    schema,
+                    &pointer,
+                    scope_name,
+                    "PatternPropertyValue",
+                )?,
+            };
+            let matcher = PropertyPatternMatcher::compile(pattern)
+                .map_err(|error| invalid_schema(pointer, error))?;
+            Ok(RequiredPropertyPattern {
+                annotation,
+                matcher,
+            })
+        })
+        .collect()
+}
+
+fn required_property_annotation(
+    patterns: &[RequiredPropertyPattern],
+    fallback_annotation: &Annotation,
+    property_name: &str,
+) -> Annotation {
+    let mut matching_pattern = None;
+    for pattern in patterns {
+        match pattern.matcher.is_match(property_name) {
+            Some(false) => {}
+            Some(true) if matching_pattern.is_none() => matching_pattern = Some(pattern),
+            // Multiple matches are intersections, and an indeterminate match
+            // may add another constraint. Preserve JSON for the containing
+            // validator instead of projecting one pattern in isolation.
+            Some(true) | None => return Annotation::json(),
+        }
+    }
+
+    let Some(pattern) = matching_pattern else {
+        return fallback_annotation.clone();
+    };
+    pattern.annotation.clone()
 }
 
 fn parse_extra_annotation(
@@ -2827,7 +2913,7 @@ mod tests {
     }
 
     #[test]
-    fn float_form_enum_values_use_float_annotation() {
+    fn float_form_enum_values_use_number_annotation() {
         let schema = json!({
             "type": "number",
             "enum": [9007199254740994.0]
@@ -2835,7 +2921,7 @@ mod tests {
 
         let source = generate_dataclass_models(&schema).unwrap();
 
-        assert!(source.contains("root: float ="));
+        assert!(source.contains("root: int | float ="));
         assert!(!source.contains("__jsoncompat_root_annotation__"));
         assert!(!source.contains("typing.Literal[9007199254740994.0]"));
     }
@@ -3044,6 +3130,30 @@ mod tests {
     }
 
     #[test]
+    fn nested_array_constructor_annotations_have_bounded_source_growth() {
+        let public_source = |depth| {
+            let mut schema = json!({ "type": "string" });
+            for _ in 0..depth {
+                schema = json!({ "type": "array", "items": schema });
+            }
+            let document = SchemaDocument::from_json(&schema).unwrap();
+            generate_dataclass_module_from_document(&document)
+                .unwrap()
+                .public_file("_generated_impl")
+        };
+
+        let shallow = public_source(4);
+        let deep = public_source(8);
+
+        assert!(
+            deep.len() <= shallow.len() * 2,
+            "nested array public source grew from {} to {} bytes when depth doubled",
+            shallow.len(),
+            deep.len()
+        );
+    }
+
+    #[test]
     fn unconstrained_prefix_items_do_not_emit_phantom_wrapper_models() {
         let schema = json!({
             "title": "trace",
@@ -3075,15 +3185,98 @@ mod tests {
             "patternProperties": {
                 "^x-": { "type": "integer" }
             },
+            "required": ["x-rank"],
             "additionalProperties": false
         });
 
         let source = generate_dataclass_models(&schema).unwrap();
 
+        assert!(source.contains("x_rank: int = dc.field(\"x-rank\")"));
         assert!(source.contains("class Labels(dc.DataclassAdditionalModel[\"int\"]):"));
         assert!(source.contains(
             "__jsoncompat_extra__: collections.abc.Mapping[str, int] = dc.extra_field(default_factory=dict)"
         ));
+    }
+
+    #[test]
+    fn undeclared_required_fields_use_matching_patterns_before_additional_properties() {
+        let schema = json!({
+            "type": "object",
+            "required": ["count", "label", "opaque"],
+            "patternProperties": {
+                "^count$": { "type": "integer" },
+                "^opaque$": true
+            },
+            "additionalProperties": { "type": "string" }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("count: int = dc.field(\"count\")"));
+        assert!(source.contains("label: str = dc.field(\"label\")"));
+        assert!(source.contains("opaque: dc.FrozenJsonValue = dc.field(\"opaque\")"));
+    }
+
+    #[test]
+    fn undeclared_required_fields_keep_overlapping_patterns_as_json() {
+        let schema = json!({
+            "type": "object",
+            "required": ["entry"],
+            "patternProperties": {
+                "^ent": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string" } },
+                    "required": ["name"]
+                },
+                "try$": {
+                    "type": "object",
+                    "properties": { "count": { "type": "integer" } },
+                    "required": ["count"]
+                }
+            },
+            "additionalProperties": { "type": "string" }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("entry: dc.FrozenJsonValue = dc.field(\"entry\")"));
+    }
+
+    #[test]
+    fn undeclared_required_fields_use_validator_pattern_semantics() {
+        let schema = json!({
+            "type": "object",
+            "required": ["digit1", "digit١"],
+            "patternProperties": {
+                "^digit\\d$": { "type": "integer" }
+            },
+            "additionalProperties": { "type": "string" }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains("digit1: int = dc.field(\"digit1\")"));
+        assert!(source.contains(": str = dc.field(\"digit١\")"));
+    }
+
+    #[test]
+    fn indeterminate_required_pattern_match_keeps_json_representation() {
+        let property_name = "a".repeat(2_000);
+        let pattern = "(?=a*)b";
+        let matcher = PropertyPatternMatcher::compile(pattern).unwrap();
+        assert_eq!(matcher.is_match(&property_name), None);
+        let schema = json!({
+            "type": "object",
+            "required": [property_name],
+            "patternProperties": {
+                pattern: { "type": "integer" }
+            },
+            "additionalProperties": { "type": "string" }
+        });
+
+        let source = generate_dataclass_models(&schema).unwrap();
+
+        assert!(source.contains(": dc.FrozenJsonValue = dc.field("));
     }
 
     #[test]
