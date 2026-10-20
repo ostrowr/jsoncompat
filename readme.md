@@ -6,6 +6,8 @@
 
 Check whether evolving JSON Schemas and OpenAPI 3.1 contracts stay backward-compatible. Generate typed Python models and HTTP clients from the same schemas.
 
+These docs target **0.6.0 (unreleased)**. Read the [migration guide from 0.5.0](CHANGELOG.md#migration-from-050) before upgrading.
+
 jsoncompat compares:
 
 - raw JSON Schema Draft 2020-12 documents;
@@ -48,7 +50,7 @@ decimal precision or extend the numeric range.
 Enable exact JSON number parsing explicitly:
 
 ```toml
-jsoncompat = { version = "0.5.0", features = ["arbitrary-precision"] }
+jsoncompat = { version = "0.6.0", features = ["arbitrary-precision"] }
 ```
 
 The same opt-in feature is available on `json_schema_ast`, `json_schema_fuzz`,
