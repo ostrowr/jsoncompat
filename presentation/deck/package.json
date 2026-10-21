@@ -20,7 +20,7 @@
   "devDependencies": {
     "@slidev/cli": "52.14.1",
     "@slidev/theme-seriph": "^0.25.0",
-    "markdown-it": "^14.1.0",
+    "markdown-it": "^14.3.3",
     "playwright": "^1.63.0",
     "playwright-chromium": "^1.63.0",
     "vite": "^7.3.7"
