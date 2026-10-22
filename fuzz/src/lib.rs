@@ -21,6 +21,7 @@ use std::num::NonZeroUsize;
 
 const DEFAULT_MAX_GENERATION_ATTEMPTS: usize = 100;
 const DEFAULT_GENERATION_DEPTH: u8 = 5;
+const MAX_EXACT_F64_INTEGER: f64 = (1_u64 << f64::MANTISSA_DIGITS) as f64;
 
 /// Errors returned by [`ValueGenerator::generate`].
 #[derive(Debug, thiserror::Error)]
@@ -753,25 +754,24 @@ fn generate_candidate_with_context(
                 let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
-            if multiple_of.is_some() {
-                let (low, high) = number_generation_range(*bounds);
-                if low <= 0.0 && 0.0 <= high {
-                    return Value::Number(serde_json::Number::from_f64(0.0).unwrap());
-                }
-            }
-
             let (low, high) = number_generation_range(*bounds);
-            let mut val = rng.random_range(low..=high);
 
-            if let Some(mo) = multiple_of {
-                let multiple_of = mo.as_f64();
-                let k = (val / multiple_of).floor();
-                val = k * multiple_of;
-                if val < low || val > high {
-                    let k = (low / multiple_of).ceil();
-                    val = k * multiple_of;
+            let val = match multiple_of {
+                None => rng.random_range(low..=high),
+                Some(mo) => {
+                    let mo = mo.as_f64();
+                    let first = (low / mo).ceil();
+                    let last = (high / mo).floor();
+                    if first > last {
+                        0.0
+                    } else if first.abs().max(last.abs()) <= MAX_EXACT_F64_INTEGER {
+                        // Draw the multiplier as an integer
+                        rng.random_range(first as i64..=last as i64) as f64 * mo
+                    } else {
+                        rng.random_range(first..=last).round() * mo
+                    }
                 }
-            }
+            };
 
             Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| 0.into()))
         }
@@ -788,29 +788,21 @@ fn generate_candidate_with_context(
                 let idx = rng.random_range(0..e.len());
                 return e[idx].clone();
             }
-            if multiple_of.is_some() {
-                let (low, high) = integer_generation_range(*bounds);
-                if low <= 0 && 0 <= high {
-                    return Value::Number(0.into());
-                }
-            }
-
             let (low, high) = integer_generation_range(*bounds);
-            let mut val = rng.random_range(low..=high);
 
-            if let Some(mo) = multiple_of
-                && let Some(mo) = mo.integer_divisor_i64()
-            {
-                val = (val / mo) * mo;
-                if val < low {
-                    val += mo;
-                }
-                if val > high {
-                    val -= mo;
+            let Some(mo) = multiple_of else {
+                return Value::Number(rng.random_range(low..=high).into());
+            };
+
+            if let Some(mo) = mo.integer_divisor_i64() {
+                let first = low.div_euclid(mo) + i64::from(low.rem_euclid(mo) != 0);
+                let last = high.div_euclid(mo);
+                if first <= last {
+                    return Value::Number((rng.random_range(first..=last) * mo).into());
                 }
             }
 
-            Value::Number(val.into())
+            Value::Number(0.into())
         }
 
         Boolean { enumeration } => {
@@ -1570,6 +1562,7 @@ mod tests {
     use json_schema_ast::SchemaDocument;
     use rand::{SeedableRng, TryRng, rngs::StdRng};
     use serde_json::json;
+    use std::collections::BTreeSet;
     use std::convert::Infallible;
 
     fn resolve(raw: Value) -> SchemaDocument {
@@ -1589,6 +1582,30 @@ mod tests {
                 schema.is_valid(&value).unwrap(),
                 "generated invalid value: {value}"
             );
+        }
+    }
+
+    #[test]
+    fn numeric_ranges_containing_zero_are_not_constant() {
+        for raw in [
+            json!({"type": "integer"}),
+            json!({"type": "integer", "minimum": 0, "maximum": 100}),
+            json!({"type": "integer", "minimum": -20, "maximum": 20, "multipleOf": 7}),
+            json!({"type": "number", "multipleOf": 3}),
+            json!({"type": "number", "minimum": -1, "maximum": 1, "multipleOf": 0.25}),
+        ] {
+            let schema = resolve(raw.clone());
+            let mut rng = StdRng::seed_from_u64(42);
+            let values: BTreeSet<String> = (0..50)
+                .map(|_| {
+                    let value =
+                        ValueGenerator::generate(&schema, GenerationConfig::new(5), &mut rng)
+                            .unwrap();
+                    assert!(schema.is_valid(&value).unwrap(), "{raw}: invalid {value}");
+                    value.to_string()
+                })
+                .collect();
+            assert!(values.len() > 1, "{raw}: only generated {values:?}");
         }
     }
 

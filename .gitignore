@@ -6,3 +6,6 @@
 __pycache__/
 
 /wasm/pkg*/
+
+/pybindings/jsoncompat/*.so
+/pybindings/jsoncompat/*.pyd
