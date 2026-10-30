@@ -2,12 +2,14 @@
 
 Check JSON Schema compatibility, generate example values, and use typed Python models and OpenAPI clients. Start with the [client examples](../examples/openapi_client/README.md) or the API reference below.
 
+These docs target **0.6.0 (unreleased)**. Read the [migration guide from 0.5.0](../CHANGELOG.md#migration-from-050) before upgrading.
+
 ## Installation
 
-Install from PyPI:
+After release, install from PyPI:
 
 ```bash
-pip install jsoncompat==0.5.0
+pip install jsoncompat==0.6.0
 ```
 
 Releases also provide a source distribution for platforms without a matching
@@ -1096,8 +1098,8 @@ The generated body type follows the declared media and schema:
 | `application/x-ndjson`, `application/ndjson` | `Sequence[Record]` | One schema-validated record per line |
 | NDJSON with an explicit string schema | `str` | Raw UTF-8 text |
 | Binary media such as PDF, ZIP, images, audio, octet-stream | `bytes` | Unmodified bytes |
-| `application/x-www-form-urlencoded` | Generated object | OpenAPI form parameter encoding |
-| `multipart/form-data` | Generated object with `bytes` file fields | Multipart parts, with generated boundaries |
+| `application/x-www-form-urlencoded` (requests only) | Generated object | OpenAPI form parameter encoding |
+| `multipart/form-data` (requests only) | Generated object with `bytes` file fields | Multipart parts, with generated boundaries |
 | YAML | Generated model or typed JSON value | YAML; install `jsoncompat[yaml]` |
 
 NDJSON schemas describe each record. An array schema therefore produces a
@@ -1108,15 +1110,16 @@ adapters buffer it before returning, so this API is intended for finite SSE
 responses, not an indefinitely open event stream.
 
 Binary bodies require an unconstrained schema or `type: string, format: binary`.
-For JSON, YAML, and NDJSON representations, `format: binary` remains an annotation:
-the media codec and declared JSON type still apply, including for explicitly
-JSON/YAML-encoded multipart parts.
 Their public fields are `bytes`: `response.unwrap().body` gives the download
 bytes directly. Binary fields in generated model `to_value()`/`from_value()` use
 canonical base64 strings as their JSON representation; HTTP encoders send the
 original bytes, without base64 on the wire. Ambiguous string constraints such as
 `pattern`, `enum`, or `minLength` on an opaque binary schema are rejected rather
 than reinterpreted as byte constraints.
+
+For JSON, YAML, and NDJSON representations, `format: binary` remains an annotation:
+the media codec and declared JSON type still apply, including for explicitly
+JSON/YAML-encoded multipart parts.
 
 Multipart object parts default to JSON, scalar parts to text, and binary parts
 to octet-stream. Arrays produce repeated parts. Declared `encoding.contentType`
