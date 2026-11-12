@@ -1,6 +1,6 @@
 [package]
 name = "jsoncompat_codegen"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Canonical stamped JSON Schema bundles for jsoncompat code generation"
 repository = "https://github.com/ostrowr/jsoncompat"
@@ -11,7 +11,7 @@ default = []
 arbitrary-precision = ["json_schema_ast/arbitrary-precision"]
 
 [dependencies]
-json_schema_ast = { path = "../schema", version = "0.5.0" }
+json_schema_ast = { path = "../schema", version = "0.6.0" }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_json = "1.0.135"
 sha2 = "0.10.8"

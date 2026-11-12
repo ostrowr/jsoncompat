@@ -10,7 +10,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json_schema_ast = "0.5.0"
+json_schema_ast = "0.6.0"
 ```
 
 ## Usage
@@ -20,7 +20,7 @@ underflow to zero, or fail to parse when out of range. Enable the
 `arbitrary-precision` Cargo feature to retain exact JSON number text:
 
 ```toml
-json_schema_ast = { version = "0.5.0", features = ["arbitrary-precision"] }
+json_schema_ast = { version = "0.6.0", features = ["arbitrary-precision"] }
 ```
 
 This enables `serde_json/arbitrary_precision` across shared dependencies. See
