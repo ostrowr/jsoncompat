@@ -902,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "json_schema_ast"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "json_schema_fuzz",
  "jsonschema",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "json_schema_fuzz"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "fake",
@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat_codegen"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "fancy-regex 0.17.0",
  "json_schema_ast",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat_openapi"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "email_address",
  "json_schema_ast",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat_py"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "jsoncompat_wasm"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "getrandom 0.4.3",
