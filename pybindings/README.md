@@ -2,11 +2,11 @@
 
 Check JSON Schema compatibility, generate example values, and use typed Python models and OpenAPI clients. Start with the [client examples](../examples/openapi_client/README.md) or the API reference below.
 
-These docs target **0.6.0 (unreleased)**. Read the [migration guide from 0.5.0](../CHANGELOG.md#migration-from-050) before upgrading.
+Read the [migration guide from 0.5.0](../CHANGELOG.md#migration-from-050) before upgrading.
 
 ## Installation
 
-After release, install from PyPI:
+Install from PyPI:
 
 ```bash
 pip install jsoncompat==0.6.0

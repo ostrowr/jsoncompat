@@ -16,7 +16,7 @@ function InstallPage() {
       <h1 className="text-3xl font-bold">Installation &amp; usage</h1>
 
       <p>
-        These examples target <strong>0.6.0 (unreleased)</strong>. Read the{" "}
+        Read the{" "}
         <a
           className="text-blue-600 hover:underline"
           href="https://github.com/ostrowr/jsoncompat/blob/main/CHANGELOG.md#migration-from-050"

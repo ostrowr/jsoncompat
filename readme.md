@@ -6,7 +6,7 @@
 
 Check whether evolving JSON Schemas and OpenAPI 3.1 contracts stay backward-compatible. Generate typed Python models and HTTP clients from the same schemas.
 
-These docs target **0.6.0 (unreleased)**. Read the [migration guide from 0.5.0](CHANGELOG.md#migration-from-050) before upgrading.
+Read the [migration guide from 0.5.0](CHANGELOG.md#migration-from-050) before upgrading.
 
 jsoncompat compares:
 

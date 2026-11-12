@@ -6,8 +6,6 @@ Build, validate, and resolve Draft 2020-12 JSON Schema and OpenAPI 3.1 Schema Ob
 
 ## Installation
 
-These examples target **0.6.0 (unreleased)**.
-
 Add to your `Cargo.toml`:
 
 ```toml

@@ -5,11 +5,7 @@ packages. Historical entries are reconstructed from the repository's `v*` tags
 and their source changes, including prereleases. Dates follow the release tags;
 a tag does not imply that every package was published to every registry.
 
-## 0.6.0 (Unreleased)
-
-These are the prepared release notes for 0.6.0. The version bump and publication
-are still pending. Installation examples in the documentation target that
-upcoming release.
+## 0.6.0
 
 [Changes since 0.5.0](https://github.com/ostrowr/jsoncompat/compare/v0.5.0..main)
 
@@ -81,7 +77,7 @@ decimals, very large numbers, or extreme exponents, opt in explicitly. For
 example, default parsing can round `0.10000000000000001` to `0.1`, underflow
 `1e-400` to zero, and reject `1e400`. Signed/unsigned 64-bit integers remain exact.
 
-For Rust, after 0.6.0 is published:
+For Rust:
 
 ```toml
 jsoncompat = { version = "0.6.0", features = ["arbitrary-precision"] }
